@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إعادة تعيين كلمة المرور - Dental Clinic</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #F5E6F8 0%, #F0E6F8 50%, #E8D4F3 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* Animated Blobs */
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.6;
+            animation: float 10s ease-in-out infinite;
+        }
+        
+        .blob1 {
+            top: 5%;
+            left: 5%;
+            width: 200px;
+            height: 200px;
+            background: rgba(168, 85, 247, 0.35);
+            animation: float1 10s ease-in-out infinite;
+        }
+        
+        .blob2 {
+            top: 70%;
+            right: 5%;
+            width: 230px;
+            height: 230px;
+            background: rgba(91, 159, 237, 0.35);
+            animation: float2 14s ease-in-out infinite;
+        }
+        
+        .blob3 {
+            bottom: 10%;
+            left: 50%;
+            margin-left: -110px;
+            width: 210px;
+            height: 210px;
+            background: rgba(125, 211, 192, 0.35);
+            animation: float3 8s ease-in-out infinite;
+        }
+        
+        .blob4 {
+            top: 15%;
+            right: 20%;
+            width: 180px;
+            height: 180px;
+            background: rgba(91, 159, 237, 0.30);
+            animation: float4 16s ease-in-out infinite;
+        }
+        
+        .blob5 {
+            top: 40%;
+            left: 10%;
+            width: 170px;
+            height: 170px;
+            background: rgba(168, 85, 247, 0.30);
+            animation: float5 11s ease-in-out infinite;
+        }
+        
+        @keyframes float1 {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(30px, -40px); }
+        }
+        
+        @keyframes float2 {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-25px, 35px); }
+        }
+        
+        @keyframes float3 {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(20px, -30px); }
+        }
+        
+        @keyframes float4 {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(28px, -32px); }
+        }
+        
+        @keyframes float5 {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-20px, 25px); }
+        }
+        
+        /* Glass Container */
+        .container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 32px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(20px);
+            overflow: hidden;
+            z-index: 10;
+        }
+        
+        .color-tint {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, 
+                rgba(168, 85, 247, 0.10) 0%, 
+                rgba(91, 159, 237, 0.10) 50%, 
+                rgba(125, 211, 192, 0.10) 100%);
+            border-radius: 32px;
+        }
+        
+        .content {
+            position: relative;
+            z-index: 1;
+            padding: 32px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+        
+        .subtitle {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 16px;
+        }
+        
+        .welcome {
+            font-size: 20px;
+            font-weight: 600;
+            color: #D4A5F5;
+        }
+        
+        /* Message */
+        .message {
+            padding: 15px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #FFFFFF;
+            border: 1.5px solid rgba(16, 185, 129, 0.4);
+        }
+        
+        .error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #FFFFFF;
+            border: 1.5px solid rgba(239, 68, 68, 0.4);
+        }
+        
+        .loading {
+            background: rgba(251, 191, 36, 0.2);
+            color: #FFFFFF;
+            border: 1.5px solid rgba(251, 191, 36, 0.4);
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1.5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 16px;
+            font-size: 16px;
+            color: #FFFFFF;
+            transition: all 0.3s;
+            text-align: right;
+        }
+        
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.25);
+        }
+        
+        /* Button */
+        button {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(90deg, #C48EF5 0%, #E88EF5 100%);
+            border: none;
+            border-radius: 16px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #FFFFFF;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(196, 142, 245, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Note */
+        .note {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            text-align: center;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <!-- Animated Blobs -->
+    <div class="blob blob1"></div>
+    <div class="blob blob2"></div>
+    <div class="blob blob3"></div>
+    <div class="blob blob4"></div>
+    <div class="blob blob5"></div>
+    
+    <!-- Glass Container -->
+    <div class="container">
+        <div class="color-tint"></div>
+        <div class="content">
+            <div class="header">
+                <h1>Dental Clinic</h1>
+                <p class="subtitle">Management System</p>
+                <p class="welcome">إعادة تعيين كلمة المرور</p>
+            </div>
+            
+            <div id="message" class="message hidden"></div>
+            
+            <form id="resetForm">
+                <div class="form-group">
+                    <label for="newPassword">كلمة المرور الجديدة</label>
+                    <input type="password" id="newPassword" placeholder="أدخل كلمة المرور الجديدة" required minlength="6">
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirmPassword">تأكيد كلمة المرور</label>
+                    <input type="password" id="confirmPassword" placeholder="أعد إدخال كلمة المرور" required minlength="6">
+                </div>
+                
+                <button type="submit" id="submitBtn">
+                    <span id="btnText">تغيير كلمة المرور</span>
+                    <span id="btnSpinner" class="spinner hidden"></span>
+                </button>
+            </form>
+            
+            <div class="note">
+                بعد تغيير كلمة المرور، ستحتاج إلى تسجيل الدخول مرة أخرى باستخدام كلمة المرور الجديدة.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://usuljsxfvhhcxdwnshpr.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdWxqc3hmdmhoY3hkd25zaHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTc0MTEsImV4cCI6MjA3ODE5MzQxMX0.cXd-iJVVsWr1O-pZ3swdYD6Rv-cwZ5y12TxDoeIX7Hs';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        const form = document.getElementById('resetForm');
+        const messageDiv = document.getElementById('message');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+        const btnSpinner = document.getElementById('btnSpinner');
+        
+        function showMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.classList.remove('hidden');
+        }
+        
+        function setLoading(loading) {
+            submitBtn.disabled = loading;
+            if (loading) {
+                btnText.classList.add('hidden');
+                btnSpinner.classList.remove('hidden');
+            } else {
+                btnText.classList.remove('hidden');
+                btnSpinner.classList.add('hidden');
+            }
+        }
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (newPassword !== confirmPassword) {
+                showMessage('كلمتا المرور غير متطابقتين!', 'error');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                showMessage('كلمة المرور يجب أن تكون 6 أحرف على الأقل!', 'error');
+                return;
+            }
+            
+            setLoading(true);
+            showMessage('جاري تغيير كلمة المرور...', 'loading');
+            
+            try {
+                // 1. Get session from URL
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                
+                if (sessionError || !session) {
+                    throw new Error('الرابط غير صالح أو منتهي الصلاحية');
+                }
+                
+                const userEmail = session.user.email;
+                
+                // 2. Update password in doctors table (for login to work)
+                const { error: doctorsError } = await supabase
+                    .from('doctors')
+                    .update({ password: newPassword })
+                    .eq('email', userEmail);
+                
+                if (doctorsError) {
+                    console.error('Doctors table error:', doctorsError);
+                }
+                
+                // 3. Also update in pending_doctors table (if exists)
+                const { error: pendingError } = await supabase
+                    .from('pending_doctors')
+                    .update({ password: newPassword })
+                    .eq('email', userEmail);
+                
+                if (pendingError) {
+                    console.error('Pending doctors table error:', pendingError);
+                }
+                
+                // 4. Update in Supabase Auth (for future if you migrate)
+                const { error: authError } = await supabase.auth.updateUser({
+                    password: newPassword
+                });
+                
+                if (authError) {
+                    throw authError;
+                }
+                
+                // 5. Sign out to force re-login
+                await supabase.auth.signOut();
+                
+                showMessage('✅ تم تغيير كلمة المرور بنجاح! يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة.', 'success');
+                
+                // Clear form
+                form.reset();
+                
+                // Redirect after 3 seconds
+                setTimeout(() => {
+                    window.close();
+                }, 3000);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('❌ حدث خطأ: ' + error.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        });
+        
+        // Check if we have a valid session on page load
+        window.addEventListener('load', async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                showMessage('⚠️ الرابط غير صالح أو منتهي الصلاحية. الرجاء طلب رابط جديد.', 'error');
+                submitBtn.disabled = true;
+            }
+        });
+    </script>
+</body>
+</html>

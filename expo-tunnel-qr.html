@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dental Clinic - Expo Tunnel</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  margin: 0;
+  background: linear-gradient(135deg, #D4E8E0 0%, #E0D4E8 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.container {
+  text-align: center;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 50px;
+  border-radius: 30px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  max-width: 600px;
+}
+h1 {
+  color: #1F2937;
+  margin-bottom: 10px;
+  font-size: 32px;
+  font-weight: 700;
+}
+.subtitle {
+  color: #6B7280;
+  margin-bottom: 30px;
+  font-size: 16px;
+}
+.qr-section {
+  display: flex;
+  justify-content: space-around;
+  margin: 30px 0;
+  gap: 30px;
+}
+.qr-box {
+  flex: 1;
+}
+.qr-box h3 {
+  color: #667eea;
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+canvas {
+  margin: 10px auto;
+  border-radius: 15px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+.url {
+  color: #9CA3AF;
+  font-size: 12px;
+  margin-top: 10px;
+  font-family: 'Courier New', monospace;
+  background: #F3F4F6;
+  padding: 8px 15px;
+  border-radius: 8px;
+  display: inline-block;
+  word-break: break-all;
+}
+.badge {
+  display: inline-block;
+  background: #667eea;
+  color: white;
+  padding: 5px 15px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 5px;
+}
+.info-box {
+  background: #F9FAFB;
+  border-radius: 15px;
+  padding: 20px;
+  margin-top: 30px;
+  text-align: left;
+}
+.info-box h3 {
+  color: #1F2937;
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+.info-box ul {
+  color: #6B7280;
+  font-size: 14px;
+  line-height: 1.8;
+  margin: 0;
+  padding-left: 20px;
+}
+.info-box li {
+  margin-bottom: 8px;
+}
+.status {
+  background: #10B981;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  margin: 20px 0;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🦷 Dental Clinic</h1>
+  <p class="subtitle">Timeline Management System - Expo Tunnel</p>
+  
+  <div class="status">✅ Tunnel Ready</div>
+  
+  <div class="qr-section">
+    <div class="qr-box">
+      <h3>📱 Local Network</h3>
+      <canvas id="qr-local"></canvas>
+      <div class="url">http://localhost:8081</div>
+      <div class="badge">Same WiFi</div>
+    </div>
+  </div>
+  
+  <div class="info-box">
+    <h3>📋 How to Connect:</h3>
+    <ul>
+      <li><strong>Install Expo Go</strong> app on your phone</li>
+      <li><strong>Connect to the same WiFi</strong> as this computer</li>
+      <li>Open Expo Go and tap <strong>"Scan QR Code"</strong></li>
+      <li>Scan the QR code above</li>
+      <li>Wait for the app to load (30-60 seconds)</li>
+      <li>Enjoy the Timeline screen! 🎉</li>
+    </ul>
+  </div>
+  
+  <div class="info-box" style="margin-top: 20px;">
+    <h3>🌐 Alternative: Web Browser</h3>
+    <ul>
+      <li>Open: <a href="http://localhost:8081" target="_blank" style="color: #667eea;">http://localhost:8081</a></li>
+      <li>Note: Web version may have limited functionality</li>
+      <li>Best experience is on mobile with Expo Go</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+// Local network QR
+QRCode.toCanvas(document.getElementById('qr-local'), 'http://localhost:8081', {
+  width: 220,
+  margin: 2,
+  color: { 
+    dark: '#1F2937', 
+    light: '#FFFFFF' 
+  }
+});
+</script>
+</body>
+</html>

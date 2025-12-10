@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCM - QR Code</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 30px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        .logo {
+            font-size: 48px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+        .qr-container {
+            background: white;
+            padding: 20px;
+            border-radius: 20px;
+            display: inline-block;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        .qr-code {
+            width: 280px;
+            height: 280px;
+        }
+        .url-box {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: #495057;
+        }
+        .instructions {
+            text-align: right;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+        }
+        .instructions h3 {
+            color: #764ba2;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .instructions ol {
+            color: #666;
+            line-height: 1.8;
+            padding-right: 20px;
+        }
+        .instructions li {
+            margin-bottom: 10px;
+        }
+        .status {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">DCM</div>
+        <div class="subtitle">Dental Clinic Management</div>
+        <div class="status">✓ متصل ويعمل</div>
+        
+        <div class="qr-container">
+            <pre class="qr-code">
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+█ ▄▄▄▄▄ █ ██▀▀ ▄▄▄▀▀▀██ ▄▄▄▄▄ █
+█ █   █ █  ▀█ ▀ ▀▄▄▄█ █ █   █ █
+█ █▄▄▄█ █▀  █▄▄ ▄ ▄▄▀██ █▄▄▄█ █
+█▄▄▄▄▄▄▄█▄█ ▀▄█ ▀ ▀ ▀ █▄▄▄▄▄▄▄█
+█▄ ▀▀  ▄█▀█▄█▄▀█ ▀ ▄█▄█▀ ▀ ▄  █
+█▄▀▀▀█▀▄▄  ▄█▀█▄ ▄ ██ █ ▀▄█▄  █
+█▀▀█ ▄▄▄▀▀█▀▄▀▄ ▀▀▄▄█▄█▀▀▀▄█▀▀█
+█▀▄▀ █▀▄█▄▀▀ ▄ ▄▄▄ ██▄█▀▀▄▄▄▀ █
+█ ▄█▀▄█▄█▄▄ █▄ ▀ █ ▄██▄▀ ▀▄█▀ █
+███ █▄▀▄▀█ ██▀█▀   █▀▀▄ ▄▀ ▄█ █
+█▄▄▄█▄▄▄▄▀▄█▄▀▄▄▀ ▄▄▀ ▄▄▄ ▀█▄▀█
+█ ▄▄▄▄▄ █▀▄█ ▄ ▄   ▀  █▄█ ▀▄█▄█
+█ █   █ █▄▀▀█▄ ▀    ▄▄ ▄▄▄▀█▄▀█
+█ █▄▄▄█ █▀ ██▀█▀ █▀▄▄ ▄█▀█▀▄  █
+█▄▄▄▄▄▄▄█▄█▄▄█▄▄██▄██▄█▄████▄██
+            </pre>
+        </div>
+
+        <div class="url-box">
+            exp://zzxlsce-anonymous-8081.exp.direct
+        </div>
+
+        <div class="instructions">
+            <h3>📱 طريقة الاتصال:</h3>
+            <ol>
+                <li>افتح تطبيق <strong>Expo Go</strong> على هاتفك</li>
+                <li>امسح الـ QR Code أعلاه</li>
+                <li>أو الصق الرابط في Expo Go</li>
+                <li>انتظر تحميل التطبيق (قد يستغرق دقيقة)</li>
+                <li>ستظهر صفحة تسجيل الدخول البنفسجية الجديدة</li>
+            </ol>
+        </div>
+    </div>
+</body>
+</html>

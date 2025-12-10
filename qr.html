@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body style="display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f0f0f0;">
+<div style="text-align:center;background:white;padding:40px;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+<h1 style="color:#333;margin-bottom:20px;">Dental Clinic App</h1>
+<canvas id="qr"></canvas>
+<p style="color:#666;margin-top:20px;font-size:14px;">Scan with Expo Go</p>
+<p style="color:#999;font-size:12px;">exp://169.254.0.21:8081</p>
+</div>
+<script>
+QRCode.toCanvas(document.getElementById('qr'), 'exp://169.254.0.21:8081', {
+  width: 300,
+  margin: 2,
+  color: { dark: '#000000', light: '#ffffff' }
+});
+</script>
+</body>
+</html>

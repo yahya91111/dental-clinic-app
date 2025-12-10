@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dental Clinic - Expo Tunnel QR</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #D4E8E0 0%, #E0D4E8 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 20px;
+}
+.container {
+  text-align: center;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 60px 40px;
+  border-radius: 30px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  max-width: 700px;
+  width: 100%;
+}
+.header {
+  margin-bottom: 40px;
+}
+h1 {
+  color: #1F2937;
+  font-size: 42px;
+  font-weight: 800;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+}
+.emoji {
+  font-size: 50px;
+}
+.subtitle {
+  color: #6B7280;
+  font-size: 18px;
+  font-weight: 500;
+}
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: white;
+  padding: 15px 30px;
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 16px;
+  margin: 30px 0;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+}
+.qr-container {
+  background: white;
+  padding: 30px;
+  border-radius: 25px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+  margin: 30px 0;
+  display: inline-block;
+}
+canvas {
+  border-radius: 15px;
+}
+.tunnel-url {
+  background: #F3F4F6;
+  padding: 15px 25px;
+  border-radius: 15px;
+  margin: 20px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #667eea;
+  font-weight: 600;
+  word-break: break-all;
+  border: 2px solid #E5E7EB;
+}
+.instructions {
+  background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
+  border-radius: 20px;
+  padding: 30px;
+  margin-top: 40px;
+  text-align: left;
+}
+.instructions h3 {
+  color: #1F2937;
+  font-size: 22px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.instructions ol {
+  color: #4B5563;
+  font-size: 16px;
+  line-height: 2;
+  padding-left: 25px;
+}
+.instructions li {
+  margin-bottom: 12px;
+}
+.instructions strong {
+  color: #667eea;
+  font-weight: 700;
+}
+.badge {
+  display: inline-block;
+  background: #667eea;
+  color: white;
+  padding: 8px 20px;
+  border-radius: 25px;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.note {
+  background: #FEF3C7;
+  border-left: 4px solid #F59E0B;
+  padding: 15px 20px;
+  border-radius: 10px;
+  margin-top: 20px;
+  text-align: left;
+  color: #92400E;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.note strong {
+  color: #78350F;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1><span class="emoji">🦷</span> Dental Clinic</h1>
+    <p class="subtitle">Timeline Management System</p>
+  </div>
+  
+  <div class="status-badge">
+    <span>✅</span>
+    <span>Tunnel Connected & Ready</span>
+  </div>
+  
+  <div class="qr-container">
+    <canvas id="qr"></canvas>
+  </div>
+  
+  <div class="tunnel-url">exp://zzxlsce-anonymous-8081.exp.direct</div>
+  
+  <div class="badge">🌐 Global Access</div>
+  <div class="badge">📱 Expo Go</div>
+  
+  <div class="instructions">
+    <h3>📋 كيفية الاتصال:</h3>
+    <ol>
+      <li>حمّل تطبيق <strong>Expo Go</strong> على هاتفك (iOS أو Android)</li>
+      <li>افتح تطبيق Expo Go</li>
+      <li>اضغط على <strong>"Scan QR Code"</strong></li>
+      <li>وجّه الكاميرا على الـ QR Code أعلاه</li>
+      <li>انتظر تحميل التطبيق (30-60 ثانية)</li>
+      <li>استمتع بتطبيق Dental Clinic! 🎉</li>
+    </ol>
+  </div>
+  
+  <div class="note">
+    <strong>💡 ملاحظة:</strong> يمكنك الاتصال من أي مكان في العالم! لا تحتاج لنفس الشبكة. Tunnel يوفر اتصال عالمي.
+  </div>
+</div>
+
+<script>
+QRCode.toCanvas(document.getElementById('qr'), 'exp://zzxlsce-anonymous-8081.exp.direct', {
+  width: 320,
+  margin: 3,
+  color: { 
+    dark: '#1F2937', 
+    light: '#FFFFFF' 
+  },
+  errorCorrectionLevel: 'H'
+});
+</script>
+</body>
+</html>

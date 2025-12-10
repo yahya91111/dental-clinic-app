@@ -1,0 +1,71 @@
+workflows:
+  ios-workflow:
+    name: iOS Workflow
+    max_build_duration: 120
+    instance_type: mac_mini_m1
+    environment:
+      node: latest
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.yahyasadeq.dentalclinic
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install
+      - name: Prebuild iOS
+        script: |
+          npx expo prebuild --platform ios --clean
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install
+      - name: Set up code signing
+        script: |
+          cd ios
+          xcode-project use-profiles --project DentalClinic.xcodeproj || true
+      - name: Build iOS archive
+        script: |
+          cd ios
+          WORKSPACE=$(find . -name "*.xcworkspace" -maxdepth 1 -type d | head -n 1 | sed 's|./||')
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | grep -A 100 "Schemes:" | grep -v "Schemes:" | head -n 1 | xargs)
+          xcodebuild -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath $HOME/DentalClinic.xcarchive \
+            archive
+      - name: Export IPA
+        script: |
+          cat > $HOME/export_options.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>TKZ24X46PP</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.yahyasadeq.dentalclinic</key>
+              <string>Dental Clinic Production</string>
+            </dict>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>uploadBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath $HOME/DentalClinic.xcarchive \
+            -exportPath $HOME/build \
+            -exportOptionsPlist $HOME/export_options.plist
+    artifacts:
+      - $HOME/build/*.ipa
+    publishing:
+  app_store_connect:
+    auth: key_file_authentication
+    key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+    issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+    key_file: $APP_STORE_CONNECT_PRIVATE_KEY

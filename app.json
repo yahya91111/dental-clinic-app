@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Dental Clinic",
+    "slug": "dental-clinic-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "description": "Dental Clinic Management System - Manage patients, appointments, and treatments efficiently",
+    "privacy": "public",
+    "primaryColor": "#7DD3C0",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yahyasadeq.dentalclinic",
+      "buildNumber": "1.0.0",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to capture profile photos and patient documents",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select and upload images",
+        "NSPhotoLibraryAddUsageDescription": "This app needs permission to save photos to your library"
+      }
+    },
+    "android": {
+      "versionCode": 5,
+      "package": "com.yahyasadeq.dentalclinic",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
