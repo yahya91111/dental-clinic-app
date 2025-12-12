@@ -244,7 +244,6 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
         setArchivedPatients([]);
       }
     } catch (error) {
-      console.error('Error loading archived patients:', error);
       Alert.alert('Error', 'Failed to load archived patients');
     } finally {
       setLoading(false);
@@ -313,7 +312,6 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
         });
       }
     } catch (error) {
-      console.error('Error loading statistics:', error);
       Alert.alert('Error', 'Failed to load statistics');
     } finally {
       setLoading(false);

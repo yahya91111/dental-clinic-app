@@ -268,7 +268,6 @@ function AppContent() {
       
       // ❌ إذا لم يكن هناك clinic_id محدد، لا تجلب أي شيء
       if (clinicId === null) {
-        console.log('No clinic selected - skipping load');
         setPatients([]);
         return;
       }
@@ -281,9 +280,6 @@ function AppContent() {
         .order('queue_number', { ascending: true });
       
       const { data, error} = await query;
-
-      console.log('Load patients - data:', data);
-      console.log('Load patients - error:', error);
 
       if (error) throw error;
 
@@ -307,10 +303,8 @@ function AppContent() {
         doctor_name: p.doctor_name || undefined,
       }));
 
-      console.log('Formatted patients:', formattedPatients);
       setPatients(formattedPatients);
     } catch (error: any) {
-      console.error('Error loading patients:', error);
       if (!silent) Alert.alert('خطأ في تحميل المرضى', error.message);
     }
   }, [selectedClinicId, userClinicId]);
@@ -322,7 +316,6 @@ function AppContent() {
     
     // ✅ الاستماع لحدث الأرشفة التلقائية
     const handleArchiveCompleted = (date: string) => {
-      console.log('[App] Archive completed, reloading patients for date:', date);
       // ✅ إعادة تحميل المرضى لتنظيف Timeline
       loadPatients();
     };
@@ -356,7 +349,6 @@ function AppContent() {
           if (error) {
             // If not found in doctors, this might be a pending doctor
             // Pending doctors don't have clinic_id, so we just skip
-            console.log('User not found in doctors table (might be pending doctor)');
             return;
           }
           
@@ -364,7 +356,7 @@ function AppContent() {
             setUserClinicId(data.clinic_id);
           }
         } catch (error) {
-          console.error('Error:', error);
+          // Error handled silently
         }
       }
     };
@@ -391,9 +383,8 @@ function AppContent() {
             .from('patients')
             .select('id, treatment, completed_at, updated_at')
             .eq('doctor_id', user.id);
-          
+
           if (error) {
-            console.error('Error fetching my total treatments:', error);
             return;
           }
           
@@ -408,7 +399,7 @@ function AppContent() {
           const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
           setMyTotalTreatments(validPatients.length);
         } catch (error) {
-          console.error('Error:', error);
+          // Error handled silently
         }
       }
     };
@@ -419,9 +410,7 @@ function AppContent() {
   // ✅ Polling: التحقق من myTotalTreatments كل 5 ثواني
   React.useEffect(() => {
     if (!user) return;
-    
-    console.log('[App] Starting polling for myTotalTreatments (every 5 seconds)...');
-    
+
     const fetchMyTotalTreatmentsPoll = async () => {
       try {
         const now = new Date();
@@ -445,18 +434,16 @@ function AppContent() {
         const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
         const newCount = validPatients.length;
         if (newCount !== myTotalTreatments) {
-          console.log('[App] ✅ myTotalTreatments changed:', myTotalTreatments, '→', newCount);
           setMyTotalTreatments(newCount);
         }
       } catch (error) {
-        console.error('[App] Error polling myTotalTreatments:', error);
+        // Error handled silently
       }
     };
-    
-    const pollInterval = setInterval(fetchMyTotalTreatmentsPoll, 5000);
-    
+
+    const pollInterval = setInterval(fetchMyTotalTreatmentsPoll, 15000);
+
     return () => {
-      console.log('[App] Stopping myTotalTreatments polling...');
       clearInterval(pollInterval);
     };
   }, [user, myTotalTreatments]);
@@ -579,14 +566,11 @@ function AppContent() {
     
     // Cleanup previous Realtime subscription if exists
     if (realtimeChannelRef.current) {
-      console.log('[App] Removing previous Realtime subscription...');
       supabase.removeChannel(realtimeChannelRef.current);
       realtimeChannelRef.current = null;
     }
-    
+
     // Setup Realtime subscription for patients table
-    console.log('[App] Setting up Realtime subscription for patients...');
-    
     const channel = supabase
       .channel(`app-patients-${Date.now()}`)
       .on(
@@ -597,20 +581,16 @@ function AppContent() {
           table: 'patients'
         },
         (payload) => {
-          console.log('[App] Realtime change detected:', payload.eventType, payload);
           // Silent refresh on any change
           loadPatients(true);
         }
       )
-      .subscribe((status) => {
-        console.log('[App] Realtime subscription status:', status);
-      });
+      .subscribe();
     
     realtimeChannelRef.current = channel;
     
     // Cleanup on unmount
     return () => {
-      console.log('[App] Cleaning up Realtime subscription...');
       if (realtimeChannelRef.current) {
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
@@ -624,10 +604,8 @@ function AppContent() {
       if (showAddModal) {
         // ✅ استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
         const clinicId = selectedClinicId || userClinicId;
-        console.log('[Auto-increment] clinicId:', clinicId, '(selectedClinicId:', selectedClinicId, ', userClinicId:', userClinicId, ')');
-        
+
         if (clinicId === null) {
-          console.log('[Auto-increment] No clinic selected, setting to 1');
           setNewPatientQueueNumber('1');
           return;
         }
@@ -643,19 +621,14 @@ function AppContent() {
             .limit(1);
           
           if (patientsError) throw patientsError;
-          
-          console.log('[Auto-increment] patients data:', patientsData);
-          
+
           if (patientsData && patientsData.length > 0) {
             const nextNumber = patientsData[0].queue_number + 1;
-            console.log('[Auto-increment] Next number:', nextNumber);
             setNewPatientQueueNumber(nextNumber.toString());
           } else {
-            console.log('[Auto-increment] No patients, setting to 1');
             setNewPatientQueueNumber('1');
           }
         } catch (error) {
-          console.error('[Auto-increment] Error:', error);
           setNewPatientQueueNumber('1');
         }
       }
@@ -793,9 +766,7 @@ function AppContent() {
       }
 
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-      
-      console.log('[Archive] Archiving patients for clinic:', clinicId, 'date:', today);
-      
+
       // ✅ تحديث archive_date لجميع المرضى في المركز الحالي
       const { data, error } = await supabase
         .from('patients')
@@ -805,17 +776,14 @@ function AppContent() {
         })
         .eq('clinic_id', clinicId) // ✅ عزل حسب المركز
         .is('archive_date', null); // فقط المرضى غير المؤرشفين
-      
+
       if (error) throw error;
-      
-      console.log('[Archive] Archived patients:', data);
-      
+
       // ✅ إعادة تحميل المرضى (سيكون فارغاً)
       await loadPatients();
       
       Alert.alert('نجح', `تمت أرشفة جميع مرضى ${selectedClinicName} بنجاح`);
     } catch (error: any) {
-      console.error('[Archive] Error:', error);
       Alert.alert('خطأ', error.message || 'فشلت الأرشفة');
     }
   };
@@ -937,7 +905,6 @@ function AppContent() {
         .eq('id', patientId);
 
       if (error) {
-        console.error('Update error:', error);
         Alert.alert('خطأ', error.message || 'Failed to update');
         return;
       }
@@ -949,7 +916,6 @@ function AppContent() {
       setEditingPatientId(null);
       setEditingField(null);
     } catch (error: any) {
-      console.error('Catch error:', error);
       Alert.alert('خطأ', error.message || 'An error occurred');
     }
   };
@@ -983,7 +949,7 @@ function AppContent() {
       if (error) throw error;
       setTimeline(data || []);
     } catch (error: any) {
-      console.error('Error loading timeline:', error.message);
+      // Error handled silently
     }
   };
 
@@ -1001,7 +967,7 @@ function AppContent() {
       // Default to Timeline tab
       setShowTimelineTab(prev => ({ ...prev, [patientId]: true }));
     } catch (error: any) {
-      console.error('Error loading card timeline:', error.message);
+      // Error handled silently
     }
   };
 
@@ -1181,7 +1147,6 @@ function AppContent() {
           setSavedClinicName('');
         }}
         onOpenTimeline={(clinicId, clinicName) => {
-          console.log('[Departments] Opening timeline for:', clinicId, clinicName);
           setSelectedClinicId(clinicId);
           setSelectedClinicName(clinicName);
           setShowDentalDepartments(false);
@@ -1204,7 +1169,6 @@ function AppContent() {
           setViewingDoctorData(null);
         }}
         onOpenTimeline={(clinicId, clinicName) => {
-          console.log('[DoctorProfile] Opening timeline for clinic:', clinicId, clinicName);
           setSelectedClinicId(clinicId);
           setSelectedClinicName(clinicName || 'Clinic');
           setShowDoctorProfile(false);
@@ -1251,14 +1215,6 @@ function AppContent() {
         }}
         clinicId={savedClinicId!}
         onOpenDoctorProfile={(doctor) => {
-          console.log('[DoctorsScreen] Opening doctor profile:', doctor.name);
-          console.log('[DEBUG] Before setState:', {
-            showDoctorProfile,
-            showDoctorsScreen,
-            showClinicDetails,
-            viewingDoctorData
-          });
-          
           // ✅ فتح DoctorProfileScreen للطبيب المختار
           setViewingDoctorData({
             id: doctor.id,
@@ -1269,8 +1225,6 @@ function AppContent() {
           setShowDoctorProfile(true);
           setShowDoctorsScreen(false);
           setShowClinicDetails(false);
-          
-          console.log('[DEBUG] After setState called');
         }}
       />
     );
@@ -1291,12 +1245,10 @@ function AppContent() {
           setNavigationStack(['profile', 'departments']);
         }}
         onDoctorsPress={() => {
-          console.log('[ClinicDetails] Doctors pressed, clinicId:', savedClinicId);
           setShowDoctorsScreen(true);
           setCurrentDoctorsScreen('list');
         }}
         onTimelinePress={() => {
-          console.log('[ClinicDetails] Timeline pressed, clinicId:', savedClinicId);
           // ✅ فتح Timeline باستخدام savedClinicId
           if (savedClinicId !== null) {
             setSelectedClinicId(savedClinicId);
@@ -1330,7 +1282,6 @@ function AppContent() {
       <DoctorProfileScreen
         onBack={() => {}} // No back button
         onOpenTimeline={(clinicId, clinicName) => {
-          console.log('[Profile] Opening timeline for clinic:', clinicId, clinicName);
           setSelectedClinicId(clinicId);
           setSelectedClinicName(clinicName || 'Clinic');
           setShowDoctorProfile(false);
@@ -1362,7 +1313,6 @@ function AppContent() {
         onBack={() => {}} // No back button
         onOpenTimeline={(clinicId, clinicName) => {
           // ✅ استخدام clinicId المُمرر من DoctorProfileScreen (المركز المختار)
-          console.log('[Timeline] Opening timeline for clinic:', clinicId, clinicName);
           setSelectedClinicId(clinicId);
           setSelectedClinicName(clinicName || 'Clinic');
           setShowDoctorProfile(false);
@@ -1573,8 +1523,7 @@ function AppContent() {
               style={styles.profileButton}
               onPress={() => {
                 // ✅ Navigation Stack: Timeline → Clinic Details → Departments → Profile
-                console.log('[Back] Current stack:', navigationStack);
-                
+
                 // Timeline → Clinic Details
                 if (selectedClinicId !== null) {
                   // ✅ حفظ clinicId قبل الرجوع
@@ -1597,8 +1546,6 @@ function AppContent() {
                 }
                 // Departments → Profile
                 else if (showDentalDepartments) {
-                  console.log('[DEBUG] Departments → Profile');
-                  console.log('[DEBUG] Before:', { selectedClinicId, savedClinicId, showDoctorProfile });
                   // ✅ مسح selectedClinicId أولاً لمنع فتح Timeline
                   setSelectedClinicId(null);
                   setSelectedClinicName('');
@@ -1608,17 +1555,16 @@ function AppContent() {
                   setShowDentalDepartments(false);
                   setShowDoctorProfile(true);
                   setNavigationStack(['profile']);
-                  console.log('[DEBUG] After setState called');
                 }
               }}
             >
               <View style={styles.profileButtonGlass}>
                 <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="arrow-back" size={24} color="#FFFFFF" style={{ zIndex: 10 }} />
+                <Ionicons name="arrow-back" size={24} color="#7DD3C0" style={{ zIndex: 10 }} />
               </View>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.profileButton}
               onPress={() => {
                 // ✅ زر رجوع للطبيب/Team Leader
@@ -1628,7 +1574,7 @@ function AppContent() {
             >
               <View style={styles.profileButtonGlass}>
                 <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="arrow-back" size={24} color="#FFFFFF" style={{ zIndex: 10 }} />
+                <Ionicons name="arrow-back" size={24} color="#7DD3C0" style={{ zIndex: 10 }} />
               </View>
             </TouchableOpacity>
           )}
@@ -1717,7 +1663,7 @@ function AppContent() {
               <Ionicons
                 name={isHeaderCollapsed ? 'chevron-down' : 'chevron-up'}
                 size={24}
-                color="#FFFFFF"
+                color="#7DD3C0"
                 style={{
                   zIndex: 10
                 }}
@@ -1853,16 +1799,26 @@ function AppContent() {
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                <LinearGradient
-                  colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.modalContent}
-                >
+                <View style={styles.modalContent}>
+                  {/* Glass Color Tint */}
+                  <LinearGradient
+                    colors={[
+                      'rgba(168, 85, 247, 0.15)',
+                      'rgba(91, 159, 237, 0.15)',
+                      'rgba(125, 211, 192, 0.15)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.modalGlassOverlay}
+                  />
+
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>Add New Patient</Text>
-                    <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                      <Ionicons name="close" size={28} color="#4A5568" />
+                    <TouchableOpacity
+                      onPress={() => setShowAddModal(false)}
+                      style={styles.modalCloseButton}
+                    >
+                      <Ionicons name="close" size={24} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
               
@@ -1978,16 +1934,9 @@ function AppContent() {
                   />
 
                   <TouchableOpacity style={styles.addButton} onPress={handleAddPatient}>
-                    <LinearGradient 
-                      colors={['#A855F7', '#D4B8E8']} 
-                      start={{ x: 0, y: 0 }} 
-                      end={{ x: 1, y: 1 }} 
-                      style={styles.addButtonGradient}
-                    >
-                      <Text style={styles.addButtonText}>Add Patient</Text>
-                    </LinearGradient>
+                    <Text style={styles.addButtonText}>Add Patient</Text>
                   </TouchableOpacity>
-                </LinearGradient>
+                </View>
               </TouchableWithoutFeedback>
             </View>
           </TouchableWithoutFeedback>
@@ -2001,12 +1950,19 @@ function AppContent() {
               activeOpacity={1} 
               onPress={() => setShowMenuForPatient(null)}
             >
-              <LinearGradient
-                colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.menuModal}
-              >
+              <View style={styles.menuModal}>
+                {/* Glass Color Tint */}
+                <LinearGradient
+                  colors={[
+                    'rgba(168, 85, 247, 0.15)',
+                    'rgba(91, 159, 237, 0.15)',
+                    'rgba(125, 211, 192, 0.15)',
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.modalGlassOverlay}
+                />
+
                 <TouchableOpacity 
                   style={styles.menuItem}
                   onPress={() => handleMenuAction(showMenuForPatient, 'note')}
@@ -2052,7 +2008,7 @@ function AppContent() {
                   </View>
                   <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Delete</Text>
                 </TouchableOpacity>
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           </Modal>
         )}
@@ -2062,16 +2018,26 @@ function AppContent() {
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                <LinearGradient
-                  colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.modalContent}
-                >
+                <View style={styles.modalContent}>
+                  {/* Glass Color Tint */}
+                  <LinearGradient
+                    colors={[
+                      'rgba(168, 85, 247, 0.15)',
+                      'rgba(91, 159, 237, 0.15)',
+                      'rgba(125, 211, 192, 0.15)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.modalGlassOverlay}
+                  />
+
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>Patient Note</Text>
-                    <TouchableOpacity onPress={() => setShowNoteModal(false)}>
-                      <Ionicons name="close" size={28} color="#4A5568" />
+                    <TouchableOpacity
+                      onPress={() => setShowNoteModal(false)}
+                      style={styles.modalCloseButton}
+                    >
+                      <Ionicons name="close" size={24} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
 
@@ -2086,16 +2052,9 @@ function AppContent() {
                   />
 
                   <TouchableOpacity style={styles.addButton} onPress={handleSaveNote}>
-                    <LinearGradient 
-                      colors={['#A855F7', '#D4B8E8']} 
-                      start={{ x: 0, y: 0 }} 
-                      end={{ x: 1, y: 1 }} 
-                      style={styles.addButtonGradient}
-                    >
-                      <Text style={styles.addButtonText}>Save Note</Text>
-                    </LinearGradient>
+                    <Text style={styles.addButtonText}>Save Note</Text>
                   </TouchableOpacity>
-                </LinearGradient>
+                </View>
               </TouchableWithoutFeedback>
             </View>
           </TouchableWithoutFeedback>
@@ -2108,16 +2067,26 @@ function AppContent() {
             activeOpacity={1} 
             onPress={() => setShowViewNoteModal(false)}
           >
-            <LinearGradient
-              colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.modalContent}
-            >
+            <View style={styles.modalContent}>
+              {/* Glass Color Tint */}
+              <LinearGradient
+                colors={[
+                  'rgba(168, 85, 247, 0.15)',
+                  'rgba(91, 159, 237, 0.15)',
+                  'rgba(125, 211, 192, 0.15)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalGlassOverlay}
+              />
+
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Patient Note</Text>
-                <TouchableOpacity onPress={() => setShowViewNoteModal(false)}>
-                  <Ionicons name="close" size={28} color="#4A5568" />
+                <TouchableOpacity
+                  onPress={() => setShowViewNoteModal(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -2126,7 +2095,7 @@ function AppContent() {
               <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteNote}>
                 <Text style={styles.deleteButtonText}>Delete Note</Text>
               </TouchableOpacity>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
         </Modal>
 
@@ -2137,12 +2106,19 @@ function AppContent() {
             activeOpacity={1} 
             onPress={() => setShowClinicDropdown(false)}
           >
-            <LinearGradient
-              colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.beautifulModal}
-            >
+            <View style={styles.beautifulModal}>
+              {/* Glass Color Tint */}
+              <LinearGradient
+                colors={[
+                  'rgba(168, 85, 247, 0.15)',
+                  'rgba(91, 159, 237, 0.15)',
+                  'rgba(125, 211, 192, 0.15)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalGlassOverlay}
+              />
+
               <Text style={styles.modalHeaderTitle}>Select Clinic</Text>
               <View style={styles.modalDivider} />
               <ScrollView style={styles.modalScrollView}>
@@ -2157,7 +2133,7 @@ function AppContent() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
         </Modal>
 
@@ -2168,12 +2144,19 @@ function AppContent() {
             activeOpacity={1} 
             onPress={() => setShowConditionDropdown(false)}
           >
-            <LinearGradient
-              colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.beautifulModal}
-            >
+            <View style={styles.beautifulModal}>
+              {/* Glass Color Tint */}
+              <LinearGradient
+                colors={[
+                  'rgba(168, 85, 247, 0.15)',
+                  'rgba(91, 159, 237, 0.15)',
+                  'rgba(125, 211, 192, 0.15)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalGlassOverlay}
+              />
+
               <Text style={styles.modalHeaderTitle}>Select Condition</Text>
               <View style={styles.modalDivider} />
               <ScrollView style={styles.modalScrollView}>
@@ -2188,7 +2171,7 @@ function AppContent() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
         </Modal>
 
@@ -2199,12 +2182,19 @@ function AppContent() {
             activeOpacity={1} 
             onPress={() => setShowTreatmentDropdown(false)}
           >
-            <LinearGradient
-              colors={['rgba(184, 212, 241, 0.95)', 'rgba(212, 184, 232, 0.95)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.beautifulModal}
-            >
+            <View style={styles.beautifulModal}>
+              {/* Glass Color Tint */}
+              <LinearGradient
+                colors={[
+                  'rgba(168, 85, 247, 0.15)',
+                  'rgba(91, 159, 237, 0.15)',
+                  'rgba(125, 211, 192, 0.15)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalGlassOverlay}
+              />
+
               <Text style={styles.modalHeaderTitle}>Select Treatment</Text>
               <View style={styles.modalDivider} />
               <ScrollView style={styles.modalScrollView}>
@@ -2219,14 +2209,14 @@ function AppContent() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
         </Modal>
 
         {/* Timeline Modal */}
         {showTimelineModal && selectedPatient && (
           <Modal visible={showTimelineModal} animationType="slide">
-            <SafeAreaView style={styles.timelineContainer}>
+            <SafeAreaView style={styles.timelineScreenContainer}>
               <LinearGradient colors={['#E8F5F0', '#F0E8F5']} style={styles.gradient}>
                 <View style={styles.timelineHeader}>
                   <TouchableOpacity onPress={() => setShowTimelineModal(false)}>
@@ -2592,11 +2582,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف أنيق
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 2 },
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -2614,11 +2604,6 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   archiveButtonGradient: {
     width: 44,
@@ -2626,13 +2611,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    // ✅ تأثير الإضاءة الداخلية (Inner Glow)
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   statsContainer: { flexDirection: 'row', paddingHorizontal: 24, gap: 16, marginBottom: 24 },
   statCard: { 
@@ -2700,13 +2686,13 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 22.5,
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف أنيق
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -2719,15 +2705,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent', // ✨ إزالة Inner Glow
   },
   // Header View Details button
-  viewDetailsHeaderButton: { 
-    paddingHorizontal: 20, 
-    paddingVertical: 12, 
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  viewDetailsHeaderButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  viewDetailsHeaderText: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
+  viewDetailsHeaderText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
   // Expandable section in header
   headerExpandableSection: {
     alignSelf: 'flex-end',
@@ -2819,10 +2810,45 @@ const styles = StyleSheet.create({
   },
   divider: { height: 3, backgroundColor: 'rgba(255, 255, 255, 0.4)', marginBottom: 6 }, // ✅ أبيض شفاف أعرض (3px)
   tagsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 4 },
-  tag: { flex: 1, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  tag: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 12,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)', // ✨ Glass effect شفاف أكثر
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   tagText: { fontSize: 12, fontWeight: '600', color: '#4A5568', textAlign: 'center' },
-  menuButton: { padding: 4 },
-  menuIcon: { fontSize: 24, fontWeight: '700' },
+  menuButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  menuIcon: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 32,
+  },
   timelineContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
   timelineText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
   fab: { position: 'absolute', bottom: 15, right: 24, width: 68, height: 68, borderRadius: 34 },
@@ -2832,11 +2858,11 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف أنيق
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 2 },
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -2850,75 +2876,217 @@ const styles = StyleSheet.create({
   },
   fabIcon: {
     fontSize: 42,
-    color: '#FFFFFF', // ✨ أبيض يتناسب مع الخلفية الفيروزية
+    color: '#7DD3C0', // ✨ فيروزي لتطابق التصميم
     fontWeight: '400',
     lineHeight: 42,
     textAlign: 'center',
     textAlignVertical: 'center',
-    marginTop: -2, 
-    zIndex: 10 
+    marginTop: -2,
+    zIndex: 10
   },
   bottomNav: { flexDirection: 'row', paddingVertical: 10, paddingBottom: 20, backgroundColor: 'transparent', borderTopWidth: 1.5, borderTopColor: 'rgba(255, 255, 255, 0.5)' },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
   navLabel: { fontSize: 11, color: '#9CA3AF', marginTop: 4, fontWeight: '500' },
   navLabelActive: { color: '#7DD3C0', fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { borderRadius: 20, padding: 24, maxHeight: '90%', width: '90%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.5)', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10 },
-  dropdownModal: { backgroundColor: '#FFFFFF', borderRadius: 20, width: '85%', maxHeight: '70%', overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 10 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  modalTitle: { fontSize: 24, fontWeight: '700', color: '#1F2937' },
-  inputLabel: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 8 },
-  textInput: { backgroundColor: 'rgba(255, 255, 255, 0.3)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.5)', borderRadius: 12, padding: 16, fontSize: 16, color: '#1F2937', fontWeight: '500', marginBottom: 12, justifyContent: 'center' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    paddingHorizontal: '2.5%',
+  },
+  modalContent: {
+    width: '90%',
+    maxHeight: '90%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', // ✨ Glass effect أقل شفافية
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.4,
+    shadowRadius: 30,
+    elevation: 15,
+    overflow: 'hidden',
+  },
+  modalGlassOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 24,
+  },
+  dropdownModal: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)', // ✨ Glass effect
+    borderRadius: 20,
+    width: '85%',
+    maxHeight: '70%',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    marginBottom: 8,
+    marginTop: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  textInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.65)', // ✨ Glass effect أعتم للوضوح
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#1F2937',
+    fontWeight: '600',
+    marginBottom: 12,
+    justifyContent: 'center',
+  },
   textArea: { minHeight: 100, paddingTop: 16 },
   pickerContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  pickerOption: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  pickerOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)', // ✨ أعتم للوضوح
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+  },
   pickerOptionSelected: { backgroundColor: '#7DD3C0', borderColor: '#7DD3C0' },
   pickerOptionText: { fontSize: 14, color: '#4A5568', fontWeight: '500' },
   pickerOptionTextSelected: { color: '#FFFFFF', fontWeight: '600' },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: 'rgba(255, 255, 255, 0.7)', backgroundColor: 'rgba(255, 255, 255, 0.3)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  checkboxChecked: { backgroundColor: '#7DD3C0', borderColor: '#7DD3C0', borderWidth: 2 },
-  checkboxLabel: { fontSize: 16, color: '#374151', fontWeight: '600' },
-  addButton: { marginTop: 32, marginBottom: 16, borderRadius: 16, overflow: 'hidden' },
-  addButtonGradient: { paddingVertical: 16, alignItems: 'center' },
-  addButtonText: { fontSize: 18, fontWeight: '700', color: '#FFFFFF' },
-  menuModal: { 
-    borderRadius: 20, 
-    padding: 12, 
-    width: '75%', 
-    maxWidth: 300,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 12,
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  menuItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 16, 
-    paddingHorizontal: 18, 
+  checkboxChecked: { backgroundColor: '#7DD3C0', borderColor: '#7DD3C0', borderWidth: 2 },
+  checkboxLabel: {
+    fontSize: 16,
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  addButton: {
+    marginTop: 32,
+    marginBottom: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(125, 211, 192, 0.3)', // ✨ Glass effect فيروزي
+    borderWidth: 2,
+    borderColor: 'rgba(125, 211, 192, 0.6)',
+    paddingVertical: 16,
+    alignItems: 'center',
+    shadowColor: '#7DD3C0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  addButtonGradient: { paddingVertical: 16, alignItems: 'center' },
+  addButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  menuModal: {
+    borderRadius: 24,
+    padding: 12,
+    width: '75%',
+    maxWidth: 300,
+    alignSelf: 'center', // ✨ لتوسيط النافذة
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', // ✨ Glass effect أقل شفافية
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.4,
+    shadowRadius: 30,
+    elevation: 15,
+    overflow: 'hidden',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
     gap: 14,
     borderRadius: 12,
     marginVertical: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
-  menuItemText: { 
-    fontSize: 16, 
-    color: '#374151', 
-    fontWeight: '600' 
+  menuItemText: {
+    fontSize: 16,
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   menuItemDanger: { 
     backgroundColor: 'rgba(254, 226, 226, 0.5)',
   },
-  noteText: { fontSize: 16, color: '#4A5568', lineHeight: 24, marginBottom: 24 },
+  noteText: {
+    fontSize: 16,
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    lineHeight: 24,
+    marginBottom: 24,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   deleteButton: { backgroundColor: '#ef4444', borderRadius: 12, padding: 16, alignItems: 'center' },
   deleteButtonText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
-  timelineContainer: { flex: 1, backgroundColor: '#E8F5F0' },
+  timelineScreenContainer: { flex: 1, backgroundColor: '#E8F5F0' },
   timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
   timelineTitle: { fontSize: 20, fontWeight: '700', color: '#1F2937' },
   timelineContent: { flex: 1, paddingHorizontal: 20 },
@@ -2957,21 +3125,27 @@ const styles = StyleSheet.create({
     width: '85%',
     maxHeight: '60%',
     alignSelf: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', // ✨ Glass effect أقل شفافية
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    padding: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.4,
+    shadowRadius: 30,
+    elevation: 15,
+    overflow: 'hidden',
   },
   modalHeaderTitle: {
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: '700',
-    color: '#1F2937',
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
     textAlign: 'center',
     paddingVertical: 20,
     paddingHorizontal: 24,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   modalDivider: {
     height: 1,
@@ -2987,15 +3161,18 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
     marginVertical: 4,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderWidth: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   beautifulDropdownText: {
     fontSize: 16,
-    color: '#374151',
+    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
     fontWeight: '600',
     marginLeft: 12,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   colorDot: {
     width: 12,

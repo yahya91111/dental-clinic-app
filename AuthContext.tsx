@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(JSON.parse(storedUser));
       }
     } catch (error) {
-      console.error('Failed to load user:', error);
+      // Error handled silently
     } finally {
       setIsLoading(false);
     }
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (pendingError) {
-        console.error('Pending doctors query error:', pendingError);
+        // Error handled silently
       }
 
       // If found in pending_doctors, use that
@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (doctorError) {
-        console.error('Doctors query error:', doctorError);
+        // Error handled silently
       }
 
       // If found in doctors, use that
@@ -137,15 +137,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // If email exists but password doesn't match, it's invalid credentials
       if (deletedDoctor) {
-        console.error('Login failed: Invalid password');
         return false;
       }
 
       // Email doesn't exist anywhere - invalid credentials
-      console.error('Login failed: Invalid email or password');
       return false;
     } catch (error) {
-      console.error('Login failed:', error);
       return false;
     }
   };
@@ -155,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       setUser(null);
     } catch (error) {
-      console.error('Logout failed:', error);
+      // Error handled silently
     }
   };
 
@@ -164,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
       setUser(updatedUser);
     } catch (error) {
-      console.error('Update user failed:', error);
+      // Error handled silently
     }
   };
 

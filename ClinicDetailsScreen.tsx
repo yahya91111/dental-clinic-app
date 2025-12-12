@@ -37,9 +37,9 @@ export default function ClinicDetailsScreen({
   const [waitingPatientsCount, setWaitingPatientsCount] = useState(currentWaitingCount || 0);
   const [doctorsCount, setDoctorsCount] = useState(currentDoctorsCount || 0);
   const [totalTreatmentsCount, setTotalTreatmentsCount] = useState(currentTotalTreatments || 0);
-  
+
   // ✅ حفظ آخر clinicId صالح لمنع reset الأرقام
-  const lastValidClinicIdRef = useRef<number | null>(null);
+  const lastValidClinicIdRef = useRef<string | null>(null);
   
 
   
@@ -47,17 +47,16 @@ export default function ClinicDetailsScreen({
   useEffect(() => {
     if (clinicId) {
       lastValidClinicIdRef.current = clinicId;
-      console.log('[ClinicDetails] ✅ clinicId received:', clinicId);
-      
+
       // ✅ Fetch فوري عند تغيير clinicId
       const fetchInitialData = async () => {
         if (!user || !clinicId) return;
-        
+
         try {
           const today = new Date();
           const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
           const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-          
+
           // Fetch waiting patients
           const { count: waitingCount } = await supabase
             .from('patients')
@@ -67,13 +66,13 @@ export default function ClinicDetailsScreen({
             .is('archive_date', null)
             .gte('registered_at', startOfDay.toISOString())
             .lte('registered_at', endOfDay.toISOString());
-          
+
           // Fetch doctors
           const { count: doctorsCountResult } = await supabase
             .from('doctors')
             .select('*', { count: 'exact', head: true })
             .eq('clinic_id', clinicId);
-          
+
           // Fetch total treatments
           const { count: treatmentsCount } = await supabase
             .from('patients')
@@ -83,21 +82,15 @@ export default function ClinicDetailsScreen({
             .is('archive_date', null)
             .gte('completed_at', startOfDay.toISOString())
             .lte('completed_at', endOfDay.toISOString());
-          
-          console.log('[ClinicDetails] ✅ Initial fetch:', {
-            waiting: waitingCount,
-            doctors: doctorsCountResult,
-            treatments: treatmentsCount
-          });
-          
+
           setWaitingPatientsCount(waitingCount || 0);
           setDoctorsCount(doctorsCountResult || 0);
           setTotalTreatmentsCount(treatmentsCount || 0);
         } catch (error) {
-          console.error('[ClinicDetails] Error fetching initial data:', error);
+          // Error handling
         }
       };
-      
+
       fetchInitialData();
     }
   }, [clinicId, user]);
@@ -233,26 +226,19 @@ export default function ClinicDetailsScreen({
 
   // ✅ Polling: التحقق من عدد المرضى في الانتظار كل 5 ثواني
   React.useEffect(() => {
-    console.log('[ClinicDetails] 🔍 useEffect triggered - user:', user?.email, 'clinicId:', clinicId);
-    
     // ✅ استخدام آخر clinicId صالح إذا كان clinicId مفقود مؤقتاً
     const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
-    
-    console.log('[ClinicDetails] 🔍 effectiveClinicId:', effectiveClinicId);
-    
+
     if (!user || !effectiveClinicId) {
-      console.log('[ClinicDetails] ❌ Skipping - user or clinicId missing');
       return;
     }
-    
-    console.log('[ClinicDetails] ✅ Starting polling for waiting patients count...');
-    
+
     const fetchWaitingPatientsCountPoll = async () => {
       try {
         const today = new Date();
         const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
         const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-        
+
         const { count, error } = await supabase
           .from('patients')
           .select('*', { count: 'exact', head: true })
@@ -261,23 +247,21 @@ export default function ClinicDetailsScreen({
           .is('archive_date', null)
           .gte('registered_at', startOfDay.toISOString())
           .lte('registered_at', endOfDay.toISOString());
-        
+
         if (!error) {
-          console.log('[ClinicDetails] ✅ Waiting patients count:', count);
           setWaitingPatientsCount(count || 0);
         }
       } catch (error) {
-        console.error('[ClinicDetails] Error polling waiting patients count:', error);
+        // Error handling
       }
     };
-    
+
     // ✅ Fetch أولي فوراً عند فتح الصفحة
     fetchWaitingPatientsCountPoll();
-    
-    const pollInterval = setInterval(fetchWaitingPatientsCountPoll, 5000);
-    
+
+    const pollInterval = setInterval(fetchWaitingPatientsCountPoll, 15000);
+
     return () => {
-      console.log('[ClinicDetails] Stopping waiting patients polling...');
       clearInterval(pollInterval);
     };
   }, [user, clinicId]);
@@ -286,32 +270,28 @@ export default function ClinicDetailsScreen({
   React.useEffect(() => {
     const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
     if (!user || !effectiveClinicId) return;
-    
-    console.log('[ClinicDetails] Starting polling for doctors count...');
-    
+
     const fetchDoctorsCountPoll = async () => {
       try {
         const { count, error } = await supabase
           .from('doctors')
           .select('*', { count: 'exact', head: true })
           .eq('clinic_id', effectiveClinicId);
-        
+
         if (!error) {
-          console.log('[ClinicDetails] ✅ Doctors count:', count);
           setDoctorsCount(count || 0);
         }
       } catch (error) {
-        console.error('[ClinicDetails] Error polling doctors count:', error);
+        // Error handling
       }
     };
-    
+
     // ✅ Fetch أولي فوراً عند فتح الصفحة
     fetchDoctorsCountPoll();
-    
-    const pollInterval = setInterval(fetchDoctorsCountPoll, 5000);
-    
+
+    const pollInterval = setInterval(fetchDoctorsCountPoll, 15000);
+
     return () => {
-      console.log('[ClinicDetails] Stopping doctors polling...');
       clearInterval(pollInterval);
     };
   }, [user, clinicId]);
@@ -320,15 +300,13 @@ export default function ClinicDetailsScreen({
   React.useEffect(() => {
     const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
     if (!user || !effectiveClinicId) return;
-    
-    console.log('[ClinicDetails] Starting polling for total treatments count...');
-    
+
     const fetchTotalTreatmentsCountPoll = async () => {
       try {
         const today = new Date();
         const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
         const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-        
+
         const { count, error } = await supabase
           .from('patients')
           .select('*', { count: 'exact', head: true })
@@ -337,23 +315,21 @@ export default function ClinicDetailsScreen({
           .is('archive_date', null)
           .gte('completed_at', startOfDay.toISOString())
           .lte('completed_at', endOfDay.toISOString());
-        
+
         if (!error) {
-          console.log('[ClinicDetails] ✅ Total treatments count:', count);
           setTotalTreatmentsCount(count || 0);
         }
       } catch (error) {
-        console.error('[ClinicDetails] Error polling total treatments count:', error);
+        // Error handling
       }
     };
-    
+
     // ✅ Fetch أولي فوراً عند فتح الصفحة
     fetchTotalTreatmentsCountPoll();
-    
-    const pollInterval = setInterval(fetchTotalTreatmentsCountPoll, 5000);
-    
+
+    const pollInterval = setInterval(fetchTotalTreatmentsCountPoll, 15000);
+
     return () => {
-      console.log('[ClinicDetails] Stopping total treatments polling...');
       clearInterval(pollInterval);
     };
   }, [user, clinicId]);
@@ -478,11 +454,10 @@ export default function ClinicDetailsScreen({
                   { opacity: fadeAnim1, transform: [{ translateX: slideAnim1 }] }
                 ]}
               >
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
                   activeOpacity={0.85}
                   onPress={() => {
-                    console.log('[ClinicDetailsScreen] Timeline button pressed');
                     onTimelinePress();
                   }}
                 >
@@ -563,11 +538,10 @@ export default function ClinicDetailsScreen({
                   { opacity: fadeAnim3, transform: [{ translateX: slideAnim3 }] }
                 ]}
               >
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
                   activeOpacity={0.85}
                   onPress={() => {
-                    console.log('[ClinicDetailsScreen] Schedules pressed');
                     // TODO: Add schedules functionality
                   }}
                 >

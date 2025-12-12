@@ -150,7 +150,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         setClinics(formattedClinics);
       }
     } catch (error) {
-      console.error('Error loading clinics:', error);
+      // Error handled silently
     }
   };
 
@@ -165,10 +165,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         .select('id, name, email, role, clinic_id')
         .in('role', ['doctor', 'coordinator', 'team_leader'])
         .order('name');
-      
-      console.log('📋 Pending Doctors Data:', pendingData);
-      console.log('❌ Pending Doctors Error:', pendingError);
-      
+
       if (pendingError) throw pendingError;
       
       // Load from doctors (assigned)
@@ -177,18 +174,12 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         .select('id, name, email, role, clinic_id')
         .in('role', ['doctor', 'coordinator', 'team_leader'])
         .order('name');
-      
-      console.log('👥 Assigned Doctors Data:', assignedData);
-      console.log('❌ Assigned Doctors Error:', assignedError);
-      
+
       if (assignedError) throw assignedError;
-      
+
       // Combine both lists
       const allDoctors = [...(pendingData || []), ...(assignedData || [])];
-      
-      console.log('🔗 Combined Doctors Count:', allDoctors.length);
-      console.log('🔗 Combined Doctors:', allDoctors);
-      
+
       if (allDoctors.length > 0) {
         const formattedDoctors: Doctor[] = allDoctors.map(d => {
           const clinic = clinics.find(c => c.id === d.clinic_id);
@@ -204,7 +195,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         setDoctors(formattedDoctors);
       }
     } catch (error) {
-      console.error('Error loading doctors:', error);
       Alert.alert('Error', 'Failed to load doctors');
     } finally {
       setLoading(false);
@@ -541,7 +531,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                         activeOpacity={0.7}
                         onPress={() => {
                           if (permissions?.canViewDoctorProfiles) {
-                            console.log('Doctor pressed:', doctor.name);
                             // TODO: Open doctor profile
                           } else {
                             Alert.alert('غير مسموح', 'لا يمكنك فتح ملفات الأطباء');
@@ -856,8 +845,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       setNewDoctorClinic(1);
                       setNewDoctorRole('doctor');
                     } catch (error: any) {
-                      console.error('Error adding doctor:', error);
-                      
                       // Check for duplicate email error
                       if (error.code === '23505') {
                         Alert.alert('Error', 'This email is already registered. Please use a different email.');
@@ -976,7 +963,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                             setSelectedDoctorId(null);
                             setSelectedDoctor(null);
                           } catch (error) {
-                            console.error('Error resetting password:', error);
                             Alert.alert('خطأ', 'فشل إعادة تعيين كلمة المرور. الرجاء المحاولة مرة أخرى.');
                           }
                         }
@@ -1033,9 +1019,8 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                                 .from('patients')
                                 .delete()
                                 .eq('doctor_id', selectedDoctorId);
-                              
+
                               if (patientsError) {
-                                console.error('Error deleting patients:', patientsError);
                                 // Continue anyway - non-critical error
                               }
                               
@@ -1051,7 +1036,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                             // ✅ Delete from Authentication (if exists)
                             const { error: authError } = await supabase.auth.admin.deleteUser(selectedDoctorId);
                             if (authError) {
-                              console.warn('Warning: Could not delete user from Authentication:', authError);
                               // Continue anyway - user might not exist in auth
                             }
                             
@@ -1063,7 +1047,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                             setSelectedDoctorId(null);
                             setSelectedDoctor(null);
                           } catch (error) {
-                            console.error('Error deleting doctor:', error);
                             Alert.alert('Error', 'Failed to delete doctor');
                           }
                         }
@@ -1206,7 +1189,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     setSelectedTransferClinic(null);
                     setSelectedDoctorId(null);
                   } catch (error) {
-                    console.error('Error transferring doctor:', error);
                     Alert.alert('Error', 'Failed to transfer doctor');
                   }
                 }}
@@ -1351,7 +1333,6 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     setSelectedRole(null);
                     setSelectedDoctorId(null);
                   } catch (error) {
-                    console.error('Error changing role:', error);
                     Alert.alert('Error', 'Failed to change role');
                   }
                 }}

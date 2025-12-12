@@ -125,7 +125,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
             
             // ✅ إذا لم يتم العثور على clinic_id، لا تحديث العدد
             if (userError || !userData?.clinic_id) {
-              console.log('[DoctorProfile] No clinic_id found for user, skipping doctors count');
               setDoctorsCount(0);
               return;
             }
@@ -135,9 +134,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               .from('doctors')
               .select('*', { count: 'exact', head: true })
               .eq('clinic_id', userData.clinic_id);
-            
+
             if (!doctorsError) {
-              console.log('[DoctorProfile] Doctors count for clinic', userData.clinic_id, ':', doctorsCountResult);
               setDoctorsCount(doctorsCountResult || 0);
             }
           } else {
@@ -145,14 +143,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
             const { count: doctorsCountResult, error: doctorsError } = await supabase
               .from('doctors')
               .select('*', { count: 'exact', head: true });
-            
+
             if (!doctorsError) {
-              console.log('[DoctorProfile] Total doctors count:', doctorsCountResult);
               setDoctorsCount(doctorsCountResult || 0);
             }
           }
         } catch (error) {
-          console.error('Error fetching doctors count:', error);
+          // Error handled silently
         } finally {
           setIsDoctorsCountLoading(false);  // ✅ انتهى التحميل
         }
@@ -177,7 +174,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           setClinicsCount(count || 0);
         }
       } catch (error) {
-        console.error('Error fetching clinics count:', error);
+        // Error handled silently
       }
     };
     
@@ -187,13 +184,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // ✅ Polling: التحقق من عدد الأطباء كل 5 ثواني
   React.useEffect(() => {
     if (!user) return;
-    
-    console.log('[DoctorProfile] Starting polling for doctors count (every 5 seconds)...');
-    
+
     const fetchDoctorsCountPoll = async () => {
       // ✅ لا تحديث إذا كان التحميل الأولي لم ينتهي بعد
       if (isDoctorsCountLoading) {
-        console.log('[DoctorProfile] Skipping poll - initial load not complete');
         return;
       }
       
@@ -208,7 +202,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           
           // ✅ إذا لم يتم العثور على clinic_id، لا تحديث
           if (userError || !userData?.clinic_id) {
-            console.log('[DoctorProfile] Polling: No clinic_id found, skipping');
             return;
           }
           
@@ -217,9 +210,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
             .from('doctors')
             .select('*', { count: 'exact', head: true })
             .eq('clinic_id', userData.clinic_id);
-          
+
           if (!doctorsError && doctorsCountResult !== doctorsCount) {
-            console.log('[DoctorProfile] ✅ Doctors count changed:', doctorsCount, '→', doctorsCountResult);
             setDoctorsCount(doctorsCountResult || 0);
           }
         } else {
@@ -227,23 +219,21 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           const { count: doctorsCountResult, error: doctorsError } = await supabase
             .from('doctors')
             .select('*', { count: 'exact', head: true });
-          
+
           if (!doctorsError && doctorsCountResult !== doctorsCount) {
-            console.log('[DoctorProfile] ✅ Doctors count changed:', doctorsCount, '→', doctorsCountResult);
             setDoctorsCount(doctorsCountResult || 0);
           }
         }
       } catch (error) {
-        console.error('[DoctorProfile] Error polling doctors count:', error);
+        // Error handled silently
       }
     };
-    
+
     // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchDoctorsCountPoll, 5000);
-    
+    const pollInterval = setInterval(fetchDoctorsCountPoll, 15000);
+
     // ✅ Cleanup: إيقاف Polling عند مغادرة الصفحة
     return () => {
-      console.log('[DoctorProfile] Stopping polling...');
       clearInterval(pollInterval);
     };
   }, [user, doctorsCount, isDoctorsCountLoading]);
@@ -251,30 +241,26 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // ✅ Polling: التحقق من عدد المراكز كل 5 ثواني
   React.useEffect(() => {
     if (!user) return;
-    
-    console.log('[DoctorProfile] Starting polling for clinics count (every 5 seconds)...');
-    
+
     const fetchClinicsCountPoll = async () => {
       try {
         const { count, error } = await supabase
           .from('clinics')
           .select('*', { count: 'exact', head: true });
-        
+
         if (!error && count !== clinicsCount) {
-          console.log('[DoctorProfile] ✅ Clinics count changed:', clinicsCount, '→', count);
           setClinicsCount(count || 0);
         }
       } catch (error) {
-        console.error('[DoctorProfile] Error polling clinics count:', error);
+        // Error handled silently
       }
     };
-    
+
     // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchClinicsCountPoll, 5000);
-    
+    const pollInterval = setInterval(fetchClinicsCountPoll, 15000);
+
     // ✅ Cleanup: إيقاف Polling عند مغادرة الصفحة
     return () => {
-      console.log('[DoctorProfile] Stopping clinics polling...');
       clearInterval(pollInterval);
     };
   }, [user, clinicsCount]);
@@ -282,9 +268,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // ✅ Polling: التحقق من عدد المرضى في الانتظار كل 5 ثواني
   React.useEffect(() => {
     if (!user) return;
-    
-    console.log('[DoctorProfile] Starting polling for waiting patients count (every 5 seconds)...');
-    
+
     const fetchWaitingPatientsCountPoll = async () => {
       try {
         // ✅ جلب clinic_id من قاعدة البيانات
@@ -309,25 +293,23 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           .is('archive_date', null)
           .gte('registered_at', startOfDay.toISOString())
           .lte('registered_at', endOfDay.toISOString());
-        
+
         if (!error && count !== waitingPatientsCount) {
-          console.log('[DoctorProfile] ✅ Waiting patients count changed:', waitingPatientsCount, '→', count);
           setWaitingPatientsCount(count || 0);
         }
       } catch (error) {
-        console.error('[DoctorProfile] Error polling waiting patients count:', error);
+        // Error handled silently
       }
     };
     
     // ✅ Fetch أولي فوراً عند mount
     fetchWaitingPatientsCountPoll();
-    
+
     // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchWaitingPatientsCountPoll, 5000);
-    
+    const pollInterval = setInterval(fetchWaitingPatientsCountPoll, 15000);
+
     // ✅ Cleanup
     return () => {
-      console.log('[DoctorProfile] Stopping waiting patients polling...');
       clearInterval(pollInterval);
     };
   }, [user, waitingPatientsCount]);
@@ -335,9 +317,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // ✅ Polling: التحقق من عدد الطلبات المعلقة كل 5 ثواني
   React.useEffect(() => {
     if (!user) return;
-    
-    console.log('[DoctorProfile] Starting polling for pending requests count (every 5 seconds)...');
-    
+
     const fetchPendingRequestsCountPoll = async () => {
       try {
         // ✅ حالياً: Pending Requests = 0 (يمكن تعديله لاحقاً إذا كان هناك جدول requests)
@@ -356,16 +336,15 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           setPendingRequestsCount(0);
         }
       } catch (error) {
-        console.error('[DoctorProfile] Error polling pending requests count:', error);
+        // Error handled silently
       }
     };
-    
+
     // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchPendingRequestsCountPoll, 5000);
-    
+    const pollInterval = setInterval(fetchPendingRequestsCountPoll, 15000);
+
     // ✅ Cleanup
     return () => {
-      console.log('[DoctorProfile] Stopping pending requests polling...');
       clearInterval(pollInterval);
     };
   }, [user, pendingRequestsCount]);
@@ -547,7 +526,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           .eq('doctor_id', viewingDoctorData.id);
 
         if (error) {
-          console.error('Error fetching viewing doctor total treatments:', error);
           return;
         }
 
@@ -562,14 +540,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
         setViewingDoctorTotalTreatments(validPatients.length);
       } catch (error) {
-        console.error('Error:', error);
+        // Error handled silently
       }
     };
 
     fetchViewingDoctorTotalTreatments();
 
     // ✅ Polling: التحديث كل 5 ثواني
-    const pollInterval = setInterval(fetchViewingDoctorTotalTreatments, 5000);
+    const pollInterval = setInterval(fetchViewingDoctorTotalTreatments, 15000);
 
     return () => clearInterval(pollInterval);
   }, [viewingDoctorData]);
@@ -606,7 +584,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         patients: patients || []
       });
     } catch (error) {
-      console.error('Error fetching doctor stats:', error);
       setDoctorStats({
         totalPatients: 0,
         treatmentCounts: {},
@@ -662,12 +639,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           setCurrentScreen('profile');
         }}
         onOpenTimeline={(clinicId, clinicName) => {
-          console.log('[DoctorProfileScreen] onOpenTimeline called for:', clinicId, clinicName);
           if (onOpenTimeline) {
-            console.log('[DoctorProfileScreen] Calling parent onOpenTimeline');
             onOpenTimeline(clinicId, clinicName);
-          } else {
-            console.log('[DoctorProfileScreen] ERROR: onOpenTimeline is undefined!');
           }
         }}
       />
@@ -2102,18 +2075,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   style={[styles.bottomButton, styles.saveButton]}
                   onPress={() => {
                     // Save changes
-                    console.log('Saved:', { 
-                      name: managerName, 
-                      email: managerEmail
-                    });
-                    
                     // Show success message
                     Alert.alert(
                       'Success',
                       'Profile updated successfully!',
                       [{ text: 'OK' }]
                     );
-                    
+
                     setShowEditModal(false);
                   }}
                 >
@@ -2244,29 +2212,20 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     }
 
                     try {
-                      console.log('Change password - Start');
-                      console.log('User:', user?.id, user?.email);
-                      console.log('Old password match:', user?.password === oldPassword);
-                      
                       // Verify old password
                       if (user?.password !== oldPassword) {
                         Alert.alert('خطأ', 'كلمة المرور القديمة غير صحيحة');
                         return;
                       }
-                      
-                      console.log('Updating password in Supabase...');
-                      
+
                       // Update password in Supabase
                       const { data, error } = await supabase
                         .from('doctors')
                         .update({ password: newPassword })
                         .eq('id', user.id)
                         .select();
-                      
-                      console.log('Supabase response:', { data, error });
-                      
+
                       if (error) {
-                        console.error('Supabase error:', error);
                         throw error;
                       }
                       
@@ -2286,7 +2245,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       setNewPassword('');
                       setConfirmPassword('');
                     } catch (error) {
-                      console.error('Error changing password:', error);
                       Alert.alert('خطأ', 'فشل تغيير كلمة المرور. الرجاء المحاولة مرة أخرى.');
                     }
                   }}

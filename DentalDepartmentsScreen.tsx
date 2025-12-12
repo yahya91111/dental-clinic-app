@@ -61,7 +61,6 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
         setClinics(data);
       }
     } catch (error) {
-      console.error('Error loading clinics:', error);
       Alert.alert('Error', 'Failed to load clinics');
     } finally {
       setLoading(false);
@@ -88,7 +87,6 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
       setShowAddModal(false);
       loadClinics(); // Reload clinics
     } catch (error) {
-      console.error('Error adding clinic:', error);
       Alert.alert('Error', 'Failed to add clinic');
     }
   };
@@ -135,7 +133,6 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 Alert.alert('Success', 'Clinic deleted successfully!');
                 loadClinics(); // Reload clinics
               } catch (error) {
-                console.error('Error deleting clinic:', error);
                 Alert.alert('Error', 'Failed to delete clinic');
               }
             }
@@ -143,7 +140,6 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
         ]
       );
     } catch (error) {
-      console.error('Error checking doctors:', error);
       Alert.alert('Error', 'Failed to check clinic doctors');
     }
   };
@@ -260,7 +256,6 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
         }}
         clinicId={selectedClinic.id}
         onOpenDoctorProfile={(doctor) => {
-          console.log('Doctor selected:', doctor);
           setViewingDoctorData({
             id: doctor.id,
             name: doctor.name,
@@ -284,12 +279,8 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
           setShowDoctorsScreen(true);
         }}
         onTimelinePress={() => {
-          console.log('[DentalDepartmentsScreen] onTimelinePress called for:', selectedClinic.name);
           if (onOpenTimeline) {
-            console.log('[DentalDepartmentsScreen] Calling onOpenTimeline');
             onOpenTimeline(selectedClinic.id, selectedClinic.name);
-          } else {
-            console.log('[DentalDepartmentsScreen] ERROR: onOpenTimeline is undefined!');
           }
         }}
       />

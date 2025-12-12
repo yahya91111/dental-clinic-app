@@ -2,14 +2,14 @@
   "expo": {
     "name": "D.C.M",
     "slug": "dental-clinic-mobile",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "description": "Dental Clinic Management System - Manage patients, appointments, and treatments efficiently",
     "privacy": "public",
     "primaryColor": "#7DD3C0",
-    "newArchEnabled": true,
+    "platforms": ["ios", "android"],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "cover",
@@ -18,19 +18,20 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yahyasadeq.dentalclinic",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture profile photos and patient documents",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select and upload images",
-        "NSPhotoLibraryAddUsageDescription": "This app needs permission to save photos to your library"
+        "NSPhotoLibraryAddUsageDescription": "This app needs permission to save photos to your library",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "versionCode": 5,
+      "versionCode": 6,
       "package": "com.yahyasadeq.dentalclinic",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#7B2CBF"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
@@ -45,12 +46,6 @@
       "eas": {
         "projectId": "f512fa06-f16c-45c1-86f2-f6b0a50ffbab"
       }
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/f512fa06-f16c-45c1-86f2-f6b0a50ffbab"
     }
   }
 }

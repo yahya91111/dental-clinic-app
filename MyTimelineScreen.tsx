@@ -194,7 +194,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
 
       setPatients(formattedPatients);
     } catch (error) {
-      console.error('Error fetching patients:', error);
+      // Error handled silently
     } finally {
       if (!silent) setLoading(false);
     }
@@ -209,41 +209,34 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
     
     // Cleanup previous subscription if exists
     if (channelRef.current) {
-      console.log('[MyTimeline] Removing previous subscription...');
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
-    
+
     // Setup Realtime subscription
     const isPendingDoctor = user?.virtualCenterId != null;
     const tableName = isPendingDoctor ? 'pending_patients' : 'patients';
-    
-    console.log(`[MyTimeline] Setting up Realtime subscription for ${tableName}...`);
-    
+
     const channel = supabase
       .channel(`timeline-${tableName}-${Date.now()}`) // Unique channel name
       .on(
         'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: tableName 
+        {
+          event: '*',
+          schema: 'public',
+          table: tableName
         },
         (payload) => {
-          console.log('[MyTimeline] Realtime change detected:', payload.eventType, payload);
           // Refresh data on any change (INSERT, UPDATE, DELETE) - SILENT refresh
           fetchPatients(true);
         }
       )
-      .subscribe((status) => {
-        console.log('[MyTimeline] Realtime subscription status:', status);
-      });
-    
+      .subscribe();
+
     channelRef.current = channel;
-    
+
     // Cleanup on unmount
     return () => {
-      console.log('[MyTimeline] Cleaning up Realtime subscription...');
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -318,7 +311,6 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       setNewPatientNote('');
       fetchPatients();
     } catch (error) {
-      console.error('Error adding patient:', error);
       Alert.alert('Error', 'Failed to add patient');
     }
   };
@@ -361,7 +353,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       setMenuPatientId(null);
       fetchPatients(true); // Silent refresh
     } catch (error) {
-      console.error('Error updating patient:', error);
+      // Error handled silently
     }
   };
 
@@ -383,7 +375,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       setNotePatientId(null);
       fetchPatients(true); // Silent refresh
     } catch (error) {
-      console.error('Error saving note:', error);
+      // Error handled silently
     }
   };
 
@@ -424,7 +416,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       setEditingField(null);
       fetchPatients(true); // Silent refresh
     } catch (error) {
-      console.error('Error updating field:', error);
+      // Error handled silently
     }
   };
 

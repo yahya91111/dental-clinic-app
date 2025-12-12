@@ -218,7 +218,6 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
         ]
       );
     } catch (error) {
-      console.error('Registration error:', error);
       setIsLoading(false);
       Alert.alert('خطأ', 'فشل إنشاء الحساب. الرجاء المحاولة مرة أخرى.');
     }

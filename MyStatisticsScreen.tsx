@@ -58,7 +58,6 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
   const handleDateFromChange = (event: any, selectedDate?: Date) => {
     setShowDateFromPicker(false);
     if (selectedDate) {
-      console.log('[DatePicker] From date selected:', selectedDate);
       setTempDateFrom(selectedDate);
       setDateFrom(selectedDate);
     }
@@ -67,7 +66,6 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
   const handleDateToChange = (event: any, selectedDate?: Date) => {
     setShowDateToPicker(false);
     if (selectedDate) {
-      console.log('[DatePicker] To date selected:', selectedDate);
       setTempDateTo(selectedDate);
       setDateTo(selectedDate);
     }
@@ -80,12 +78,6 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
       // وإلا استخدم user.id (للطبيب الحالي)
       const targetDoctorId = doctorId || user?.id;
       const clinicId = user?.clinicId || userClinicId; // Use user's clinic_id first
-
-      console.log('[MyStatistics] Loading statistics for doctor:', doctorId, 'clinic:', clinicId);
-      console.log('[MyStatistics] User data:', user);
-      console.log('[MyStatistics] Date range:', fromDate.toISOString(), 'to', toDate.toISOString());
-
-      // Removed debug alert
 
       // Get all patients for this doctor only
       let query = supabase
@@ -110,15 +102,11 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
 
       const { data: patients, error } = await query;
 
-      console.log('[MyStatistics] Query result:', patients?.length || 0, 'patients');
       if (error) {
-        console.error('[MyStatistics] Error loading statistics:', error);
         Alert.alert('Error', `Failed to load statistics: ${error.message}`);
         setStatsData({ treatments: {}, total: 0 });
         return;
       }
-
-      // Removed debug alert
 
       // Filter by date range
       const fromTime = fromDate.getTime();
@@ -129,11 +117,6 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
         const patientTime = completedDate.getTime();
         return patientTime >= fromTime && patientTime <= toTime;
       }) || [];
-
-      console.log('[MyStatistics] Total patients for doctor:', patients?.length || 0);
-      console.log('[MyStatistics] Filtered patients in date range:', filteredPatients.length);
-
-      // No alert needed - just show empty state in UI
 
       // Count treatments
       const treatments: { [key: string]: number } = {};
@@ -148,10 +131,8 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
         }
       });
 
-      console.log('[MyStatistics] Statistics:', { treatments, total });
       setStatsData({ treatments, total });
     } catch (error) {
-      console.error('Error:', error);
       setStatsData({ treatments: {}, total: 0 });
     } finally {
       setLoading(false);

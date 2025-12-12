@@ -196,7 +196,6 @@ export default function MyPracticeScreen({
         });
       }
     } catch (error) {
-      console.error('Error loading doctor data:', error);
       Alert.alert('خطأ', 'فشل تحميل البيانات');
     } finally {
       setLoading(false);
@@ -542,14 +541,8 @@ export default function MyPracticeScreen({
                   style={[styles.bottomButton, styles.saveButton]}
                   onPress={async () => {
                     try {
-                      console.log('Save button pressed');
-                      console.log('Current password filled:', !!currentPassword);
-                      console.log('New password filled:', !!newPassword);
-                      console.log('Confirm password filled:', !!confirmPassword);
-                      
                       // Validate password change if fields are filled
                       if (currentPassword || newPassword || confirmPassword) {
-                        console.log('Password change requested');
                         if (!currentPassword) {
                           Alert.alert('خطأ', 'الرجاء إدخال كلمة المرور الحالية');
                           return;
@@ -568,46 +561,35 @@ export default function MyPracticeScreen({
                         }
 
                         // Verify current password from database
-                        console.log('Verifying current password from database...');
                         const { data: doctorData, error: fetchError } = await supabase
                           .from('pending_doctors')
                           .select('password')
                           .eq('id', doctorId)
                           .single();
-                        
+
                         if (fetchError || !doctorData) {
-                          console.log('ERROR: Failed to fetch doctor data:', fetchError);
                           Alert.alert('خطأ', 'فشل في التحقق من كلمة المرور');
                           return;
                         }
-                        
-                        console.log('Current password from DB:', doctorData.password);
-                        console.log('Entered current password:', currentPassword);
-                        
+
                         if (doctorData.password !== currentPassword) {
-                          console.log('ERROR: Current password incorrect');
                           Alert.alert('خطأ', 'كلمة المرور الحالية غير صحيحة');
                           return;
                         }
-                        
-                        console.log('Current password verified successfully');
 
                         // Update password in database
-                        console.log('Updating password in database...');
                         const { error: updateError } = await supabase
                           .from('pending_doctors')
                           .update({ password: newPassword })
                           .eq('id', doctorId);
-                        
+
                         if (updateError) {
-                          console.log('ERROR: Failed to update password:', updateError.message);
                           Alert.alert('خطأ', 'فشل تحديث كلمة المرور');
                           return;
                         }
-                        
-                        console.log('Password updated successfully in database!');
+
                         Alert.alert('نجح', 'تم تغيير كلمة المرور بنجاح!');
-                        
+
                         // Reset password fields after successful change
                         setCurrentPassword('');
                         setNewPassword('');
@@ -621,22 +603,21 @@ export default function MyPracticeScreen({
                         .from('pending_doctors')
                         .update({ name: editedDoctorName })
                         .eq('id', doctorId);
-                      
+
                       if (error) throw error;
-                      
+
                       Alert.alert(
                         'نجح',
                         'تم تحديث الملف الشخصي بنجاح!',
                         [{ text: 'OK' }]
                       );
-                      
+
                       // Reset password fields
                       setCurrentPassword('');
                       setNewPassword('');
                       setConfirmPassword('');
                       setShowEditModal(false);
                     } catch (error) {
-                      console.error('Error updating profile:', error);
                       Alert.alert('خطأ', 'فشل تحديث الملف الشخصي');
                     }
                   }}
