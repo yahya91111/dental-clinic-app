@@ -487,7 +487,7 @@ export default function ClinicDetailsScreen({
                   }}
                 >
                   <LinearGradient
-                    colors={['#B8A4E5', '#9B87D1']}
+                    colors={['rgba(168, 218, 255, 0.6)', 'rgba(126, 200, 255, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -504,7 +504,7 @@ export default function ClinicDetailsScreen({
                           <Text style={styles.ticketLabel}>Waiting</Text>
                         </LinearGradient>
                       </View>
-                    
+
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
                         <Ionicons name="pulse" size={32} color="#FFFFFF" />
@@ -528,7 +528,7 @@ export default function ClinicDetailsScreen({
                   onPress={onDoctorsPress}
                 >
                   <LinearGradient
-                    colors={['#8DD4C7', '#6BC4B5']}
+                    colors={['rgba(157, 223, 206, 0.6)', 'rgba(125, 211, 189, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -545,7 +545,7 @@ export default function ClinicDetailsScreen({
                           <Text style={styles.ticketLabel}>Doctors</Text>
                         </LinearGradient>
                       </View>
-                    
+
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
                         <Ionicons name="people-circle" size={32} color="#FFFFFF" />
@@ -572,7 +572,7 @@ export default function ClinicDetailsScreen({
                   }}
                 >
                   <LinearGradient
-                    colors={['#D4A5E3', '#C48FD6']}
+                    colors={['rgba(255, 212, 163, 0.6)', 'rgba(255, 199, 138, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -589,7 +589,7 @@ export default function ClinicDetailsScreen({
                           <Text style={styles.ticketLabel}>{new Date().toLocaleString('en', { month: 'short' }).toUpperCase()}</Text>
                         </LinearGradient>
                       </View>
-                    
+
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
                         <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
@@ -628,6 +628,7 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     flex: 1,
+    paddingHorizontal: 20,
   },
   // Side Header
   sideHeader: {
@@ -676,7 +677,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   floatingCard: {
-    width: '105%',  // ✅ عرض 105%
+    width: '105%',
     height: 130,
     borderRadius: 24,
     overflow: 'hidden',
@@ -685,15 +686,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cardRight: {
-    alignSelf: 'center',  // ✅ في الوسط
+    marginHorizontal: -20,  // ✅ الكرت يخرج خارج الشاشة 20 بكسل
   },
   cardLeft: {
-    alignSelf: 'center',  // ✅ في الوسط
+    marginHorizontal: -20,  // ✅ الكرت يخرج خارج الشاشة 20 بكسل
   },
   cardGradient: {
     flex: 1,

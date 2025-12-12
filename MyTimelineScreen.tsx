@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -107,6 +107,9 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
   const [showDoctorProfile, setShowDoctorProfile] = useState(false);
   const [showMyStatistics, setShowMyStatistics] = useState(false);
   
+  // Ref to prevent multiple subscriptions
+  const channelRef = useRef<any>(null);
+  
   // Animated values for blobs
   const blob1Anim = useRef(new Animated.Value(0)).current;
   const blob2Anim = useRef(new Animated.Value(0)).current;
@@ -163,15 +166,12 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
     ).start();
   }, []);
 
-  // Fetch patients by virtual_center_id
-  useEffect(() => {
+  // Fetch patients function with useCallback to prevent re-creation
+  const fetchPatients = useCallback(async (silent = false) => {
     if (!user?.id) return;
-    fetchPatients();
-  }, [user]);
-
-  const fetchPatients = async () => {
+    
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       
       // Check if user is a pending doctor (has virtualCenterId)
       const isPendingDoctor = user?.virtualCenterId != null;
@@ -196,9 +196,62 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
     } catch (error) {
       console.error('Error fetching patients:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [user?.id, user?.virtualCenterId]);
+
+  // Fetch patients by virtual_center_id + Realtime subscription
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    // Initial fetch
+    fetchPatients();
+    
+    // Cleanup previous subscription if exists
+    if (channelRef.current) {
+      console.log('[MyTimeline] Removing previous subscription...');
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    // Setup Realtime subscription
+    const isPendingDoctor = user?.virtualCenterId != null;
+    const tableName = isPendingDoctor ? 'pending_patients' : 'patients';
+    
+    console.log(`[MyTimeline] Setting up Realtime subscription for ${tableName}...`);
+    
+    const channel = supabase
+      .channel(`timeline-${tableName}-${Date.now()}`) // Unique channel name
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: tableName 
+        },
+        (payload) => {
+          console.log('[MyTimeline] Realtime change detected:', payload.eventType, payload);
+          // Refresh data on any change (INSERT, UPDATE, DELETE) - SILENT refresh
+          fetchPatients(true);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[MyTimeline] Realtime subscription status:', status);
+      });
+    
+    channelRef.current = channel;
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('[MyTimeline] Cleaning up Realtime subscription...');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [user?.id, user?.virtualCenterId, fetchPatients]);
+
+  // fetchPatients is now defined above with useCallback
 
   // Convert Arabic numerals to English numerals
   const convertArabicToEnglishNumbers = (str: string): string => {
@@ -306,7 +359,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       }
 
       setMenuPatientId(null);
-      fetchPatients();
+      fetchPatients(true); // Silent refresh
     } catch (error) {
       console.error('Error updating patient:', error);
     }
@@ -328,7 +381,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       setShowNoteModal(false);
       setNoteText('');
       setNotePatientId(null);
-      fetchPatients();
+      fetchPatients(true); // Silent refresh
     } catch (error) {
       console.error('Error saving note:', error);
     }
@@ -369,7 +422,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       setEditFieldModalVisible(false);
       setEditingPatientId(null);
       setEditingField(null);
-      fetchPatients();
+      fetchPatients(true); // Silent refresh
     } catch (error) {
       console.error('Error updating field:', error);
     }
@@ -758,23 +811,11 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
           </View>
         </TouchableOpacity>
 
-        {/* Bottom Navigation */}
+        {/* Bottom Navigation - Coming Soon features removed */}
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem}>
             <Ionicons name="home" size={26} color="#7DD3C0" />
             <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert('Coming Soon', 'Patient File feature is under development')}>
-            <Ionicons name="document-text-outline" size={26} color="#9CA3AF" />
-            <Text style={styles.navLabel}>Patient File</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert('Coming Soon', 'Appointments feature is under development')}>
-            <Ionicons name="calendar-outline" size={26} color="#9CA3AF" />
-            <Text style={styles.navLabel}>Appointments</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => Alert.alert('Coming Soon', 'Archive feature is under development')}>
-            <Ionicons name="archive-sharp" size={26} color="#9CA3AF" />
-            <Text style={styles.navLabel}>Archive</Text>
           </TouchableOpacity>
         </View>
 
@@ -1117,35 +1158,31 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   backButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   profileButtonGlass: {
     width: '100%',
     height: '100%',
-    borderRadius: 25,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(125, 211, 192, 0.45)',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 25,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   profileButtonInnerGlow: {
     position: 'absolute',
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 18,
+    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
   },
   headerCenter: {
     flex: 1,

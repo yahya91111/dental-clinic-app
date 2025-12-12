@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -257,8 +257,11 @@ function AppContent() {
   const [isElderly, setIsElderly] = useState(false);
   const [newPatientNote, setNewPatientNote] = useState('');
 
-  // Load patients from Supabase
-  const loadPatients = async () => {
+  // Ref to prevent multiple Realtime subscriptions
+  const realtimeChannelRef = useRef<any>(null);
+
+  // Load patients from Supabase with useCallback
+  const loadPatients = useCallback(async (silent = false) => {
     try {
       // ✅ استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
       const clinicId = selectedClinicId || userClinicId;
@@ -308,9 +311,9 @@ function AppContent() {
       setPatients(formattedPatients);
     } catch (error: any) {
       console.error('Error loading patients:', error);
-      Alert.alert('خطأ في تحميل المرضى', error.message);
+      if (!silent) Alert.alert('خطأ في تحميل المرضى', error.message);
     }
-  };
+  }, [selectedClinicId, userClinicId]);
 
   // Setup auto archive on app start
   useEffect(() => {
@@ -567,12 +570,53 @@ function AppContent() {
     }
   }, [selectedClinicId]);
 
-  // Load patients when user clinic is set OR when selected clinic changes
+  // Load patients when user clinic is set OR when selected clinic changes + Realtime
   useEffect(() => {
-    if (user) {
-      loadPatients(); // ✅ ستتحقق loadPatients من clinicId داخلياً
+    if (!user) return;
+    
+    // Initial load
+    loadPatients();
+    
+    // Cleanup previous Realtime subscription if exists
+    if (realtimeChannelRef.current) {
+      console.log('[App] Removing previous Realtime subscription...');
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
     }
-  }, [user, userClinicId, selectedClinicId]); // ✅ إضافة selectedClinicId
+    
+    // Setup Realtime subscription for patients table
+    console.log('[App] Setting up Realtime subscription for patients...');
+    
+    const channel = supabase
+      .channel(`app-patients-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients'
+        },
+        (payload) => {
+          console.log('[App] Realtime change detected:', payload.eventType, payload);
+          // Silent refresh on any change
+          loadPatients(true);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[App] Realtime subscription status:', status);
+      });
+    
+    realtimeChannelRef.current = channel;
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('[App] Cleaning up Realtime subscription...');
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, [user, userClinicId, selectedClinicId, loadPatients])
 
   // Auto-calculate next queue number when modal opens
   useEffect(() => {
@@ -1148,120 +1192,8 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Doctors Screen - View Stats
-  if (showDoctorsScreen && showClinicDetails && !showDoctorProfile && !showDentalDepartments && currentDoctorsScreen === 'viewStats' && viewingDoctorData) {
-    return (
-      <MyStatisticsScreen
-        onBack={() => {
-          setCurrentDoctorsScreen('list');
-          setViewingDoctorData(null);
-        }}
-        userClinicId={userClinicId}
-        onTotalChange={(total) => setMyTotalTreatments(total)}
-        doctorId={viewingDoctorData.id}
-        doctorName={viewingDoctorData.name}
-        clinicName={savedClinicName}
-      />
-    );
-  }
-
-  // ✅ Show Doctors Screen - List
-  if (showDoctorsScreen && showClinicDetails && !showDoctorProfile && !showDentalDepartments && currentDoctorsScreen === 'list') {
-    return (
-      <DoctorsScreen
-        onBack={() => {
-          setShowDoctorsScreen(false);
-          setCurrentDoctorsScreen('list');
-        }}
-        clinicId={savedClinicId!}
-        onOpenDoctorProfile={(doctor) => {
-          console.log('Doctor selected:', doctor);
-          
-          Alert.alert(
-            'Debug - Before Update',
-            `showDoctorsScreen: ${showDoctorsScreen}\n` +
-            `showClinicDetails: ${showClinicDetails}\n` +
-            `currentDoctorsScreen: ${currentDoctorsScreen}\n` +
-            `Doctor: ${doctor.name}`
-          );
-          
-          // Open MyStatisticsScreen for selected doctor
-          setViewingDoctorData({
-            id: doctor.id,
-            name: doctor.name,
-            clinic_id: doctor.clinicId,
-            role: doctor.role,
-          });
-          setCurrentDoctorsScreen('viewStats');
-          
-          setTimeout(() => {
-            Alert.alert(
-              'Debug - After Update',
-              `currentDoctorsScreen: viewStats\n` +
-              `viewingDoctorData: ${doctor.name}`
-            );
-          }, 100);
-        }}
-      />
-    );
-  }
-
-  // ✅ Show Clinic Details Screen
-  if (showClinicDetails && !showDoctorProfile && !showDentalDepartments && selectedClinicId === null && !showDoctorsScreen) {
-    return (
-      <ClinicDetailsScreen
-        clinicName={savedClinicName}
-        clinicId={savedClinicId}
-        onBack={() => {
-          setShowClinicDetails(false);
-          setShowDentalDepartments(true);
-          // ✅ مسح savedClinicId عند الرجوع
-          setSavedClinicId(null);
-          setSavedClinicName('');
-          setNavigationStack(['profile', 'departments']);
-        }}
-        onDoctorsPress={() => {
-          console.log('[ClinicDetails] Doctors pressed, clinicId:', savedClinicId);
-          Alert.alert(
-            'Opening Doctors',
-            `showDoctorsScreen: ${showDoctorsScreen}\n` +
-            `showClinicDetails: ${showClinicDetails}\n` +
-            `currentDoctorsScreen: ${currentDoctorsScreen}`
-          );
-          setShowDoctorsScreen(true);
-          setCurrentDoctorsScreen('list');
-        }}
-        onTimelinePress={() => {
-          console.log('[ClinicDetails] Timeline pressed, clinicId:', savedClinicId);
-          // ✅ فتح Timeline باستخدام savedClinicId
-          if (savedClinicId !== null) {
-            setSelectedClinicId(savedClinicId);
-            setSelectedClinicName(savedClinicName);
-            setShowClinicDetails(false);
-            setNavigationStack(['profile', 'departments', 'clinicDetails', 'timeline']);
-          }
-        }}
-      />
-    );
-  }
-
-  // IMPORTANT: Check if user is a pending doctor (virtual practice)
-  // Pending doctors have clinic_id = null and virtual_center_id
-  if (user?.clinicId === null && user?.virtualCenterId) {
-    // Show MyTimelineScreen for pending doctors (virtual practice)
-    return (
-      <MyTimelineScreen
-        clinicId={user.virtualCenterId}
-        clinicName={user.virtualCenterName || 'My Practice'}
-        onBack={() => {
-          // Pending doctors can't go back - this is their only screen
-        }}
-      />
-    );
-  }
-
-  // ✅ Show Doctor Profile when viewing another doctor
-  if (showDoctorProfile && viewingDoctorData !== null && !showDentalDepartments && !showClinicDetails) {
+  // ✅ Show Doctor Profile when viewing another doctor (MUST be before Doctors Screen - View Stats)
+  if (showDoctorProfile && viewingDoctorData !== null && !showDentalDepartments) {
     return (
       <DoctorProfileScreen
         doctorData={viewingDoctorData}
@@ -1291,6 +1223,134 @@ function AppContent() {
       />
     );
   }
+
+  // ✅ Show Doctors Screen - View Stats
+  if (showDoctorsScreen && showClinicDetails && !showDoctorProfile && !showDentalDepartments && currentDoctorsScreen === 'viewStats' && viewingDoctorData) {
+    return (
+      <MyStatisticsScreen
+        onBack={() => {
+          setCurrentDoctorsScreen('list');
+          setViewingDoctorData(null);
+        }}
+        userClinicId={userClinicId}
+        onTotalChange={(total) => setMyTotalTreatments(total)}
+        doctorId={viewingDoctorData.id}
+        doctorName={viewingDoctorData.name}
+        clinicName={savedClinicName}
+      />
+    );
+  }
+
+  // ✅ Show Doctors Screen - List
+  if (showDoctorsScreen && showClinicDetails && !showDoctorProfile && !showDentalDepartments && currentDoctorsScreen === 'list') {
+    return (
+      <DoctorsScreen
+        onBack={() => {
+          setShowDoctorsScreen(false);
+          setCurrentDoctorsScreen('list');
+        }}
+        clinicId={savedClinicId!}
+        onOpenDoctorProfile={(doctor) => {
+          console.log('[DoctorsScreen] Opening doctor profile:', doctor.name);
+          console.log('[DEBUG] Before setState:', {
+            showDoctorProfile,
+            showDoctorsScreen,
+            showClinicDetails,
+            viewingDoctorData
+          });
+          
+          // ✅ فتح DoctorProfileScreen للطبيب المختار
+          setViewingDoctorData({
+            id: doctor.id,
+            name: doctor.name,
+            clinic_id: doctor.clinicId,
+            role: doctor.role,
+          });
+          setShowDoctorProfile(true);
+          setShowDoctorsScreen(false);
+          setShowClinicDetails(false);
+          
+          console.log('[DEBUG] After setState called');
+        }}
+      />
+    );
+  }
+
+  // ✅ Show Clinic Details Screen
+  if (showClinicDetails && !showDoctorProfile && !showDentalDepartments && selectedClinicId === null && !showDoctorsScreen) {
+    return (
+      <ClinicDetailsScreen
+        clinicName={savedClinicName}
+        clinicId={savedClinicId}
+        onBack={() => {
+          setShowClinicDetails(false);
+          setShowDentalDepartments(true);
+          // ✅ مسح savedClinicId عند الرجوع
+          setSavedClinicId(null);
+          setSavedClinicName('');
+          setNavigationStack(['profile', 'departments']);
+        }}
+        onDoctorsPress={() => {
+          console.log('[ClinicDetails] Doctors pressed, clinicId:', savedClinicId);
+          setShowDoctorsScreen(true);
+          setCurrentDoctorsScreen('list');
+        }}
+        onTimelinePress={() => {
+          console.log('[ClinicDetails] Timeline pressed, clinicId:', savedClinicId);
+          // ✅ فتح Timeline باستخدام savedClinicId
+          if (savedClinicId !== null) {
+            setSelectedClinicId(savedClinicId);
+            setSelectedClinicName(savedClinicName);
+            setShowClinicDetails(false);
+            setNavigationStack(['profile', 'departments', 'clinicDetails', 'timeline']);
+          }
+        }}
+      />
+    );
+  }
+
+  // IMPORTANT: Check if user is a pending doctor (virtual practice)
+  // Pending doctors have clinic_id = null and virtual_center_id
+  if (user?.clinicId === null && user?.virtualCenterId) {
+    // Show MyTimelineScreen for pending doctors (virtual practice)
+    return (
+      <MyTimelineScreen
+        clinicId={user.virtualCenterId}
+        clinicName={user.virtualCenterName || 'My Practice'}
+        onBack={() => {
+          setShowMyTimeline(false);
+        }}
+      />
+    );
+  }
+
+  // ✅ Show Doctor Profile (My Profile) when showDoctorProfile = true
+  if (showDoctorProfile && viewingDoctorData === null && !showDentalDepartments && !showClinicDetails && selectedClinicId === null) {
+    return (
+      <DoctorProfileScreen
+        onBack={() => {}} // No back button
+        onOpenTimeline={(clinicId, clinicName) => {
+          console.log('[Profile] Opening timeline for clinic:', clinicId, clinicName);
+          setSelectedClinicId(clinicId);
+          setSelectedClinicName(clinicName || 'Clinic');
+          setShowDoctorProfile(false);
+          setNavigationStack(['profile', 'timeline']);
+        }}
+        onOpenMyStatistics={() => {
+          setShowMyStatistics(true);
+        }}
+        onOpenClinicSelection={() => {
+          setShowDentalDepartments(true);
+          setShowDoctorProfile(false);
+          setNavigationStack(['profile', 'departments']);
+        }}
+        currentWaitingCount={0}
+        currentTotalTreatments={0}
+        myTotalTreatments={myTotalTreatments}
+      />
+    );
+  }
+
 
   // Show Timeline (Main Screen) - Only if clinic is selected
   if (selectedClinicId !== null && !showDoctorProfile && !showDentalDepartments && !showClinicDetails) {
@@ -1329,12 +1389,12 @@ function AppContent() {
   return (
     <View style={{ flex: 1 }}>
       <StatusBar translucent={true} backgroundColor="transparent" barStyle="dark-content" />
-      {/* Gradient Mesh Background - Pink/Purple Tint */}
-      <LinearGradient 
-        colors={['#FFF0F5', '#F5E5FF', '#E8D5FF']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject} 
+      {/* Gradient Mesh Background */}
+      <LinearGradient
+        colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
       />
       <SafeAreaView style={styles.container} edges={['top']}>
       <View style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1537,9 +1597,18 @@ function AppContent() {
                 }
                 // Departments → Profile
                 else if (showDentalDepartments) {
+                  console.log('[DEBUG] Departments → Profile');
+                  console.log('[DEBUG] Before:', { selectedClinicId, savedClinicId, showDoctorProfile });
+                  // ✅ مسح selectedClinicId أولاً لمنع فتح Timeline
+                  setSelectedClinicId(null);
+                  setSelectedClinicName('');
+                  setSavedClinicId(null);
+                  setSavedClinicName('');
+                  // ✅ ثم إغلاق Departments وفتح Profile
                   setShowDentalDepartments(false);
                   setShowDoctorProfile(true);
                   setNavigationStack(['profile']);
+                  console.log('[DEBUG] After setState called');
                 }
               }}
             >
@@ -1551,11 +1620,15 @@ function AppContent() {
           ) : (
             <TouchableOpacity 
               style={styles.profileButton}
-              onPress={() => setShowDoctorProfile(true)}
+              onPress={() => {
+                // ✅ زر رجوع للطبيب/Team Leader
+                setSelectedClinicId(null);
+                setSelectedClinicName('');
+              }}
             >
               <View style={styles.profileButtonGlass}>
                 <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="person" size={24} color="#FFFFFF" style={{ zIndex: 10 }} />
+                <Ionicons name="arrow-back" size={24} color="#FFFFFF" style={{ zIndex: 10 }} />
               </View>
             </TouchableOpacity>
           )}
@@ -1641,15 +1714,12 @@ function AppContent() {
               activeOpacity={0.7}
             >
               <View style={styles.minimizeButtonInnerGlow} />
-              <Ionicons 
-                name={isHeaderCollapsed ? 'chevron-down' : 'chevron-up'} 
-                size={24} 
-                color="#FFFFFF" 
-                style={{ 
-                  textShadowColor: 'rgba(0, 0, 0, 0.3)', 
-                  textShadowOffset: { width: 0, height: 2 }, 
-                  textShadowRadius: 5,
-                  zIndex: 10 
+              <Ionicons
+                name={isHeaderCollapsed ? 'chevron-down' : 'chevron-up'}
+                size={24}
+                color="#FFFFFF"
+                style={{
+                  zIndex: 10
                 }}
               />
             </TouchableOpacity>
@@ -2512,35 +2582,31 @@ const styles = StyleSheet.create({
   iconButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   // ✅ زر البروفايل - مطابق تماماً لـ FAB
   profileButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   profileButtonGlass: {
     width: '100%',
     height: '100%',
-    borderRadius: 25,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(125, 211, 192, 0.45)', // ✨ نفس لون FAB
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)', // ✨ نفس حدود FAB
-    shadowColor: '#7DD3C0', // ✨ نفس ظل FAB
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 25,
-    elevation: 12,
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف أنيق
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    shadowColor: '#7DD3C0',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   profileButtonInnerGlow: {
     position: 'absolute',
-    width: 36, // ✨ متناسب مع حجم الزر
+    width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)', // ✨ نفس inner glow FAB
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 18,
+    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
   },
   // ✅ زر الأرشفة الاحترافي
   archiveButton: {
@@ -2634,27 +2700,23 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 22.5,
-    backgroundColor: 'rgba(125, 211, 192, 0.45)',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف أنيق
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 25,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   minimizeButtonInnerGlow: {
     position: 'absolute',
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 18,
+    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
   },
   // Header View Details button
   viewDetailsHeaderButton: { 
@@ -2764,43 +2826,36 @@ const styles = StyleSheet.create({
   timelineContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
   timelineText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
   fab: { position: 'absolute', bottom: 15, right: 24, width: 68, height: 68, borderRadius: 34 },
-  fabGlass: { 
-    width: '100%', 
-    height: '100%', 
-    borderRadius: 34, 
-    justifyContent: 'center', 
+  fabGlass: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 34,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(125, 211, 192, 0.45)',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف أنيق
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 25,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   fabInnerGlow: {
     position: 'absolute',
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 18,
+    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
   },
-  fabIcon: { 
-    fontSize: 42, 
-    color: '#FFFFFF', 
+  fabIcon: {
+    fontSize: 42,
+    color: '#FFFFFF', // ✨ أبيض يتناسب مع الخلفية الفيروزية
     fontWeight: '400',
     lineHeight: 42,
     textAlign: 'center',
     textAlignVertical: 'center',
-    marginTop: -2,
-    textShadowColor: 'rgba(0, 0, 0, 0.3)', 
-    textShadowOffset: { width: 0, height: 2 }, 
-    textShadowRadius: 5, 
+    marginTop: -2, 
     zIndex: 10 
   },
   bottomNav: { flexDirection: 'row', paddingVertical: 10, paddingBottom: 20, backgroundColor: 'transparent', borderTopWidth: 1.5, borderTopColor: 'rgba(255, 255, 255, 0.5)' },

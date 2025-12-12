@@ -438,16 +438,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                         transform: [{ translateX: cardAnims[index]?.slide || 0 }]
                       }}
                     >
-                    <LinearGradient
-                      colors={[
-                        'rgba(255, 255, 255, 0.5)',
-                        'rgba(255, 255, 255, 0.35)',
-                        'rgba(147, 51, 234, 0.3)' // Purple smoke effect
-                      ]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.clinicCard}
-                    >
+                    <View style={styles.clinicCard}>
                       {/* Menu Button - Far Left (Super Admin only) */}
                       {isSuperAdmin && (
                         <TouchableOpacity
@@ -475,12 +466,12 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                             style={styles.clinicIcon}
                           >
                             <View style={styles.clinicInnerGlow}>
-                              <Ionicons name="business-outline" size={28} color="#FFFFFF" />
+                              <Ionicons name="business-outline" size={30} color="#FFFFFF" />
                             </View>
                           </LinearGradient>
                         </View>
                       </TouchableOpacity>
-                    </LinearGradient>
+                    </View>
                     </Animated.View>
                   ))
                 )}
@@ -670,17 +661,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.35)', // 💎 زجاجي شفاف
+    borderRadius: 20,
+    padding: 14, // 💎 أنحف
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: 'rgba(255, 255, 255, 0.5)', // 💎 حدود بيضاء شفافة
+    shadowColor: '#C084FC', // 💎 ظل بنفسجي ملون
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 6,
   },
   deleteButton: {
     padding: 8,
@@ -697,16 +688,16 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   clinicIconContainer: {
-    shadowColor: '#9333EA',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
-    elevation: 12,
+    shadowColor: '#C084FC', // 💎 ظل بنفسجي
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
   clinicIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52, // 💎 أيقونة أصغر وأنحف
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -715,18 +706,19 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // 💎 شفافية أكثر
+    borderRadius: 26,
   },
   clinicInfo: {
     flex: 1,
     alignItems: 'flex-end',
-    marginRight: 12,
+    marginRight: 14, // 💎 أقرب قليلاً
   },
   clinicName: {
-    fontSize: 18,
+    fontSize: 18, // 💎 أصغر قليلاً
     fontWeight: '600',
     color: '#2D3748',
+    letterSpacing: -0.2,
   },
   searchContainer: {
     paddingHorizontal: 20,

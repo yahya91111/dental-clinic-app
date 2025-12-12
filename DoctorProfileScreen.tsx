@@ -24,6 +24,7 @@ const SimpleBadge: React.FC<{ number: number | string; label: string }> = ({ num
 
 type DoctorProfileScreenProps = {
   onBack: () => void;
+  doctorData?: {id: string, name: string, clinic_id: string | null, role: string};  // ✅ بيانات الطبيب المختار (إذا كان يعرض طبيباً آخر)
   onOpenTimeline?: (clinicId: string, clinicName: string) => void;
   onOpenMyStatistics?: () => void;
   onOpenClinicSelection?: () => void;
@@ -33,7 +34,7 @@ type DoctorProfileScreenProps = {
   myTotalTreatments?: number;  // عدد المرضى الذين عالجتهم أنا (من صفحة احصائياتي)
 };
 
-export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMyStatistics, onOpenClinicSelection, currentWaitingCount, currentDoctorsCount, currentTotalTreatments, myTotalTreatments }: DoctorProfileScreenProps) {
+export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline, onOpenMyStatistics, onOpenClinicSelection, currentWaitingCount, currentDoctorsCount, currentTotalTreatments, myTotalTreatments }: DoctorProfileScreenProps) {
   const { user, logout, updateUser } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<'profile' | 'departments' | 'doctors' | 'viewDoctor' | 'viewDoctorStats' | 'schedule' | 'requests'>('profile');
   const [previousScreen, setPreviousScreen] = useState<'profile' | 'departments' | 'doctors' | 'viewDoctor' | 'viewDoctorStats' | 'schedule' | 'requests'>('profile');
@@ -778,7 +779,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                   onPress={() => setCurrentScreen('doctors')} 
                   style={[styles.viewDoctorBackButton, { zIndex: 1 }]}
                 >
-                  <Ionicons name="arrow-back" size={24} color="#4A5568" />
+                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
                 
                 {/* Info */}
@@ -816,7 +817,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                       }}
                     >
                       <LinearGradient
-                        colors={['#F5A6C8', '#F287B5']}
+                        colors={['rgba(197, 179, 255, 0.6)', 'rgba(177, 159, 255, 0.5)']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={styles.cardGradient}
@@ -833,7 +834,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                             <Text style={styles.ticketLabel}>Total</Text>
                           </LinearGradient>
                         </View>
-                        
+
                         <View style={styles.cardContent}>
                           <View style={styles.cardIconWrapper}>
                             <Ionicons name="analytics" size={32} color="#FFFFFF" />
@@ -921,7 +922,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('viewDoctor')} 
                     style={styles.statsBackButton}
                   >
-                    <Ionicons name="arrow-back" size={24} color="#4A5568" />
+                    <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
                   </TouchableOpacity>
                   <View style={{ flex: 1, alignItems: 'center' }}>
                     <Text style={styles.statsHeaderTitle}>{viewingDoctorData.name}</Text>
@@ -1193,7 +1194,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
 
   return (
     <View style={{ flex: 1 }}>
-      <StatusBar translucent={true} backgroundColor="transparent" barStyle="dark-content" />
+      <StatusBar translucent={true} backgroundColor="transparent" barStyle="light-content" />
       {/* Gradient Mesh Background */}
       <LinearGradient
         colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
@@ -1201,7 +1202,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.container}>
         <View style={styles.gradient}>
         
         {/* Animated Blobs */}
@@ -1271,27 +1272,43 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
         
         {/* Content Wrapper */}
         <View style={styles.contentWrapper}>
+          {/* Glass Container Header */}
+          <View style={styles.glassHeaderContainer}>
+            {/* Color Tint Layer */}
+            <LinearGradient
+              colors={[
+                'rgba(168, 85, 247, 0.10)',
+                'rgba(91, 159, 237, 0.10)',
+                'rgba(125, 211, 192, 0.10)',
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.glassHeaderColorTint}
+            />
+
+            {/* Header Content */}
+            <View style={styles.glassHeaderContent}>
+              {/* Info */}
+              <View style={styles.glassHeaderInfo}>
+                <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>{user?.name || 'Doctor'}</Text>
+                <View style={styles.glassHeaderClinicRow}>
+                  <Ionicons name="location" size={14} color="rgba(255, 255, 255, 0.9)" />
+                  <Text style={styles.glassHeaderClinicName} numberOfLines={1}>{user?.clinicName || 'Clinic'}</Text>
+                </View>
+              </View>
+
+              {/* Edit Button */}
+              <TouchableOpacity
+                onPress={() => setShowEditModal(true)}
+                style={styles.glassHeaderEditButton}
+              >
+                <Ionicons name="create-outline" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
         {/* Content */}
         <View style={styles.content}>
-          {/* Side Avatar Header */}
-          <View style={styles.sideHeader}>
-            {/* Info */}
-            <View style={[styles.sideInfo, { zIndex: 1 }]}>
-              <Text style={styles.sideDoctorName} numberOfLines={1}>{user?.name || 'Doctor'}</Text>
-              <View style={styles.sideClinicRow}>
-                <Ionicons name="location" size={12} color="#718096" />
-                <Text style={styles.sideClinicName} numberOfLines={1}>{user?.clinicName || 'Clinic'}</Text>
-              </View>
-            </View>
-            
-            {/* Edit Button */}
-            <TouchableOpacity 
-              onPress={() => setShowEditModal(true)} 
-              style={[styles.sideEditButton, { zIndex: 1 }]}
-            >
-              <Ionicons name="create-outline" size={20} color="#4A5568" />
-            </TouchableOpacity>
-          </View>
 
           {/* 3D Floating Cards - Staggered Layout */}
           <ScrollView 
@@ -1319,7 +1336,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                     <LinearGradient
-                      colors={['#B8A4E5', '#9B87D1']}
+                      colors={['rgba(168, 218, 255, 0.6)', 'rgba(126, 200, 255, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1336,7 +1353,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Waiting</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="pulse" size={32} color="#FFFFFF" />
@@ -1363,7 +1380,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                     <LinearGradient
-                      colors={['#8DD4C7', '#6BC4B5']}
+                      colors={['rgba(157, 223, 206, 0.6)', 'rgba(125, 211, 189, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1380,7 +1397,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Doctors</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="people-circle" size={32} color="#FFFFFF" />
@@ -1408,7 +1425,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                     <LinearGradient
-                      colors={['#F5A6C8', '#F287B5']}
+                      colors={['rgba(197, 179, 255, 0.6)', 'rgba(177, 159, 255, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1425,7 +1442,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Total</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="analytics" size={32} color="#FFFFFF" />
@@ -1449,7 +1466,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('schedule')}
                   >
                     <LinearGradient
-                      colors={['#D4A5E3', '#C48FD6']}
+                      colors={['rgba(255, 212, 163, 0.6)', 'rgba(255, 199, 138, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1466,7 +1483,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>{new Date().toLocaleString('en', { month: 'short' }).toUpperCase()}</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
@@ -1490,7 +1507,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('requests')}
                   >
                     <LinearGradient
-                      colors={['#FFB8A0', '#FF9E85']}
+                      colors={['rgba(255, 184, 212, 0.6)', 'rgba(255, 163, 199, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1507,7 +1524,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Pending</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="mail-unread" size={32} color="#FFFFFF" />
@@ -1539,7 +1556,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                     <LinearGradient
-                      colors={['#8DD4C7', '#6BC4B5']}
+                      colors={['rgba(157, 223, 206, 0.6)', 'rgba(125, 211, 189, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1556,7 +1573,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Doctors</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="people" size={32} color="#FFFFFF" />
@@ -1584,7 +1601,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                     <LinearGradient
-                      colors={['#F5A6C8', '#F287B5']}
+                      colors={['rgba(197, 179, 255, 0.6)', 'rgba(177, 159, 255, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1601,7 +1618,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Total</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="analytics" size={32} color="#FFFFFF" />
@@ -1625,7 +1642,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('departments')}
                   >
                     <LinearGradient
-                      colors={['#FFA07A', '#FF8C69']}
+                      colors={['rgba(163, 228, 224, 0.6)', 'rgba(138, 217, 213, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1642,7 +1659,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Clinics</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="business" size={32} color="#FFFFFF" />
@@ -1666,7 +1683,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('schedule')}
                   >
                     <LinearGradient
-                      colors={['#D4A5E3', '#C48FD6']}
+                      colors={['rgba(255, 212, 163, 0.6)', 'rgba(255, 199, 138, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1683,7 +1700,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>{new Date().toLocaleString('en', { month: 'short' }).toUpperCase()}</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
@@ -1707,7 +1724,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('requests')}
                   >
                     <LinearGradient
-                      colors={['#FFB8A0', '#FF9E85']}
+                      colors={['rgba(255, 184, 212, 0.6)', 'rgba(255, 163, 199, 0.5)']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
@@ -1724,7 +1741,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Pending</Text>
                         </LinearGradient>
                       </View>
-                      
+
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
                           <Ionicons name="mail-unread" size={32} color="#FFFFFF" />
@@ -1757,7 +1774,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                   <LinearGradient
-                    colors={['#B8A4E5', '#9B87D1']}
+                    colors={['rgba(168, 218, 255, 0.6)', 'rgba(126, 200, 255, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1774,7 +1791,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Waiting</Text>
                         </LinearGradient>
                       </View>
-                    
+
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
                         <Ionicons name="pulse" size={32} color="#FFFFFF" />
@@ -1801,7 +1818,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                   <LinearGradient
-                    colors={['#8DD4C7', '#6BC4B5']}
+                    colors={['rgba(157, 223, 206, 0.6)', 'rgba(125, 211, 189, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1818,7 +1835,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                           <Text style={styles.ticketLabel}>Doctors</Text>
                         </LinearGradient>
                       </View>
-                    
+
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
                         <Ionicons name="people-circle" size={32} color="#FFFFFF" />
@@ -1846,7 +1863,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     }}
                   >
                   <LinearGradient
-                    colors={['#F5A6C8', '#F287B5']}
+                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1887,7 +1904,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('schedule')}
                   >
                   <LinearGradient
-                    colors={['#D4A5E3', '#C48FD6']}
+                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1928,7 +1945,7 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
                     onPress={() => setCurrentScreen('requests')}
                   >
                   <LinearGradient
-                    colors={['#FFB8A0', '#FF9E85']}
+                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1961,8 +1978,8 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
           </ScrollView>
         </View>
         </View>
+        </View>
       </View>
-        </SafeAreaView>
 
 
       {/* Edit Profile Modal */}
@@ -1982,14 +1999,26 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
             onPress={() => setShowEditModal(false)}
           >
             <View style={styles.modalContent}>
+              {/* Glass Color Tint */}
+              <LinearGradient
+                colors={[
+                  'rgba(168, 85, 247, 0.15)',
+                  'rgba(91, 159, 237, 0.15)',
+                  'rgba(125, 211, 192, 0.15)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalGlassOverlay}
+              />
+
               {/* Modal Header */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Edit Profile</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setShowEditModal(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color="#2D3748" />
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -2112,19 +2141,31 @@ export default function DoctorProfileScreen({ onBack, onOpenTimeline, onOpenMySt
             activeOpacity={1}
             onPress={() => setShowChangePasswordModal(false)}
           >
-            <TouchableOpacity 
-              activeOpacity={1} 
+            <TouchableOpacity
+              activeOpacity={1}
               onPress={(e) => e.stopPropagation()}
               style={styles.modalContent}
             >
+              {/* Glass Color Tint */}
+              <LinearGradient
+                colors={[
+                  'rgba(168, 85, 247, 0.15)',
+                  'rgba(91, 159, 237, 0.15)',
+                  'rgba(125, 211, 192, 0.15)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.modalGlassOverlay}
+              />
+
               {/* Modal Header */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Change Password</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setShowChangePasswordModal(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color="#2D3748" />
+                  <Ionicons name="close" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -2287,16 +2328,18 @@ const styles = StyleSheet.create({
     borderRadius: 150,
   },
   viewDoctorBackButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    shadowColor: '#7DD3C0',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
     elevation: 3,
   },
   blob1: {
@@ -2336,14 +2379,19 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    shadowColor: '#7DD3C0',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerTitle: {
     fontSize: 34,
@@ -2355,8 +2403,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
   },
   // Side Avatar Header
   sideHeader: {
@@ -2447,6 +2493,37 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginBottom: 16,
+  },
+  avatarGradient: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  headerInfo: {
+    flex: 1,
+  },
+  clinicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  clinicName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#718096',
   },
   avatarCircle: {
     width: 100,
@@ -2593,22 +2670,31 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     paddingHorizontal: '2.5%',
   },
   modalContent: {
     width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 24,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-    padding: 20,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    padding: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.4,
+    shadowRadius: 30,
+    elevation: 15,
+    overflow: 'hidden',
+  },
+  modalGlassOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 24,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -2617,15 +2703,20 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
-    color: '#2D3748',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   modalCloseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2639,54 +2730,63 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4A5568',
+    color: '#FFFFFF',
     textAlign: 'right',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   textInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
-    color: '#2D3748',
+    color: '#FFFFFF',
     textAlign: 'right',
   },
   disabledInput: {
-    backgroundColor: 'rgba(200, 200, 200, 0.3)',
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-    color: '#9CA3AF',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    color: 'rgba(255, 255, 255, 0.6)',
   },
   transparentButton: {
     width: '100%',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
-    backgroundColor: 'rgba(91, 159, 237, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderWidth: 1.5,
-    borderColor: 'rgba(91, 159, 237, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     marginTop: 12,
   },
   transparentButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#5B9FED',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   logoutButton: {
     width: '100%',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'rgba(239, 68, 68, 0.3)',
     borderWidth: 1.5,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
     marginTop: 12,
   },
   logoutButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#EF4444',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   bottomActions: {
     flexDirection: 'row',
@@ -2696,27 +2796,33 @@ const styles = StyleSheet.create({
   bottomButton: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     borderWidth: 1.5,
   },
   saveButton: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.4)',
+    backgroundColor: 'rgba(16, 185, 129, 0.35)',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
   cancelButton: {
-    backgroundColor: 'rgba(107, 114, 128, 0.1)',
-    borderColor: 'rgba(107, 114, 128, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#10B981',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   // 3D Floating Cards Styles
   cardsScrollView: {
@@ -2783,7 +2889,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   floatingCard: {
-    width: '105%',  // ✅ عرض 105%
+    width: '100%',
     height: 130,
     borderRadius: 24,
     overflow: 'hidden',
@@ -2792,13 +2898,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cardRight: {
-    marginHorizontal: -20,  // ✅ الكرت يخرج خارج الشاشة 20 بكسل
+    marginHorizontal: 0,
   },
   cardLeft: {
-    marginHorizontal: -20,  // ✅ الكرت يخرج خارج الشاشة 20 بكسل
+    marginHorizontal: 0,
   },
   cardGradient: {
     flex: 1,
@@ -2978,11 +3086,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    shadowColor: '#7DD3C0',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   statsHeaderTitle: {
     fontSize: 24,
@@ -3328,5 +3441,86 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.95)',
     marginTop: -2,
     letterSpacing: 1,
+  },
+  glassHeaderContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 0,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    borderWidth: 2,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 40,
+    elevation: 10,
+    overflow: 'hidden',
+    paddingTop: 60,
+    marginLeft: -20,
+    marginRight: -20,
+    paddingHorizontal: 20,
+  },
+  glassHeaderColorTint: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  glassHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    position: 'relative',
+    zIndex: 1,
+    width: '100%',
+  },
+  glassHeaderInfo: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 30,
+  },
+  glassHeaderDoctorName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  glassHeaderClinicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  glassHeaderClinicName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  glassHeaderEditButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
 });

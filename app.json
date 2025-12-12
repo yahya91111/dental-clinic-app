@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Dental Clinic",
+    "name": "D.C.M",
     "slug": "dental-clinic-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,13 +12,13 @@
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "resizeMode": "cover",
+      "backgroundColor": "#7B2CBF"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yahyasadeq.dentalclinic",
-      "buildNumber": "1.0.0",
+      "buildNumber": "2",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture profile photos and patient documents",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select and upload images",
@@ -40,6 +40,17 @@
     },
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f512fa06-f16c-45c1-86f2-f6b0a50ffbab"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f512fa06-f16c-45c1-86f2-f6b0a50ffbab"
+    }
   }
 }

@@ -347,12 +347,12 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
   return (
     <View style={{ flex: 1 }}>
       <StatusBar translucent={true} backgroundColor="transparent" barStyle="dark-content" />
-      {/* Gradient Mesh Background - Pink/Purple Tint */}
-      <LinearGradient 
-        colors={['#FFF0F5', '#F5E5FF', '#E8D5FF']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject} 
+      {/* Gradient Mesh Background */}
+      <LinearGradient
+        colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
       />
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={{ flex: 1, position: 'relative' }}>
