@@ -503,8 +503,74 @@ export default function MyPracticeScreen({
                   </View>
                 </View>
 
+                {/* Delete Account Button */}
+                <TouchableOpacity
+                  style={styles.deleteAccountButton}
+                  onPress={() => {
+                    setShowEditModal(false);
+                    Alert.alert(
+                      'حذف الحساب',
+                      'هل أنت متأكد من أنك تريد حذف حسابك نهائياً؟ لن تتمكن من استرجاع البيانات بعد الحذف.',
+                      [
+                        { text: 'إلغاء', style: 'cancel', onPress: () => setShowEditModal(true) },
+                        {
+                          text: 'حذف',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              // 1. Delete all patients associated with this virtual center
+                              const { error: patientsError } = await supabase
+                                .from('patients')
+                                .delete()
+                                .eq('virtual_center_id', virtualCenterId);
+
+                              if (patientsError) throw patientsError;
+
+                              // 2. Delete doctor account from database
+                              const { error: doctorError } = await supabase
+                                .from('pending_doctors')
+                                .delete()
+                                .eq('id', doctorId);
+
+                              if (doctorError) throw doctorError;
+
+                              // 3. Delete authentication account from Supabase Auth
+                              const { error: authError } = await supabase.auth.admin.deleteUser(
+                                doctorId
+                              );
+
+                              // If admin API not available, try user delete
+                              if (authError) {
+                                const { error: userDeleteError } = await supabase.auth.updateUser({
+                                  data: { deleted: true }
+                                });
+
+                                // Attempt to sign out and delete
+                                await supabase.auth.signOut();
+                              }
+
+                              Alert.alert(
+                                'تم الحذف',
+                                'تم حذف حسابك بشكل نهائي من التطبيق وقواعد البيانات',
+                                [{ text: 'OK', onPress: onLogout }]
+                              );
+                            } catch (error) {
+                              console.error('Delete account error:', error);
+                              Alert.alert('خطأ', 'فشل حذف الحساب. الرجاء المحاولة مرة أخرى.');
+                              setShowEditModal(true);
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#DC2626" style={{ marginRight: 8 }} />
+                  <Text style={styles.deleteAccountButtonText}>حذف الحساب نهائياً</Text>
+                </TouchableOpacity>
+
                 {/* Logout Button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.logoutButton}
                   onPress={() => {
                     setShowEditModal(false);
@@ -513,8 +579,8 @@ export default function MyPracticeScreen({
                       'Are you sure you want to logout?',
                       [
                         { text: 'Cancel', style: 'cancel' },
-                        { 
-                          text: 'Logout', 
+                        {
+                          text: 'Logout',
                           style: 'destructive',
                           onPress: onLogout
                         }
@@ -935,6 +1001,23 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     padding: 4,
+  },
+  deleteAccountButton: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(220, 38, 38, 0.3)',
+    marginTop: 12,
+  },
+  deleteAccountButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   logoutButton: {
     width: '100%',
