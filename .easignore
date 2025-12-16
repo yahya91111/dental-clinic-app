@@ -1,3 +1,0 @@
-# Don't ignore assets folder - it's required for build
-!assets/
-!assets/**
