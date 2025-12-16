@@ -39,9 +39,6 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "plugins": [
       "expo-font"
     ],
