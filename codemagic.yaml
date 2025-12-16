@@ -66,3 +66,4 @@ workflows:
             -exportOptionsPlist $HOME/export_options.plist
     artifacts:
       - $HOME/build/*.ipa
+    publishing: {}
