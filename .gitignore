@@ -41,3 +41,19 @@ yarn-error.*
 /ios
 /android
 .claude/
+
+# Documentation files (internal use only)
+*.md
+!README.md
+
+# SQL files (database schemas)
+*.sql
+
+# Log files
+*.log
+
+# Backup and temporary files
+*-FIXED.json
+*.html
+!docs/index.html
+run-sql.sh
