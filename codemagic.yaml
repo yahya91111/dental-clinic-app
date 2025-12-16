@@ -12,8 +12,6 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.yahyasadeq.dentalclinic
-        certificate_name: dental_cert
-        profile_name: Dental Clinic Production
     scripts:
       - name: Install dependencies
         script: |
