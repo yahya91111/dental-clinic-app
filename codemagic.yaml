@@ -6,6 +6,9 @@ workflows:
     environment:
       node: latest
       xcode: latest
+      vars:
+        EXPO_PUBLIC_SUPABASE_URL: https://usuljsxfvhhcxdwnshpr.supabase.co
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdWxqc3hmdmhoY3hkd25zaHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTc0MTEsImV4cCI6MjA3ODE5MzQxMX0.cXd-iJVVsWr1O-pZ3swdYD6Rv-cwZ5y12TxDoeIX7Hs
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.yahyasadeq.dentalclinic
@@ -64,8 +67,7 @@ workflows:
     artifacts:
       - $HOME/build/*.ipa
     publishing:
-  app_store_connect:
-    auth: key_file_authentication
-    key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
-    issuer_id: $APP_STORE_CONNECT_ISSUER_ID
-    key_file: $APP_STORE_CONNECT_PRIVATE_KEY
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
