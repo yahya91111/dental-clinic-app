@@ -11,8 +11,8 @@
     "primaryColor": "#7DD3C0",
     "platforms": ["ios", "android"],
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "cover",
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#7B2CBF"
     },
     "ios": {
