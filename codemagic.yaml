@@ -66,7 +66,4 @@ workflows:
             -exportOptionsPlist $HOME/export_options.plist
     artifacts:
       - $HOME/build/*.ipa
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
+    publishing: {}
