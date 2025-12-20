@@ -1826,7 +1826,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim3, transform: [{ translateX: slideAnim3 }] }
                   ]}
                 >
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
                     activeOpacity={0.85}
                     onPress={() => {
@@ -1836,7 +1836,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     }}
                   >
                   <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                    colors={['rgba(197, 179, 255, 0.6)', 'rgba(177, 159, 255, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1871,13 +1871,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim4, transform: [{ translateX: slideAnim4 }] }
                   ]}
                 >
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('schedule')}
                   >
                   <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                    colors={['rgba(255, 212, 163, 0.6)', 'rgba(255, 199, 138, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
@@ -1912,13 +1912,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim5, transform: [{ translateX: slideAnim5 }] }
                   ]}
                 >
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('requests')}
                   >
                   <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+                    colors={['rgba(255, 184, 212, 0.6)', 'rgba(255, 163, 199, 0.5)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}

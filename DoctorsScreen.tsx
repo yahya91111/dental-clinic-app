@@ -990,12 +990,12 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     'Are you sure you want to delete this doctor?',
                     [
                       { text: 'Cancel', style: 'cancel' },
-                      { 
-                        text: 'Delete', 
-                        style: 'destructive', 
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
                         onPress: async () => {
                           if (!selectedDoctorId) return;
-                          
+
                           try {
                             // ✅ Step 1: Check if doctor is in pending_doctors
                             const { data: pendingDoctor } = await supabase
@@ -1003,51 +1003,72 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                               .select('id')
                               .eq('id', selectedDoctorId)
                               .single();
-                            
+
                             if (pendingDoctor) {
                               // ✅ Delete from pending_doctors (CASCADE will delete pending_patients)
                               const { error: deletePendingError } = await supabase
                                 .from('pending_doctors')
                                 .delete()
                                 .eq('id', selectedDoctorId);
-                              
+
                               if (deletePendingError) throw deletePendingError;
                             } else {
-                              // ✅ Delete from doctors table
-                              // First delete all patients associated with this doctor
-                              const { error: patientsError } = await supabase
+                              // ✅ CASCADE DELETE - Delete all related data
+
+                              // 1. Delete all timeline events for this doctor
+                              await supabase
+                                .from('timeline_events')
+                                .delete()
+                                .eq('doctor_id', selectedDoctorId);
+
+                              // 2. Delete all timeline events for patients of this doctor
+                              const { data: doctorPatients } = await supabase
+                                .from('patients')
+                                .select('id')
+                                .eq('doctor_id', selectedDoctorId);
+
+                              if (doctorPatients && doctorPatients.length > 0) {
+                                const patientIds = doctorPatients.map(p => p.id);
+                                await supabase
+                                  .from('timeline_events')
+                                  .delete()
+                                  .in('patient_id', patientIds);
+                              }
+
+                              // 3. Delete all patients associated with this doctor
+                              await supabase
                                 .from('patients')
                                 .delete()
                                 .eq('doctor_id', selectedDoctorId);
 
-                              if (patientsError) {
-                                // Continue anyway - non-critical error
-                              }
-                              
-                              // Then delete doctor
+                              // 4. Delete doctor from doctors table
                               const { error: deleteDoctorError } = await supabase
                                 .from('doctors')
                                 .delete()
                                 .eq('id', selectedDoctorId);
-                              
+
                               if (deleteDoctorError) throw deleteDoctorError;
                             }
-                            
-                            // ✅ Delete from Authentication (if exists)
-                            const { error: authError } = await supabase.auth.admin.deleteUser(selectedDoctorId);
-                            if (authError) {
+
+                            // ✅ Step 2: Delete from Authentication (auth.users) using RPC
+                            try {
+                              await supabase.rpc('delete_user_completely', {
+                                user_id: selectedDoctorId
+                              });
+                            } catch (authError) {
                               // Continue anyway - user might not exist in auth
+                              console.log('Auth deletion error:', authError);
                             }
-                            
+
                             // Reload clinics and doctors
                             await loadClinics();
                             await loadDoctors();
-                            
-                            Alert.alert('Success', 'Doctor deleted successfully!');
+
+                            Alert.alert('تم بنجاح', 'تم حذف الطبيب وجميع بياناته من قاعدة البيانات بشكل كامل!');
                             setSelectedDoctorId(null);
                             setSelectedDoctor(null);
                           } catch (error) {
-                            Alert.alert('Error', 'Failed to delete doctor');
+                            Alert.alert('خطأ', 'فشل حذف الطبيب. الرجاء المحاولة مرة أخرى.');
                           }
                         }
                       }
