@@ -92,31 +92,16 @@ workflows:
             -alias dentalclinic -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
             -dname "CN=Dental Clinic, OU=Mobile, O=Dental Clinic Management, L=Iraq, ST=Iraq, C=IQ"
-      - name: Configure signing
+      - name: Create signing configuration
         script: |
-          cat > $CM_BUILD_DIR/android/key.properties <<EOF
-          storePassword=android
-          keyPassword=android
-          keyAlias=dentalclinic
-          storeFile=release.keystore
-          EOF
-      - name: Update build.gradle for signing
-        script: |
-          cat >> $CM_BUILD_DIR/android/app/build.gradle <<'GRADLE'
-
-          def keystorePropertiesFile = rootProject.file("../key.properties")
-          def keystoreProperties = new Properties()
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-          }
-
+          cat > $CM_BUILD_DIR/android/app/signing-config.gradle <<'GRADLE'
           android {
               signingConfigs {
                   release {
-                      keyAlias keystoreProperties['keyAlias']
-                      keyPassword keystoreProperties['keyPassword']
-                      storeFile file(keystoreProperties['storeFile'])
-                      storePassword keystoreProperties['storePassword']
+                      storeFile file("release.keystore")
+                      storePassword "android"
+                      keyAlias "dentalclinic"
+                      keyPassword "android"
                   }
               }
               buildTypes {
@@ -126,6 +111,10 @@ workflows:
               }
           }
           GRADLE
+      - name: Apply signing configuration
+        script: |
+          echo "" >> $CM_BUILD_DIR/android/app/build.gradle
+          echo "apply from: \"signing-config.gradle\"" >> $CM_BUILD_DIR/android/app/build.gradle
       - name: Build Android AAB
         script: |
           cd android
