@@ -119,7 +119,10 @@ workflows:
         script: |
           cd android
           ./gradlew bundleRelease
+      - name: Save keystore
+        script: |
+          cp android/app/release.keystore $CM_BUILD_DIR/release.keystore
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
-      - android/app/release.keystore
+      - release.keystore
     publishing: {}
