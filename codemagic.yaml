@@ -80,6 +80,9 @@ workflows:
       - name: Install dependencies
         script: |
           npm install
+      - name: Prebuild Android
+        script: |
+          npx expo prebuild --platform android --clean
       - name: Set up local properties
         script: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
@@ -97,9 +100,6 @@ workflows:
           keyAlias=dentalclinic
           storeFile=release.keystore
           EOF
-      - name: Prebuild Android
-        script: |
-          npx expo prebuild --platform android --clean
       - name: Update build.gradle for signing
         script: |
           cat > $CM_BUILD_DIR/android/app/build.gradle.signing <<'GRADLE'
