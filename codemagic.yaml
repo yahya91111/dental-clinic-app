@@ -73,6 +73,8 @@ workflows:
     max_build_duration: 120
     environment:
       node: latest
+      groups:
+        - android_keystore
       vars:
         EXPO_PUBLIC_SUPABASE_URL: https://usuljsxfvhhcxdwnshpr.supabase.co
         EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdWxqc3hmdmhoY3hkd25zaHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTc0MTEsImV4cCI6MjA3ODE5MzQxMX0.cXd-iJVVsWr1O-pZ3swdYD6Rv-cwZ5y12TxDoeIX7Hs
@@ -86,22 +88,19 @@ workflows:
       - name: Set up local properties
         script: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
-      - name: Create Keystore
+      - name: Decode Keystore
         script: |
-          keytool -genkey -v -keystore $CM_BUILD_DIR/android/app/release.keystore \
-            -alias dentalclinic -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=Dental Clinic, OU=Mobile, O=Dental Clinic Management, L=Iraq, ST=Iraq, C=IQ"
+          echo "$KEYSTORE_FILE" | base64 --decode > $CM_BUILD_DIR/android/app/release.keystore
       - name: Create signing configuration
         script: |
-          cat > $CM_BUILD_DIR/android/app/signing-config.gradle <<'GRADLE'
+          cat > $CM_BUILD_DIR/android/app/signing-config.gradle <<GRADLE
           android {
               signingConfigs {
                   release {
                       storeFile file("release.keystore")
-                      storePassword "android"
-                      keyAlias "dentalclinic"
-                      keyPassword "android"
+                      storePassword "$KEYSTORE_PASSWORD"
+                      keyAlias "$KEY_ALIAS"
+                      keyPassword "$KEY_PASSWORD"
                   }
               }
               buildTypes {
