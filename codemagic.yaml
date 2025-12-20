@@ -77,8 +77,6 @@ workflows:
       vars:
         EXPO_PUBLIC_SUPABASE_URL: https://usuljsxfvhhcxdwnshpr.supabase.co
         EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdWxqc3hmdmhoY3hkd25zaHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTc0MTEsImV4cCI6MjA3ODE5MzQxMX0.cXd-iJVVsWr1O-pZ3swdYD6Rv-cwZ5y12TxDoeIX7Hs
-      android_signing:
-        - keystore_reference
     scripts:
       - name: Install dependencies
         script: |
@@ -86,9 +84,52 @@ workflows:
       - name: Set up local properties
         script: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
+      - name: Create Keystore
+        script: |
+          keytool -genkey -v -keystore $CM_BUILD_DIR/android/app/release.keystore \
+            -alias dentalclinic -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Dental Clinic, OU=Mobile, O=Dental Clinic Management, L=Iraq, ST=Iraq, C=IQ"
+      - name: Configure signing
+        script: |
+          cat > $CM_BUILD_DIR/android/key.properties <<EOF
+          storePassword=android
+          keyPassword=android
+          keyAlias=dentalclinic
+          storeFile=release.keystore
+          EOF
       - name: Prebuild Android
         script: |
           npx expo prebuild --platform android --clean
+      - name: Update build.gradle for signing
+        script: |
+          cat > $CM_BUILD_DIR/android/app/build.gradle.signing <<'GRADLE'
+
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file('key.properties')
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+
+          android {
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile file(keystoreProperties['storeFile'])
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          GRADLE
+
+          # Inject signing config into build.gradle
+          sed -i '/android {/r android/app/build.gradle.signing' android/app/build.gradle
       - name: Build Android AAB
         script: |
           cd android
