@@ -291,7 +291,11 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
 
   return (
     <View style={{ flex: 1 }}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
       <View style={styles.gradient}>
         {/* Gradient Mesh Background */}
         <LinearGradient
@@ -379,8 +383,11 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Dental Departments</Text>
               {isSuperAdmin && (
-                <TouchableOpacity 
-                  style={styles.addButton}
+                <TouchableOpacity
+                  style={[
+                    styles.addButton,
+                    Platform.OS === 'android' && { marginLeft: 10 }
+                  ]}
                   onPress={() => setShowAddModal(true)}
                 >
                   <Ionicons name="add" size={28} color="#4A5568" />
@@ -633,7 +640,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   headerTitle: {
-    fontSize: 34,
+    fontSize: Platform.OS === 'android' ? 28 : 34,
     fontWeight: '700',
     color: '#4A5568',
     letterSpacing: -0.5,
@@ -658,11 +665,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)', // 💎 حدود بيضاء شفافة
-    shadowColor: '#C084FC', // 💎 ظل بنفسجي ملون
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-    elevation: 6,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#C084FC', // 💎 ظل بنفسجي ملون
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 6 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 14,
+    elevation: Platform.OS === 'android' ? 0 : 6,
   },
   deleteButton: {
     padding: 8,
@@ -679,11 +686,11 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   clinicIconContainer: {
-    shadowColor: '#C084FC', // 💎 ظل بنفسجي
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#C084FC', // 💎 ظل بنفسجي
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.25,
+    shadowRadius: Platform.OS === 'android' ? 0 : 10,
+    elevation: Platform.OS === 'android' ? 0 : 6,
   },
   clinicIcon: {
     width: 52, // 💎 أيقونة أصغر وأنحف

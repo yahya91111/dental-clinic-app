@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar, Animated, Dimensions, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, StatusBar, Animated, Dimensions, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,9 +40,13 @@ export default function ClinicDetailsScreen({
 
   // ✅ حفظ آخر clinicId صالح لمنع reset الأرقام
   const lastValidClinicIdRef = useRef<string | null>(null);
-  
 
-  
+  // Realtime subscriptions
+  const patientsChannelRef = useRef<any>(null);
+  const doctorsChannelRef = useRef<any>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
+
+
   // ✅ تحديث lastValidClinicId عندما يكون clinicId موجود
   useEffect(() => {
     if (clinicId) {
@@ -57,15 +61,18 @@ export default function ClinicDetailsScreen({
           const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
           const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
-          // Fetch waiting patients
-          const { count: waitingCount } = await supabase
+          // Fetch waiting patients (exclude those assigned to specific clinics)
+          const { data: waitingData } = await supabase
             .from('patients')
-            .select('*', { count: 'exact', head: true })
+            .select('clinic, status')
             .eq('clinic_id', clinicId)
             .neq('status', 'complete')
+            .neq('status', 'na')
             .is('archive_date', null)
             .gte('registered_at', startOfDay.toISOString())
             .lte('registered_at', endOfDay.toISOString());
+
+          const waitingCount = waitingData?.filter(p => p.clinic === 'Clinic' || !p.clinic).length || 0;
 
           // Fetch doctors
           const { count: doctorsCountResult } = await supabase
@@ -224,54 +231,41 @@ export default function ClinicDetailsScreen({
     }
   }, [waitingPatientsCount, doctorsCount, totalTreatmentsCount]);
 
-  // ✅ Polling: التحقق من عدد المرضى في الانتظار كل 5 ثواني
+  // ✅ Realtime: تحديث فوري للبيانات
   React.useEffect(() => {
-    // ✅ استخدام آخر clinicId صالح إذا كان clinicId مفقود مؤقتاً
     const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
 
     if (!user || !effectiveClinicId) {
       return;
     }
 
-    const fetchWaitingPatientsCountPoll = async () => {
+    // Fetch functions
+    const fetchWaitingCount = async () => {
       try {
         const today = new Date();
         const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
         const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
-        const { count, error } = await supabase
+        const { data, error } = await supabase
           .from('patients')
-          .select('*', { count: 'exact', head: true })
+          .select('clinic, status')
           .eq('clinic_id', effectiveClinicId)
           .neq('status', 'complete')
+          .neq('status', 'na')
           .is('archive_date', null)
           .gte('registered_at', startOfDay.toISOString())
           .lte('registered_at', endOfDay.toISOString());
 
         if (!error) {
-          setWaitingPatientsCount(count || 0);
+          const count = data?.filter(p => p.clinic === 'Clinic' || !p.clinic).length || 0;
+          setWaitingPatientsCount(count);
         }
       } catch (error) {
         // Error handling
       }
     };
 
-    // ✅ Fetch أولي فوراً عند فتح الصفحة
-    fetchWaitingPatientsCountPoll();
-
-    const pollInterval = setInterval(fetchWaitingPatientsCountPoll, 15000);
-
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [user, clinicId]);
-
-  // ✅ Polling: التحقق من عدد الأطباء كل 5 ثواني
-  React.useEffect(() => {
-    const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
-    if (!user || !effectiveClinicId) return;
-
-    const fetchDoctorsCountPoll = async () => {
+    const fetchDoctorsCount = async () => {
       try {
         const { count, error } = await supabase
           .from('doctors')
@@ -286,22 +280,7 @@ export default function ClinicDetailsScreen({
       }
     };
 
-    // ✅ Fetch أولي فوراً عند فتح الصفحة
-    fetchDoctorsCountPoll();
-
-    const pollInterval = setInterval(fetchDoctorsCountPoll, 15000);
-
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [user, clinicId]);
-
-  // ✅ Polling: التحقق من إجمالي العلاجات كل 5 ثواني
-  React.useEffect(() => {
-    const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
-    if (!user || !effectiveClinicId) return;
-
-    const fetchTotalTreatmentsCountPoll = async () => {
+    const fetchTreatmentsCount = async () => {
       try {
         const today = new Date();
         const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
@@ -324,13 +303,91 @@ export default function ClinicDetailsScreen({
       }
     };
 
-    // ✅ Fetch أولي فوراً عند فتح الصفحة
-    fetchTotalTreatmentsCountPoll();
+    // Initial fetch
+    fetchWaitingCount();
+    fetchDoctorsCount();
+    fetchTreatmentsCount();
 
-    const pollInterval = setInterval(fetchTotalTreatmentsCountPoll, 15000);
+    // Cleanup previous subscriptions
+    if (patientsChannelRef.current) {
+      supabase.removeChannel(patientsChannelRef.current);
+      patientsChannelRef.current = null;
+    }
+    if (doctorsChannelRef.current) {
+      supabase.removeChannel(doctorsChannelRef.current);
+      doctorsChannelRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
 
+    // Setup Realtime for patients table
+    const patientsChannel = supabase
+      .channel(`clinic-patients-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients',
+          filter: `clinic_id=eq.${effectiveClinicId}`
+        },
+        () => {
+          fetchWaitingCount();
+          fetchTreatmentsCount();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            fetchWaitingCount();
+            fetchTreatmentsCount();
+          }, 3000);
+        }
+      });
+
+    patientsChannelRef.current = patientsChannel;
+
+    // Setup Realtime for doctors table
+    const doctorsChannel = supabase
+      .channel(`clinic-doctors-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctors',
+          filter: `clinic_id=eq.${effectiveClinicId}`
+        },
+        () => {
+          fetchDoctorsCount();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            fetchDoctorsCount();
+          }, 3000);
+        }
+      });
+
+    doctorsChannelRef.current = doctorsChannel;
+
+    // Cleanup
     return () => {
-      clearInterval(pollInterval);
+      if (patientsChannelRef.current) {
+        supabase.removeChannel(patientsChannelRef.current);
+        patientsChannelRef.current = null;
+      }
+      if (doctorsChannelRef.current) {
+        supabase.removeChannel(doctorsChannelRef.current);
+        doctorsChannelRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
   }, [user, clinicId]);
 
@@ -655,11 +712,11 @@ const styles = StyleSheet.create({
     height: 130,
     borderRadius: 24,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 16,
+    elevation: Platform.OS === 'android' ? 0 : 8,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.4)',
@@ -686,10 +743,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#FFFFFF',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.5,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
   },
   cardTitle: {
     fontSize: 24,
@@ -725,11 +782,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
     paddingVertical: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 6 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.3,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 10,
     overflow: 'visible',
   },
   badgeNumber: {

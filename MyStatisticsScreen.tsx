@@ -277,27 +277,29 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                                 'Suture Removal': ['#14B8A6', '#2DD4BF'],
                               };
                               const colors = treatmentColors[treatment] || ['#7DD3C0', '#5FBDAA'];
-                              
+
                               return (
                                 <View key={treatment} style={styles.circularCard}>
                                   <View style={styles.circularProgressContainer}>
                                     {/* Background Circle */}
                                     <View style={[styles.circularProgressBg, { borderColor: `${colors[0]}30` }]} />
-                                    
-                                    {/* Progress Circle */}
-                                    <LinearGradient
-                                      colors={colors}
-                                      start={{ x: 0, y: 0 }}
-                                      end={{ x: 1, y: 1 }}
-                                      style={[
-                                        styles.circularProgress,
-                                        {
-                                          transform: [
-                                            { rotate: `-${90 - (percentage * 3.6)}deg` }
-                                          ]
-                                        }
-                                      ]}
-                                    />
+
+                                    {/* Progress Circle - Removed on Android due to transform issues */}
+                                    {Platform.OS === 'ios' && (
+                                      <LinearGradient
+                                        colors={[colors[0], colors[1]]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={[
+                                          styles.circularProgress,
+                                          {
+                                            transform: [
+                                              { rotate: (270 + (percentage * 3.6)).toFixed(0) + 'deg' }
+                                            ]
+                                          }
+                                        ]}
+                                      />
+                                    )}
                                     
                                     {/* Center Content */}
                                     <View style={styles.circularCenter}>
@@ -495,11 +497,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   headerTitle: {
     fontSize: 28,
@@ -547,11 +549,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   circularProgressContainer: {
     width: 100,
@@ -626,11 +628,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   totalLabel: {
     fontSize: 16,

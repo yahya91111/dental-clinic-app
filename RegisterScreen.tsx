@@ -389,6 +389,8 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
 
             {/* Glass Container with White Border and Color Tint */}
             <View style={styles.glassContainer}>
+              {/* White Background Layer */}
+              <View style={styles.whiteBackground} />
               {/* Color Tint Layer - Purple, Blue, Green */}
               <LinearGradient
                 colors={[
@@ -560,7 +562,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: 'absolute',
-    top: 50,
+    top: 5,
     right: 24,
     width: 44,
     height: 44,
@@ -575,18 +577,21 @@ const styles = StyleSheet.create({
   glassContainer: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'transparent',
     borderRadius: 32,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.3,
-    shadowRadius: 40,
-    elevation: 10,
-    backdropFilter: 'blur(20px)',
     overflow: 'hidden',
     position: 'relative',
+  },
+  whiteBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 32,
   },
   colorTint: {
     position: 'absolute',
@@ -627,7 +632,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.3)',

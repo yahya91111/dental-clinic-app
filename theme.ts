@@ -1,18 +1,20 @@
+import { Platform } from 'react-native';
+
 export const colors = {
   // Premium Neumorphism colors
   background: '#E8F5F0', // Mint cream background
   cardBackground: '#F5F0E8', // Cream card background
-  
+
   // Accent colors
   mint: '#10b981', // Mint green
   roseGold: '#f43f5e', // Rose gold
   cream: '#fef3c7', // Cream
   lavender: '#e9d5ff', // Lavender
-  
+
   // Text colors
   textPrimary: '#4A5568', // Dark gray
   textSecondary: '#718096', // Medium gray
-  
+
   // Gradient colors for patient numbers
   gradients: {
     blue: ['#93C5FD', '#C4B5FD'], // Blue to purple
@@ -20,21 +22,21 @@ export const colors = {
     pink: ['#FDA4AF', '#FCA5A5'], // Pink to rose
     purple: ['#C4B5FD', '#DDD6FE'], // Purple to light purple
   },
-  
+
   // Clinic colors
   clinic1: '#10b981', // Mint
   clinic2: '#06b6d4', // Cyan
   clinic3: '#8b5cf6', // Purple
   clinic4: '#f59e0b', // Amber
   clinic5: '#ec4899', // Pink
-  
+
   // Treatment colors (pastel)
   pain: '#FED7D7', // Light red
   swelling: '#E9D5FF', // Light purple
   filling: '#FED7AA', // Light orange
   extraction: '#E9D5FF', // Light purple
   scaling: '#A7F3D0', // Light mint
-  
+
   // Status colors
   iconGray: '#9CA3AF',
   white: '#FFFFFF',
@@ -43,11 +45,11 @@ export const colors = {
 
 export const shadows = {
   neumorphic: {
-    shadowColor: '#8B95A5',
-    shadowOffset: { width: 10, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 8,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#8B95A5',
+    shadowOffset: { width: Platform.OS === 'android' ? 0 : 10, height: Platform.OS === 'android' ? 0 : 10 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
+    shadowRadius: Platform.OS === 'android' ? 0 : 20,
+    elevation: Platform.OS === 'android' ? 0 : 8,
   },
   neumorphicInset: {
     shadowColor: '#fff',
@@ -56,11 +58,11 @@ export const shadows = {
     shadowRadius: 12,
   },
   card: {
-    shadowColor: '#8B95A5',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 30,
-    elevation: 8,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#8B95A5',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 12 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
+    shadowRadius: Platform.OS === 'android' ? 0 : 30,
+    elevation: Platform.OS === 'android' ? 0 : 8,
   },
   fab: {
     shadowColor: '#7DD3C0',

@@ -14,6 +14,7 @@ import {
   FlatList,
   Animated,
   PanResponder,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +31,7 @@ import DoctorsScreen from './DoctorsScreen';
 import ComingSoonScreen from './ComingSoonScreen';
 import MyPracticeScreen from './MyPracticeScreen';
 import MyTimelineScreen from './MyTimelineScreen';
+import PatientProfileScreen from './PatientProfileScreen';
 import { AuthProvider, useAuth } from './AuthContext';
 import { startAutoArchive, stopAutoArchive, testArchiveNow, archiveEventEmitter } from './autoArchiveService';
 
@@ -104,6 +106,7 @@ interface Patient {
   clinic_entry_at?: Date;    // وقت دخول العيادة
   completed_at?: Date;       // وقت الانتهاء
   doctor_name?: string;      // اسم الطبيب
+  assigned_by_doctor_name?: string; // اسم الطبيب الذي قام بالتعيين
 }
 
 type TimelineEvent = {
@@ -113,6 +116,7 @@ type TimelineEvent = {
   event_details: string;
   timestamp: string;
   doctor_name?: string;
+  assigned_by_doctor_name?: string;
 };
 
 export default function App() {
@@ -249,6 +253,12 @@ function AppContent() {
   const [currentNote, setCurrentNote] = useState('');
   const [notePatientId, setNotePatientId] = useState<string | null>(null);
 
+  // Treatment Done Modal states
+  const [showTreatmentDoneModal, setShowTreatmentDoneModal] = useState(false);
+  const [treatmentDonePatientId, setTreatmentDonePatientId] = useState<string | null>(null);
+  const [clinicDoctors, setClinicDoctors] = useState<{id: string, name: string}[]>([]);
+  const [doctorSearchQuery, setDoctorSearchQuery] = useState('');
+
   // Form state for new patient
   const [newPatientName, setNewPatientName] = useState('');
   const [newPatientQueueNumber, setNewPatientQueueNumber] = useState('');
@@ -259,6 +269,9 @@ function AppContent() {
 
   // Ref to prevent multiple Realtime subscriptions
   const realtimeChannelRef = useRef<any>(null);
+  const timelineChannelRef = useRef<any>(null);
+  const myTreatmentsChannelRef = useRef<any>(null);
+  const reconnectTimeoutRef = useRef<any>(null);
 
   // Load patients from Supabase with useCallback
   const loadPatients = useCallback(async (silent = false) => {
@@ -301,6 +314,7 @@ function AppContent() {
         clinic_entry_at: p.clinic_entry_at ? new Date(p.clinic_entry_at) : undefined,
         completed_at: p.completed_at ? new Date(p.completed_at) : undefined,
         doctor_name: p.doctor_name || undefined,
+        assigned_by_doctor_name: p.assigned_by_doctor_name || undefined,
       }));
 
       setPatients(formattedPatients);
@@ -407,7 +421,7 @@ function AppContent() {
     fetchMyTotalTreatments();
   }, [user, patients]); // Re-fetch when user or patients change
   
-  // ✅ Polling: التحقق من myTotalTreatments كل 5 ثواني
+  // ✅ Realtime: التحقق من myTotalTreatments
   React.useEffect(() => {
     if (!user) return;
 
@@ -416,37 +430,69 @@ function AppContent() {
         const now = new Date();
         const fromTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime();
         const toTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).getTime();
-        
+
         const { data: patients, error } = await supabase
           .from('patients')
           .select('id, treatment, completed_at, updated_at')
           .eq('doctor_id', user.id);
-        
+
         if (error) return;
-        
+
         const filteredPatients = patients?.filter((patient: any) => {
           const completedDate = patient.completed_at ? new Date(patient.completed_at) : new Date(patient.updated_at);
           const patientTime = completedDate.getTime();
           return patientTime >= fromTime && patientTime <= toTime;
         }) || [];
-        
+
         // ✅ استثناء كلمة "Treatment" من العدد
         const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
-        const newCount = validPatients.length;
-        if (newCount !== myTotalTreatments) {
-          setMyTotalTreatments(newCount);
-        }
+        setMyTotalTreatments(validPatients.length);
       } catch (error) {
         // Error handled silently
       }
     };
 
-    const pollInterval = setInterval(fetchMyTotalTreatmentsPoll, 15000);
+    // Initial fetch
+    fetchMyTotalTreatmentsPoll();
+
+    // Cleanup previous subscription
+    if (myTreatmentsChannelRef.current) {
+      supabase.removeChannel(myTreatmentsChannelRef.current);
+      myTreatmentsChannelRef.current = null;
+    }
+
+    // Setup Realtime for my treatments
+    const myTreatmentsChannel = supabase
+      .channel(`app-my-treatments-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients',
+          filter: `doctor_id=eq.${user.id}`
+        },
+        () => {
+          fetchMyTotalTreatmentsPoll();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            fetchMyTotalTreatmentsPoll();
+          }, 3000);
+        }
+      });
+
+    myTreatmentsChannelRef.current = myTreatmentsChannel;
 
     return () => {
-      clearInterval(pollInterval);
+      if (myTreatmentsChannelRef.current) {
+        supabase.removeChannel(myTreatmentsChannelRef.current);
+        myTreatmentsChannelRef.current = null;
+      }
     };
-  }, [user, myTotalTreatments]);
+  }, [user]);
 
   // Dragon Design: Animate blobs continuously for Timeline
   React.useEffect(() => {
@@ -560,43 +606,110 @@ function AppContent() {
   // Load patients when user clinic is set OR when selected clinic changes + Realtime
   useEffect(() => {
     if (!user) return;
-    
+
     // Initial load
     loadPatients();
-    
-    // Cleanup previous Realtime subscription if exists
+
+    // Cleanup previous subscriptions
     if (realtimeChannelRef.current) {
       supabase.removeChannel(realtimeChannelRef.current);
       realtimeChannelRef.current = null;
     }
+    if (timelineChannelRef.current) {
+      supabase.removeChannel(timelineChannelRef.current);
+      timelineChannelRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    const clinicId = selectedClinicId || userClinicId;
+    if (clinicId === null) return;
 
     // Setup Realtime subscription for patients table
-    const channel = supabase
+    const patientsChannel = supabase
       .channel(`app-patients-${Date.now()}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'patients'
+          table: 'patients',
+          filter: `clinic_id=eq.${clinicId}` // Filter by clinic
         },
         (payload) => {
           // Silent refresh on any change
           loadPatients(true);
         }
       )
-      .subscribe();
-    
-    realtimeChannelRef.current = channel;
-    
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          // Successfully subscribed
+        } else if (status === 'CHANNEL_ERROR') {
+          // Retry connection after 3 seconds
+          reconnectTimeoutRef.current = setTimeout(() => {
+            loadPatients(true);
+          }, 3000);
+        }
+      });
+
+    realtimeChannelRef.current = patientsChannel;
+
+    // Setup Realtime subscription for timeline_events table
+    const timelineChannel = supabase
+      .channel(`app-timeline-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'timeline_events'
+        },
+        (payload) => {
+          // Reload timeline for the affected patient
+          const newRecord = payload.new as any;
+          const oldRecord = payload.old as any;
+
+          if (newRecord?.patient_id && selectedPatient?.id === newRecord.patient_id) {
+            loadTimeline(newRecord.patient_id);
+          }
+          if (oldRecord?.patient_id && selectedPatient?.id === oldRecord.patient_id) {
+            loadTimeline(oldRecord.patient_id);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          // Successfully subscribed
+        } else if (status === 'CHANNEL_ERROR') {
+          // Retry connection
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (selectedPatient) {
+              loadTimeline(selectedPatient.id);
+            }
+          }, 3000);
+        }
+      });
+
+    timelineChannelRef.current = timelineChannel;
+
     // Cleanup on unmount
     return () => {
       if (realtimeChannelRef.current) {
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
       }
+      if (timelineChannelRef.current) {
+        supabase.removeChannel(timelineChannelRef.current);
+        timelineChannelRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
-  }, [user, userClinicId, selectedClinicId, loadPatients])
+  }, [user, userClinicId, selectedClinicId]) // ✅ Removed loadPatients from dependencies
 
   // Auto-calculate next queue number when modal opens
   useEffect(() => {
@@ -638,7 +751,11 @@ function AppContent() {
   }, [showAddModal, selectedClinicId, userClinicId]); // ✅ إضافة selectedClinicId
 
   const totalPatients = displayedPatients.length;
-  const waitingPatients = displayedPatients.filter(p => p.status !== 'complete' && p.status !== 'na').length;
+  const waitingPatients = displayedPatients.filter(p =>
+    p.status !== 'complete' &&
+    p.status !== 'na' &&
+    (p.clinic === 'Clinic' || !p.clinic)
+  ).length;
   
   // Treatment statistics (only count Done patients)
   const treatmentStats = TREATMENTS.slice(1).reduce((acc, treatment) => {
@@ -825,27 +942,32 @@ function AppContent() {
         }
         break;
       case 'complete':
-        try {
-          const patient = patients.find(p => p.id === patientId);
-          const newStatus = patient?.status === 'complete' ? 'normal' : 'complete';
-          
-          const updateData: any = { status: newStatus };
-          
-          // If marking as complete, record completion time, doctor name, and doctor ID
-          if (newStatus === 'complete') {
-            updateData.completed_at = new Date().toISOString();
-            updateData.doctor_id = user?.id; // Save doctor ID
-            // Get doctor name from user profile (as written in doctor file)
-            updateData.doctor_name = user?.name || user?.email || 'Unknown';
+        // Check if patient is already completed
+        const targetPatient = patients.find(p => p.id === patientId);
+
+        if (targetPatient?.status === 'complete') {
+          // Undo treatment done - revert to normal status
+          try {
+            await supabase
+              .from('patients')
+              .update({
+                status: 'normal',
+                completed_at: null,
+                doctor_name: null,
+                assigned_by_doctor_name: null
+              })
+              .eq('id', patientId);
+
+            await loadPatients();
+            Alert.alert('تم', 'تم التراجع عن إكمال العلاج');
+          } catch (error: any) {
+            Alert.alert('خطأ', error.message);
           }
-          
-          await supabase
-            .from('patients')
-            .update(updateData)
-            .eq('id', patientId);
-          await loadPatients();
-        } catch (error: any) {
-          Alert.alert('خطأ', error.message);
+        } else {
+          // Open treatment done modal
+          setTreatmentDonePatientId(patientId);
+          loadClinicDoctors();
+          setShowTreatmentDoneModal(true);
         }
         break;
       case 'delete':
@@ -885,6 +1007,94 @@ function AppContent() {
       setNotePatientId(patientId);
       setCurrentNote(patient.note);
       setShowViewNoteModal(true);
+    }
+  };
+
+  // Load doctors from same clinic
+  const loadClinicDoctors = async () => {
+    try {
+      let clinicId = selectedClinicId || userClinicId;
+
+      // If clinicId is not available, fetch it directly from doctors table
+      if (clinicId === null && user?.id) {
+        const { data: userData, error: userError } = await supabase
+          .from('doctors')
+          .select('clinic_id')
+          .eq('id', user.id)
+          .single();
+
+        if (userError || !userData?.clinic_id) {
+          Alert.alert('خطأ', 'لا يمكن العثور على معرف العيادة');
+          return;
+        }
+
+        clinicId = userData.clinic_id;
+      }
+
+      if (clinicId === null) {
+        Alert.alert('خطأ', 'لا يمكن العثور على معرف العيادة');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('doctors')
+        .select('id, name')
+        .eq('clinic_id', clinicId)
+        .neq('id', user?.id || ''); // Exclude current user
+
+      if (error) {
+        Alert.alert('خطأ', 'فشل في تحميل الأطباء: ' + error.message);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setClinicDoctors(data);
+      } else {
+        setClinicDoctors([]);
+        // Only show alert if query succeeded but no doctors found
+        if (data) {
+          Alert.alert('تنبيه', 'لا يوجد أطباء آخرون في العيادة رقم ' + clinicId);
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('خطأ', 'فشل في تحميل الأطباء');
+    }
+  };
+
+  // Handle treatment done by selected doctor
+  const handleTreatmentDoneByDoctor = async (doctorId: string | null, doctorName: string | null) => {
+    if (!treatmentDonePatientId) return;
+
+    try {
+      const updateData: any = {
+        status: 'complete',
+        completed_at: new Date().toISOString()
+      };
+
+      if (doctorId && doctorName) {
+        // Assigned to another doctor
+        updateData.doctor_id = doctorId;
+        updateData.doctor_name = doctorName;
+        updateData.assigned_by_doctor_name = user?.name || user?.email || 'Unknown';
+      } else {
+        // Done by me
+        updateData.doctor_id = user?.id;
+        updateData.doctor_name = user?.name || user?.email || 'Unknown';
+        updateData.assigned_by_doctor_name = null; // Clear if done by self
+      }
+
+      // Update patient status
+      await supabase
+        .from('patients')
+        .update(updateData)
+        .eq('id', treatmentDonePatientId);
+
+      await loadPatients();
+      setShowTreatmentDoneModal(false);
+      setTreatmentDonePatientId(null);
+      setDoctorSearchQuery('');
+    } catch (error: any) {
+      Alert.alert('خطأ', error.message);
     }
   };
 
@@ -942,7 +1152,7 @@ function AppContent() {
     try {
       const { data, error } = await supabase
         .from('timeline_events')
-        .select('*')
+        .select('id, patient_id, event_type, event_details, timestamp, doctor_name, assigned_by_doctor_name')
         .eq('patient_id', patientId)
         .order('timestamp', { ascending: false });
 
@@ -958,7 +1168,7 @@ function AppContent() {
     try {
       const { data, error } = await supabase
         .from('timeline_events')
-        .select('*')
+        .select('id, patient_id, event_type, event_details, timestamp, doctor_name, assigned_by_doctor_name')
         .eq('patient_id', patientId)
         .order('timestamp', { ascending: false });
 
@@ -1113,9 +1323,17 @@ function AppContent() {
   // Show Patient File
   if (showPatientFile) {
     return (
-      <ComingSoonScreen
+      <PatientProfileScreen
         onBack={() => setShowPatientFile(false)}
-        title="Patient File"
+        onNavigateHome={() => setShowPatientFile(false)}
+        onNavigateAppointments={() => {
+          setShowPatientFile(false);
+          setShowAppointments(true);
+        }}
+        onNavigateArchive={() => {
+          setShowPatientFile(false);
+          setShowArchiveScreen(true);
+        }}
       />
     );
   }
@@ -1821,8 +2039,12 @@ function AppContent() {
                       <Ionicons name="close" size={24} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
-              
-                  <Text style={styles.inputLabel}>Patient Name:</Text>
+
+                  <ScrollView
+                    showsVerticalScrollIndicator={Platform.OS === 'android'}
+                    nestedScrollEnabled
+                  >
+                    <Text style={styles.inputLabel}>Patient Name:</Text>
                   <TextInput
                     style={styles.textInput}
                     placeholder="Patient Name"
@@ -1831,111 +2053,112 @@ function AppContent() {
                     returnKeyType="done"
                   />
 
-                  <Text style={styles.inputLabel}>Queue Number:</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Queue Number"
-                    value={newPatientQueueNumber}
-                    onChangeText={setNewPatientQueueNumber}
-                    keyboardType="numeric"
-                    returnKeyType="done"
-                  />
+                    <Text style={styles.inputLabel}>Queue Number:</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Queue Number"
+                      value={newPatientQueueNumber}
+                      onChangeText={setNewPatientQueueNumber}
+                      keyboardType="numeric"
+                      returnKeyType="done"
+                    />
 
-                  <Text style={styles.inputLabel}>Condition:</Text>
-                  <TouchableOpacity 
-                    style={styles.textInput}
-                    onPress={() => setShowConditionDropdown(!showConditionDropdown)}
-                  >
-                    <Text style={styles.dropdownButtonText}>{newPatientCondition}</Text>
-                  </TouchableOpacity>
-                  {showConditionDropdown && (
-                    <View style={styles.dropdownList}>
-                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
-                        {CONDITIONS.map((condition, index) => (
-                          <TouchableOpacity
-                            key={condition.name}
-                            style={[
-                              styles.dropdownItem,
-                              newPatientCondition === condition.name && styles.dropdownItemSelected
-                            ]}
-                            onPress={() => {
-                              setNewPatientCondition(condition.name);
-                              setShowConditionDropdown(false);
-                            }}
-                          >
-                            <Text style={[
-                              styles.dropdownItemText,
-                              newPatientCondition === condition.name && styles.dropdownItemTextSelected
-                            ]}>{condition.name}</Text>
-                            {newPatientCondition === condition.name && (
-                              <Ionicons name="checkmark" size={20} color="#7DD3C0" />
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
+                    <Text style={styles.inputLabel}>Condition:</Text>
+                    <TouchableOpacity
+                      style={styles.textInput}
+                      onPress={() => setShowConditionDropdown(!showConditionDropdown)}
+                    >
+                      <Text style={styles.dropdownButtonText}>{newPatientCondition}</Text>
+                    </TouchableOpacity>
+                    {showConditionDropdown && (
+                      <View style={styles.dropdownList}>
+                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                          {CONDITIONS.map((condition, index) => (
+                            <TouchableOpacity
+                              key={condition.name}
+                              style={[
+                                styles.dropdownItem,
+                                newPatientCondition === condition.name && styles.dropdownItemSelected
+                              ]}
+                              onPress={() => {
+                                setNewPatientCondition(condition.name);
+                                setShowConditionDropdown(false);
+                              }}
+                            >
+                              <Text style={[
+                                styles.dropdownItemText,
+                                newPatientCondition === condition.name && styles.dropdownItemTextSelected
+                              ]}>{condition.name}</Text>
+                              {newPatientCondition === condition.name && (
+                                <Ionicons name="checkmark" size={20} color="#7DD3C0" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
 
-                  <Text style={styles.inputLabel}>Treatment:</Text>
-                  <TouchableOpacity 
-                    style={styles.textInput}
-                    onPress={() => setShowTreatmentDropdown(!showTreatmentDropdown)}
-                  >
-                    <Text style={styles.dropdownButtonText}>{newPatientTreatment}</Text>
-                  </TouchableOpacity>
-                  {showTreatmentDropdown && (
-                    <View style={styles.dropdownList}>
-                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
-                        {TREATMENTS.map((treatment, index) => (
-                          <TouchableOpacity
-                            key={treatment.name}
-                            style={[
-                              styles.dropdownItem,
-                              newPatientTreatment === treatment.name && styles.dropdownItemSelected
-                            ]}
-                            onPress={() => {
-                              setNewPatientTreatment(treatment.name);
-                              setShowTreatmentDropdown(false);
-                            }}
-                          >
-                            <Text style={[
-                              styles.dropdownItemText,
-                              newPatientTreatment === treatment.name && styles.dropdownItemTextSelected
-                            ]}>{treatment.name}</Text>
-                            {newPatientTreatment === treatment.name && (
-                              <Ionicons name="checkmark" size={20} color="#7DD3C0" />
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
+                    <Text style={styles.inputLabel}>Treatment:</Text>
+                    <TouchableOpacity
+                      style={styles.textInput}
+                      onPress={() => setShowTreatmentDropdown(!showTreatmentDropdown)}
+                    >
+                      <Text style={styles.dropdownButtonText}>{newPatientTreatment}</Text>
+                    </TouchableOpacity>
+                    {showTreatmentDropdown && (
+                      <View style={styles.dropdownList}>
+                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                          {TREATMENTS.map((treatment, index) => (
+                            <TouchableOpacity
+                              key={treatment.name}
+                              style={[
+                                styles.dropdownItem,
+                                newPatientTreatment === treatment.name && styles.dropdownItemSelected
+                              ]}
+                              onPress={() => {
+                                setNewPatientTreatment(treatment.name);
+                                setShowTreatmentDropdown(false);
+                              }}
+                            >
+                              <Text style={[
+                                styles.dropdownItemText,
+                                newPatientTreatment === treatment.name && styles.dropdownItemTextSelected
+                              ]}>{treatment.name}</Text>
+                              {newPatientTreatment === treatment.name && (
+                                <Ionicons name="checkmark" size={20} color="#7DD3C0" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
 
-                  <TouchableOpacity 
-                    style={styles.checkboxRow}
-                    onPress={() => setIsElderly(!isElderly)}
-                  >
-                    <View style={[styles.checkbox, isElderly && styles.checkboxChecked]}>
-                      {isElderly && <Ionicons name="checkmark" size={18} color="#FFFFFF" />}
-                    </View>
-                    <Text style={styles.checkboxLabel}>Elderly</Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.checkboxRow}
+                      onPress={() => setIsElderly(!isElderly)}
+                    >
+                      <View style={[styles.checkbox, isElderly && styles.checkboxChecked]}>
+                        {isElderly && <Ionicons name="checkmark" size={18} color="#FFFFFF" />}
+                      </View>
+                      <Text style={styles.checkboxLabel}>Elderly</Text>
+                    </TouchableOpacity>
 
-                  <Text style={styles.inputLabel}>Notes (Optional):</Text>
-                  <TextInput
-                    style={[styles.textInput, styles.textArea]}
-                    placeholder="Add notes..."
-                    value={newPatientNote}
-                    onChangeText={setNewPatientNote}
-                    multiline
-                    numberOfLines={3}
-                    returnKeyType="done"
-                    blurOnSubmit
-                  />
+                    <Text style={styles.inputLabel}>Notes (Optional):</Text>
+                    <TextInput
+                      style={[styles.textInput, styles.textArea]}
+                      placeholder="Add notes..."
+                      value={newPatientNote}
+                      onChangeText={setNewPatientNote}
+                      multiline
+                      numberOfLines={3}
+                      returnKeyType="done"
+                      blurOnSubmit
+                    />
 
-                  <TouchableOpacity style={styles.addButton} onPress={handleAddPatient}>
-                    <Text style={styles.addButtonText}>Add Patient</Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity style={styles.addButton} onPress={handleAddPatient}>
+                      <Text style={styles.addButtonText}>Add Patient</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
                 </View>
               </TouchableWithoutFeedback>
             </View>
@@ -2062,9 +2285,9 @@ function AppContent() {
 
         {/* View Note Modal */}
         <Modal visible={showViewNoteModal} animationType="fade" transparent onRequestClose={() => setShowViewNoteModal(false)}>
-          <TouchableOpacity 
-            style={styles.modalOverlay} 
-            activeOpacity={1} 
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
             onPress={() => setShowViewNoteModal(false)}
           >
             <View style={styles.modalContent}>
@@ -2097,6 +2320,98 @@ function AppContent() {
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
+        </Modal>
+
+        {/* Treatment Done Modal */}
+        <Modal visible={showTreatmentDoneModal} animationType="slide" transparent onRequestClose={() => setShowTreatmentDoneModal(false)}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+                <View style={styles.modalContent}>
+                  {/* Glass Color Tint - Darker */}
+                  <LinearGradient
+                    colors={[
+                      'rgba(168, 85, 247, 0.25)',
+                      'rgba(91, 159, 237, 0.25)',
+                      'rgba(125, 211, 192, 0.25)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.modalGlassOverlay}
+                  />
+
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Treatment Done</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowTreatmentDoneModal(false);
+                        setDoctorSearchQuery('');
+                      }}
+                      style={styles.modalCloseButton}
+                    >
+                      <Ionicons name="close" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Done by Me Button */}
+                  <TouchableOpacity
+                    style={styles.treatmentDoneByMeButton}
+                    onPress={() => handleTreatmentDoneByDoctor(null, null)}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(34, 197, 94, 0.2)', justifyContent: 'center', alignItems: 'center' }}>
+                        <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
+                      </View>
+                      <Text style={styles.treatmentDoneByMeText}>Treatment Done by Me</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  <View style={styles.orDivider}>
+                    <View style={styles.orLine} />
+                    <Text style={styles.orText}>OR</Text>
+                    <View style={styles.orLine} />
+                  </View>
+
+                  {/* Search Bar */}
+                  <View style={styles.searchContainer}>
+                    <Ionicons name="search" size={20} color="#9CA3AF" />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search doctor..."
+                      placeholderTextColor="#9CA3AF"
+                      value={doctorSearchQuery}
+                      onChangeText={setDoctorSearchQuery}
+                    />
+                  </View>
+
+                  {/* Doctors List */}
+                  <ScrollView style={styles.doctorsListContainer} showsVerticalScrollIndicator={false}>
+                    {clinicDoctors
+                      .filter(doctor => doctor.name.toLowerCase().includes(doctorSearchQuery.toLowerCase()))
+                      .map((doctor) => (
+                        <TouchableOpacity
+                          key={doctor.id}
+                          style={styles.doctorItem}
+                          onPress={() => handleTreatmentDoneByDoctor(doctor.id, doctor.name)}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(125, 211, 192, 0.2)', justifyContent: 'center', alignItems: 'center' }}>
+                              <Ionicons name="person" size={24} color="#7DD3C0" />
+                            </View>
+                            <Text style={styles.doctorName}>{doctor.name}</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      ))}
+                    {clinicDoctors.filter(doctor => doctor.name.toLowerCase().includes(doctorSearchQuery.toLowerCase())).length === 0 && (
+                      <Text style={styles.noDoctorsText}>No doctors found</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
         </Modal>
 
         {/* Clinic Dropdown Modal */}
@@ -2232,7 +2547,10 @@ function AppContent() {
                       <Text style={styles.eventType}>{event.event_type}</Text>
                       <Text style={styles.eventDetails}>{event.event_details}</Text>
                       {event.doctor_name && (
-                        <Text style={styles.eventDoctor}>By: {event.doctor_name}</Text>
+                        <Text style={styles.eventDoctor}>Done by Dr. {event.doctor_name}</Text>
+                      )}
+                      {event.assigned_by_doctor_name && (
+                        <Text style={styles.eventAssignedBy}>Assigned by Dr. {event.assigned_by_doctor_name}</Text>
                       )}
                       <Text style={styles.eventTime}>
                         {new Date(event.timestamp).toLocaleString()}
@@ -2434,10 +2752,18 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                 </View>
               )}
               {patient.doctor_name && (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                   <Ionicons name="person-outline" size={14} color="#FFFFFF" />
                   <Text style={{ fontSize: 11, color: '#FFFFFF', marginLeft: 6 }}>
-                    Doctor: {patient.doctor_name}
+                    Done by Dr. {patient.doctor_name}
+                  </Text>
+                </View>
+              )}
+              {patient.assigned_by_doctor_name && (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Ionicons name="people-outline" size={14} color="#FFFFFF" />
+                  <Text style={{ fontSize: 11, color: '#FFFFFF', marginLeft: 6, fontStyle: 'italic' }}>
+                    Assigned by Dr. {patient.assigned_by_doctor_name}
                   </Text>
                 </View>
               )}
@@ -2585,11 +2911,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   profileButtonInnerGlow: {
     position: 'absolute',
@@ -2621,43 +2947,45 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   statsContainer: { flexDirection: 'row', paddingHorizontal: 24, gap: 16, marginBottom: 24 },
-  statCard: { 
-    flex: 1, 
+  statCard: {
+    flex: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.4)', // ✨ زجاجي شفاف
-    borderRadius: 20, 
-    padding: 20, 
-    alignItems: 'center', 
-    minHeight: 150, 
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    minHeight: 150,
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.8)', // ✅ حواف بيضاء
-    shadowColor: '#5B9FED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
-  statCardActive: { 
+  statCardActive: {
     backgroundColor: 'rgba(125, 211, 192, 0.3)', // ✨ زجاجي فيروزي عند التفعيل
-    borderWidth: 2.5, 
+    borderWidth: 2.5,
     borderColor: 'rgba(125, 211, 192, 0.9)', // ✅ حواف فيروزية
-    shadowColor: '#7DD3C0',
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 0 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
+    shadowRadius: Platform.OS === 'android' ? 0 : 16,
+    elevation: Platform.OS === 'android' ? 0 : 0,
   },
-  statCardExpanded: { 
-    flex: 1, 
+  statCardExpanded: {
+    flex: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.4)', // ✨ زجاجي شفاف
-    borderRadius: 20, 
-    padding: 20, 
+    borderRadius: 20,
+    padding: 20,
     minHeight: 200,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.8)', // ✅ حواف بيضاء
-    shadowColor: '#5B9FED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   expandedHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   expandedTitle: { fontSize: 18, fontWeight: '700', color: '#4A5568' },
@@ -2691,11 +3019,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   minimizeButtonInnerGlow: {
     position: 'absolute',
@@ -2712,11 +3040,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   viewDetailsHeaderText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
   // Expandable section in header
@@ -2730,11 +3058,11 @@ const styles = StyleSheet.create({
     gap: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   headerOptionButton: {
     flexDirection: 'row',
@@ -2746,21 +3074,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.8)', // ✨ حدود بيضاء لامعة
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 4,
+    elevation: Platform.OS === 'android' ? 0 : 3,
   },
   headerOptionButtonActive: {
     backgroundColor: 'rgba(125, 211, 192, 0.3)', // ✨ زجاجي فيروزي عند التفعيل
     borderWidth: 2.5,
     borderColor: 'rgba(125, 211, 192, 0.9)', // ✨ حدود فيروزية لامعة
-    shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 3 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.3,
+    shadowRadius: Platform.OS === 'android' ? 0 : 6,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   headerOptionText: {
     fontSize: 15,
@@ -2772,19 +3100,19 @@ const styles = StyleSheet.create({
   },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingTop: 0, paddingBottom: 120 },
-  patientCardWrapper: { 
-    flexDirection: 'row', 
-    marginBottom: 16, 
-    borderRadius: 18, 
+  patientCardWrapper: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.35)', // ✨ زجاجي شفاف
     borderWidth: 2.5, // ✅ حواف أعرض
     borderColor: 'rgba(255, 255, 255, 0.7)', // ✅ حواف بيضاء أوضح
-    shadowColor: '#5B9FED',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 3,
   },
   queueNumberSection: { 
     width: 50, 
@@ -2821,11 +3149,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)', // ✨ Glass effect شفاف أكثر
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 4,
+    elevation: Platform.OS === 'android' ? 0 : 2,
   },
   tagText: { fontSize: 12, fontWeight: '600', color: '#4A5568', textAlign: 'center' },
   menuButton: {
@@ -2837,17 +3165,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   menuIcon: {
     fontSize: 18,
     fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 32,
+    ...(Platform.OS === 'android' ? { marginTop: -3 } : { lineHeight: 32 }),
   },
   timelineContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
   timelineText: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
@@ -2861,11 +3189,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   fabInnerGlow: {
     position: 'absolute',
@@ -2903,11 +3231,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
     padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.4,
-    shadowRadius: 30,
-    elevation: 15,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 20 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
+    shadowRadius: Platform.OS === 'android' ? 0 : 30,
+    elevation: Platform.OS === 'android' ? 0 : 15,
     overflow: 'hidden',
   },
   modalGlassOverlay: {
@@ -3021,11 +3349,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(125, 211, 192, 0.6)',
     paddingVertical: 16,
     alignItems: 'center',
-    shadowColor: '#7DD3C0',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.3,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 6,
   },
   addButtonGradient: { paddingVertical: 16, alignItems: 'center' },
   addButtonText: {
@@ -3094,11 +3422,12 @@ const styles = StyleSheet.create({
   eventType: { fontSize: 16, fontWeight: '700', color: '#667eea', marginBottom: 8 },
   eventDetails: { fontSize: 14, color: '#1F2937', marginBottom: 8 },
   eventDoctor: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
+  eventAssignedBy: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', marginBottom: 4 },
   eventTime: { fontSize: 12, color: '#9CA3AF' },
   treatmentSection: { padding: 20, margin: 20, marginBottom: 10, backgroundColor: '#FFFFFF', borderRadius: 16 },
   treatmentInput: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 12, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: '#E2E8F0' },
   dropdownButtonText: { fontSize: 16, color: '#1F2937', fontWeight: '500' },
-  dropdownList: { backgroundColor: 'rgba(255, 255, 255, 0.4)', borderRadius: 12, marginBottom: 12, maxHeight: 200, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.6)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  dropdownList: { backgroundColor: 'rgba(255, 255, 255, 0.4)', borderRadius: 12, marginBottom: 12, maxHeight: 200, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.6)', shadowColor: Platform.OS === 'android' ? 'transparent' : '#000', shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 }, shadowOpacity: Platform.OS === 'android' ? 0 : 0.1, shadowRadius: Platform.OS === 'android' ? 0 : 4, elevation: Platform.OS === 'android' ? 0 : 3 },
   dropdownItem: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -3315,5 +3644,81 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: '#2D3748',
+  },
+  // Treatment Done Modal Styles
+  treatmentDoneByMeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  treatmentDoneByMeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  orText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginHorizontal: 16,
+    opacity: 0.7,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  doctorsListContainer: {
+    maxHeight: 300,
+  },
+  doctorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  doctorName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  noDoctorsText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginTop: 20,
   },
 });

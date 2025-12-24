@@ -35,6 +35,7 @@ type Patient = {
   is_elderly?: boolean;
   timeline: TimelineEvent[];
   doctor_name?: string;
+  assigned_by_doctor_name?: string;
 };
 
 type TimelineEvent = {
@@ -217,6 +218,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
           status: p.status,
           is_elderly: p.is_elderly || false,
           doctor_name: p.doctor_name,
+          assigned_by_doctor_name: p.assigned_by_doctor_name,
           // ✅ بناء Timeline من أعمدة patients
           timeline: [
             p.registered_at && {
@@ -705,7 +707,12 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                                       </Text>
                                       {event.doctor_name && event.type === 'completed' && (
                                         <Text style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', marginTop: 2 }}>
-                                          Doctor: {event.doctor_name}
+                                          Done by Dr. {event.doctor_name}
+                                        </Text>
+                                      )}
+                                      {patient.assigned_by_doctor_name && event.type === 'completed' && (
+                                        <Text style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', fontStyle: 'italic', marginTop: 2 }}>
+                                          Assigned by Dr. {patient.assigned_by_doctor_name}
                                         </Text>
                                       )}
                                     </View>
@@ -783,7 +790,12 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                                       </Text>
                                       {event.doctor_name && event.type === 'completed' && (
                                         <Text style={{ fontSize: 11, color: '#4B5563', fontWeight: '600', marginTop: 2 }}>
-                                          Doctor: {event.doctor_name}
+                                          Done by Dr. {event.doctor_name}
+                                        </Text>
+                                      )}
+                                      {patient.assigned_by_doctor_name && event.type === 'completed' && (
+                                        <Text style={{ fontSize: 11, color: '#6B7280', fontStyle: 'italic', marginTop: 2 }}>
+                                          Assigned by Dr. {patient.assigned_by_doctor_name}
                                         </Text>
                                       )}
                                     </View>
@@ -912,20 +924,22 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                                     {/* Background Circle */}
                                     <View style={[styles.circularProgressBg, { borderColor: `${colors[0]}30` }]} />
                                     
-                                    {/* Progress Circle */}
-                                    <LinearGradient
-                                      colors={colors}
-                                      start={{ x: 0, y: 0 }}
-                                      end={{ x: 1, y: 1 }}
-                                      style={[
-                                        styles.circularProgress,
-                                        {
-                                          transform: [
-                                            { rotate: `-${90 - (percentage * 3.6)}deg` }
-                                          ]
-                                        }
-                                      ]}
-                                    />
+                                    {/* Progress Circle - Removed on Android due to transform issues */}
+                                    {Platform.OS === 'ios' && (
+                                      <LinearGradient
+                                        colors={[colors[0], colors[1]]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={[
+                                          styles.circularProgress,
+                                          {
+                                            transform: [
+                                              { rotate: (270 + (percentage * 3.6)).toFixed(0) + 'deg' }
+                                            ]
+                                          }
+                                        ]}
+                                      />
+                                    )}
                                     
                                     {/* Center Content */}
                                     <View style={styles.circularCenter}>
@@ -1348,11 +1362,11 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   cardLabel: {
     fontSize: 14,
@@ -1889,11 +1903,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   circularProgressContainer: {
     width: 100,

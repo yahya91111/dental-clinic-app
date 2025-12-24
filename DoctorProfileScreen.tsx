@@ -73,7 +73,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [clinicsCount, setClinicsCount] = useState(0);  // ✅ عدد المراكز
   const [isDoctorsCountLoading, setIsDoctorsCountLoading] = useState(true);  // ✅ منع race condition
-  
+
+  // ✅ Realtime subscriptions refs
+  const doctorsChannelRef = React.useRef<any>(null);
+  const clinicsChannelRef = React.useRef<any>(null);
+  const patientsChannelRef = React.useRef<any>(null);
+  const viewingDoctorChannelRef = React.useRef<any>(null);
+  const reconnectTimeoutRef = React.useRef<any>(null);
+
   // Animation values for 3D cards - recreate on screen change
   const [animKey, setAnimKey] = useState(0);
   const previousScreenRef = React.useRef(currentScreen);
@@ -160,194 +167,226 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     
     // ✅ Pending Requests Count
     setPendingRequestsCount(0);
-    
-    // ✅ Clinics Count: جلب عدد المراكز من قاعدة البيانات
-    const fetchClinicsCount = async () => {
-      if (!user) return;
-      
-      try {
-        const { count, error } = await supabase
-          .from('clinics')
-          .select('*', { count: 'exact', head: true });
-        
-        if (!error) {
-          setClinicsCount(count || 0);
-        }
-      } catch (error) {
-        // Error handled silently
-      }
-    };
-    
-    fetchClinicsCount();
   }, [user, currentWaitingCount, currentDoctorsCount, currentTotalTreatments]);
   
-  // ✅ Polling: التحقق من عدد الأطباء كل 5 ثواني
-  React.useEffect(() => {
+  // ✅ Fetch doctors count - مع useCallback
+  const fetchDoctorsCountCallback = React.useCallback(async () => {
     if (!user) return;
 
-    const fetchDoctorsCountPoll = async () => {
-      // ✅ لا تحديث إذا كان التحميل الأولي لم ينتهي بعد
-      if (isDoctorsCountLoading) {
-        return;
-      }
-      
-      try {
-        // ✅ للتيم ليدر والطبيب: جلب clinic_id أولاً
-        if (user.role === 'team_leader' || user.role === 'doctor') {
-          const { data: userData, error: userError } = await supabase
-            .from('doctors')
-            .select('clinic_id')
-            .eq('email', user.email)
-            .single();
-          
-          // ✅ إذا لم يتم العثور على clinic_id، لا تحديث
-          if (userError || !userData?.clinic_id) {
-            return;
-          }
-          
-          // ✅ جلب عدد الأطباء في المركز فقط
-          const { count: doctorsCountResult, error: doctorsError } = await supabase
-            .from('doctors')
-            .select('*', { count: 'exact', head: true })
-            .eq('clinic_id', userData.clinic_id);
-
-          if (!doctorsError && doctorsCountResult !== doctorsCount) {
-            setDoctorsCount(doctorsCountResult || 0);
-          }
-        } else {
-          // ✅ للمدير والمنسق: جلب جميع الأطباء
-          const { count: doctorsCountResult, error: doctorsError } = await supabase
-            .from('doctors')
-            .select('*', { count: 'exact', head: true });
-
-          if (!doctorsError && doctorsCountResult !== doctorsCount) {
-            setDoctorsCount(doctorsCountResult || 0);
-          }
-        }
-      } catch (error) {
-        // Error handled silently
-      }
-    };
-
-    // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchDoctorsCountPoll, 15000);
-
-    // ✅ Cleanup: إيقاف Polling عند مغادرة الصفحة
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [user, doctorsCount, isDoctorsCountLoading]);
-  
-  // ✅ Polling: التحقق من عدد المراكز كل 5 ثواني
-  React.useEffect(() => {
-    if (!user) return;
-
-    const fetchClinicsCountPoll = async () => {
-      try {
-        const { count, error } = await supabase
-          .from('clinics')
-          .select('*', { count: 'exact', head: true });
-
-        if (!error && count !== clinicsCount) {
-          setClinicsCount(count || 0);
-        }
-      } catch (error) {
-        // Error handled silently
-      }
-    };
-
-    // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchClinicsCountPoll, 15000);
-
-    // ✅ Cleanup: إيقاف Polling عند مغادرة الصفحة
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [user, clinicsCount]);
-  
-  // ✅ Polling: التحقق من عدد المرضى في الانتظار كل 5 ثواني
-  React.useEffect(() => {
-    if (!user) return;
-
-    const fetchWaitingPatientsCountPoll = async () => {
-      try {
-        // ✅ جلب clinic_id من قاعدة البيانات
+    try {
+      // ✅ للتيم ليدر والطبيب: جلب clinic_id أولاً
+      if (user.role === 'team_leader' || user.role === 'doctor') {
         const { data: userData, error: userError } = await supabase
           .from('doctors')
           .select('clinic_id')
           .eq('email', user.email)
           .single();
-        
+
         if (userError || !userData?.clinic_id) return;
-        
-        // ✅ جلب عدد المرضى في الانتظار (status != 'complete' + اليوم فقط)
+
+        const { count: doctorsCountResult, error: doctorsError } = await supabase
+          .from('doctors')
+          .select('*', { count: 'exact', head: true })
+          .eq('clinic_id', userData.clinic_id);
+
+        if (!doctorsError) {
+          setDoctorsCount(doctorsCountResult || 0);
+        }
+      } else {
+        const { count: doctorsCountResult, error: doctorsError } = await supabase
+          .from('doctors')
+          .select('*', { count: 'exact', head: true });
+
+        if (!doctorsError) {
+          setDoctorsCount(doctorsCountResult || 0);
+        }
+      }
+    } catch (error) {
+      // Error handled silently
+    }
+  }, [user]);
+
+  // ✅ Fetch clinics count - مع useCallback للتأكد من عدم إعادة إنشاءها
+  const fetchClinicsCountCallback = React.useCallback(async () => {
+    try {
+      const { count, error } = await supabase
+        .from('clinics')
+        .select('*', { count: 'exact', head: true });
+
+      if (!error && count !== null) {
+        setClinicsCount(count);
+      }
+    } catch (error) {
+      // Error handled silently
+    }
+  }, []);
+
+
+  // ✅ Realtime: التحديث الفوري لجميع البيانات
+  React.useEffect(() => {
+    if (!user) return;
+    if (isDoctorsCountLoading) {
+      setIsDoctorsCountLoading(false);
+    }
+
+    const fetchWaitingPatientsCount = async () => {
+      try {
+        const { data: userData, error: userError } = await supabase
+          .from('doctors')
+          .select('clinic_id')
+          .eq('email', user.email)
+          .single();
+
+        if (userError || !userData?.clinic_id) return;
+
         const today = new Date();
         const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
         const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-        
-        const { count, error } = await supabase
+
+        const { data, error } = await supabase
           .from('patients')
-          .select('*', { count: 'exact', head: true })
+          .select('clinic, status')
           .eq('clinic_id', userData.clinic_id)
           .neq('status', 'complete')
+          .neq('status', 'na')
           .is('archive_date', null)
           .gte('registered_at', startOfDay.toISOString())
           .lte('registered_at', endOfDay.toISOString());
 
-        if (!error && count !== waitingPatientsCount) {
-          setWaitingPatientsCount(count || 0);
+        if (!error) {
+          const count = data?.filter(p => p.clinic === 'Clinic' || !p.clinic).length || 0;
+          setWaitingPatientsCount(count);
         }
       } catch (error) {
         // Error handled silently
       }
     };
-    
-    // ✅ Fetch أولي فوراً عند mount
-    fetchWaitingPatientsCountPoll();
 
-    // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchWaitingPatientsCountPoll, 15000);
-
-    // ✅ Cleanup
-    return () => {
-      clearInterval(pollInterval);
-    };
-  }, [user, waitingPatientsCount]);
-  
-  // ✅ Polling: التحقق من عدد الطلبات المعلقة كل 5 ثواني
-  React.useEffect(() => {
-    if (!user) return;
-
-    const fetchPendingRequestsCountPoll = async () => {
+    const fetchPendingRequestsCount = async () => {
       try {
-        // ✅ حالياً: Pending Requests = 0 (يمكن تعديله لاحقاً إذا كان هناك جدول requests)
-        // const { count, error } = await supabase
-        //   .from('requests')
-        //   .select('*', { count: 'exact', head: true })
-        //   .eq('status', 'pending');
-        // 
-        // if (!error && count !== pendingRequestsCount) {
-        //   console.log('[DoctorProfile] ✅ Pending requests count changed:', pendingRequestsCount, '→', count);
-        //   setPendingRequestsCount(count || 0);
-        // }
-        
         // ✅ مؤقتاً: إبقاء 0
-        if (pendingRequestsCount !== 0) {
-          setPendingRequestsCount(0);
-        }
+        setPendingRequestsCount(0);
       } catch (error) {
         // Error handled silently
       }
     };
 
-    // ✅ التحقق كل 5 ثواني
-    const pollInterval = setInterval(fetchPendingRequestsCountPoll, 15000);
+    // Initial fetch
+    fetchDoctorsCountCallback();
+    fetchClinicsCountCallback();
+    fetchWaitingPatientsCount();
+    fetchPendingRequestsCount();
 
-    // ✅ Cleanup
+    // Cleanup previous subscriptions
+    if (doctorsChannelRef.current) {
+      supabase.removeChannel(doctorsChannelRef.current);
+      doctorsChannelRef.current = null;
+    }
+    if (clinicsChannelRef.current) {
+      supabase.removeChannel(clinicsChannelRef.current);
+      clinicsChannelRef.current = null;
+    }
+    if (patientsChannelRef.current) {
+      supabase.removeChannel(patientsChannelRef.current);
+      patientsChannelRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    // Setup Realtime for doctors table
+    const doctorsChannel = supabase
+      .channel(`doctor-profile-doctors-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctors'
+        },
+        () => {
+          fetchDoctorsCountCallback();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            fetchDoctorsCountCallback();
+          }, 3000);
+        }
+      });
+
+    doctorsChannelRef.current = doctorsChannel;
+
+    // Setup Realtime for clinics table
+    const clinicsChannel = supabase
+      .channel(`doctor-profile-clinics-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'clinics'
+        },
+        () => {
+          fetchClinicsCountCallback();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            fetchClinicsCountCallback();
+          }, 3000);
+        }
+      });
+
+    clinicsChannelRef.current = clinicsChannel;
+
+    // Setup Realtime for patients table
+    const patientsChannel = supabase
+      .channel(`doctor-profile-patients-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients'
+        },
+        () => {
+          fetchWaitingPatientsCount();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            fetchWaitingPatientsCount();
+          }, 3000);
+        }
+      });
+
+    patientsChannelRef.current = patientsChannel;
+
+    // Cleanup
     return () => {
-      clearInterval(pollInterval);
+      if (doctorsChannelRef.current) {
+        supabase.removeChannel(doctorsChannelRef.current);
+        doctorsChannelRef.current = null;
+      }
+      if (clinicsChannelRef.current) {
+        supabase.removeChannel(clinicsChannelRef.current);
+        clinicsChannelRef.current = null;
+      }
+      if (patientsChannelRef.current) {
+        supabase.removeChannel(patientsChannelRef.current);
+        patientsChannelRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
-  }, [user, pendingRequestsCount]);
+  }, [user, fetchDoctorsCountCallback, fetchClinicsCountCallback]);
   
   // Dragon Design: Animate blobs continuously
   React.useEffect(() => {
@@ -507,7 +546,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     }
   }, [currentScreen, viewingDoctorData]);
 
-  // ✅ حساب Total Treatments للطبيب المختار (اليوم فقط)
+  // ✅ Realtime: حساب Total Treatments للطبيب المختار (اليوم فقط)
   React.useEffect(() => {
     const fetchViewingDoctorTotalTreatments = async () => {
       if (!viewingDoctorData) {
@@ -544,12 +583,56 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       }
     };
 
+    if (!viewingDoctorData) {
+      // Cleanup if no doctor is being viewed
+      if (viewingDoctorChannelRef.current) {
+        supabase.removeChannel(viewingDoctorChannelRef.current);
+        viewingDoctorChannelRef.current = null;
+      }
+      setViewingDoctorTotalTreatments(0);
+      return;
+    }
+
+    // Initial fetch
     fetchViewingDoctorTotalTreatments();
 
-    // ✅ Polling: التحديث كل 5 ثواني
-    const pollInterval = setInterval(fetchViewingDoctorTotalTreatments, 15000);
+    // Cleanup previous subscription
+    if (viewingDoctorChannelRef.current) {
+      supabase.removeChannel(viewingDoctorChannelRef.current);
+      viewingDoctorChannelRef.current = null;
+    }
 
-    return () => clearInterval(pollInterval);
+    // Setup Realtime for viewing doctor's patients
+    const viewingDoctorChannel = supabase
+      .channel(`doctor-profile-viewing-${viewingDoctorData.id}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients',
+          filter: `doctor_id=eq.${viewingDoctorData.id}`
+        },
+        () => {
+          fetchViewingDoctorTotalTreatments();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          setTimeout(() => {
+            fetchViewingDoctorTotalTreatments();
+          }, 3000);
+        }
+      });
+
+    viewingDoctorChannelRef.current = viewingDoctorChannel;
+
+    return () => {
+      if (viewingDoctorChannelRef.current) {
+        supabase.removeChannel(viewingDoctorChannelRef.current);
+        viewingDoctorChannelRef.current = null;
+      }
+    };
   }, [viewingDoctorData]);
 
   const loadDoctorStatistics = async (fromDate: Date, toDate: Date) => {
@@ -633,10 +716,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // Dental Departments screen
   if (currentScreen === 'departments') {
     return (
-      <DentalDepartmentsScreen 
+      <DentalDepartmentsScreen
         onBack={() => {
           setSelectedClinicId(null);
           setCurrentScreen('profile');
+          // ✅ Re-fetch clinics count when returning from departments
+          fetchClinicsCountCallback();
         }}
         onOpenTimeline={(clinicId, clinicName) => {
           if (onOpenTimeline) {
@@ -650,10 +735,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // Doctors screen
   if (currentScreen === 'doctors') {
     return (
-      <DoctorsScreen 
+      <DoctorsScreen
         onBack={() => {
           setSelectedClinicId(null);
           setCurrentScreen(previousScreen);
+          // ✅ Re-fetch doctors count when returning
+          fetchDoctorsCountCallback();
         }}
         clinicId={selectedClinicId || undefined}
         onOpenDoctorProfile={(doctor) => {
@@ -1008,20 +1095,22 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                       {/* Background Circle */}
                                       <View style={[styles.statsCircularProgressBg, { borderColor: `${colors[0]}30` }]} />
                                       
-                                      {/* Progress Circle */}
-                                      <LinearGradient
-                                        colors={colors}
-                                        start={{ x: 0, y: 0 }}
-                                        end={{ x: 1, y: 1 }}
-                                        style={[
-                                          styles.statsCircularProgress,
-                                          {
-                                            transform: [
-                                              { rotate: `-${90 - (percentage * 3.6)}deg` }
-                                            ]
-                                          }
-                                        ]}
-                                      />
+                                      {/* Progress Circle - Removed on Android due to transform issues */}
+                                      {Platform.OS === 'ios' && (
+                                        <LinearGradient
+                                          colors={[colors[0], colors[1]]}
+                                          start={{ x: 0, y: 0 }}
+                                          end={{ x: 1, y: 1 }}
+                                          style={[
+                                            styles.statsCircularProgress,
+                                            {
+                                              transform: [
+                                                { rotate: (270 + (percentage * 3.6)).toFixed(0) + 'deg' }
+                                              ]
+                                            }
+                                          ]}
+                                        />
+                                      )}
                                       
                                       {/* Center Content */}
                                       <View style={styles.statsCircularCenter}>
@@ -1273,7 +1362,16 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               {/* Edit Button */}
               <TouchableOpacity
                 onPress={() => setShowEditModal(true)}
-                style={styles.glassHeaderEditButton}
+                style={[
+                  styles.glassHeaderEditButton,
+                  Platform.OS === 'android' && {
+                    shadowColor: 'transparent',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0,
+                    shadowRadius: 0,
+                    elevation: 0,
+                  }
+                ]}
               >
                 <Ionicons name="create-outline" size={22} color="#FFFFFF" />
               </TouchableOpacity>
@@ -1299,8 +1397,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim1, transform: [{ translateX: slideAnim1 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 0 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       if (onOpenTimeline && user?.clinicId) {
@@ -1344,8 +1453,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim2, transform: [{ translateX: slideAnim2 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardLeft,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       setPreviousScreen('profile');
@@ -1388,8 +1508,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim3, transform: [{ translateX: slideAnim3 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       if (onOpenMyStatistics) {
@@ -1433,8 +1564,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim4, transform: [{ translateX: slideAnim4 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardLeft,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('schedule')}
                   >
@@ -1474,8 +1616,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim5, transform: [{ translateX: slideAnim5 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('requests')}
                   >
@@ -1520,8 +1673,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim1, transform: [{ translateX: slideAnim1 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 0 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       setPreviousScreen('profile');
@@ -1534,7 +1698,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1564,8 +1727,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim2, transform: [{ translateX: slideAnim2 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardLeft,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       if (onOpenMyStatistics) {
@@ -1609,8 +1783,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim3, transform: [{ translateX: slideAnim3 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('departments')}
                   >
@@ -1650,8 +1835,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim4, transform: [{ translateX: slideAnim4 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardLeft,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('schedule')}
                   >
@@ -1691,8 +1887,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim5, transform: [{ translateX: slideAnim5 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('requests')}
                   >
@@ -1737,8 +1944,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim1, transform: [{ translateX: slideAnim1 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 0 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       if (onOpenTimeline && user?.clinicId) {
@@ -1782,8 +2000,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     { opacity: fadeAnim2, transform: [{ translateX: slideAnim2 }] }
                   ]}
                 >
-                  <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                  <TouchableOpacity
+                    style={[
+                      styles.floatingCard,
+                      styles.cardLeft,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       setPreviousScreen('profile');
@@ -1827,7 +2056,18 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   ]}
                 >
                   <TouchableOpacity
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => {
                       if (onOpenMyStatistics) {
@@ -1872,7 +2112,18 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   ]}
                 >
                   <TouchableOpacity
-                    style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                    style={[
+                      styles.floatingCard,
+                      styles.cardLeft,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('schedule')}
                   >
@@ -1913,7 +2164,18 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   ]}
                 >
                   <TouchableOpacity
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                    style={[
+                      styles.floatingCard,
+                      styles.cardRight,
+                      { marginTop: 20 },
+                      Platform.OS === 'android' && {
+                        shadowColor: 'transparent',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0,
+                        shadowRadius: 0,
+                        elevation: 0,
+                      }
+                    ]}
                     activeOpacity={0.85}
                     onPress={() => setCurrentScreen('requests')}
                   >
@@ -2285,6 +2547,15 @@ const styles = StyleSheet.create({
     height: 300,
     borderRadius: 150,
   },
+  blurView: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
   viewDoctorBackButton: {
     width: 44,
     height: 44,
@@ -2332,8 +2603,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingTop: Platform.OS === 'android' ? 0 : 12,
+    paddingBottom: Platform.OS === 'android' ? 0 : 10,
     position: 'relative',
   },
   backButton: {
@@ -2419,9 +2690,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   // Curved Header Styles
   curvedHeader: {
@@ -2443,11 +2716,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(74, 85, 104, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   avatarContainer: {
     marginBottom: 16,
@@ -2566,9 +2839,10 @@ const styles = StyleSheet.create({
   actionButton: {
     width: 110,
     height: 110,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -2620,11 +2894,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   modalOverlay: {
     flex: 1,
@@ -2731,10 +3005,10 @@ const styles = StyleSheet.create({
   logoutButton: {
     width: '100%',
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.3)',
-    borderWidth: 1.5,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     marginTop: 12,
   },
@@ -2754,16 +3028,16 @@ const styles = StyleSheet.create({
   bottomButton: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2,
   },
   saveButton: {
-    backgroundColor: 'rgba(16, 185, 129, 0.35)',
-    borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cancelButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cancelButtonText: {
@@ -3102,11 +3376,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   statsCircularProgressContainer: {
     width: 100,
@@ -3181,11 +3455,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 12,
+    elevation: Platform.OS === 'android' ? 0 : 5,
   },
   statsTotalLabel: {
     fontSize: 16,

@@ -14,6 +14,7 @@ import {
   Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
 import RegisterScreen from './RegisterScreen';
@@ -193,259 +194,276 @@ export default function LoginScreen() {
         barStyle="light-content"
       />
       
-      {/* Purple Gradient Background */}
+      {/* Background - Pastel Gradient */}
       <LinearGradient
         colors={['#F5E6F8', '#F0E6F8', '#E8D4F3']}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFillObject}
       />
 
-      {/* Animated Blobs - Purple, Blue, Green */}
-      <Animated.View
-        style={[
-          styles.blob,
-          {
-            top: '5%',
-            left: '5%',
-            width: 200,
-            height: 200,
-            backgroundColor: 'rgba(168, 85, 247, 0.35)', // Purple
-            transform: [
+      {/* Animated Blobs - Beautiful Floating Circles */}
+      {(Platform.OS === 'ios' || Platform.OS === 'android') && (
+        <>
+          <Animated.View
+            style={[
+              styles.blob,
               {
-                translateX: blob1Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 30],
-                }),
+                top: '5%',
+                left: '5%',
+                width: 200,
+                height: 200,
+                backgroundColor: 'rgba(168, 85, 247, 0.35)',
+                transform: [
+                  {
+                    translateX: blob1Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 30],
+                    }),
+                  },
+                  {
+                    translateY: blob1Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -40],
+                    }),
+                  },
+                ],
               },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.blob,
               {
-                translateY: blob1Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -40],
-                }),
+                top: '70%',
+                right: '5%',
+                width: 230,
+                height: 230,
+                backgroundColor: 'rgba(91, 159, 237, 0.35)',
+                transform: [
+                  {
+                    translateX: blob2Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -25],
+                    }),
+                  },
+                  {
+                    translateY: blob2Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 35],
+                    }),
+                  },
+                ],
               },
-            ],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.blob,
-          {
-            top: '70%',
-            right: '5%',
-            width: 230,
-            height: 230,
-            backgroundColor: 'rgba(91, 159, 237, 0.35)', // Blue
-            transform: [
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.blob,
               {
-                translateX: blob2Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -25],
-                }),
+                bottom: '10%',
+                left: '50%',
+                marginLeft: -110,
+                width: 210,
+                height: 210,
+                backgroundColor: 'rgba(125, 211, 192, 0.35)',
+                transform: [
+                  {
+                    translateX: blob3Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 20],
+                    }),
+                  },
+                  {
+                    translateY: blob3Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -30],
+                    }),
+                  },
+                ],
               },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.blob,
               {
-                translateY: blob2Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 35],
-                }),
+                top: '15%',
+                right: '20%',
+                width: 180,
+                height: 180,
+                backgroundColor: 'rgba(91, 159, 237, 0.30)',
+                transform: [
+                  {
+                    translateX: blob4Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 28],
+                    }),
+                  },
+                  {
+                    translateY: blob4Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -32],
+                    }),
+                  },
+                ],
               },
-            ],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.blob,
-          {
-            bottom: '10%',
-            left: '50%',
-            marginLeft: -110,
-            width: 210,
-            height: 210,
-            backgroundColor: 'rgba(125, 211, 192, 0.35)', // Green
-            transform: [
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.blob,
               {
-                translateX: blob3Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 20],
-                }),
+                top: '40%',
+                left: '10%',
+                width: 170,
+                height: 170,
+                backgroundColor: 'rgba(168, 85, 247, 0.30)',
+                transform: [
+                  {
+                    translateX: blob5Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -20],
+                    }),
+                  },
+                  {
+                    translateY: blob5Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 25],
+                    }),
+                  },
+                ],
               },
-              {
-                translateY: blob3Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -30],
-                }),
-              },
-            ],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.blob,
-          {
-            top: '15%',
-            right: '20%',
-            width: 180,
-            height: 180,
-            backgroundColor: 'rgba(91, 159, 237, 0.30)', // Blue
-            transform: [
-              {
-                translateX: blob4Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 28],
-                }),
-              },
-              {
-                translateY: blob4Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -32],
-                }),
-              },
-            ],
-          },
-        ]}
-      />
-      <Animated.View
-        style={[
-          styles.blob,
-          {
-            top: '40%',
-            left: '10%',
-            width: 170,
-            height: 170,
-            backgroundColor: 'rgba(168, 85, 247, 0.30)', // Purple
-            transform: [
-              {
-                translateX: blob5Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, -20],
-                }),
-              },
-              {
-                translateY: blob5Anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 25],
-                }),
-              },
-            ],
-          },
-        ]}
-      />
+            ]}
+          />
+        </>
+      )}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
         <View style={styles.content}>
-          {/* Glass Container with White Border and Color Tint */}
+          {/* Glass Morphism Design */}
           <View style={styles.glassContainer}>
-            {/* Color Tint Layer - Purple, Blue, Green */}
-            <LinearGradient
-              colors={[
-                'rgba(168, 85, 247, 0.10)',  // Purple
-                'rgba(91, 159, 237, 0.10)',   // Blue
-                'rgba(125, 211, 192, 0.10)',  // Green
-              ]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.colorTint}
-            />
+            {/* Android: BlurView only | iOS: Two layers (whiteBackground + colorTint) */}
+            {Platform.OS === 'android' ? (
+              <BlurView
+                intensity={50}
+                tint="light"
+                style={styles.blurView}
+              />
+            ) : (
+              <>
+                {/* White Background Layer */}
+                <View style={styles.whiteBackground} />
+                {/* Color Tint Layer - Purple, Blue, Green */}
+                <LinearGradient
+                  colors={[
+                    'rgba(168, 85, 247, 0.10)',  // Purple
+                    'rgba(91, 159, 237, 0.10)',   // Blue
+                    'rgba(125, 211, 192, 0.10)',  // Green
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.colorTint}
+                />
+              </>
+            )}
             {/* Content */}
             <View style={styles.glassContent}>
               {/* Title */}
               <View style={styles.header}>
-              <Text style={styles.title}>Dental Clinic</Text>
-              <Text style={styles.subtitle}>Management System</Text>
-              <Text style={styles.welcome}>مرحباً بك</Text>
-            </View>
-
-            {/* Login Form */}
-            <View style={styles.form}>
-              {/* Email Field */}
-              <View style={styles.inputWrapper}>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="mail-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="البريد الإلكتروني"
-                    placeholderTextColor="#94A3B8"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
+                <Text style={styles.title}>Dental Clinic</Text>
+                <Text style={styles.subtitle}>Management System</Text>
+                <Text style={styles.welcome}>مرحباً بك</Text>
               </View>
 
-              {/* Password Field */}
-              <View style={styles.inputWrapper}>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="كلمة المرور"
-                    placeholderTextColor="#94A3B8"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPassword(!showPassword)}
-                    style={styles.eyeIcon}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                      size={22}
-                      color="#94A3B8"
+              {/* Login Form */}
+              <View style={styles.form}>
+                {/* Email Field */}
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="mail-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="البريد الإلكتروني"
+                      placeholderTextColor="#94A3B8"
+                      value={email}
+                      onChangeText={setEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
                     />
-                  </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
 
-              {/* Forget Password Link */}
-              <TouchableOpacity 
-                style={styles.forgetPasswordContainer}
-                onPress={() => setShowForgotPassword(true)}
-              >
-                <Text style={styles.forgetPasswordText}>نسيت كلمة المرور؟</Text>
-              </TouchableOpacity>
+                {/* Password Field */}
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="lock-closed-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="كلمة المرور"
+                      placeholderTextColor="#94A3B8"
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(!showPassword)}
+                      style={styles.eyeIcon}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                        size={22}
+                        color="#94A3B8"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
-              {/* Login Button */}
-              <TouchableOpacity
-                style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-                onPress={handleLogin}
-                disabled={isLoading}
-              >
-                <LinearGradient
-                  colors={['#C48EF5', '#E88EF5']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.loginGradient}
+                {/* Forget Password Link */}
+                <TouchableOpacity
+                  style={styles.forgetPasswordContainer}
+                  onPress={() => setShowForgotPassword(true)}
                 >
-                  {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={styles.loginButtonText}>تسجيل الدخول</Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                  <Text style={styles.forgetPasswordText}>نسيت كلمة المرور؟</Text>
+                </TouchableOpacity>
 
-              {/* Divider */}
-              <View style={styles.dividerContainer}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>أو</Text>
-                <View style={styles.dividerLine} />
+                {/* Login Button */}
+                <TouchableOpacity
+                  style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                >
+                  <LinearGradient
+                    colors={['#C48EF5', '#E88EF5']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.loginGradient}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.loginButtonText}>تسجيل الدخول</Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                {/* Divider */}
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>أو</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* Register Button */}
+                <TouchableOpacity
+                  style={styles.registerButton}
+                  onPress={() => setShowRegister(true)}
+                >
+                  <Text style={styles.registerButtonText}>إنشاء حساب جديد</Text>
+                </TouchableOpacity>
               </View>
-
-              {/* Register Button */}
-              <TouchableOpacity
-                style={styles.registerButton}
-                onPress={() => setShowRegister(true)}
-              >
-                <Text style={styles.registerButtonText}>إنشاء حساب جديد</Text>
-              </TouchableOpacity>
-            </View>
             </View>
           </View>
         </View>
@@ -471,7 +489,7 @@ export default function LoginScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.modalColorTint}
             />
-            
+
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>إعادة تعيين كلمة المرور</Text>
               <Text style={styles.modalSubtitle}>
@@ -548,20 +566,31 @@ const styles = StyleSheet.create({
   glassContainer: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'transparent',
     borderRadius: 32,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.3,
-    shadowRadius: 40,
-    elevation: 10,
-    backdropFilter: 'blur(20px)',
     overflow: 'hidden',
     position: 'relative',
   },
+  whiteBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 32,
+  },
   colorTint: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 32,
+  },
+  blurView: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -607,7 +636,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.3)',
@@ -655,7 +684,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   forgetPasswordText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -667,10 +696,10 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
   dividerText: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 14,
     marginHorizontal: 16,
     fontWeight: '500',
@@ -679,7 +708,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',

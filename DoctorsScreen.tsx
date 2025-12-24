@@ -355,7 +355,11 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         />
         
         <View style={styles.contentContainer}>
-          <StatusBar barStyle="dark-content" />
+          <StatusBar
+            barStyle="dark-content"
+            backgroundColor="transparent"
+            translucent={true}
+          />
           <SafeAreaView style={styles.safeArea} edges={['top']}>
             {/* Header */}
             <View style={styles.header}>
@@ -1505,11 +1509,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 4,
+    elevation: Platform.OS === 'android' ? 0 : 3,
   },
   rightContent: {
     flex: 1,
@@ -1586,11 +1590,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.5)',
     paddingHorizontal: 18,
     paddingVertical: 14,
-    shadowColor: '#A78BFA',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#A78BFA',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.15,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
   },
   dropdownButtonText: {
     fontSize: 16,
@@ -1604,11 +1608,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-    shadowColor: '#A78BFA',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#A78BFA',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 8 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.25,
+    shadowRadius: Platform.OS === 'android' ? 0 : 16,
+    elevation: Platform.OS === 'android' ? 0 : 8,
     overflow: 'hidden',
   },
   dropdownItem: {

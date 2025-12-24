@@ -2,7 +2,7 @@
   "expo": {
     "name": "D.C.M",
     "slug": "dental-clinic-mobile",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yahyasadeq.dentalclinic",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture profile photos and patient documents",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select and upload images",
@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "versionCode": 1,
+      "versionCode": 2,
       "package": "com.yahyasadeq.dcm",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
