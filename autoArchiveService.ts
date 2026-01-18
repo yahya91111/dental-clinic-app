@@ -7,7 +7,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabaseClient';
 
-// ✅ نظام بسيط لإبلاغ Timeline بالأرشفة
+//  نظام بسيط لإبلاغ Timeline بالأرشفة
 type ArchiveListener = (date: string) => void;
 let archiveListeners: ArchiveListener[] = [];
 
@@ -46,7 +46,7 @@ async function archiveAllPatients(): Promise<boolean> {
       .from('patients')
       .update({
         archive_date: today
-        // ✅ لا نغير status - نحافظ على الحالة الأصلية
+        //  لا نغير status - نحافظ على الحالة الأصلية
       })
       .is('archive_date', null) // Only unarchived patients
       .select('id'); // Get IDs of archived patients
@@ -70,7 +70,7 @@ async function archiveAllPatients(): Promise<boolean> {
     // Step 3: Save last archive date
     await AsyncStorage.setItem(LAST_ARCHIVE_DATE_KEY, today);
 
-    // ✅ إبلاغ Timeline بالأرشفة
+    //  إبلاغ Timeline بالأرشفة
     archiveEventEmitter.emit('archive-completed', today);
 
     return true;

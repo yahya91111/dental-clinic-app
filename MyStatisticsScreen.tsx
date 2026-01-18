@@ -124,7 +124,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
 
       filteredPatients.forEach((patient: any) => {
         const treatment = patient.treatment || 'Unknown';
-        // ✅ استثناء كلمة "Treatment" من الإحصائيات
+        //  استثناء كلمة "Treatment" من الإحصائيات
         if (treatment !== 'Treatment') {
           treatments[treatment] = (treatments[treatment] || 0) + 1;
           total++;

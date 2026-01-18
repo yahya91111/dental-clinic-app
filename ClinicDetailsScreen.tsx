@@ -33,12 +33,12 @@ export default function ClinicDetailsScreen({
 }: ClinicDetailsScreenProps) {
   const { user } = useAuth();
   
-  // ✅ State للـ Badges - استخدام props كـ initial value
+  //  State للـ Badges - استخدام props كـ initial value
   const [waitingPatientsCount, setWaitingPatientsCount] = useState(currentWaitingCount || 0);
   const [doctorsCount, setDoctorsCount] = useState(currentDoctorsCount || 0);
   const [totalTreatmentsCount, setTotalTreatmentsCount] = useState(currentTotalTreatments || 0);
 
-  // ✅ حفظ آخر clinicId صالح لمنع reset الأرقام
+  //  حفظ آخر clinicId صالح لمنع reset الأرقام
   const lastValidClinicIdRef = useRef<string | null>(null);
 
   // Realtime subscriptions
@@ -47,12 +47,12 @@ export default function ClinicDetailsScreen({
   const reconnectTimeoutRef = useRef<any>(null);
 
 
-  // ✅ تحديث lastValidClinicId عندما يكون clinicId موجود
+  //  تحديث lastValidClinicId عندما يكون clinicId موجود
   useEffect(() => {
     if (clinicId) {
       lastValidClinicIdRef.current = clinicId;
 
-      // ✅ Fetch فوري عند تغيير clinicId
+      //  Fetch فوري عند تغيير clinicId
       const fetchInitialData = async () => {
         if (!user || !clinicId) return;
 
@@ -211,7 +211,7 @@ export default function ClinicDetailsScreen({
     ]).start();
   }, []);
 
-  // ✅ استخدام القيم الممررة من props إذا كانت موجودة
+  //  استخدام القيم الممررة من props إذا كانت موجودة
   React.useEffect(() => {
     if (currentWaitingCount !== undefined) {
       setWaitingPatientsCount(currentWaitingCount);
@@ -224,14 +224,14 @@ export default function ClinicDetailsScreen({
     }
   }, [currentWaitingCount, currentDoctorsCount, currentTotalTreatments]);
   
-  // ✅ إبلاغ الصفحة الأم عندما تتغير الأرقام
+  //  إبلاغ الصفحة الأم عندما تتغير الأرقام
   React.useEffect(() => {
     if (onBadgesUpdate) {
       onBadgesUpdate(waitingPatientsCount, doctorsCount, totalTreatmentsCount);
     }
   }, [waitingPatientsCount, doctorsCount, totalTreatmentsCount]);
 
-  // ✅ Realtime: تحديث فوري للبيانات
+  //  Realtime: تحديث فوري للبيانات
   React.useEffect(() => {
     const effectiveClinicId = clinicId || lastValidClinicIdRef.current;
 
@@ -524,7 +524,7 @@ export default function ClinicDetailsScreen({
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ قسم منفصل بنصف قوس */}
+                    {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -565,7 +565,7 @@ export default function ClinicDetailsScreen({
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ قسم منفصل بنصف قوس */}
+                    {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -608,7 +608,7 @@ export default function ClinicDetailsScreen({
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ قسم منفصل بنصف قوس */}
+                    {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -722,10 +722,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   cardRight: {
-    marginHorizontal: -20,  // ✅ الكرت يخرج خارج الشاشة 20 بكسل
+    marginHorizontal: -20,  //  الكرت يخرج خارج الشاشة 20 بكسل
   },
   cardLeft: {
-    marginHorizontal: -20,  // ✅ الكرت يخرج خارج الشاشة 20 بكسل
+    marginHorizontal: -20,  //  الكرت يخرج خارج الشاشة 20 بكسل
   },
   cardGradient: {
     flex: 1,
@@ -765,7 +765,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  // ✅ Animated Badge Styles (نفس DoctorProfileScreen)
+  //  Animated Badge Styles (نفس DoctorProfileScreen)
   badgeContainer: {
     position: 'absolute',
     right: 20,
@@ -815,7 +815,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
     letterSpacing: 1,
   },
-  // ✅ Ticket Stub - قسم منفصل بنصف قوس
+  //  Ticket Stub - قسم منفصل بنصف قوس
   ticketStub: {
     position: 'absolute',
     right: 0,
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: 'rgba(255, 255, 255, 0.3)',
     borderStyle: 'dashed',
-    // ✅ نصف قوس على اليسار
+    //  نصف قوس على اليسار
     borderTopLeftRadius: 100,
     borderBottomLeftRadius: 100,
   },

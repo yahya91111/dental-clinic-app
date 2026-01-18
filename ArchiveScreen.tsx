@@ -187,12 +187,12 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
     try {
       setLoading(true);
       const dateStr = date.toISOString().split('T')[0];
-      // ✅ استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
+      //  استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
       const clinicId = selectedClinicId || userClinicId;
 
       let query = supabase
         .from('patients')
-        .select('*') // ✅ جلب جميع الأعمدة من patients (بما فيها registered_at, clinic_entry_at, completed_at)
+        .select('*') //  جلب جميع الأعمدة من patients (بما فيها registered_at, clinic_entry_at, completed_at)
         .eq('archive_date', dateStr)
         .order('queue_number', { ascending: true });
 
@@ -219,7 +219,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
           is_elderly: p.is_elderly || false,
           doctor_name: p.doctor_name,
           assigned_by_doctor_name: p.assigned_by_doctor_name,
-          // ✅ بناء Timeline من أعمدة patients
+          //  بناء Timeline من أعمدة patients
           timeline: [
             p.registered_at && {
               type: 'registered',
@@ -239,7 +239,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
               details: 'Treatment completed',
               doctor_name: p.doctor_name
             }
-          ].filter(Boolean) as TimelineEvent[] // ✅ إزالة null/undefined
+          ].filter(Boolean) as TimelineEvent[] //  إزالة null/undefined
         }));
         setArchivedPatients(formattedPatients);
       } else {
@@ -257,7 +257,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
       setLoading(true);
       const fromStr = from.toISOString().split('T')[0];
       const toStr = to.toISOString().split('T')[0];
-      // ✅ استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
+      //  استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
       const clinicId = selectedClinicId || userClinicId;
 
       let query = supabase
@@ -310,7 +310,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
           treatments,
           conditions,
           clinicPerformance,
-          total: validPatients.length // ✅ عدد المرضى الصحيحين فقط
+          total: validPatients.length //  عدد المرضى الصحيحين فقط
         });
       }
     } catch (error) {
@@ -519,7 +519,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
         {/* Header with Tabs */}
         <View style={styles.headerContainer}>
           <View style={styles.headerTitleRow}>
-            {/* ✅ زر Profile مُزال - يجب العودة للصفحة الرئيسية لفتح Profile */}
+            {/*  زر Profile مُزال - يجب العودة للصفحة الرئيسية لفتح Profile */}
             <Text style={styles.headerTitle}>Archive & Statistics</Text>
           </View>
           
@@ -631,7 +631,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                   
                   let eventText = (event: any) => {
                     if (event.type === 'registered') return 'Patient registered';
-                    if (event.type === 'clinic_entry') return 'Entered clinic'; // ✅ إضافة clinic_entry
+                    if (event.type === 'clinic_entry') return 'Entered clinic'; //  إضافة clinic_entry
                     if (event.type === 'clinic_assigned') return `Assigned to ${event.details}`;
                     if (event.type === 'not_available') return 'Patient not available';
                     if (event.type === 'completed') return 'Treatment completed';
@@ -1282,7 +1282,7 @@ const styles = StyleSheet.create({
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',  // ✅ توسيط العنوان
+    justifyContent: 'center',  //  توسيط العنوان
     marginBottom: 20,
   },
   doctorProfileButton: {

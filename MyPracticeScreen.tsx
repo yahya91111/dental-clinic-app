@@ -337,7 +337,7 @@ export default function MyPracticeScreen({
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس على اليسار */}
+                      {/*  قسم منفصل بنصف قوس على اليسار */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -863,7 +863,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  // ✅ Ticket Stub - على اليمين
+  //  Ticket Stub - على اليمين
   ticketStub: {
     position: 'absolute',
     right: 0,
@@ -879,7 +879,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: 'rgba(255, 255, 255, 0.3)',
     borderStyle: 'dashed',
-    // ✅ نصف قوس على اليسار
+    //  نصف قوس على اليسار
     borderTopLeftRadius: 100,
     borderBottomLeftRadius: 100,
   },

@@ -804,7 +804,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       // Get clinic name
                       const clinic = clinics.find(c => c.id === finalClinicId);
                       
-                      // ✅ Step 1: Create user in Authentication
+                      //  Step 1: Create user in Authentication
                       const { data: authData, error: authError } = await supabase.auth.signUp({
                         email: newDoctorEmail.trim(),
                         password: newDoctorPassword || '0000',
@@ -823,14 +823,14 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                         throw new Error('Failed to create user in Authentication');
                       }
                       
-                      // ✅ Step 2: Insert doctor into doctors table with the same UUID
+                      //  Step 2: Insert doctor into doctors table with the same UUID
                       const { error: doctorError } = await supabase
                         .from('doctors')
                         .insert([{
-                          id: authData.user.id, // ✅ Use same UUID from auth.users
+                          id: authData.user.id, //  Use same UUID from auth.users
                           name: 'د. ' + newDoctorName.trim(),
                           email: newDoctorEmail.trim(),
-                          password: newDoctorPassword || '0000', // ✅ Store password (required by table schema)
+                          password: newDoctorPassword || '0000', //  Store password (required by table schema)
                           role: finalRole,
                           clinic_id: finalClinicId
                         }]);
@@ -1001,7 +1001,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                           if (!selectedDoctorId) return;
 
                           try {
-                            // ✅ Step 1: Check if doctor is in pending_doctors
+                            //  Step 1: Check if doctor is in pending_doctors
                             const { data: pendingDoctor } = await supabase
                               .from('pending_doctors')
                               .select('id')
@@ -1009,7 +1009,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                               .single();
 
                             if (pendingDoctor) {
-                              // ✅ Delete from pending_doctors (CASCADE will delete pending_patients)
+                              //  Delete from pending_doctors (CASCADE will delete pending_patients)
                               const { error: deletePendingError } = await supabase
                                 .from('pending_doctors')
                                 .delete()
@@ -1017,7 +1017,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
 
                               if (deletePendingError) throw deletePendingError;
                             } else {
-                              // ✅ CASCADE DELETE - Delete all related data
+                              //  CASCADE DELETE - Delete all related data
 
                               // 1. Delete all timeline events for this doctor
                               await supabase
@@ -1054,7 +1054,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                               if (deleteDoctorError) throw deleteDoctorError;
                             }
 
-                            // ✅ Step 2: Delete from Authentication (auth.users) using RPC
+                            //  Step 2: Delete from Authentication (auth.users) using RPC
                             try {
                               await supabase.rpc('delete_user_completely', {
                                 user_id: selectedDoctorId
@@ -1170,15 +1170,15 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     
                     if (pendingDoctor) {
                       // Doctor is in pending_doctors - move to doctors table
-                      // ✅ Note: Authentication account already exists (created during registration)
+                      //  Note: Authentication account already exists (created during registration)
                       // We just need to move data from pending_doctors to doctors
                       const { error: insertError } = await supabase
                         .from('doctors')
                         .insert([{
-                          id: pendingDoctor.id, // ✅ Keep same UUID (already in auth.users)
+                          id: pendingDoctor.id, //  Keep same UUID (already in auth.users)
                           name: pendingDoctor.name,
                           email: pendingDoctor.email,
-                          password: pendingDoctor.password, // ✅ Keep password (required by table schema)
+                          password: pendingDoctor.password, //  Keep password (required by table schema)
                           role: pendingDoctor.role,
                           clinic_id: selectedTransferClinic, // Assign to real clinic (UUID)
                           is_approved: true, // Now approved

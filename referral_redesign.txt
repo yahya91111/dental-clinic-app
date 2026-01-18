@@ -1,0 +1,126 @@
+                  {activeDentalTab === 'referrals' && (
+                    <>
+                      {patientReferrals && patientReferrals.length > 0 ? (
+                        <ScrollView
+                          showsVerticalScrollIndicator={true}
+                          contentContainerStyle={{ paddingBottom: 80 }}
+                        >
+                          <View style={{ gap: 12 }}>
+                            {/* Need Referral Card - Orange */}
+                            {(() => {
+                              const notGivenReferrals = patientReferrals.filter(r => r.status === 'not_given');
+                              if (notGivenReferrals.length === 0) return null;
+
+                              // Group by referral_type
+                              const grouped = notGivenReferrals.reduce((acc, ref) => {
+                                if (!acc[ref.referral_type]) acc[ref.referral_type] = [];
+                                acc[ref.referral_type].push(ref.tooth_number);
+                                return acc;
+                              }, {});
+
+                              return (
+                                <View style={{
+                                  backgroundColor: 'rgba(254, 215, 170, 0.4)',  // Light orange
+                                  borderRadius: 10,
+                                  padding: 14,
+                                  marginBottom: 10,
+                                  borderWidth: 2,
+                                  borderColor: '#FFFFFF',
+                                }}>
+                                  {/* Header */}
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#1E3A8A' }}>Need Referral</Text>
+                                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>{notGivenReferrals.length}</Text>
+                                    </View>
+                                  </View>
+                                  {/* Divider */}
+                                  <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                                  {/* Referral Types and Teeth */}
+                                  {Object.entries(grouped).map(([type, teeth], index) => (
+                                    <View key={index} style={{ marginBottom: index < Object.keys(grouped).length - 1 ? 12 : 0 }}>
+                                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E3A8A', marginBottom: 6 }}>{type}</Text>
+                                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                                        {teeth.map((tooth, idx) => (
+                                          <View key={idx} style={{
+                                            backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 5,
+                                            borderRadius: 6,
+                                            margin: 2,
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(147, 197, 253, 0.6)',
+                                          }}>
+                                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' }}>{tooth}</Text>
+                                          </View>
+                                        ))}
+                                      </View>
+                                    </View>
+                                  ))}
+                                </View>
+                              );
+                            })()}
+
+                            {/* Referrals Records Card - Green */}
+                            {(() => {
+                              const givenReferrals = patientReferrals.filter(r => r.status === 'given');
+                              if (givenReferrals.length === 0) return null;
+
+                              // Group by referral_type
+                              const grouped = givenReferrals.reduce((acc, ref) => {
+                                if (!acc[ref.referral_type]) acc[ref.referral_type] = [];
+                                acc[ref.referral_type].push(ref.tooth_number);
+                                return acc;
+                              }, {});
+
+                              return (
+                                <View style={{
+                                  backgroundColor: 'rgba(167, 243, 208, 0.4)',  // Light green
+                                  borderRadius: 10,
+                                  padding: 14,
+                                  marginBottom: 10,
+                                  borderWidth: 2,
+                                  borderColor: '#FFFFFF',
+                                }}>
+                                  {/* Header */}
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#1E3A8A' }}>Referrals Records</Text>
+                                    <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.25)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>{givenReferrals.length}</Text>
+                                    </View>
+                                  </View>
+                                  {/* Divider */}
+                                  <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                                  {/* Referral Types and Teeth */}
+                                  {Object.entries(grouped).map(([type, teeth], index) => (
+                                    <View key={index} style={{ marginBottom: index < Object.keys(grouped).length - 1 ? 12 : 0 }}>
+                                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E3A8A', marginBottom: 6 }}>{type}</Text>
+                                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                                        {teeth.map((tooth, idx) => (
+                                          <View key={idx} style={{
+                                            backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 5,
+                                            borderRadius: 6,
+                                            margin: 2,
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(147, 197, 253, 0.6)',
+                                          }}>
+                                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' }}>{tooth}</Text>
+                                          </View>
+                                        ))}
+                                      </View>
+                                    </View>
+                                  ))}
+                                </View>
+                              );
+                            })()}
+                          </View>
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>No referrals found.</Text>
+                      )}
+                    </>
+                  )}

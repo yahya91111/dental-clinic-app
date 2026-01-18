@@ -12,7 +12,7 @@ import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
 
-// ✅ Simple Badge Component - Text Only (No Background)
+//  Simple Badge Component - Text Only (No Background)
 const SimpleBadge: React.FC<{ number: number | string; label: string }> = ({ number, label }) => {
   return (
     <View style={styles.simpleBadge}>
@@ -24,7 +24,7 @@ const SimpleBadge: React.FC<{ number: number | string; label: string }> = ({ num
 
 type DoctorProfileScreenProps = {
   onBack: () => void;
-  doctorData?: {id: string, name: string, clinic_id: string | null, role: string};  // ✅ بيانات الطبيب المختار (إذا كان يعرض طبيباً آخر)
+  doctorData?: {id: string, name: string, clinic_id: string | null, role: string};  //  بيانات الطبيب المختار (إذا كان يعرض طبيباً آخر)
   onOpenTimeline?: (clinicId: string, clinicName: string) => void;
   onOpenMyStatistics?: () => void;
   onOpenClinicSelection?: () => void;
@@ -71,10 +71,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const [doctorsCount, setDoctorsCount] = useState(0);
   const [totalTreatments, setTotalTreatments] = useState(0);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
-  const [clinicsCount, setClinicsCount] = useState(0);  // ✅ عدد المراكز
-  const [isDoctorsCountLoading, setIsDoctorsCountLoading] = useState(true);  // ✅ منع race condition
+  const [clinicsCount, setClinicsCount] = useState(0);  //  عدد المراكز
+  const [isDoctorsCountLoading, setIsDoctorsCountLoading] = useState(true);  //  منع race condition
 
-  // ✅ Realtime subscriptions refs
+  //  Realtime subscriptions refs
   const doctorsChannelRef = React.useRef<any>(null);
   const clinicsChannelRef = React.useRef<any>(null);
   const patientsChannelRef = React.useRef<any>(null);
@@ -108,21 +108,21 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
   // Use values from Timeline (mirror Timeline data)
   React.useEffect(() => {
-    // ✅ استخدام القيم الممررة من Timeline دائماً
+    //  استخدام القيم الممررة من Timeline دائماً
     setWaitingPatientsCount(currentWaitingCount ?? 0);
     setTotalTreatments(currentTotalTreatments ?? 0);
     
-    // ✅ Doctors Count: اجلب من قاعدة البيانات إذا لم يتم تمريره
+    //  Doctors Count: اجلب من قاعدة البيانات إذا لم يتم تمريره
     if (currentDoctorsCount !== undefined) {
       setDoctorsCount(currentDoctorsCount);
-      setIsDoctorsCountLoading(false);  // ✅ تم التحميل
+      setIsDoctorsCountLoading(false);  //  تم التحميل
     } else {
-      setIsDoctorsCountLoading(true);  // ✅ بدء التحميل
+      setIsDoctorsCountLoading(true);  //  بدء التحميل
       const fetchDoctorsCount = async () => {
         if (!user) return;
         
         try {
-          // ✅ للتيم ليدر والطبيب: جلب clinic_id أولاً
+          //  للتيم ليدر والطبيب: جلب clinic_id أولاً
           if (user.role === 'team_leader' || user.role === 'doctor') {
             const { data: userData, error: userError } = await supabase
               .from('doctors')
@@ -130,13 +130,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               .eq('email', user.email)
               .single();
             
-            // ✅ إذا لم يتم العثور على clinic_id، لا تحديث العدد
+            //  إذا لم يتم العثور على clinic_id، لا تحديث العدد
             if (userError || !userData?.clinic_id) {
               setDoctorsCount(0);
               return;
             }
             
-            // ✅ جلب عدد الأطباء في المركز فقط
+            //  جلب عدد الأطباء في المركز فقط
             const { count: doctorsCountResult, error: doctorsError } = await supabase
               .from('doctors')
               .select('*', { count: 'exact', head: true })
@@ -146,7 +146,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               setDoctorsCount(doctorsCountResult || 0);
             }
           } else {
-            // ✅ للمدير والمنسق: جلب جميع الأطباء
+            //  للمدير والمنسق: جلب جميع الأطباء
             const { count: doctorsCountResult, error: doctorsError } = await supabase
               .from('doctors')
               .select('*', { count: 'exact', head: true });
@@ -158,23 +158,23 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         } catch (error) {
           // Error handled silently
         } finally {
-          setIsDoctorsCountLoading(false);  // ✅ انتهى التحميل
+          setIsDoctorsCountLoading(false);  //  انتهى التحميل
         }
       };
       
       fetchDoctorsCount();
     }
     
-    // ✅ Pending Requests Count
+    //  Pending Requests Count
     setPendingRequestsCount(0);
   }, [user, currentWaitingCount, currentDoctorsCount, currentTotalTreatments]);
   
-  // ✅ Fetch doctors count - مع useCallback
+  //  Fetch doctors count - مع useCallback
   const fetchDoctorsCountCallback = React.useCallback(async () => {
     if (!user) return;
 
     try {
-      // ✅ للتيم ليدر والطبيب: جلب clinic_id أولاً
+      //  للتيم ليدر والطبيب: جلب clinic_id أولاً
       if (user.role === 'team_leader' || user.role === 'doctor') {
         const { data: userData, error: userError } = await supabase
           .from('doctors')
@@ -206,7 +206,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     }
   }, [user]);
 
-  // ✅ Fetch clinics count - مع useCallback للتأكد من عدم إعادة إنشاءها
+  //  Fetch clinics count - مع useCallback للتأكد من عدم إعادة إنشاءها
   const fetchClinicsCountCallback = React.useCallback(async () => {
     try {
       const { count, error } = await supabase
@@ -222,7 +222,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   }, []);
 
 
-  // ✅ Realtime: التحديث الفوري لجميع البيانات
+  //  Realtime: التحديث الفوري لجميع البيانات
   React.useEffect(() => {
     if (!user) return;
     if (isDoctorsCountLoading) {
@@ -264,7 +264,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
     const fetchPendingRequestsCount = async () => {
       try {
-        // ✅ مؤقتاً: إبقاء 0
+        //  مؤقتاً: إبقاء 0
         setPendingRequestsCount(0);
       } catch (error) {
         // Error handled silently
@@ -546,7 +546,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     }
   }, [currentScreen, viewingDoctorData]);
 
-  // ✅ Realtime: حساب Total Treatments للطبيب المختار (اليوم فقط)
+  //  Realtime: حساب Total Treatments للطبيب المختار (اليوم فقط)
   React.useEffect(() => {
     const fetchViewingDoctorTotalTreatments = async () => {
       if (!viewingDoctorData) {
@@ -575,7 +575,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           return patientTime >= fromTime && patientTime <= toTime;
         }) || [];
 
-        // ✅ استثناء كلمة "Treatment" من العدد
+        //  استثناء كلمة "Treatment" من العدد
         const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
         setViewingDoctorTotalTreatments(validPatients.length);
       } catch (error) {
@@ -720,7 +720,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         onBack={() => {
           setSelectedClinicId(null);
           setCurrentScreen('profile');
-          // ✅ Re-fetch clinics count when returning from departments
+          //  Re-fetch clinics count when returning from departments
           fetchClinicsCountCallback();
         }}
         onOpenTimeline={(clinicId, clinicName) => {
@@ -739,7 +739,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         onBack={() => {
           setSelectedClinicId(null);
           setCurrentScreen(previousScreen);
-          // ✅ Re-fetch doctors count when returning
+          //  Re-fetch doctors count when returning
           fetchDoctorsCountCallback();
         }}
         clinicId={selectedClinicId || undefined}
@@ -882,7 +882,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                         end={{ x: 1, y: 1 }}
                         style={styles.cardGradient}
                       >
-                        {/* ✅ Ticket Stub Badge */}
+                        {/*  Ticket Stub Badge */}
                         <View style={styles.ticketStub}>
                           <LinearGradient
                             colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1423,7 +1423,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس على اليسار */}
+                      {/*  قسم منفصل بنصف قوس على اليسار */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1478,7 +1478,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1534,7 +1534,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1586,7 +1586,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1638,7 +1638,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1753,7 +1753,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1805,7 +1805,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1857,7 +1857,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1909,7 +1909,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       end={{ x: 1, y: 1 }}
                       style={styles.cardGradient}
                     >
-                      {/* ✅ قسم منفصل بنصف قوس */}
+                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -1970,7 +1970,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ قسم منفصل بنصف قوس على اليسار */}
+                    {/*  قسم منفصل بنصف قوس على اليسار */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -2025,7 +2025,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ قسم منفصل بنصف قوس */}
+                    {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -2081,7 +2081,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ قسم منفصل بنصف قوس */}
+                    {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -2133,7 +2133,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                                        {/* ✅ قسم منفصل بنصف قوس */}
+                                        {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -2185,7 +2185,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     end={{ x: 1, y: 1 }}
                     style={styles.cardGradient}
                   >
-                    {/* ✅ Anim                      {/* ✅ قسم منفصل بنصف قوس */}
+                    {/*  Anim                      {/*  قسم منفصل بنصف قوس */}
                       <View style={styles.ticketStub}>
                         <LinearGradient
                           colors={['rgba(255, 255, 255, 0.25)', 'rgba(255, 255, 255, 0.15)']}
@@ -2560,7 +2560,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', //  فيروزي شفاف موحد
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -2611,7 +2611,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', //  فيروزي شفاف موحد
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -2635,13 +2635,13 @@ const styles = StyleSheet.create({
   },
   // Side Avatar Header
   sideHeader: {
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',  // ✅ أقل شفافية
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',  //  أقل شفافية
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 12,
     gap: 12,
-    borderRadius: 0,  // ✅ مستطيل كامل
+    borderRadius: 0,  //  مستطيل كامل
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.5)',
     shadowColor: '#000',
@@ -3318,7 +3318,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', //  فيروزي شفاف موحد
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -3580,7 +3580,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   
-  // ✅ Animated Badge Styles
+  //  Animated Badge Styles
   badgeContainer: {
     position: 'absolute',
     right: 20,
@@ -3597,7 +3597,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
     paddingVertical: 6,
-    // ✅ Smoky Gradient Effect - No borders, soft fade
+    //  Smoky Gradient Effect - No borders, soft fade
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
@@ -3606,12 +3606,12 @@ const styles = StyleSheet.create({
     // Smoky edge effect
     overflow: 'visible',
   },
-  // ✅ Simple Badge - Text Only (No Background/Border)
+  //  Simple Badge - Text Only (No Background/Border)
   simpleBadge: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // ✅ Ticket Stub - قسم منفصل بنصف قوس
+  //  Ticket Stub - قسم منفصل بنصف قوس
   ticketStub: {
     position: 'absolute',
     right: 0,
@@ -3627,7 +3627,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: 'rgba(255, 255, 255, 0.3)',
     borderStyle: 'dashed',
-    // ✅ نصف قوس على اليسار
+    //  نصف قوس على اليسار
     borderTopLeftRadius: 100,
     borderBottomLeftRadius: 100,
   },

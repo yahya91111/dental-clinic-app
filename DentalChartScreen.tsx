@@ -1,0 +1,11727 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  StatusBar,
+  Animated,
+  ScrollView,
+  Modal,
+  Dimensions,
+  Alert,
+  LogBox,
+  Platform,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Line, Rect, Defs, ClipPath, G, Polygon } from 'react-native-svg';
+import { useAuth } from './AuthContext';
+import { supabase } from './lib/supabase';
+import {
+  getCompleteToothData,
+  saveToothSurfaceCondition,
+  deleteToothSurfaceCondition,
+  createPlanningRecord,
+  createPlanningBatch,
+  getEditingRecords,
+  getPlanningRecords,
+  getReferrals,
+  createScalingRecord,
+  getScalingRecords,
+  deleteScalingRecord,
+} from './lib/database';
+import type { ToothNumber, ToothSurface, ToothCondition } from './types';
+import ToothDetailsModal from './components/ToothDetailsModal';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Container Heights and Spacing Constants
+const REFERRAL_HEADER_HEIGHT = 130; // ارتفاع العنوان + الأزرار الثابتة
+const REFERRAL_CONTENT_MIN = 70; // ارتفاع المحتوى الأدنى (بدون أقسام)
+const REFERRAL_CONTENT_MAX = 320; // ارتفاع المحتوى الأقصى (مع أقسام)
+const CONTAINER_SPACING = 170; // المسافة بين Need Referral والحاويات الأخرى
+const TREATMENT_PLANNING_SPACING = 100; // المسافة بين Treatment و Planning
+
+// إخفاء التحذيرات غير المهمة
+LogBox.ignoreLogs([
+  "Style property 'height' is not supported by native animated module",
+  "Style property 'width' is not supported by native animated module",
+]);
+
+interface DentalChartScreenProps {
+  onBack: () => void;
+  permanentPatientId?: string; // ID المريض الدائم من permanent_patients
+}
+
+// مكون السن مع الأقسام - تصميم جديد بمربع مركزي وخطوط قطرية (للأضراس - Molars)
+const ToothWithSections: React.FC = () => {
+  return (
+    <View style={{ width: 40, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="40" height="52" viewBox="0 0 40 52">
+        {/* الحدود الخارجية للسن - شكل بيضاوي */}
+        <Rect
+          x="2"
+          y="2"
+          width="36"
+          height="48"
+          rx="18"
+          ry="18"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* المربع المركزي */}
+        <Rect
+          x="14"
+          y="18"
+          width="12"
+          height="16"
+          rx="2"
+          ry="2"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية */}
+        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
+        <Line
+          x1="14"
+          y1="18"
+          x2="8"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
+        <Line
+          x1="26"
+          y1="18"
+          x2="32"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
+        <Line
+          x1="14"
+          y1="34"
+          x2="8"
+          y2="44"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
+        <Line
+          x1="26"
+          y1="34"
+          x2="32"
+          y2="44"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون الأضراس بشكل مربع (للأسنان 6، 7، 8 فقط)
+const ToothWithSectionsSquare: React.FC = () => {
+  return (
+    <View style={{ width: 40, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="40" height="52" viewBox="0 0 40 52">
+        {/* الحدود الخارجية للسن - شكل مربع أكثر */}
+        <Rect
+          x="2"
+          y="2"
+          width="36"
+          height="48"
+          rx="8"
+          ry="8"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* المربع المركزي */}
+        <Rect
+          x="14"
+          y="18"
+          width="12"
+          height="16"
+          rx="2"
+          ry="2"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية - متصلة بالحواف */}
+        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى الحافة العلوية اليسرى للسن */}
+        <Line
+          x1="14"
+          y1="18"
+          x2="4"
+          y2="4"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى الحافة العلوية اليمنى للسن */}
+        <Line
+          x1="26"
+          y1="18"
+          x2="36"
+          y2="4"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى الحافة السفلية اليسرى للسن */}
+        <Line
+          x1="14"
+          y1="34"
+          x2="4"
+          y2="48"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى الحافة السفلية اليمنى للسن */}
+        <Line
+          x1="26"
+          y1="34"
+          x2="36"
+          y2="48"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+// Interface للأسنان مع الألوان والتفاعل
+interface ToothWithSectionsProps {
+  colors?: ToothSurfaceConditions;
+  onToothPress?: () => void;
+  onSurfacePress?: (surface: keyof ToothSurfaceConditions) => void;
+  rotation?: number; // زاوية الدوران: 0, 90, -90
+  swapSides?: boolean; // تبديل الميزيال والدستل (اليسار واليمين)
+  borderColor?: string; // لون حدود السن المخصص
+}
+
+// مكون الأضراس الصغير جداً بشكل مربع (للأسنان 6، 7، 8 مع خطوط أصغر)
+const ToothWithSectionsSquareTiny: React.FC<ToothWithSectionsProps> = ({
+  colors,
+  onToothPress,
+  onSurfacePress,
+  rotation = 0,
+  swapSides = false,
+  borderColor,
+}) => {
+  // أنيميشن النبض البطيء للحالات التي تحتاج تشخيص أدق
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const getColor = (surface: keyof ToothSurfaceConditions) => {
+    // تبديل اليسار واليمين إذا كان swapSides مفعل
+    let actualSurface = surface;
+    if (swapSides) {
+      if (surface === 'left') actualSurface = 'right';
+      else if (surface === 'right') actualSurface = 'left';
+    }
+
+    if (colors && colors[actualSurface]) {
+      return CONDITION_COLORS[colors[actualSurface] as string];
+    }
+    return 'rgba(251, 191, 36, 0.12)';
+  };
+
+  // التحقق إذا كان السن مفقود (أي سطح فيه missing)
+  const isMissing = colors && Object.values(colors).some(condition => condition === 'missing');
+
+  // التحقق إذا كان هناك سطح يحتاج لتشخيص أدق
+  const needsDiagnosis = colors && Object.values(colors).some(condition => condition === 'needs_diagnosis');
+
+  // بدء أنيميشن النبض إذا كان يحتاج لتشخيص أدق
+  useEffect(() => {
+    if (needsDiagnosis) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.4,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [needsDiagnosis, pulseAnim]);
+
+  // تحديد لون الحدود (رمادي فاتح للمفقود، مخصص إذا وجد، أو أزرق افتراضي)
+  const finalBorderColor = isMissing
+    ? "#666666"
+    : borderColor || "rgba(135, 206, 250, 0.95)";
+
+  return (
+    <TouchableOpacity
+      style={{ width: 37, height: 47, alignItems: 'center', justifyContent: 'center' }}
+      onPress={onToothPress}
+      activeOpacity={0.7}
+    >
+      <Animated.View style={{ opacity: pulseAnim }}>
+        <Svg width="37" height="47" viewBox="0 0 37 47">
+          <Defs>
+          <ClipPath id="toothClipTiny">
+            <Rect
+              x="2.5"
+              y="2.5"
+              width="32"
+              height="42"
+              rx="8.5"
+              ry="12"
+            />
+          </ClipPath>
+        </Defs>
+
+        {/* Glass Morphism Effect - خلفية شبه شفافة بلون أصفر */}
+        <Rect
+          x="1.8"
+          y="1.8"
+          width="33.4"
+          height="43.4"
+          rx="9"
+          ry="12.6"
+          fill="rgba(251, 191, 36, 0.15)"
+          stroke="rgba(251, 191, 36, 0.3)"
+          strokeWidth="1"
+        />
+
+        <G clipPath="url(#toothClipTiny)">
+          {/* السطح العلوي (Top) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="2.5,2.5 34.5,2.5 24.1,16.3 13,16.3"
+            fill={getColor('top')}
+            opacity={0.85}
+          />
+
+          {/* السطح السفلي (Bottom) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="13,30.8 24.1,30.8 34.5,44.5 2.5,44.5"
+            fill={getColor('bottom')}
+            opacity={0.85}
+          />
+
+          {/* السطح الأيسر (Left) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="2.5,2.5 13,16.3 13,30.8 2.5,44.5"
+            fill={getColor('left')}
+            opacity={0.85}
+          />
+
+          {/* السطح الأيمن (Right) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="24.1,16.3 34.5,2.5 34.5,44.5 24.1,30.8"
+            fill={getColor('right')}
+            opacity={0.85}
+          />
+
+          {/* المربع المركزي - مع حواف مستديرة */}
+          <Rect
+            x="13"
+            y="16.3"
+            width="11.1"
+            height="14.5"
+            rx="2"
+            ry="2"
+            fill={getColor('center')}
+            opacity={0.85}
+          />
+        </G>
+
+        {/* الحدود الخارجية للسن */}
+        <Rect
+          x="1.8"
+          y="1.8"
+          width="33.4"
+          height="43.4"
+          rx="9"
+          ry="12.6"
+          fill="transparent"
+          stroke={finalBorderColor}
+          strokeWidth="2.5"
+        />
+
+        {/* المربع المركزي - حدود فقط (مخفي عند السن المفقود) */}
+        {!isMissing && (
+          <Rect
+            x="13"
+            y="16.3"
+            width="11.1"
+            height="14.5"
+            rx="2"
+            ry="2"
+            fill="transparent"
+            stroke={finalBorderColor}
+            strokeWidth="1.8"
+            strokeOpacity={0.9}
+          />
+        )}
+
+        {/* الخطوط القطرية */}
+        <Line
+          x1="13"
+          y1="16.3"
+          x2="5"
+          y2="5"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+        <Line
+          x1="24.1"
+          y1="16.3"
+          x2="32"
+          y2="5"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+        <Line
+          x1="13"
+          y1="30.8"
+          x2="5"
+          y2="42"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+        <Line
+          x1="24.1"
+          y1="30.8"
+          x2="32"
+          y2="42"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+
+        {/* علامة X للسن المفقود */}
+        {isMissing && (
+          <>
+            <Line
+              x1="8"
+              y1="8"
+              x2="29"
+              y2="39"
+              stroke="#666666"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            <Line
+              x1="29"
+              y1="8"
+              x2="8"
+              y2="39"
+              stroke="#666666"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          </>
+        )}
+      </Svg>
+      </Animated.View>
+
+      {/* Invisible Touchable Overlays for surfaces */}
+      {onSurfacePress && (
+        <>
+          {/* Top Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 3.7, top: 3.6, width: 29.6, height: 12.7, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }}
+            activeOpacity={0.5}
+          />
+          {/* Bottom Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 3.7, top: 30.8, width: 29.6, height: 12.6, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }}
+            activeOpacity={0.5}
+          />
+          {/* Left Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 3.7, top: 16.3, width: 9.3, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }}
+            activeOpacity={0.5}
+          />
+          {/* Right Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 24.1, top: 16.3, width: 9.2, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }}
+            activeOpacity={0.5}
+          />
+          {/* Center Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 13, top: 16.3, width: 11.1, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }}
+            activeOpacity={0.5}
+          />
+        </>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+// مكون الأضراس المتوسط بشكل مربع (للأسنان 4 و 5)
+const ToothWithSectionsSquareMedium: React.FC<ToothWithSectionsProps> = ({
+  colors,
+  onToothPress,
+  onSurfacePress,
+  rotation = 0,
+  swapSides = false,
+  borderColor,
+}) => {
+  // أنيميشن النبض البطيء للحالات التي تحتاج تشخيص أدق
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const getColor = (surface: keyof ToothSurfaceConditions) => {
+    // تبديل اليسار واليمين إذا كان swapSides مفعل
+    let actualSurface = surface;
+    if (swapSides) {
+      if (surface === 'left') actualSurface = 'right';
+      else if (surface === 'right') actualSurface = 'left';
+    }
+
+    if (colors && colors[actualSurface]) {
+      return CONDITION_COLORS[colors[actualSurface] as string];
+    }
+    return 'rgba(251, 191, 36, 0.12)';
+  };
+
+  // التحقق إذا كان السن مفقود
+  const isMissing = colors && Object.values(colors).some(condition => condition === 'missing');
+
+  // التحقق إذا كان هناك سطح يحتاج لتشخيص أدق
+  const needsDiagnosis = colors && Object.values(colors).some(condition => condition === 'needs_diagnosis');
+
+  // بدء أنيميشن النبض إذا كان يحتاج لتشخيص أدق
+  useEffect(() => {
+    if (needsDiagnosis) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.4,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [needsDiagnosis, pulseAnim]);
+
+  // تحديد لون الحدود (رمادي فاتح للمفقود)
+  const finalBorderColor = isMissing
+    ? "#666666"
+    : borderColor || "rgba(135, 206, 250, 0.95)";
+
+  return (
+    <TouchableOpacity
+      style={{ width: 33, height: 42, alignItems: 'center', justifyContent: 'center' }}
+      onPress={onToothPress}
+      activeOpacity={0.7}
+    >
+      <Animated.View style={{ opacity: pulseAnim }}>
+        <Svg width="33" height="42" viewBox="0 0 33 42">
+          <Defs>
+          <ClipPath id="toothClipMedium">
+            <Rect
+              x="2.3"
+              y="2.3"
+              width="28.4"
+              height="37.4"
+              rx="7.75"
+              ry="10.7"
+            />
+          </ClipPath>
+        </Defs>
+
+        {/* Glass Morphism Effect - أصفر */}
+        <Rect
+          x="1.65"
+          y="1.6"
+          width="29.7"
+          height="38.8"
+          rx="8.25"
+          ry="11.3"
+          fill="rgba(251, 191, 36, 0.15)"
+          stroke="rgba(251, 191, 36, 0.3)"
+          strokeWidth="1"
+        />
+
+        <G clipPath="url(#toothClipMedium)">
+          {/* السطح العلوي (Top) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="2,2 31,2 21.45,14.5 11.55,14.5"
+            fill={getColor('top')}
+            opacity={0.85}
+          />
+
+          {/* السطح السفلي (Bottom) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="11.55,27.4 21.45,27.4 31,40 2,40"
+            fill={getColor('bottom')}
+            opacity={0.85}
+          />
+
+          {/* السطح الأيسر (Left) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="2,2 11.55,14.5 11.55,27.4 2,40"
+            fill={getColor('left')}
+            opacity={0.85}
+          />
+
+          {/* السطح الأيمن (Right) - شبه منحرف يتبع الخطوط */}
+          <Polygon
+            points="21.45,14.5 31,2 31,40 21.45,27.4"
+            fill={getColor('right')}
+            opacity={0.85}
+          />
+
+          {/* المربع المركزي - مع حواف مستديرة */}
+          <Rect
+            x="11.55"
+            y="14.5"
+            width="9.9"
+            height="12.9"
+            rx="2"
+            ry="2"
+            fill={getColor('center')}
+            opacity={0.85}
+          />
+        </G>
+
+        <Rect
+          x="1.65"
+          y="1.6"
+          width="29.7"
+          height="38.8"
+          rx="8.25"
+          ry="11.3"
+          fill="transparent"
+          stroke={finalBorderColor}
+          strokeWidth="2.5"
+        />
+
+        {/* المربع المركزي - حدود فقط (مخفي عند السن المفقود) */}
+        {!isMissing && (
+          <Rect
+            x="11.55"
+            y="14.5"
+            width="9.9"
+            height="12.9"
+            rx="2"
+            ry="2"
+            fill="transparent"
+            stroke={finalBorderColor}
+            strokeWidth="1.8"
+            strokeOpacity={0.9}
+          />
+        )}
+
+        {/* الخطوط القطرية */}
+        <Line
+          x1="11.55"
+          y1="14.5"
+          x2="4.5"
+          y2="4.5"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+        <Line
+          x1="21.45"
+          y1="14.5"
+          x2="28.5"
+          y2="4.5"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+        <Line
+          x1="11.55"
+          y1="27.4"
+          x2="4.5"
+          y2="37.5"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+        <Line
+          x1="21.45"
+          y1="27.4"
+          x2="28.5"
+          y2="37.5"
+          stroke={finalBorderColor}
+          strokeWidth="1.8"
+          strokeOpacity={0.8}
+        />
+
+        {/* علامة X للسن المفقود */}
+        {isMissing && (
+          <>
+            <Line
+              x1="7"
+              y1="7"
+              x2="26"
+              y2="35"
+              stroke="#666666"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            <Line
+              x1="26"
+              y1="7"
+              x2="7"
+              y2="35"
+              stroke="#666666"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          </>
+        )}
+      </Svg>
+      </Animated.View>
+
+      {/* Invisible Touchable Overlays for surfaces */}
+      {onSurfacePress && (
+        <>
+          {/* Top Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 3.3, top: 3.2, width: 26.4, height: 11.3, zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }}
+            activeOpacity={1}
+          />
+          {/* Bottom Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 3.3, top: 27.5, width: 26.4, height: 11.3, zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }}
+            activeOpacity={1}
+          />
+          {/* Left Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 3.3, top: 14.5, width: 8.25, height: 13, zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }}
+            activeOpacity={1}
+          />
+          {/* Right Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 21.45, top: 14.5, width: 8.25, height: 13, zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }}
+            activeOpacity={1}
+          />
+          {/* Center Surface */}
+          <TouchableOpacity
+            style={{ position: 'absolute', left: 11.55, top: 14.5, width: 9.9, height: 12.9, zIndex: 1005, elevation: 1005 }}
+            onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }}
+            activeOpacity={1}
+          />
+        </>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+// مكون الناب الصغير (للسن 3 بحجم 30×38)
+const ToothWithSectionsCanineSmall: React.FC = () => {
+  return (
+    <View style={{ width: 30, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="30" height="38" viewBox="0 0 32 50">
+        {/* Glass Morphism Effect - أصفر */}
+        <Rect
+          x="2"
+          y="2"
+          width="28"
+          height="46"
+          rx="14"
+          ry="20"
+          fill="rgba(251, 191, 36, 0.15)"
+          stroke="rgba(251, 191, 36, 0.3)"
+          strokeWidth="1"
+        />
+        <Rect
+          x="2"
+          y="2"
+          width="28"
+          height="46"
+          rx="14"
+          ry="20"
+          fill="transparent"
+          stroke="rgba(135, 206, 250, 0.95)"
+          strokeWidth="2.5"
+        />
+        {/* المربع المركزي - Glass effect أزرق فاتح */}
+        <Rect x="10" y="17" width="12" height="16" rx="2" ry="2" fill="rgba(251, 191, 36, 0.12)" stroke="rgba(135, 206, 250, 0.85)" strokeWidth="1.8" />
+        {/* الخطوط القطرية - Glass effect أزرق فاتح */}
+        <Line x1="10" y1="17" x2="5" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+        <Line x1="22" y1="17" x2="27" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+        <Line x1="10" y1="33" x2="5" y2="43" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+        <Line x1="22" y1="33" x2="27" y2="43" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون القواطع الصغير (للأسنان 1 و 2 بحجم 30×38)
+const ToothWithSectionsIncisorSmall: React.FC = () => {
+  return (
+    <View style={{ width: 30, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="30" height="38" viewBox="0 0 30 48">
+        {/* Glass Morphism Effect - أصفر */}
+        <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="rgba(251, 191, 36, 0.15)" stroke="rgba(251, 191, 36, 0.3)" strokeWidth="1" />
+        <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(135, 206, 250, 0.95)" strokeWidth="2.5" />
+        {/* المربع المركزي - Glass effect أزرق فاتح */}
+        <Rect x="9" y="16" width="12" height="16" rx="2" ry="2" fill="rgba(251, 191, 36, 0.12)" stroke="rgba(135, 206, 250, 0.85)" strokeWidth="1.8" />
+        {/* الخطوط القطرية - Glass effect أزرق فاتح */}
+        <Line x1="9" y1="16" x2="4" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+        <Line x1="21" y1="16" x2="26" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+        <Line x1="9" y1="32" x2="4" y2="41" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+        <Line x1="21" y1="32" x2="26" y2="41" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون السن الأصغر مع الأقسام (للضواحك - Premolars)
+const ToothWithSectionsPremolar: React.FC = () => {
+  return (
+    <View style={{ width: 35, height: 45, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="35" height="45" viewBox="0 0 35 45">
+        {/* الحدود الخارجية للسن - شكل بيضاوي */}
+        <Rect
+          x="2"
+          y="2"
+          width="31"
+          height="41"
+          rx="15"
+          ry="15"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* المربع المركزي */}
+        <Rect
+          x="12"
+          y="16"
+          width="11"
+          height="13"
+          rx="2"
+          ry="2"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية */}
+        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
+        <Line
+          x1="12"
+          y1="16"
+          x2="7"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
+        <Line
+          x1="23"
+          y1="16"
+          x2="28"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
+        <Line
+          x1="12"
+          y1="29"
+          x2="7"
+          y2="37"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
+        <Line
+          x1="23"
+          y1="29"
+          x2="28"
+          y2="37"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون الناب مع الأقسام (للأنياب - Canine) - شكل بيضاوي أكثر
+const ToothWithSectionsCanine: React.FC = () => {
+  return (
+    <View style={{ width: 32, height: 50, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="32" height="50" viewBox="0 0 32 50">
+        {/* الحدود الخارجية للسن - شكل بيضاوي طويل */}
+        <Rect
+          x="2"
+          y="2"
+          width="28"
+          height="46"
+          rx="14"
+          ry="20"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* المربع المركزي */}
+        <Rect
+          x="11"
+          y="18"
+          width="10"
+          height="14"
+          rx="2"
+          ry="2"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية */}
+        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
+        <Line
+          x1="11"
+          y1="18"
+          x2="6"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
+        <Line
+          x1="21"
+          y1="18"
+          x2="26"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
+        <Line
+          x1="11"
+          y1="32"
+          x2="6"
+          y2="42"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
+        <Line
+          x1="21"
+          y1="32"
+          x2="26"
+          y2="42"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون القواطع مع الأقسام (للقواطع - Incisors) - شكل مستطيل ومسطح
+const ToothWithSectionsIncisor: React.FC = () => {
+  return (
+    <View style={{ width: 30, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="30" height="48" viewBox="0 0 30 48">
+        {/* الحدود الخارجية للسن - شكل بيضاوي مسطح */}
+        <Rect
+          x="2"
+          y="2"
+          width="26"
+          height="44"
+          rx="13"
+          ry="18"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* المربع المركزي */}
+        <Rect
+          x="10"
+          y="17"
+          width="10"
+          height="14"
+          rx="2"
+          ry="2"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية */}
+        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
+        <Line
+          x1="10"
+          y1="17"
+          x2="5"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
+        <Line
+          x1="20"
+          y1="17"
+          x2="25"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
+        <Line
+          x1="10"
+          y1="31"
+          x2="5"
+          y2="40"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
+        <Line
+          x1="20"
+          y1="31"
+          x2="25"
+          y2="40"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون القواطع بدون المربع المركزي - مع خط مركزي عمودي وخطوط قطرية (للأسنان 1 و 2)
+const ToothWithSectionsIncisorNoCenter: React.FC = () => {
+  return (
+    <View style={{ width: 30, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="30" height="48" viewBox="0 0 30 48">
+        {/* الحدود الخارجية للسن - شكل بيضاوي */}
+        <Rect
+          x="2"
+          y="2"
+          width="26"
+          height="44"
+          rx="13"
+          ry="18"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* الخط المركزي العمودي (بدل المربع) */}
+        <Line
+          x1="15"
+          y1="8"
+          x2="15"
+          y2="40"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية - مثل باقي الأسنان */}
+        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليسرى */}
+        <Line
+          x1="15"
+          y1="17"
+          x2="5"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليمنى */}
+        <Line
+          x1="15"
+          y1="17"
+          x2="25"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليسرى */}
+        <Line
+          x1="15"
+          y1="31"
+          x2="5"
+          y2="40"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليمنى */}
+        <Line
+          x1="15"
+          y1="31"
+          x2="25"
+          y2="40"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+// مكون الناب بدون المربع المركزي - مع خط مركزي عمودي وخطوط قطرية (للسن 3)
+const ToothWithSectionsCanineNoCenter: React.FC = () => {
+  return (
+    <View style={{ width: 32, height: 50, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width="32" height="50" viewBox="0 0 32 50">
+        {/* الحدود الخارجية للسن - شكل بيضاوي طويل */}
+        <Rect
+          x="2"
+          y="2"
+          width="28"
+          height="46"
+          rx="14"
+          ry="20"
+          fill="transparent"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
+        />
+
+        {/* الخط المركزي العمودي (بدل المربع) */}
+        <Line
+          x1="16"
+          y1="8"
+          x2="16"
+          y2="42"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* الخطوط القطرية - مثل باقي الأسنان */}
+        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليسرى */}
+        <Line
+          x1="16"
+          y1="18"
+          x2="6"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليمنى */}
+        <Line
+          x1="16"
+          y1="18"
+          x2="26"
+          y2="8"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليسرى */}
+        <Line
+          x1="16"
+          y1="32"
+          x2="6"
+          y2="42"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+
+        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليمنى */}
+        <Line
+          x1="16"
+          y1="32"
+          x2="26"
+          y2="42"
+          stroke="rgba(255, 255, 255, 0.7)"
+          strokeWidth="1.5"
+        />
+      </Svg>
+    </View>
+  );
+};
+
+
+// أنواع الحالات المتاحة للأسنان
+type ToothCondition = 'caries' | 'extraction' | 'pulpectomy' | 'follow_up' | 'missing' | 'filling_replacement' | 'treated' | 'broken' | 'permanent_filling' | 'needs_diagnosis' | 'direct_pulp_capping' | 'indirect_pulp_capping' | 'gi' | null;
+
+// ألوان الحالات
+const CONDITION_COLORS: Record<string, string> = {
+  caries: '#FF0000',              // أحمر - تسوس
+  broken: '#FFC0CB',              // وردي - سن مكسور/حشوة غير مناسبة
+  pulpectomy: '#800000',          // عنابي - علاج جذور
+  extraction: '#000000',          // أسود - خلع
+  follow_up: '#1E90FF',           // أزرق - متابعة
+  filling_replacement: '#808080', // رمادي - حشوة مؤقتة
+  missing: 'transparent',         // شفاف - سن مفقود (سيتم عرض X)
+  permanent_filling: '#10B981',   // أخضر - حشوة دائمة
+  treated: '#800000',             // عنابي - علاج جذور (حدود فقط)
+  needs_diagnosis: '#D97706',     // برتقالي غامق - يحتاج لتشخيص أدق
+  direct_pulp_capping: '#10B981', // أخضر - Direct Pulp Capping
+  indirect_pulp_capping: '#10B981', // أخضر - Indirect Pulp Capping
+  gi: '#10B981',                  // أخضر - GI (Glass Ionomer)
+};
+
+// أسماء الحالات بالعربية
+const CONDITION_NAMES: Record<string, string> = {
+  caries: 'تسوس',
+  broken: 'سن مكسور/حشوة غير مناسبة',
+  pulpectomy: 'علاج جذور',
+  extraction: 'خلع',
+  follow_up: 'متابعة',
+  missing: 'سن مفقود',
+  filling_replacement: 'استبدال حشوة',
+  permanent_filling: 'حشوة دائمة',
+  treated: 'تم العلاج',
+  needs_diagnosis: 'يحتاج لتشخيص أدق',
+};
+
+// نوع البيانات لحالات سطح السن
+interface ToothSurfaceConditions {
+  top: ToothCondition;
+  bottom: ToothCondition;
+  left: ToothCondition;
+  right: ToothCondition;
+  center: ToothCondition;
+}
+
+// دالة للحصول على اسم السطح
+const getSurfaceName = (surface: keyof ToothSurfaceConditions | null, toothNumber?: number): string => {
+  if (!surface) return '';
+
+  // للأسنان على الجانب الأيسر (9-16 و 25-32)، نعكس الأسماء Buccal/Palatal
+  const isLeftSide = toothNumber && ((toothNumber >= 9 && toothNumber <= 16) || (toothNumber >= 25 && toothNumber <= 32));
+  // للأسنان السفلية (17-32)، نستخدم Lingual بدلاً من Palatal
+  const isLowerTooth = toothNumber && toothNumber >= 17 && toothNumber <= 32;
+  const palatalOrLingual = isLowerTooth ? 'Lingual Surface' : 'Palatal Surface';
+
+  // تبديل الميزيال والدستال لجميع الأسنان السفلية (17-32) للتطابق مع labels الموجودة
+  const swapMesialDistal = toothNumber && toothNumber >= 17 && toothNumber <= 32;
+
+  const names = {
+    top: swapMesialDistal ? 'Distal Surface' : 'Mesial Surface',
+    bottom: swapMesialDistal ? 'Mesial Surface' : 'Distal Surface',
+    left: isLeftSide ? 'Buccal Surface' : palatalOrLingual,
+    right: isLeftSide ? palatalOrLingual : 'Buccal Surface',
+    center: 'Occlusal Surface',
+  };
+  return names[surface] || '';
+};
+
+// دالة للحصول على موقع السن
+const getToothPosition = (toothNumber: number): string => {
+  if (toothNumber >= 1 && toothNumber <= 8) {
+    return `Upper Left ${toothNumber}`;
+  } else if (toothNumber >= 9 && toothNumber <= 16) {
+    return `Upper Right ${17 - toothNumber}`;
+  } else if (toothNumber >= 17 && toothNumber <= 24) {
+    return `Lower Left ${toothNumber - 16}`;
+  } else if (toothNumber >= 25 && toothNumber <= 32) {
+    return `Lower Right ${33 - toothNumber}`;
+  }
+  return `Tooth ${toothNumber}`;
+};
+
+// دالة للحصول على رقم السن في الربع (1-8)
+const getQuadrantToothNumber = (toothNumber: number): number => {
+  if (toothNumber >= 1 && toothNumber <= 8) {
+    return toothNumber; // Upper Left: 1-8
+  } else if (toothNumber >= 9 && toothNumber <= 16) {
+    return 17 - toothNumber; // Upper Right: 8-1
+  } else if (toothNumber >= 17 && toothNumber <= 24) {
+    return toothNumber - 16; // Lower Left: 1-8
+  } else if (toothNumber >= 25 && toothNumber <= 32) {
+    return 33 - toothNumber; // Lower Right: 8-1
+  }
+  return toothNumber;
+};
+
+// دالة لتحويل رقم السن إلى الاسم الجديد
+const getToothDisplayName = (toothNumber: number): string => {
+  // الربع الأول: الأسنان 1-8 (UL)
+  if (toothNumber === 1) return 'UL 1';
+  if (toothNumber === 2) return 'UL 2';
+  if (toothNumber === 3) return 'UL 3';
+  if (toothNumber === 4) return 'UL 4';
+  if (toothNumber === 5) return 'UL 5';
+  if (toothNumber === 6) return 'UL 6';
+  if (toothNumber === 7) return 'UL 7';
+  if (toothNumber === 8) return 'UL 8';
+
+  // الربع الثاني: الأسنان 9-16 (UR)
+  if (toothNumber === 9) return 'UR 8';
+  if (toothNumber === 10) return 'UR 7';
+  if (toothNumber === 11) return 'UR 6';
+  if (toothNumber === 12) return 'UR 5';
+  if (toothNumber === 13) return 'UR 4';
+  if (toothNumber === 14) return 'UR 3';
+  if (toothNumber === 15) return 'UR 2';
+  if (toothNumber === 16) return 'UR 1';
+
+  // الربع الثالث: الأسنان 25-32 (LR)
+  if (toothNumber === 25) return 'LR 8';
+  if (toothNumber === 26) return 'LR 7';
+  if (toothNumber === 27) return 'LR 6';
+  if (toothNumber === 28) return 'LR 5';
+  if (toothNumber === 29) return 'LR 4';
+  if (toothNumber === 30) return 'LR 3';
+  if (toothNumber === 31) return 'LR 2';
+  if (toothNumber === 32) return 'LR 1';
+
+  // الربع الرابع: الأسنان 17-24 (LL)
+  if (toothNumber === 17) return 'LL 1';
+  if (toothNumber === 18) return 'LL 2';
+  if (toothNumber === 19) return 'LL 3';
+  if (toothNumber === 20) return 'LL 4';
+  if (toothNumber === 21) return 'LL 5';
+  if (toothNumber === 22) return 'LL 6';
+  if (toothNumber === 23) return 'LL 7';
+  if (toothNumber === 24) return 'LL 8';
+
+  return toothNumber.toString(); // باقي الأسنان تبقى بأرقامها
+};
+
+// دالة عكسية: تحويل Palmer notation إلى رقم
+const palmerToNumber = (palmer: string): number => {
+  const mapping: Record<string, number> = {
+    'UL 1': 1, 'UL 2': 2, 'UL 3': 3, 'UL 4': 4, 'UL 5': 5, 'UL 6': 6, 'UL 7': 7, 'UL 8': 8,
+    'UR 8': 9, 'UR 7': 10, 'UR 6': 11, 'UR 5': 12, 'UR 4': 13, 'UR 3': 14, 'UR 2': 15, 'UR 1': 16,
+    'LL 1': 17, 'LL 2': 18, 'LL 3': 19, 'LL 4': 20, 'LL 5': 21, 'LL 6': 22, 'LL 7': 23, 'LL 8': 24,
+    'LR 8': 25, 'LR 7': 26, 'LR 6': 27, 'LR 5': 28, 'LR 4': 29, 'LR 3': 30, 'LR 2': 31, 'LR 1': 32,
+  };
+  return mapping[palmer] || parseInt(palmer);
+};
+
+// دالة لاستخراج الرقم فقط (1-8) للعرض في Modal
+const getToothPositionNumber = (toothNumber: number): string => {
+  const palmerName = getToothDisplayName(toothNumber);
+  // استخراج الرقم من Palmer notation (مثال: "UL 1" → "1")
+  const match = palmerName.match(/\d+/);
+  return match ? match[0] : toothNumber.toString();
+};
+
+// دالة لتحديد الربع (UL/UR/LL/LR)
+const getToothQuadrant = (toothNumber: number): 'UL' | 'UR' | 'LL' | 'LR' => {
+  if (toothNumber >= 1 && toothNumber <= 8) return 'UL';
+  if (toothNumber >= 9 && toothNumber <= 16) return 'UR';
+  if (toothNumber >= 17 && toothNumber <= 24) return 'LL';
+  return 'LR';
+};
+
+// Component لعرض رقم السن مع الحدود
+const ToothNumberBadge: React.FC<{ toothNumber: number }> = ({ toothNumber }) => {
+  const quadrant = getToothQuadrant(toothNumber);
+  const displayNumber = getToothPositionNumber(toothNumber);
+
+  const borderStyles = {
+    'UL': { borderLeftWidth: 2.5, borderBottomWidth: 2.5, borderLeftColor: '#2563EB', borderBottomColor: '#2563EB' },
+    'UR': { borderRightWidth: 2.5, borderBottomWidth: 2.5, borderRightColor: '#2563EB', borderBottomColor: '#2563EB' },
+    'LL': { borderLeftWidth: 2.5, borderTopWidth: 2.5, borderLeftColor: '#2563EB', borderTopColor: '#2563EB' },
+    'LR': { borderRightWidth: 2.5, borderTopWidth: 2.5, borderRightColor: '#2563EB', borderTopColor: '#2563EB' },
+  };
+
+  return (
+    <View style={[
+      {
+        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 10,
+        minWidth: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      borderStyles[quadrant]
+    ]}>
+      <Text style={{ fontSize: 17, fontWeight: '700', color: '#1E40AF', letterSpacing: 0.3 }}>
+        {displayNumber}
+      </Text>
+    </View>
+  );
+};
+
+// دالة للحصول على اسم السن
+const getToothName = (toothNumber: number): { arabic: string; english: string } => {
+  const position = getQuadrantToothNumber(toothNumber);
+
+  const names: Record<number, { arabic: string; english: string }> = {
+    1: { arabic: 'القاطع المركزي', english: 'Central Incisor' },
+    2: { arabic: 'القاطع الجانبي', english: 'Lateral Incisor' },
+    3: { arabic: 'الناب', english: 'Canine' },
+    4: { arabic: 'الضاحك الأول', english: 'First Premolar' },
+    5: { arabic: 'الضاحك الثاني', english: 'Second Premolar' },
+    6: { arabic: 'الطاحن الأول', english: 'First Molar' },
+    7: { arabic: 'الطاحن الثاني', english: 'Second Molar' },
+    8: { arabic: 'ضرس العقل', english: 'Third Molar' },
+  };
+
+  return names[position] || { arabic: 'سن', english: 'Tooth' };
+};
+
+// دالة للحصول على الربع
+const getQuadrant = (toothNumber: number): 'upper-left' | 'upper-right' | 'lower-left' | 'lower-right' => {
+  if (toothNumber >= 1 && toothNumber <= 8) return 'upper-left';
+  if (toothNumber >= 9 && toothNumber <= 16) return 'upper-right';
+  if (toothNumber >= 17 && toothNumber <= 24) return 'lower-left';
+  return 'lower-right';
+};
+
+// مكون قائمة اختيار الحالة
+interface ConditionMenuProps {
+  visible: boolean;
+  onSelect: (condition: ToothCondition) => void;
+  onClose: () => void;
+  selectedSurface: keyof ToothSurfaceConditions | null;
+  selectedTooth: number | null;
+}
+
+// دالة للحصول على اسم الحالة بالعربي والإنجليزي
+const getConditionName = (condition: ToothCondition): { arabic: string; english: string } => {
+  const names: Record<string, { arabic: string; english: string }> = {
+    caries: { arabic: 'تسوس', english: 'Caries' },
+    broken: { arabic: 'سن مكسور/حشوة غير مناسبة', english: 'Broken/Inappropriate Filling' },
+    pulpectomy: { arabic: 'علاج عصب', english: 'Pulpectomy' },
+    extraction: { arabic: 'خلع', english: 'Extraction' },
+    follow_up: { arabic: 'متابعة', english: 'Follow-up' },
+    filling_replacement: { arabic: 'حشوة مؤقتة', english: 'Temporary Filling' },
+    missing: { arabic: 'سن مفقود', english: 'Missing Tooth' },
+    permanent_filling: { arabic: 'حشوة دائمة', english: 'Permanent Filling' },
+    treated: { arabic: 'علاج جذور', english: 'Root Canal Treated' },
+    needs_diagnosis: { arabic: 'يحتاج لتشخيص أدق', english: 'Needs More Diagnosis' },
+    direct_pulp_capping: { arabic: 'تغطية اللب المباشرة', english: 'Direct Pulp Capping' },
+    indirect_pulp_capping: { arabic: 'تغطية اللب غير المباشرة', english: 'Indirect Pulp Capping' },
+    gi: { arabic: 'جلاس أيونومر', english: 'GI' },
+  };
+  return condition ? names[condition] : { arabic: 'سليم', english: 'Healthy' };
+};
+
+// دالة للحصول على اسم السطح بالعربي
+const getArabicSurfaceName = (surface: keyof ToothSurfaceConditions): string => {
+  const names: Record<keyof ToothSurfaceConditions, string> = {
+    top: 'الميزيال',
+    bottom: 'الدستال',
+    left: 'الباكال/اللساني',
+    right: 'الحنكي/الباكال',
+    center: 'الإطباقي',
+  };
+  return names[surface] || surface;
+};
+
+// دالة للحصول على اسم القسم بدون رقم
+const getReferralName = (key: string): string => {
+  const names: Record<string, string> = {
+    endodontics: 'Endodontics',
+    oralSurgery: 'Oral Surgery',
+    orthodontics: 'Orthodontics',
+    periodontics: 'Periodontics',
+    prosthodontics: 'Prosthodontics',
+    oralMedicine: 'Oral Medicine',
+  };
+  return names[key] || key;
+};
+
+// Helper function to get tooth rotation angle
+const getToothAngle = (toothNumber: number): number => {
+  // Upper right (teeth 1-8)
+  if (toothNumber === 1) return -80;
+  if (toothNumber === 2) return -60;
+  if (toothNumber === 3) return -35;
+  if (toothNumber === 4) return -20;
+  if (toothNumber === 5) return -15;
+  if (toothNumber >= 6 && toothNumber <= 8) return 0;
+
+  // Upper left (teeth 9-16)
+  if (toothNumber >= 9 && toothNumber <= 11) return 0;
+  if (toothNumber === 12) return 15;
+  if (toothNumber === 13) return 20;
+  if (toothNumber === 14) return 35;
+  if (toothNumber === 15) return 60;
+  if (toothNumber === 16) return 80;
+
+  // Lower right (teeth 17-24)
+  if (toothNumber === 17) return 80;
+  if (toothNumber === 18) return 60;
+  if (toothNumber === 19) return 35;
+  if (toothNumber === 20) return 20;
+  if (toothNumber === 21) return 15;
+  if (toothNumber >= 22 && toothNumber <= 24) return 0;
+
+  // Lower left (teeth 25-32)
+  if (toothNumber >= 25 && toothNumber <= 27) return 0;
+  if (toothNumber === 28) return -15;
+  if (toothNumber === 29) return -20;
+  if (toothNumber === 30) return -35;
+  if (toothNumber === 31) return -60;
+  if (toothNumber === 32) return -80;
+
+  return 0; // default
+};
+
+// Helper function to get approximate tooth SVG coordinates (viewBox 0 0 100 100)
+const getToothSVGCoordinates = (toothNumber: number): { x: number; y: number } => {
+  // These are approximate positions based on the style coordinates
+  // SVG viewBox is 0-100, we need to map the percentage/pixel positions
+
+  // Upper right quadrant (teeth 1-8) - right side of screen
+  // tooth1: right: 160, top: '7.5%' -> x: 75, y: 8
+  if (toothNumber === 1) return { x: 75, y: 8 };
+  // tooth2: right: 120, top: '10%' -> x: 72, y: 11
+  if (toothNumber === 2) return { x: 72, y: 11 };
+  // tooth3: right: 90, top: '14%' -> x: 67, y: 15
+  if (toothNumber === 3) return { x: 67, y: 15 };
+  // tooth4: right: 67, top: '18.5%' -> x: 62, y: 20
+  if (toothNumber === 4) return { x: 62, y: 20 };
+  // tooth5: right: 55, top: '24%' -> x: 58, y: 26
+  if (toothNumber === 5) return { x: 58, y: 26 };
+  // tooth6: right: 45, top: '30%' -> x: 56, y: 32
+  if (toothNumber === 6) return { x: 56, y: 32 };
+  // tooth7: right: 45, top: '36%' -> x: 56, y: 38
+  if (toothNumber === 7) return { x: 56, y: 38 };
+  // tooth8: right: 45, top: '42%' -> x: 56, y: 44
+  if (toothNumber === 8) return { x: 56, y: 44 };
+
+  // Upper left quadrant (teeth 9-16) - left side of screen
+  // tooth9: left: 45, top: '42%' -> x: 44, y: 44
+  if (toothNumber === 9) return { x: 44, y: 44 };
+  // tooth10: left: 45, top: '36%' -> x: 44, y: 38
+  if (toothNumber === 10) return { x: 44, y: 38 };
+  // tooth11: left: 45, top: '30%' -> x: 44, y: 32
+  if (toothNumber === 11) return { x: 44, y: 32 };
+  // tooth12: left: 55, top: '24%' -> x: 42, y: 26
+  if (toothNumber === 12) return { x: 42, y: 26 };
+  // tooth13: left: 67, top: '18.5%' -> x: 38, y: 20
+  if (toothNumber === 13) return { x: 38, y: 20 };
+  // tooth14: left: 90, top: '14%' -> x: 33, y: 15
+  if (toothNumber === 14) return { x: 33, y: 15 };
+  // tooth15: left: 120, top: '10%' -> x: 28, y: 11
+  if (toothNumber === 15) return { x: 28, y: 11 };
+  // tooth16: left: 160, top: '7.5%' -> x: 25, y: 8
+  if (toothNumber === 16) return { x: 25, y: 8 };
+
+  // Lower right quadrant (teeth 17-24) - right side of screen, bottom
+  // tooth17: right: 160, bottom: '7.5%' -> x: 75, y: 92
+  if (toothNumber === 17) return { x: 75, y: 92 };
+  // tooth18: right: 120, bottom: '10%' -> x: 72, y: 89
+  if (toothNumber === 18) return { x: 72, y: 89 };
+  // tooth19: right: 90, bottom: '14%' -> x: 67, y: 85
+  if (toothNumber === 19) return { x: 67, y: 85 };
+  // tooth20: right: 67, bottom: '18.5%' -> x: 62, y: 80
+  if (toothNumber === 20) return { x: 62, y: 80 };
+  // tooth21: right: 55, bottom: '24%' -> x: 58, y: 74
+  if (toothNumber === 21) return { x: 58, y: 74 };
+  // tooth22: right: 45, bottom: '30%' -> x: 56, y: 68
+  if (toothNumber === 22) return { x: 56, y: 68 };
+  // tooth23: right: 45, bottom: '36%' -> x: 56, y: 62
+  if (toothNumber === 23) return { x: 56, y: 62 };
+  // tooth24: right: 45, bottom: '42%' -> x: 56, y: 56
+  if (toothNumber === 24) return { x: 56, y: 56 };
+
+  // Lower left quadrant (teeth 25-32) - left side of screen, bottom
+  // tooth25: left: 45, bottom: '42%' -> x: 44, y: 56
+  if (toothNumber === 25) return { x: 44, y: 56 };
+  // tooth26: left: 45, bottom: '36%' -> x: 44, y: 62
+  if (toothNumber === 26) return { x: 44, y: 62 };
+  // tooth27: left: 45, bottom: '30%' -> x: 44, y: 68
+  if (toothNumber === 27) return { x: 44, y: 68 };
+  // tooth28: left: 55, bottom: '24%' -> x: 42, y: 74
+  if (toothNumber === 28) return { x: 42, y: 74 };
+  // tooth29: left: 67, bottom: '18.5%' -> x: 38, y: 80
+  if (toothNumber === 29) return { x: 38, y: 80 };
+  // tooth30: left: 90, bottom: '14%' -> x: 33, y: 85
+  if (toothNumber === 30) return { x: 33, y: 85 };
+  // tooth31: left: 120, bottom: '10%' -> x: 28, y: 89
+  if (toothNumber === 31) return { x: 28, y: 89 };
+  // tooth32: left: 160, bottom: '7.5%' -> x: 25, y: 92
+  if (toothNumber === 32) return { x: 25, y: 92 };
+
+  return { x: 50, y: 50 }; // default center
+};
+
+const ConditionMenu: React.FC<ConditionMenuProps> = ({ visible, onSelect, onClose, selectedSurface, selectedTooth }) => {
+  const [activeTab, setActiveTab] = useState<'condition' | 'toothStatus'>('condition');
+
+  if (!visible) return null;
+
+  const conditionsList: Array<{ key: ToothCondition; name: string; color: string }> = [
+    { key: 'caries', name: 'Caries', color: CONDITION_COLORS.caries },
+    { key: 'broken', name: 'Broken/Inappropriate Filling', color: CONDITION_COLORS.broken },
+    { key: 'pulpectomy', name: 'Pulpectomy', color: CONDITION_COLORS.pulpectomy },
+    { key: 'extraction', name: 'Extraction', color: CONDITION_COLORS.extraction },
+    { key: 'follow_up', name: 'Follow-up', color: CONDITION_COLORS.follow_up },
+    { key: 'needs_diagnosis', name: 'Needs More Diagnosis', color: CONDITION_COLORS.needs_diagnosis },
+  ];
+
+  const toothStatusList: Array<{ key: ToothCondition; name: string; color: string }> = [
+    { key: 'missing', name: 'Missing Tooth', color: CONDITION_COLORS.missing },
+    { key: 'filling_replacement', name: 'Temporary Filling', color: CONDITION_COLORS.filling_replacement },
+    { key: 'permanent_filling', name: 'Permanent Filling', color: CONDITION_COLORS.permanent_filling },
+    { key: 'treated', name: 'Root Canal Treated', color: 'transparent' },
+  ];
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity
+        style={styles.conditionMenuOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <TouchableWithoutFeedback>
+          <View style={{ width: '85%', borderRadius: 24, overflow: 'hidden' }}>
+            <BlurView intensity={90} tint="light" style={styles.conditionMenuContainer}>
+              <View style={{ backgroundColor: 'rgba(240, 249, 255, 0.95)' }}>
+                {/* Header */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18 }}>
+                  <View style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={styles.conditionMenuTitle}>{getSurfaceName(selectedSurface, selectedTooth || undefined)}</Text>
+                    <Text style={styles.conditionMenuSubtitle}>{getToothPosition(selectedTooth || 0)}</Text>
+                  </View>
+                  <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+                    <Ionicons name="close" size={24} color="#1E3A8A" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.conditionMenuDivider} />
+
+                {/* Tab Buttons */}
+                <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 12, marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: activeTab === 'condition' ? '#3B82F6' : 'rgba(255, 255, 255, 0.9)',
+                      paddingVertical: 12,
+                      paddingHorizontal: 18,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      borderWidth: activeTab === 'condition' ? 0 : 1.5,
+                      borderColor: 'rgba(203, 213, 225, 0.5)',
+                      shadowColor: activeTab === 'condition' ? '#3B82F6' : '#000',
+                      shadowOffset: {
+                        width: 0,
+                        height: activeTab === 'condition' ? 4 : 2,
+                      },
+                      shadowOpacity: activeTab === 'condition' ? 0.3 : 0.08,
+                      shadowRadius: activeTab === 'condition' ? 8 : 4,
+                      elevation: activeTab === 'condition' ? 6 : 2,
+                    }}
+                    onPress={() => setActiveTab('condition')}
+                  >
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: activeTab === 'condition' ? '#FFFFFF' : '#475569',
+                      letterSpacing: 0.3,
+                    }}>Condition</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor: activeTab === 'toothStatus' ? '#3B82F6' : 'rgba(255, 255, 255, 0.9)',
+                      paddingVertical: 12,
+                      paddingHorizontal: 18,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      borderWidth: activeTab === 'toothStatus' ? 0 : 1.5,
+                      borderColor: 'rgba(203, 213, 225, 0.5)',
+                      shadowColor: activeTab === 'toothStatus' ? '#3B82F6' : '#000',
+                      shadowOffset: {
+                        width: 0,
+                        height: activeTab === 'toothStatus' ? 4 : 2,
+                      },
+                      shadowOpacity: activeTab === 'toothStatus' ? 0.3 : 0.08,
+                      shadowRadius: activeTab === 'toothStatus' ? 8 : 4,
+                      elevation: activeTab === 'toothStatus' ? 6 : 2,
+                    }}
+                    onPress={() => setActiveTab('toothStatus')}
+                  >
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: activeTab === 'toothStatus' ? '#FFFFFF' : '#475569',
+                      letterSpacing: 0.3,
+                    }}>Tooth Status</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.conditionMenuScroll}>
+                  {activeTab === 'condition' ? (
+                    <>
+                      {conditionsList.map((condition) => (
+                        <TouchableOpacity
+                          key={condition.key}
+                          style={styles.conditionMenuItem}
+                          onPress={() => onSelect(condition.key)}
+                        >
+                          <View
+                            style={[
+                              styles.conditionColorBox,
+                              { backgroundColor: condition.color }
+                            ]}
+                          />
+                          <Text style={styles.conditionMenuItemText}>{condition.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      {/* خيار إزالة الحالة */}
+                      <TouchableOpacity
+                        style={styles.conditionMenuItem}
+                        onPress={() => onSelect(null)}
+                      >
+                        <Ionicons name="close-circle" size={24} color="#FF5252" />
+                        <Text style={[styles.conditionMenuItemText, { color: '#FF5252', marginLeft: 12 }]}>Clear Condition</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      {toothStatusList.map((status) => (
+                        <TouchableOpacity
+                          key={status.key}
+                          style={styles.conditionMenuItem}
+                          onPress={() => onSelect(status.key)}
+                        >
+                          <View
+                            style={[
+                              styles.conditionColorBox,
+                              {
+                                backgroundColor: status.color,
+                                borderWidth: status.key === 'treated' ? 2 : 0,
+                                borderColor: status.key === 'treated' ? '#800000' : 'transparent'
+                              }
+                            ]}
+                          />
+                          <Text style={styles.conditionMenuItemText}>{status.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      {/* خيار إزالة الحالة */}
+                      <TouchableOpacity
+                        style={styles.conditionMenuItem}
+                        onPress={() => onSelect('CLEAR_TOOTH_STATUS' as any)}
+                      >
+                        <Ionicons name="close-circle" size={24} color="#FF5252" />
+                        <Text style={[styles.conditionMenuItemText, { color: '#FF5252', marginLeft: 12 }]}>Clear Condition</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </ScrollView>
+              </View>
+            </BlurView>
+          </View>
+        </TouchableWithoutFeedback>
+      </TouchableOpacity>
+    </Modal>
+  );
+};
+
+// Get all available surfaces for a tooth
+const getAllSurfaces = (toothNumber: number): Array<{ key: string; label: string }> => {
+  const isLowerTooth = toothNumber >= 17 && toothNumber <= 32;
+  const swapMesialDistal = isLowerTooth;
+  const palatalOrLingual = isLowerTooth ? 'Lingual' : 'Palatal';
+
+  return [
+    { key: 'top', label: swapMesialDistal ? 'Distal' : 'Mesial' },
+    { key: 'bottom', label: swapMesialDistal ? 'Mesial' : 'Distal' },
+    { key: 'left', label: palatalOrLingual },
+    { key: 'right', label: 'Buccal' },
+    { key: 'center', label: 'Occlusal' },
+  ];
+};
+
+// Helper function to get surface mapping for database operations
+// Lower teeth (17-32) have swapped mesial/distal positions on screen
+const getSurfaceMap = (toothNumber: number): Record<keyof ToothSurfaceConditions, ToothSurface> => {
+  const isLowerTooth = toothNumber >= 17 && toothNumber <= 32;
+
+  return {
+    top: isLowerTooth ? 'distal' : 'mesial',       // Swap for lower teeth
+    bottom: isLowerTooth ? 'mesial' : 'distal',    // Swap for lower teeth
+    left: 'lingual',
+    right: 'buccal',
+    center: 'occlusal',
+  };
+};
+
+// Helper function to get surface name mapping (database → UI keys)
+// Lower teeth (17-32) have swapped mesial/distal positions on screen
+const getSurfaceNameMap = (toothNumber: number): Record<string, keyof ToothSurfaceConditions> => {
+  const isLowerTooth = toothNumber >= 17 && toothNumber <= 32;
+
+  return {
+    'mesial': isLowerTooth ? 'bottom' : 'top',     // Swap for lower teeth
+    'distal': isLowerTooth ? 'top' : 'bottom',     // Swap for lower teeth
+    'buccal': 'right',
+    'lingual': 'left',
+    'palatal': 'left',
+    'occlusal': 'center',
+  };
+};
+
+export default function DentalChartScreen({
+  onBack,
+  permanentPatientId,
+}: DentalChartScreenProps) {
+  // Get user context for doctor name
+  const { user } = useAuth();
+
+  // Animated Blobs - Same as PatientProfileScreen
+  const blob1Anim = useState(new Animated.Value(0))[0];
+  const blob2Anim = useState(new Animated.Value(0))[0];
+  const blob3Anim = useState(new Animated.Value(0))[0];
+  const blob4Anim = useState(new Animated.Value(0))[0];
+  const blob5Anim = useState(new Animated.Value(0))[0];
+  const blob6Anim = useState(new Animated.Value(0))[0];
+
+  // State Management لحالات الأسنان
+  const [toothConditions, setToothConditions] = useState<Record<number | string, ToothSurfaceConditions>>({});
+  const [toothBorderColors, setToothBorderColors] = useState<Record<number | string, ToothCondition>>({});
+  const [selectedTooth, setSelectedTooth] = useState<number | string | null>(null);
+  const [selectedSurface, setSelectedSurface] = useState<keyof ToothSurfaceConditions | null>(null);
+  const [showConditionMenu, setShowConditionMenu] = useState(false);
+  const [isClosing, setIsClosing] = useState(false); // لتتبع حالة الإغلاق
+  const [isEditModeActive, setIsEditModeActive] = useState(false); // لتتبع حالة Edit Mode
+  const [showToothDetailsModal, setShowToothDetailsModal] = useState(false); // لعرض تفاصيل السن في Edit Mode
+  const [isViewModeActive, setIsViewModeActive] = useState(false); // لتتبع حالة View Mode
+  const [selectedToothForDetails, setSelectedToothForDetails] = useState<number | null>(null); // السن المحدد للتفاصيل
+
+  // Referral state
+  const [referrals, setReferrals] = useState({
+    endodontics: false,
+    oralSurgery: false,
+    orthodontics: false,
+    periodontics: false,
+    prosthodontics: false,
+    oralMedicine: false,
+  });
+  const [referralStatus, setReferralStatus] = useState({
+    endodontics: 'not_given', // 'given' أو 'not_given'
+    oralSurgery: 'not_given',
+    orthodontics: 'not_given',
+    periodontics: 'not_given',
+    prosthodontics: 'not_given',
+    oralMedicine: 'not_given',
+  });
+  const [isReferralExpanded, setIsReferralExpanded] = useState(false); // لتتبع حالة فتح/إغلاق الأقسام (مغلقة افتراضياً)
+  const [showDepartmentModal, setShowDepartmentModal] = useState(false); // للتحكم في فتح/إغلاق Modal الأقسام
+  const [referralTab, setReferralTab] = useState<'department' | 'records'>('department'); // للتبديل بين Department و Referral Records
+  const [referralRecords, setReferralRecords] = useState<Array<{
+    departmentKey: string;
+    departmentName: string;
+    teeth: number[];
+    timestamp: string;
+    doctorName: string;
+    timestampNum: number
+  }>>([]); // سجلات التحويلات
+
+  // Oral Hygiene (Scaling) state
+  const [isOralHygieneExpanded, setIsOralHygieneExpanded] = useState(false); // لتتبع حالة توسع حاوية Oral Hygiene
+  const oralHygieneExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
+  const [scalingRecords, setScalingRecords] = useState<Array<{ id: string; timestamp: string; doctorName: string; timestampNum: number }>>([]);
+
+  // Total Treatment Record state
+  const [isTreatmentRecordExpanded, setIsTreatmentRecordExpanded] = useState(false); // لتتبع حالة توسع Total Treatment Record
+  const treatmentRecordExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
+
+  // Total Planning Record state
+  const [isPlanningRecordExpanded, setIsPlanningRecordExpanded] = useState(false); // لتتبع حالة توسع Total Planning Record
+  const planningRecordExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
+
+  // بيانات الأسنان المحفوظة
+  const [selectedReferralFor, setSelectedReferralFor] = useState<Record<number | string, string[]>>({});  // Changed to array for multiple referrals
+  // Types for tooth records
+  type EditingRecord = {
+    type: 'editing';
+    treatment: string;
+    details: string;
+    surfaces: string[];
+    timestamp: string;
+    timestampNum: number;
+    doctorName: string;
+  };
+
+  type PlanningRecord = {
+    type: 'planning';
+    action: 'diagnosed' | 'canceled';
+    condition: string;
+    surfaces: string[];
+    timestamp: string;
+    timestampNum: number;
+    doctorName: string;
+    isChange?: boolean; // هل هذا تغيير لحالة موجودة؟
+    previousCondition?: string; // الحالة السابقة
+  };
+
+  type ToothRecord = EditingRecord | PlanningRecord;
+
+  const [toothRecords, setToothRecords] = useState<Record<number | string, ToothRecord[]>>({});
+
+  // قائمة عامة لكل planning records بترتيب الإضافة الفعلي
+  const [allPlanningRecordsGlobal, setAllPlanningRecordsGlobal] = useState<Array<{
+    toothNumber: number;
+    action: 'diagnosed' | 'canceled';
+    condition: string;
+    surfaces: string[];
+    timestamp: string;
+    timestampNum: number;
+    doctorName: string;
+    isChange?: boolean;
+    previousCondition?: string;
+  }>>([]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // Pending Planning Records State (Before Submit)
+  // ═══════════════════════════════════════════════════════════════
+  const [pendingPlanningRecords, setPendingPlanningRecords] = useState<Array<{
+    toothNumber: number;
+    action: 'diagnosed' | 'canceled';
+    condition: string;
+    surfaces: string[];
+    timestamp: string;
+    timestampNum: number;
+    doctorName: string;
+    isChange?: boolean;
+    previousCondition?: string;
+  }>>([]);
+
+  // Treatment and Details Options
+  const treatmentOptions = [
+    { key: 'filling', label: 'Filling' },
+    { key: 'pulpectomy', label: 'Pulpectomy' },
+    { key: 'extraction', label: 'Extraction' },
+  ];
+
+  const detailsOptions = [
+    { key: 'permanent_filling', label: 'Permanent Filling' },
+    { key: 'direct_pulp_capping', label: 'Direct Pulp Capping' },
+    { key: 'indirect_pulp_capping', label: 'Indirect Pulp Capping' },
+    { key: 'gi_filling', label: 'GI Filling' },
+    { key: 'temporary_filling', label: 'Temporary Filling' },
+  ];
+
+  const referralOptions = [
+    { key: 'endodontics', label: 'Endodontics' },
+    { key: 'oralSurgery', label: 'Oral Surgery' },
+    { key: 'orthodontics', label: 'Orthodontics' },
+    { key: 'periodontics', label: 'Periodontics' },
+    { key: 'prosthodontics', label: 'Prosthodontics' },
+    { key: 'oralMedicine', label: 'Oral Medicine' },
+  ];
+
+  // Animated Values للأنيميشن - قيم منفصلة لكل سن
+  // السن 6
+  const tooth6Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth6Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth6TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth6TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 7
+  const tooth7Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth7Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth7TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth7TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 8
+  const tooth8Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth8Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth8TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth8TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 5
+  const tooth5Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth5Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth5TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth5TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 4
+  const tooth4Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth4Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth4TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth4TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 3
+  const tooth3Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth3Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth3TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth3TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 2
+  const tooth2Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth2Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth2TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth2TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 1
+  const tooth1Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth1Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth1TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth1TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 32 (السفلية يسار #8)
+  const tooth32Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth32Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth32TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth32TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 31 (السفلية يسار #7)
+  const tooth31Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth31Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth31TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth31TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 30 (السفلية يسار #6)
+  const tooth30Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth30Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth30TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth30TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 29 (السفلية يسار #5)
+  const tooth29Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth29Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth29TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth29TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 28 (السفلية يسار #4)
+  const tooth28Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth28Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth28TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth28TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 27 (السفلية يسار #3)
+  const tooth27Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth27Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth27TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth27TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 26 (السفلية يسار #2)
+  const tooth26Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth26Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth26TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth26TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 25 (السفلية يسار #1)
+  const tooth25Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth25Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth25TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth25TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 9 (العلوية يسار #1)
+  const tooth9Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth9Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth9TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth9TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 10 (العلوية يسار #2)
+  const tooth10Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth10Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth10TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth10TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 11 (العلوية يسار #3)
+  const tooth11Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth11Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth11TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth11TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 12 (العلوية يسار #4)
+  const tooth12Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth12Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth12TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth12TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 13 (العلوية يسار #5)
+  const tooth13Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth13Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth13TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth13TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 14 (العلوية يسار #6)
+  const tooth14Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth14Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth14TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth14TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 15 (العلوية يسار #7)
+  const tooth15Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth15Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth15TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth15TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 16 (العلوية يسار #8)
+  const tooth16Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth16Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth16TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth16TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 17 (السفلية يمين #8)
+  const tooth17Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth17Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth17TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth17TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // Animated Values للـ View Mode - إزاحة الأسنان وزر Edit
+  const rightTeethSlide = React.useRef(new Animated.Value(0)).current; // أسنان اليمين (1-8 و 17-24)
+  const leftTeethSlide = React.useRef(new Animated.Value(0)).current; // أسنان اليسار (9-16 و 25-32)
+  const editButtonSlide = React.useRef(new Animated.Value(0)).current; // زر Edit
+  const verticalTopLineSlide = React.useRef(new Animated.Value(0)).current; // الخط العمودي العلوي (للأعلى)
+  const verticalBottomLineSlide = React.useRef(new Animated.Value(0)).current; // الخط العمودي السفلي (للأسفل)
+  const horizontalRightLineSlide = React.useRef(new Animated.Value(0)).current; // الخط الأفقي الأيمن (لليمين)
+  const horizontalLeftLineSlide = React.useRef(new Animated.Value(0)).current; // الخط الأفقي الأيسر (لليسار)
+  const rightNumbersSlide = React.useRef(new Animated.Value(0)).current; // أرقام الأسنان اليمنى
+  const leftNumbersSlide = React.useRef(new Animated.Value(0)).current; // أرقام الأسنان اليسرى
+  const oralHygieneOpacity = React.useRef(new Animated.Value(1)).current; // شفافية حاوية Oral Hygiene
+  const viewButtonPositionAnim = React.useRef(new Animated.Value(0)).current; // أنيميشن موقع زر View (0 = موقع أصلي, 1 = أعلى يمين)
+  const buttonsOpacity = React.useRef(new Animated.Value(1)).current; // شفافية الأزرار (Edit, View, Oral Hygiene) - تختفي عند فتح السن
+  const referralContainerSlide = React.useRef(new Animated.Value(1000)).current; // حاوية Referral (تبدأ خارج الشاشة من اليمين)
+  const referralSectionsHeight = React.useRef(new Animated.Value(0)).current; // لفتح/إغلاق أقسام Referral (0 = مغلق, 1 = مفتوح) - تبدأ مغلقة
+  const treatmentRecordSlide = React.useRef(new Animated.Value(-1000)).current; // حاوية Treatment Record (تبدأ خارج الشاشة من اليسار)
+  const planningRecordSlide = React.useRef(new Animated.Value(1000)).current; // حاوية Planning Record (تبدأ خارج الشاشة من اليمين)
+  const treatmentRecordPushDown = React.useRef(new Animated.Value(0)).current; // تحريك Treatment Record للأسفل عند فتح Referral (0 = عادي, 400 = مدفوع للأسفل)
+  const planningRecordPushDown = React.useRef(new Animated.Value(0)).current; // تحريك Planning Record للأسفل عند فتح Referral (0 = عادي, 400 = مدفوع للأسفل)
+
+  // الحاويات في موقع ثابت - لا حاجة لتحريكها
+  React.useEffect(() => {
+    // قيمة 0 تعني أن الحاويات في موقعها الطبيعي الثابت
+    treatmentRecordPushDown.setValue(0);
+    planningRecordPushDown.setValue(0);
+  }, []);
+
+  // أنيميشن توسع حاوية Oral Hygiene
+  useEffect(() => {
+    Animated.timing(oralHygieneExpandAnim, {
+      toValue: isOralHygieneExpanded ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [isOralHygieneExpanded]);
+
+  // دالة للنقر على حاوية Oral Hygiene
+  const handleOralHygienePress = () => {
+    setIsOralHygieneExpanded(!isOralHygieneExpanded);
+  };
+
+  // دالة لإضافة سجل Scaling جديد
+  const handleAddScaling = async () => {
+    if (!permanentPatientId) {
+      Alert.alert('Error', 'No patient selected');
+      return;
+    }
+
+    const now = new Date();
+    const timestamp = now.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // حفظ في قاعدة البيانات
+    const { data, error } = await createScalingRecord(
+      permanentPatientId,
+      user?.name || 'Dr. Unknown'
+    );
+
+    if (error) {
+      Alert.alert('Error', 'Failed to save scaling record');
+      console.error('Error saving scaling record:', error);
+      return;
+    }
+
+    // إضافة للـ state
+    if (data) {
+      setScalingRecords(prev => [
+        {
+          id: data.id,
+          timestamp,
+          doctorName: user?.name || 'Dr. Unknown',
+          timestampNum: now.getTime()
+        },
+        ...prev
+      ]);
+    }
+
+    // إغلاق الحاوية بعد الإضافة
+    setIsOralHygieneExpanded(false);
+  };
+
+  // السن 18 (السفلية يمين #7)
+  const tooth18Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth18Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth18TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth18TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 19 (السفلية يمين #6)
+  const tooth19Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth19Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth19TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth19TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 20 (السفلية يمين #5)
+  const tooth20Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth20Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth20TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth20TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 21 (السفلية يمين #4)
+  const tooth21Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth21Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth21TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth21TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 22 (السفلية يمين #3)
+  const tooth22Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth22Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth22TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth22TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 23 (السفلية يمين #2)
+  const tooth23Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth23Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth23TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth23TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // السن 24 (السفلية يمين #1)
+  const tooth24Scale = React.useRef(new Animated.Value(1)).current;
+  const tooth24Rotation = React.useRef(new Animated.Value(0)).current;
+  const tooth24TranslateX = React.useRef(new Animated.Value(0)).current;
+  const tooth24TranslateY = React.useRef(new Animated.Value(0)).current;
+
+  // Function لإيقاف جميع الأنيميشنات لسن معين
+  const stopToothAnimations = (toothNumber: number) => {
+    if (toothNumber === 6) {
+      tooth6Scale.stopAnimation();
+      tooth6Rotation.stopAnimation();
+      tooth6TranslateX.stopAnimation();
+      tooth6TranslateY.stopAnimation();
+      // إعادة القيم للوضع الطبيعي
+      tooth6Scale.setValue(1);
+      tooth6Rotation.setValue(0);
+      tooth6TranslateX.setValue(0);
+      tooth6TranslateY.setValue(0);
+    } else if (toothNumber === 7) {
+      tooth7Scale.stopAnimation();
+      tooth7Rotation.stopAnimation();
+      tooth7TranslateX.stopAnimation();
+      tooth7TranslateY.stopAnimation();
+      tooth7Scale.setValue(1);
+      tooth7Rotation.setValue(0);
+      tooth7TranslateX.setValue(0);
+      tooth7TranslateY.setValue(0);
+    } else if (toothNumber === 8) {
+      tooth8Scale.stopAnimation();
+      tooth8Rotation.stopAnimation();
+      tooth8TranslateX.stopAnimation();
+      tooth8TranslateY.stopAnimation();
+      tooth8Scale.setValue(1);
+      tooth8Rotation.setValue(0);
+      tooth8TranslateX.setValue(0);
+      tooth8TranslateY.setValue(0);
+    } else if (toothNumber === 5) {
+      tooth5Scale.stopAnimation();
+      tooth5Rotation.stopAnimation();
+      tooth5TranslateX.stopAnimation();
+      tooth5TranslateY.stopAnimation();
+      tooth5Scale.setValue(1);
+      tooth5Rotation.setValue(0);
+      tooth5TranslateX.setValue(0);
+      tooth5TranslateY.setValue(0);
+    } else if (toothNumber === 4) {
+      tooth4Scale.stopAnimation();
+      tooth4Rotation.stopAnimation();
+      tooth4TranslateX.stopAnimation();
+      tooth4TranslateY.stopAnimation();
+      tooth4Scale.setValue(1);
+      tooth4Rotation.setValue(0);
+      tooth4TranslateX.setValue(0);
+      tooth4TranslateY.setValue(0);
+    } else if (toothNumber === 3) {
+      tooth3Scale.stopAnimation();
+      tooth3Rotation.stopAnimation();
+      tooth3TranslateX.stopAnimation();
+      tooth3TranslateY.stopAnimation();
+      tooth3Scale.setValue(1);
+      tooth3Rotation.setValue(0);
+      tooth3TranslateX.setValue(0);
+      tooth3TranslateY.setValue(0);
+    } else if (toothNumber === 2) {
+      tooth2Scale.stopAnimation();
+      tooth2Rotation.stopAnimation();
+      tooth2TranslateX.stopAnimation();
+      tooth2TranslateY.stopAnimation();
+      tooth2Scale.setValue(1);
+      tooth2Rotation.setValue(0);
+      tooth2TranslateX.setValue(0);
+      tooth2TranslateY.setValue(0);
+    } else if (toothNumber === 1) {
+      tooth1Scale.stopAnimation();
+      tooth1Rotation.stopAnimation();
+      tooth1TranslateX.stopAnimation();
+      tooth1TranslateY.stopAnimation();
+      tooth1Scale.setValue(1);
+      tooth1Rotation.setValue(0);
+      tooth1TranslateX.setValue(0);
+      tooth1TranslateY.setValue(0);
+    } else if (toothNumber === 32) {
+      tooth32Scale.stopAnimation();
+      tooth32Rotation.stopAnimation();
+      tooth32TranslateX.stopAnimation();
+      tooth32TranslateY.stopAnimation();
+      tooth32Scale.setValue(1);
+      tooth32Rotation.setValue(0);
+      tooth32TranslateX.setValue(0);
+      tooth32TranslateY.setValue(0);
+    } else if (toothNumber === 31) {
+      tooth31Scale.stopAnimation();
+      tooth31Rotation.stopAnimation();
+      tooth31TranslateX.stopAnimation();
+      tooth31TranslateY.stopAnimation();
+      tooth31Scale.setValue(1);
+      tooth31Rotation.setValue(0);
+      tooth31TranslateX.setValue(0);
+      tooth31TranslateY.setValue(0);
+    } else if (toothNumber === 30) {
+      tooth30Scale.stopAnimation();
+      tooth30Rotation.stopAnimation();
+      tooth30TranslateX.stopAnimation();
+      tooth30TranslateY.stopAnimation();
+      tooth30Scale.setValue(1);
+      tooth30Rotation.setValue(0);
+      tooth30TranslateX.setValue(0);
+      tooth30TranslateY.setValue(0);
+    } else if (toothNumber === 29) {
+      tooth29Scale.stopAnimation();
+      tooth29Rotation.stopAnimation();
+      tooth29TranslateX.stopAnimation();
+      tooth29TranslateY.stopAnimation();
+      tooth29Scale.setValue(1);
+      tooth29Rotation.setValue(0);
+      tooth29TranslateX.setValue(0);
+      tooth29TranslateY.setValue(0);
+    } else if (toothNumber === 28) {
+      tooth28Scale.stopAnimation();
+      tooth28Rotation.stopAnimation();
+      tooth28TranslateX.stopAnimation();
+      tooth28TranslateY.stopAnimation();
+      tooth28Scale.setValue(1);
+      tooth28Rotation.setValue(0);
+      tooth28TranslateX.setValue(0);
+      tooth28TranslateY.setValue(0);
+    } else if (toothNumber === 27) {
+      tooth27Scale.stopAnimation();
+      tooth27Rotation.stopAnimation();
+      tooth27TranslateX.stopAnimation();
+      tooth27TranslateY.stopAnimation();
+      tooth27Scale.setValue(1);
+      tooth27Rotation.setValue(0);
+      tooth27TranslateX.setValue(0);
+      tooth27TranslateY.setValue(0);
+    } else if (toothNumber === 26) {
+      tooth26Scale.stopAnimation();
+      tooth26Rotation.stopAnimation();
+      tooth26TranslateX.stopAnimation();
+      tooth26TranslateY.stopAnimation();
+      tooth26Scale.setValue(1);
+      tooth26Rotation.setValue(0);
+      tooth26TranslateX.setValue(0);
+      tooth26TranslateY.setValue(0);
+    } else if (toothNumber === 25) {
+      tooth25Scale.stopAnimation();
+      tooth25Rotation.stopAnimation();
+      tooth25TranslateX.stopAnimation();
+      tooth25TranslateY.stopAnimation();
+      tooth25Scale.setValue(1);
+      tooth25Rotation.setValue(0);
+      tooth25TranslateX.setValue(0);
+      tooth25TranslateY.setValue(0);
+    } else if (toothNumber === 9) {
+      tooth9Scale.stopAnimation();
+      tooth9Rotation.stopAnimation();
+      tooth9TranslateX.stopAnimation();
+      tooth9TranslateY.stopAnimation();
+      tooth9Scale.setValue(1);
+      tooth9Rotation.setValue(0);
+      tooth9TranslateX.setValue(0);
+      tooth9TranslateY.setValue(0);
+    } else if (toothNumber === 10) {
+      tooth10Scale.stopAnimation();
+      tooth10Rotation.stopAnimation();
+      tooth10TranslateX.stopAnimation();
+      tooth10TranslateY.stopAnimation();
+      tooth10Scale.setValue(1);
+      tooth10Rotation.setValue(0);
+      tooth10TranslateX.setValue(0);
+      tooth10TranslateY.setValue(0);
+    } else if (toothNumber === 11) {
+      tooth11Scale.stopAnimation();
+      tooth11Rotation.stopAnimation();
+      tooth11TranslateX.stopAnimation();
+      tooth11TranslateY.stopAnimation();
+      tooth11Scale.setValue(1);
+      tooth11Rotation.setValue(0);
+      tooth11TranslateX.setValue(0);
+      tooth11TranslateY.setValue(0);
+    } else if (toothNumber === 12) {
+      tooth12Scale.stopAnimation();
+      tooth12Rotation.stopAnimation();
+      tooth12TranslateX.stopAnimation();
+      tooth12TranslateY.stopAnimation();
+      tooth12Scale.setValue(1);
+      tooth12Rotation.setValue(0);
+      tooth12TranslateX.setValue(0);
+      tooth12TranslateY.setValue(0);
+    } else if (toothNumber === 13) {
+      tooth13Scale.stopAnimation();
+      tooth13Rotation.stopAnimation();
+      tooth13TranslateX.stopAnimation();
+      tooth13TranslateY.stopAnimation();
+      tooth13Scale.setValue(1);
+      tooth13Rotation.setValue(0);
+      tooth13TranslateX.setValue(0);
+      tooth13TranslateY.setValue(0);
+    } else if (toothNumber === 14) {
+      tooth14Scale.stopAnimation();
+      tooth14Rotation.stopAnimation();
+      tooth14TranslateX.stopAnimation();
+      tooth14TranslateY.stopAnimation();
+      tooth14Scale.setValue(1);
+      tooth14Rotation.setValue(0);
+      tooth14TranslateX.setValue(0);
+      tooth14TranslateY.setValue(0);
+    } else if (toothNumber === 15) {
+      tooth15Scale.stopAnimation();
+      tooth15Rotation.stopAnimation();
+      tooth15TranslateX.stopAnimation();
+      tooth15TranslateY.stopAnimation();
+      tooth15Scale.setValue(1);
+      tooth15Rotation.setValue(0);
+      tooth15TranslateX.setValue(0);
+      tooth15TranslateY.setValue(0);
+    } else if (toothNumber === 16) {
+      tooth16Scale.stopAnimation();
+      tooth16Rotation.stopAnimation();
+      tooth16TranslateX.stopAnimation();
+      tooth16TranslateY.stopAnimation();
+      tooth16Scale.setValue(1);
+      tooth16Rotation.setValue(0);
+      tooth16TranslateX.setValue(0);
+      tooth16TranslateY.setValue(0);
+    } else if (toothNumber === 17) {
+      tooth17Scale.stopAnimation();
+      tooth17Rotation.stopAnimation();
+      tooth17TranslateX.stopAnimation();
+      tooth17TranslateY.stopAnimation();
+      tooth17Scale.setValue(1);
+      tooth17Rotation.setValue(0);
+      tooth17TranslateX.setValue(0);
+      tooth17TranslateY.setValue(0);
+    } else if (toothNumber === 18) {
+      tooth18Scale.stopAnimation();
+      tooth18Rotation.stopAnimation();
+      tooth18TranslateX.stopAnimation();
+      tooth18TranslateY.stopAnimation();
+      tooth18Scale.setValue(1);
+      tooth18Rotation.setValue(0);
+      tooth18TranslateX.setValue(0);
+      tooth18TranslateY.setValue(0);
+    } else if (toothNumber === 19) {
+      tooth19Scale.stopAnimation();
+      tooth19Rotation.stopAnimation();
+      tooth19TranslateX.stopAnimation();
+      tooth19TranslateY.stopAnimation();
+      tooth19Scale.setValue(1);
+      tooth19Rotation.setValue(0);
+      tooth19TranslateX.setValue(0);
+      tooth19TranslateY.setValue(0);
+    } else if (toothNumber === 20) {
+      tooth20Scale.stopAnimation();
+      tooth20Rotation.stopAnimation();
+      tooth20TranslateX.stopAnimation();
+      tooth20TranslateY.stopAnimation();
+      tooth20Scale.setValue(1);
+      tooth20Rotation.setValue(0);
+      tooth20TranslateX.setValue(0);
+      tooth20TranslateY.setValue(0);
+    } else if (toothNumber === 21) {
+      tooth21Scale.stopAnimation();
+      tooth21Rotation.stopAnimation();
+      tooth21TranslateX.stopAnimation();
+      tooth21TranslateY.stopAnimation();
+      tooth21Scale.setValue(1);
+      tooth21Rotation.setValue(0);
+      tooth21TranslateX.setValue(0);
+      tooth21TranslateY.setValue(0);
+    } else if (toothNumber === 22) {
+      tooth22Scale.stopAnimation();
+      tooth22Rotation.stopAnimation();
+      tooth22TranslateX.stopAnimation();
+      tooth22TranslateY.stopAnimation();
+      tooth22Scale.setValue(1);
+      tooth22Rotation.setValue(0);
+      tooth22TranslateX.setValue(0);
+      tooth22TranslateY.setValue(0);
+    } else if (toothNumber === 23) {
+      tooth23Scale.stopAnimation();
+      tooth23Rotation.stopAnimation();
+      tooth23TranslateX.stopAnimation();
+      tooth23TranslateY.stopAnimation();
+      tooth23Scale.setValue(1);
+      tooth23Rotation.setValue(0);
+      tooth23TranslateX.setValue(0);
+      tooth23TranslateY.setValue(0);
+    } else if (toothNumber === 24) {
+      tooth24Scale.stopAnimation();
+      tooth24Rotation.stopAnimation();
+      tooth24TranslateX.stopAnimation();
+      tooth24TranslateY.stopAnimation();
+      tooth24Scale.setValue(1);
+      tooth24Rotation.setValue(0);
+      tooth24TranslateX.setValue(0);
+      tooth24TranslateY.setValue(0);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  // Database Integration Functions
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Convert tooth number (1-32) to Palmer Notation (UR1-UR8, UL1-UL8, LR1-LR8, LL1-LL8)
+   */
+  const convertNumberToPalmer = (toothNumber: number): ToothNumber | null => {
+    // Upper Left (1-8 → UL1-UL8)
+    if (toothNumber >= 1 && toothNumber <= 8) {
+      const position = toothNumber;
+      return `UL${position}` as ToothNumber;
+    }
+    // Upper Right (9-16 → UR8-UR1)
+    if (toothNumber >= 9 && toothNumber <= 16) {
+      const position = 17 - toothNumber;
+      return `UR${position}` as ToothNumber;
+    }
+    // Lower Left (17-24 → LL1-LL8)
+    if (toothNumber >= 17 && toothNumber <= 24) {
+      const position = toothNumber - 16;
+      return `LL${position}` as ToothNumber;
+    }
+    // Lower Right (25-32 → LR8-LR1)
+    if (toothNumber >= 25 && toothNumber <= 32) {
+      const position = 33 - toothNumber;
+      return `LR${position}` as ToothNumber;
+    }
+    return null;
+  };
+
+  /**
+   * Convert Palmer Notation to tooth number (1-32)
+   */
+  const convertPalmerToNumber = (palmer: ToothNumber): number | null => {
+    const quadrant = palmer.substring(0, 2); // UR, UL, LR, LL
+    const position = parseInt(palmer.substring(2)); // 1-8
+
+    if (quadrant === 'UL') {
+      return position; // UL1→1, UL2→2, ..., UL8→8
+    }
+    if (quadrant === 'UR') {
+      return 17 - position; // UR8→9, UR7→10, ..., UR1→16
+    }
+    if (quadrant === 'LL') {
+      return 16 + position; // LL1→17, LL2→18, ..., LL8→24
+    }
+    if (quadrant === 'LR') {
+      return 33 - position; // LR1→32, LR2→31, ..., LR8→25
+    }
+    return null;
+  };
+
+  /**
+   * Load all dental data for the patient from database
+   */
+  const loadPatientDentalData = async () => {
+    if (!permanentPatientId) {
+      console.log('No permanent patient ID, skipping data load');
+      return;
+    }
+
+    try {
+      console.log('🚀 Loading dental data for patient (PARALLEL):', permanentPatientId);
+      const startTime = performance.now();
+
+      // ⚡ Load ALL data in PARALLEL (much faster!)
+      const [
+        toothDataResult,
+        editingDataResult,
+        planningDataResult,
+        referralsDataResult,
+        scalingDataResult
+      ] = await Promise.all([
+        getCompleteToothData(permanentPatientId),
+        getEditingRecords(permanentPatientId),
+        getPlanningRecords(permanentPatientId),
+        getReferrals(permanentPatientId),
+        getScalingRecords(permanentPatientId)
+      ]);
+
+      const loadTime = performance.now() - startTime;
+      console.log(` All data loaded in ${loadTime.toFixed(0)}ms`);
+
+      // Process tooth surface conditions
+      const { data: toothData, error: toothError } = toothDataResult;
+
+      if (toothError) {
+        console.error('Error loading tooth data:', toothError);
+        Alert.alert('خطأ', 'فشل تحميل بيانات الأسنان');
+        return;
+      }
+
+      if (toothData && toothData.length > 0) {
+        const newConditions: Record<number, ToothSurfaceConditions> = {};
+
+        // Convert Palmer notation to numbers and build conditions object
+        toothData.forEach((tooth) => {
+          const toothNumber = convertPalmerToNumber(tooth.tooth_number as ToothNumber);
+          if (toothNumber) {
+            newConditions[toothNumber] = {
+              top: tooth.surfaces.top || null,
+              bottom: tooth.surfaces.bottom || null,
+              left: tooth.surfaces.left || null,
+              right: tooth.surfaces.right || null,
+              center: tooth.surfaces.center || null,
+            };
+          }
+        });
+
+        setToothConditions(newConditions);
+        console.log('Loaded tooth conditions for', Object.keys(newConditions).length, 'teeth');
+        // Border colors come from editing_records and planning_records only
+      }
+
+      // Process editing records (treatments) - already loaded
+      const { data: editingData, error: editingError } = editingDataResult;
+
+      if (editingError) {
+        console.error('Error loading editing records:', editingError);
+      } else if (editingData && editingData.length > 0) {
+        const newRecords: Record<number, ToothRecord[]> = {};
+        const borderColorsFromEditing: Record<number, ToothCondition> = {};
+        const conditionsFromEditing: Record<number, ToothSurfaceConditions> = {};
+
+        editingData.forEach((record) => {
+          const toothNumber = convertPalmerToNumber(record.tooth_number as ToothNumber);
+          if (toothNumber) {
+            // Parse surfaces once at the beginning
+            const parsedSurfaces = typeof record.surfaces === 'string' ? JSON.parse(record.surfaces) : record.surfaces;
+
+            if (!newRecords[toothNumber]) {
+              newRecords[toothNumber] = [];
+            }
+
+            newRecords[toothNumber].push({
+              type: 'editing',
+              treatment: record.treatment,
+              details: record.details || '',
+              surfaces: parsedSurfaces,
+              timestamp: new Date(record.timestamp).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              }),
+              timestampNum: record.timestamp_num || Date.now(),
+              doctorName: record.doctor_name,
+            });
+
+            // Rebuild toothBorderColors from editing records
+            if (record.treatment === 'Pulpectomy') {
+              borderColorsFromEditing[toothNumber] = 'pulpectomy';
+            }
+
+            // Rebuild toothConditions from editing records
+            if (record.treatment === 'Extraction') {
+              conditionsFromEditing[toothNumber] = {
+                top: 'missing',
+                bottom: 'missing',
+                left: 'missing',
+                right: 'missing',
+                center: 'missing',
+              };
+            } else if (record.details && Array.isArray(parsedSurfaces)) {
+              console.log(`🔍 Processing tooth ${toothNumber}: details="${record.details}", surfaces=`, parsedSurfaces);
+
+              // Map surface names to keys (database uses lowercase)
+              // Use helper function to get correct mapping for lower teeth
+              const surfaceNameMap = getSurfaceNameMap(toothNumber);
+
+              // Determine color based on details
+              let conditionColor: ToothCondition | null = null;
+              if (record.details === 'Temporary Filling') {
+                conditionColor = 'filling_replacement';  // رمادي
+              } else if (record.details === 'Permanent Filling') {
+                conditionColor = 'permanent_filling';    // أخضر
+              } else if (record.details === 'GI Filling') {
+                conditionColor = 'gi';                   // أخضر
+              } else if (record.details === 'Direct Pulp Capping') {
+                conditionColor = 'direct_pulp_capping';  // أخضر
+              } else if (record.details === 'Indirect Pulp Capping') {
+                conditionColor = 'indirect_pulp_capping'; // أخضر
+              }
+
+              console.log(`   → Mapped to color: ${conditionColor}`);
+
+              if (conditionColor && Array.isArray(parsedSurfaces)) {
+                if (!conditionsFromEditing[toothNumber]) {
+                  conditionsFromEditing[toothNumber] = {
+                    top: null,
+                    bottom: null,
+                    left: null,
+                    right: null,
+                    center: null,
+                  };
+                }
+
+                // Apply color to specified surfaces
+                parsedSurfaces.forEach((surfaceName: string) => {
+                  const surfaceKey = surfaceNameMap[surfaceName];
+                  if (surfaceKey) {
+                    conditionsFromEditing[toothNumber][surfaceKey] = conditionColor;
+                  }
+                });
+              }
+            }
+          }
+        });
+
+        setToothRecords(prev => ({ ...prev, ...newRecords }));
+        console.log(' Loaded editing records for', Object.keys(newRecords).length, 'teeth');
+
+        // Apply border colors from editing records (Pulpectomy)
+        if (Object.keys(borderColorsFromEditing).length > 0) {
+          setToothBorderColors(prev => {
+            const updated = { ...prev, ...borderColorsFromEditing };
+            console.log(' Applying border colors from editing records:', borderColorsFromEditing);
+            console.log('   Previous border colors:', prev);
+            console.log('   Updated border colors:', updated);
+            return updated;
+          });
+        }
+
+        // Editing records are for display only in Modal (history)
+        // Colors come ONLY from tooth_surface_conditions table
+      }
+
+      // Process planning records (diagnoses) - already loaded
+      const { data: planningData, error: planningError } = planningDataResult;
+
+      if (planningError) {
+        console.error('Error loading planning records:', planningError);
+      } else if (planningData && planningData.length > 0) {
+        const newPlanningRecords: Array<{
+          toothNumber: number;
+          action: 'diagnosed' | 'canceled';
+          condition: string;
+          surfaces: string[];
+          timestamp: string;
+          timestampNum: number;
+          doctorName: string;
+          isChange?: boolean;
+          previousCondition?: string;
+        }> = [];
+
+        planningData.forEach((record) => {
+          const toothNumber = convertPalmerToNumber(record.tooth_number as ToothNumber);
+          if (toothNumber) {
+            newPlanningRecords.push({
+              toothNumber,
+              action: record.action,
+              condition: record.condition,
+              surfaces: typeof record.surfaces === 'string' ? JSON.parse(record.surfaces) : record.surfaces,
+              timestamp: new Date(record.timestamp).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              }),
+              timestampNum: record.timestamp_num || Date.now(),
+              doctorName: record.doctor_name,
+              isChange: record.is_change,
+              previousCondition: record.previous_condition,
+            });
+          }
+        });
+
+        setAllPlanningRecordsGlobal(newPlanningRecords);
+        console.log('Loaded', newPlanningRecords.length, 'planning records');
+
+        const planningRecordsForTeeth: Record<number, ToothRecord[]> = {};
+
+        newPlanningRecords.forEach((record) => {
+          const toothNumber = record.toothNumber;
+
+          // Add to toothRecords
+          if (!planningRecordsForTeeth[toothNumber]) {
+            planningRecordsForTeeth[toothNumber] = [];
+          }
+
+          planningRecordsForTeeth[toothNumber].push({
+            type: 'planning',
+            action: record.action,
+            condition: record.condition,
+            surfaces: record.surfaces,
+            timestamp: record.timestamp,
+            timestampNum: record.timestampNum,
+            doctorName: record.doctorName,
+            isChange: record.isChange,
+            previousCondition: record.previousCondition,
+          });
+        });
+
+        // Add planning records to toothRecords
+        if (Object.keys(planningRecordsForTeeth).length > 0) {
+          setToothRecords(prev => {
+            const updated = { ...prev };
+
+            // First, remove all old planning records to prevent duplicates
+            Object.keys(updated).forEach((toothKey) => {
+              const toothNum = parseInt(toothKey);
+              updated[toothNum] = updated[toothNum].filter(record => record.type !== 'planning');
+            });
+
+            // Then add the fresh planning records from database
+            Object.keys(planningRecordsForTeeth).forEach((toothKey) => {
+              const toothNum = parseInt(toothKey);
+              updated[toothNum] = [
+                ...(updated[toothNum] || []),
+                ...planningRecordsForTeeth[toothNum]
+              ];
+            });
+            return updated;
+          });
+        }
+
+        // Detect Root Canal Treated from planning records and set border colors
+        const borderColorsFromPlanning: Record<number, ToothCondition> = {};
+        newPlanningRecords.forEach((record) => {
+          console.log(`🔍 Planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, record.surfaces);
+          if (record.surfaces.includes('Root Canal Treated')) {
+            borderColorsFromPlanning[record.toothNumber] = 'treated';
+            console.log(`🦷 Tooth ${record.toothNumber}: Root Canal Treated detected → setting border color to 'treated'`);
+          }
+        });
+
+        if (Object.keys(borderColorsFromPlanning).length > 0) {
+          setToothBorderColors(prev => {
+            const updated = { ...prev, ...borderColorsFromPlanning };
+            console.log(' Applying border colors from planning records:', borderColorsFromPlanning);
+            console.log('   Previous border colors:', prev);
+            console.log('   Updated border colors:', updated);
+            return updated;
+          });
+        }
+
+        // Planning records are for display only in Modal (history)
+        // Colors come ONLY from tooth_surface_conditions table
+      }
+
+      // Notes are loaded directly in ToothDetailsModal when needed
+
+      // Process referrals - already loaded
+      const { data: referralsData, error: referralsError } = referralsDataResult;
+
+      if (referralsError) {
+        console.error('Error loading referrals:', referralsError);
+      } else if (referralsData && referralsData.length > 0) {
+        console.log(' Loaded', referralsData.length, 'referrals');
+
+        // Map referral types from database to UI keys
+        const referralTypeToKeyMap: Record<string, string> = {
+          'Endodontics': 'endodontics',
+          'Oral Surgery': 'oralSurgery',
+          'Orthodontics': 'orthodontics',
+          'Prosthodontics': 'prosthodontics',
+          'Periodontics': 'periodontics',
+          'Pediatric Dentistry': 'pediatricDentistry',
+        };
+
+        // فصل التحويلات حسب الحالة
+        const notGivenReferrals = referralsData.filter(r => r.status === 'not_given' || !r.status);
+        const givenReferrals = referralsData.filter(r => r.status === 'given');
+
+        // Group referrals by tooth (فقط Not Given) - Multiple referrals per tooth
+        const referralsByTooth: Record<number, string[]> = {};
+
+        notGivenReferrals.forEach((referral) => {
+          const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
+          if (toothNumber) {
+            // Map referral type to key
+            const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
+
+            // Add to array (multiple referrals per tooth)
+            if (!referralsByTooth[toothNumber]) {
+              referralsByTooth[toothNumber] = [];
+            }
+            if (!referralsByTooth[toothNumber].includes(referralKey)) {
+              referralsByTooth[toothNumber].push(referralKey);
+            }
+          }
+        });
+
+        // Rebuild referrals state for Department tab (Not Given referrals فقط)
+        const departmentsWithReferrals: Record<string, boolean> = {};
+        const departmentStatuses: Record<string, 'given' | 'not_given'> = {};
+
+        notGivenReferrals.forEach((referral) => {
+          const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
+
+          // Mark department as having referrals (show in Department tab)
+          departmentsWithReferrals[referralKey] = true;
+          // Set status to "not_given" (will show in Department tab)
+          departmentStatuses[referralKey] = 'not_given';
+        });
+
+        // Build Referral Records from Given referrals
+        const givenReferralRecords: Array<{
+          departmentKey: string;
+          departmentName: string;
+          teeth: number[];
+          timestamp: string;
+          timestampNum: number;
+          doctorName: string;
+        }> = [];
+
+        // Group Given referrals by department AND given_at time (to separate batches)
+        const givenByDept = new Map<string, typeof givenReferralRecords[0]>();
+
+        givenReferrals.forEach((referral) => {
+          const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
+          const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
+
+          if (toothNumber) {
+            // Create unique key: referralKey + timestamp (rounded to minute)
+            const givenTime = new Date(referral.timestamp || referral.created_at);
+            const roundedTime = new Date(givenTime.getFullYear(), givenTime.getMonth(), givenTime.getDate(), givenTime.getHours(), givenTime.getMinutes());
+            const batchKey = `${referralKey}-${roundedTime.getTime()}`;
+
+            const existingRecord = givenByDept.get(batchKey);
+
+            if (existingRecord) {
+              // Add tooth to existing batch (if not already included)
+              if (!existingRecord.teeth.includes(toothNumber)) {
+                existingRecord.teeth.push(toothNumber);
+              }
+            } else {
+              // Create new batch record
+              givenByDept.set(batchKey, {
+                departmentKey: referralKey,
+                departmentName: referral.referral_type,
+                teeth: [toothNumber],
+                timestamp: givenTime.toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                }),
+                timestampNum: givenTime.getTime(),
+                doctorName: referral.doctor_name || 'Dr. Unknown'
+              });
+            }
+          }
+        });
+
+        givenReferralRecords.push(...Array.from(givenByDept.values()));
+
+        // Sort by timestamp (newest first) before updating state
+        givenReferralRecords.sort((a, b) => b.timestampNum - a.timestampNum);
+
+        // Update states
+        setSelectedReferralFor(prev => ({ ...prev, ...referralsByTooth }));
+
+        // Update Department tab states
+        setReferrals(prev => ({ ...prev, ...departmentsWithReferrals }));
+        setReferralStatus(prev => ({ ...prev, ...departmentStatuses }));
+
+        // Update Referral Records (already sorted newest first)
+        setReferralRecords(givenReferralRecords);
+
+        console.log(' Applied referrals to', Object.keys(referralsByTooth).length, 'teeth');
+        console.log(' Loaded departments for view:', departmentsWithReferrals);
+        console.log(' Loaded Given referral records:', givenReferralRecords.length);
+      }
+
+      // Process scaling records (Oral Hygiene) - already loaded
+      const { data: scalingData, error: scalingError } = scalingDataResult;
+
+      if (scalingError) {
+        console.error('Error loading scaling records:', scalingError);
+      } else if (scalingData && scalingData.length > 0) {
+        const newScalingRecords = scalingData.map((record) => ({
+          id: record.id,
+          timestamp: new Date(record.timestamp).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          doctorName: record.doctor_name,
+          timestampNum: new Date(record.timestamp).getTime(),
+        }));
+
+        setScalingRecords(newScalingRecords);
+        console.log(' Loaded', newScalingRecords.length, 'scaling records');
+      }
+
+      console.log('Dental data loading complete');
+    } catch (error) {
+      console.error('Error in loadPatientDentalData:', error);
+      Alert.alert('خطأ', 'حدث خطأ أثناء تحميل البيانات');
+    }
+  };
+
+  // Load data when component mounts or permanentPatientId changes
+  useEffect(() => {
+    loadPatientDentalData();
+  }, [permanentPatientId]);
+
+  /**
+   * Save tooth surface condition to database
+   */
+  const saveToothConditionToDatabase = async (
+    toothNumber: number,
+    surface: keyof ToothSurfaceConditions,
+    condition: ToothCondition
+  ) => {
+    if (!permanentPatientId || !user?.name) {
+      console.log('Cannot save: missing permanentPatientId or user name');
+      return;
+    }
+
+    const palmerNotation = convertNumberToPalmer(toothNumber);
+    if (!palmerNotation) {
+      console.error('Invalid tooth number:', toothNumber);
+      return;
+    }
+
+    // Map UI surface names to database field names
+    // Use helper function to get correct mapping for lower teeth
+    const surfaceMap = getSurfaceMap(toothNumber);
+
+    const dbSurface = surfaceMap[surface];
+
+    try {
+      const { error } = await saveToothSurfaceCondition(
+        permanentPatientId,
+        palmerNotation,
+        dbSurface,
+        condition
+      );
+
+      if (error) {
+        console.error('Error saving tooth condition:', error);
+        // Don't show alert - just log the error and continue
+        // User can still work offline
+      } else {
+        console.log(`Saved ${surface} (${dbSurface}) of tooth ${toothNumber} (${palmerNotation}): ${condition}`);
+      }
+    } catch (error) {
+      console.error('Exception saving tooth condition:', error);
+    }
+  };
+
+  /**
+   * Save planning record to database
+   */
+  const savePlanningRecordToDatabase = async (
+    toothNumber: number,
+    action: 'diagnosed' | 'canceled',
+    condition: string,
+    surfaces: string[]
+  ) => {
+    if (!permanentPatientId || !user?.name) {
+      console.log('Cannot save planning record: missing permanentPatientId or user name');
+      return;
+    }
+
+    const palmerNotation = convertNumberToPalmer(toothNumber);
+    if (!palmerNotation) {
+      console.error('Invalid tooth number:', toothNumber);
+      return;
+    }
+
+    try {
+      const surfaceArray = surfaces.map(s => s.toLowerCase()) as ToothSurface[];
+
+      const { error } = await createPlanningRecord(
+        permanentPatientId,
+        palmerNotation,
+        action,
+        condition,
+        surfaceArray,
+        user.name
+      );
+
+      if (error) {
+        console.error('Error saving planning record:', error);
+      } else {
+        console.log(`Saved planning record for tooth ${toothNumber} (${palmerNotation}): ${action} - ${condition}`);
+      }
+    } catch (error) {
+      console.error('Exception saving planning record:', error);
+    }
+  };
+
+  /**
+   * ═══════════════════════════════════════════════════════════════
+   * Handle Planning Submit - Save all pending planning records as batch
+   * ═══════════════════════════════════════════════════════════════
+   */
+  const handlePlanningSubmit = async () => {
+    if (!permanentPatientId || !user?.name || pendingPlanningRecords.length === 0) {
+      console.log('Cannot submit planning: missing data or no pending records');
+      return;
+    }
+
+    try {
+      console.log('🔵 Submitting planning batch with', pendingPlanningRecords.length, 'records');
+
+      // Step 1: Create a new planning batch
+      const { data: batchData, error: batchError } = await createPlanningBatch(
+        permanentPatientId,
+        user.name
+      );
+
+      if (batchError || !batchData) {
+        console.error(' Error creating planning batch:', batchError);
+        Alert.alert('خطأ', 'فشل حفظ التخطيط. حاول مرة أخرى.');
+        return;
+      }
+
+      const batchId = batchData.id;
+      console.log(' Created planning batch:', batchId);
+
+      // Step 2: Save all pending planning records with batch_id
+      const savePromises = pendingPlanningRecords.map(async (record) => {
+        const palmerNotation = convertNumberToPalmer(record.toothNumber);
+        if (!palmerNotation) {
+          console.error('Invalid tooth number:', record.toothNumber);
+          return null;
+        }
+
+        // Helper function to extract surface name from strings like "Caries (Mesial)" or "Mesial"
+        const extractSurfaceName = (surfaceLabel: string): string => {
+          if (surfaceLabel.includes('(')) {
+            // Extract from "Caries (Mesial)" → "Mesial"
+            const match = surfaceLabel.match(/\(([^)]+)\)/);
+            return match ? match[1].trim() : surfaceLabel;
+          }
+          return surfaceLabel; // Already just "Mesial"
+        };
+
+        // Don't lowercase special tooth status values (Root Canal Treated, Missing Tooth)
+        // Extract surface name from "Caries (Mesial)" format, then lowercase
+        const surfaceArray = record.surfaces.map(s => {
+          if (s === 'Root Canal Treated' || s === 'Missing Tooth') {
+            return s; // Keep as-is
+          }
+          // Extract surface name first (e.g., "Caries (Mesial)" → "Mesial")
+          const surfaceName = extractSurfaceName(s);
+          return surfaceName.toLowerCase(); // Convert surface name to lowercase
+        }) as ToothSurface[];
+
+        console.log(`💾 Saving planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, surfaceArray);
+
+        return createPlanningRecord(
+          permanentPatientId,
+          palmerNotation,
+          record.action,
+          record.condition,
+          surfaceArray,
+          user.name,
+          record.isChange,
+          record.previousCondition,
+          batchId  // ← Include batch_id
+        );
+      });
+
+      const results = await Promise.all(savePromises);
+      const errors = results.filter(r => r?.error);
+
+      if (errors.length > 0) {
+        console.error(' Some planning records failed to save:', errors);
+        Alert.alert('تحذير', 'تم حفظ بعض السجلات فقط. تحقق من البيانات.');
+      } else {
+        console.log(' All planning records saved successfully with batch_id:', batchId);
+      }
+
+      // Step 2.5: Save/Delete tooth surface conditions from pendingPlanningRecords
+      console.log('🔵 Saving tooth surface conditions from pending records...');
+
+      // Helper function to extract surface name from strings like "Caries (Mesial)" or "Mesial"
+      const extractSurfaceName = (surfaceLabel: string): string => {
+        if (surfaceLabel.includes('(')) {
+          // Extract from "Caries (Mesial)" → "Mesial"
+          const match = surfaceLabel.match(/\(([^)]+)\)/);
+          return match ? match[1].trim() : surfaceLabel;
+        }
+        return surfaceLabel; // Already just "Mesial"
+      };
+
+      const conditionColorMap: Record<string, ToothCondition> = {
+        // Condition options (surface-specific)
+        'Caries': 'caries',                                    // أحمر
+        'Broken/Inappropriate Filling': 'broken',              // وردي
+        'Pulpectomy': 'pulpectomy',                            // عنابي (السطح المختار فقط)
+        'Follow-up': 'follow_up',                              // أزرق
+        'Needs More Diagnosis': 'needs_diagnosis',             // برتقالي
+        'Temporary Filling': 'filling_replacement',            // رمادي (السطح المختار فقط)
+        'Permanent Filling': 'permanent_filling',              // أخضر (السطح المختار فقط)
+        'Fracture': 'fracture',
+        'Restoration to Replace': 'filling_replacement',
+        'Impacted': 'impacted',
+      };
+
+      // IMPORTANT: Separate delete and save operations to execute them sequentially
+      // Delete operations MUST complete BEFORE save operations to prevent race conditions
+      const deleteOperationPromises = [];
+      const saveOperationPromises = [];
+
+      // Process each pending planning record
+      for (const record of pendingPlanningRecords) {
+        const palmerNotation = convertNumberToPalmer(record.toothNumber);
+        if (!palmerNotation) continue;
+
+        console.log(`🔍 Processing record: ${record.condition}, surfaces:`, record.surfaces);
+
+        // Get correct surface mapping for this tooth
+        const surfaceMap = getSurfaceMap(record.toothNumber);
+
+        // Map surface names directly to database surface names (no UI key conversion needed)
+        const surfaceNameToDbSurface: Record<string, ToothSurface> = {
+          'mesial': 'mesial',
+          'distal': 'distal',
+          'buccal': 'buccal',
+          'lingual': 'lingual',
+          'palatal': 'lingual',
+          'occlusal': 'occlusal',
+        };
+
+        // إذا كان تغيير من Extraction إلى شيء آخر، احذف "extraction" من كل الأسطح أولاً
+        if (record.isChange && record.previousCondition === 'Extraction') {
+          console.log(`   Changing from Extraction → clearing all surfaces first`);
+          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
+            const dbSurface = surfaceMap[surfaceKey];
+            deleteOperationPromises.push(
+              deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
+            );
+          }
+        }
+
+        // Handle Clear Condition (canceled)
+        if (record.action === 'canceled') {
+          // Check if this was an extraction/missing tooth that needs to be restored to healthy
+          const wasExtraction = record.surfaces.some(s =>
+            s === 'Mesial' || s === 'Distal' || s === 'Buccal' || s === 'Lingual' || s === 'Occlusal'
+          ) && record.surfaces.length >= 5; // If all surfaces cleared, it was likely extraction
+
+          if (wasExtraction) {
+            // Restore all surfaces to healthy instead of just deleting
+            console.log(`  → Restoring extraction tooth to healthy: all surfaces`);
+            for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
+              const dbSurface = surfaceMap[surfaceKey];
+              // First delete any existing condition
+              deleteOperationPromises.push(
+                deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
+              );
+            }
+            // Note: After deletion, tooth will appear healthy (no color) by default
+          } else {
+            // Delete colors for specified surfaces only
+            record.surfaces.forEach(surfaceLabel => {
+              const surfaceName = extractSurfaceName(surfaceLabel);
+              const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
+              console.log(`  → Clear: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}"`);
+              if (dbSurface) {
+                deleteOperationPromises.push(
+                  deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
+                );
+              }
+            });
+          }
+        }
+        // Handle surface-specific diagnoses (Caries, Fracture, etc.)
+        else if (record.condition && conditionColorMap[record.condition]) {
+          const color = conditionColorMap[record.condition];
+          record.surfaces.forEach(surfaceLabel => {
+            const surfaceName = extractSurfaceName(surfaceLabel);
+            const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
+            console.log(`  → ${record.condition}: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}" → color:"${color}"`);
+            if (dbSurface) {
+              saveOperationPromises.push(
+                saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, color)
+              );
+            }
+          });
+        }
+        // Handle Extraction (Condition)
+        else if (record.condition === 'Extraction') {
+          console.log('  → Extraction: saving "extraction" to all surfaces');
+          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
+            const dbSurface = surfaceMap[surfaceKey];
+            saveOperationPromises.push(
+              saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, 'extraction')
+            );
+          }
+        }
+        // Handle Missing Tooth (Tooth Status)
+        else if (record.surfaces.includes('Missing Tooth')) {
+          console.log('  → Missing Tooth: saving "missing" to all surfaces');
+          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
+            const dbSurface = surfaceMap[surfaceKey];
+            saveOperationPromises.push(
+              saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, 'missing')
+            );
+          }
+        }
+        // Root Canal Treated: border color only, NO surface colors saved
+        else if (record.surfaces.includes('Root Canal Treated')) {
+          console.log('  → Root Canal Treated: border color only (no surface colors saved)');
+          // Do NOT save any surface conditions
+          // Border color will be detected from planning_records on reload
+        }
+      }
+
+      // STEP 1: Execute DELETE operations FIRST and wait for completion
+      if (deleteOperationPromises.length > 0) {
+        console.log(`🗑️ Executing ${deleteOperationPromises.length} delete operations...`);
+        const deleteResults = await Promise.all(deleteOperationPromises);
+
+        const deleteErrors = deleteResults.filter(r => r?.error);
+        if (deleteErrors.length > 0) {
+          console.error(' Some delete operations failed:', deleteErrors);
+        } else {
+          console.log(` All ${deleteOperationPromises.length} delete operations completed successfully`);
+        }
+      }
+
+      // STEP 2: Execute SAVE operations AFTER deletes are complete
+      if (saveOperationPromises.length > 0) {
+        console.log(`💾 Executing ${saveOperationPromises.length} save operations...`);
+        const saveResults = await Promise.all(saveOperationPromises);
+
+        const saveErrors = saveResults.filter(r => r?.error);
+        if (saveErrors.length > 0) {
+          console.error(' Some save operations failed:', saveErrors);
+        } else {
+          console.log(` All ${saveOperationPromises.length} save operations completed successfully`);
+        }
+      }
+
+      if (deleteOperationPromises.length === 0 && saveOperationPromises.length === 0) {
+        console.log(' No surface conditions to save/delete');
+      }
+
+      // Step 3: Move pending records to allPlanningRecordsGlobal
+      setAllPlanningRecordsGlobal(prev => [...prev, ...pendingPlanningRecords]);
+
+      // Step 4: Clear pending records
+      setPendingPlanningRecords([]);
+
+      // Step 5: Show success message
+      Alert.alert(' نجح', 'تم حفظ التخطيط بنجاح!');
+
+      // Step 6: Reload data to show updated Planning Records
+      await loadPatientDentalData();
+
+    } catch (error) {
+      console.error(' Exception in handlePlanningSubmit:', error);
+      Alert.alert('خطأ', 'حدث خطأ أثناء حفظ التخطيط.');
+    }
+  };
+
+  /**
+   * ═══════════════════════════════════════════════════════════════
+   * Handle Planning Cancel - Discard all pending planning records
+   * ═══════════════════════════════════════════════════════════════
+   */
+  const handlePlanningCancel = () => {
+    if (pendingPlanningRecords.length === 0) {
+      return;
+    }
+
+    Alert.alert(
+      'إلغاء التخطيط',
+      'هل تريد إلغاء كل التخطيطات المعلقة؟',
+      [
+        { text: 'لا', style: 'cancel' },
+        {
+          text: 'نعم',
+          style: 'destructive',
+          onPress: async () => {
+            console.log('🔴 Canceling planning session - clearing', pendingPlanningRecords.length, 'pending records');
+
+            // Step 1: Remove pending planning records from toothRecords
+            // (they were added locally but not saved to database)
+            setToothRecords(prev => {
+              const updated = { ...prev };
+
+              // For each pending record, remove it from toothRecords
+              pendingPlanningRecords.forEach(pendingRecord => {
+                const toothNum = pendingRecord.toothNumber;
+                if (updated[toothNum]) {
+                  // Filter out records that match this pending record
+                  updated[toothNum] = updated[toothNum].filter(record => {
+                    if (record.type !== 'planning') return true;
+
+                    // Remove if it matches the pending record
+                    return !(
+                      record.condition === pendingRecord.condition &&
+                      record.timestampNum === pendingRecord.timestampNum
+                    );
+                  });
+
+                  // If no records left for this tooth, remove the key
+                  if (updated[toothNum].length === 0) {
+                    delete updated[toothNum];
+                  }
+                }
+              });
+
+              return updated;
+            });
+
+            // Step 2: Clear pending records (this hides buttons)
+            setPendingPlanningRecords([]);
+
+            // Step 3: Reload from database to restore saved state
+            // This will replace toothConditions with saved data only
+            await loadPatientDentalData();
+
+            console.log(' Planning canceled - restored to saved state');
+          }
+        }
+      ]
+    );
+  };
+
+  /**
+   * Handle closing condition menu - just close without removing anything
+   */
+  const handleConditionMenuClose = () => {
+    // Just close the menu without removing anything
+    // User didn't make any changes, so keep existing state
+    setShowConditionMenu(false);
+    setSelectedSurface(null);
+  };
+
+  // Function للحصول على تسمية السن
+  const getToothLabel = (toothNumber: number): string => {
+    if (toothNumber >= 25 && toothNumber <= 32) {
+      const position = 33 - toothNumber; // 25→8, 26→7, 27→6, etc.
+      return `lower right ${position}`;
+    }
+    if (toothNumber >= 17 && toothNumber <= 24) {
+      const position = toothNumber - 16; // 17→1, 18→2, 19→3, etc.
+      return `lower left ${position}`;
+    }
+    return `السن #${toothNumber}`;
+  };
+
+  // Function للنقر على السن - تكبيره وتدويره
+  const handleToothPress = (toothNumber: number | string) => {
+    // السيناريو الثاني: إذا كان Edit Mode نشط، نعرض modal التفاصيل بدلاً من الانيميشن
+    console.log('handleToothPress - toothNumber:', toothNumber, 'isEditModeActive:', isEditModeActive);
+    if (isEditModeActive) {
+      console.log('Opening tooth details modal for tooth:', toothNumber);
+      setSelectedToothForDetails(toothNumber);
+      setShowToothDetailsModal(true);
+      return;
+    }
+
+    // السيناريو الأول: الوضع العادي (انيميشن)
+    // إذا تم النقر على نفس السن المفتوح وليس في حالة إغلاق، نتجاهل (السن مفتوح بالفعل)
+    if (selectedTooth === toothNumber && !isClosing) return;
+
+    // إذا تم النقر على نفس السن أثناء الإغلاق، نوقف الإغلاق ونفتحه مرة أخرى
+    if (selectedTooth === toothNumber && isClosing && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(toothNumber)) {
+      // إيقاف أنيميشن الإغلاق فوراً
+      stopToothAnimations(toothNumber);
+      // إلغاء حالة الإغلاق
+      setIsClosing(false);
+      // فتح السن مرة أخرى
+      openTooth(toothNumber);
+      return;
+    }
+
+    // إذا كان هناك سن آخر مفتوح (من 1-32)
+    if (selectedTooth && selectedTooth !== toothNumber && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth)) {
+      // إيقاف جميع الأنيميشنات للسن القديم فوراً
+      stopToothAnimations(selectedTooth);
+      // إلغاء حالة الإغلاق
+      setIsClosing(false);
+      // فتح السن الجديد مباشرة
+      openTooth(toothNumber);
+      return;
+    }
+
+    // فتح السن مباشرة
+    openTooth(toothNumber);
+  };
+
+  // Function لفتح السن
+  const openTooth = (toothNumber: number) => {
+    setSelectedTooth(toothNumber);
+    setSelectedSurface(null);
+    setShowConditionMenu(false);
+    setIsClosing(false);
+
+    // إخفاء الأزرار (Edit, View, Oral Hygiene) تدريجياً عند فتح السن
+    Animated.timing(buttonsOpacity, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
+    // Animation: تكبير السن وتدويره ونقله للمنتصف (للأسنان 6 و 7 و 8)
+    if (toothNumber === 6) {
+      // إيقاف أي أنيميشنات للسن 6
+      tooth6Scale.stopAnimation();
+      tooth6Rotation.stopAnimation();
+      tooth6TranslateX.stopAnimation();
+      tooth6TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth6Scale.setValue(1);
+      tooth6Rotation.setValue(0);
+      tooth6TranslateX.setValue(0);
+      tooth6TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 45, top: '30%', width: 37, height: 47 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth6Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth6Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth6TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth6TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 7) {
+      // إيقاف أي أنيميشنات للسن 7
+      tooth7Scale.stopAnimation();
+      tooth7Rotation.stopAnimation();
+      tooth7TranslateX.stopAnimation();
+      tooth7TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth7Scale.setValue(1);
+      tooth7Rotation.setValue(0);
+      tooth7TranslateX.setValue(0);
+      tooth7TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 45, top: '36%', width: 37, height: 47 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth7Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth7Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth7TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth7TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 8) {
+      // إيقاف أي أنيميشنات للسن 8
+      tooth8Scale.stopAnimation();
+      tooth8Rotation.stopAnimation();
+      tooth8TranslateX.stopAnimation();
+      tooth8TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth8Scale.setValue(1);
+      tooth8Rotation.setValue(0);
+      tooth8TranslateX.setValue(0);
+      tooth8TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 45, top: '42%', width: 37, height: 47 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth8Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth8Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth8TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth8TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 5) {
+      // إيقاف أي أنيميشنات للسن 5
+      tooth5Scale.stopAnimation();
+      tooth5Rotation.stopAnimation();
+      tooth5TranslateX.stopAnimation();
+      tooth5TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth5Scale.setValue(1);
+      tooth5Rotation.setValue(0);
+      tooth5TranslateX.setValue(0);
+      tooth5TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 55, top: '24%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth5Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth5Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }), // 1 = interpolate to -90deg from -15deg
+        Animated.spring(tooth5TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth5TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 4) {
+      // إيقاف أي أنيميشنات للسن 4
+      tooth4Scale.stopAnimation();
+      tooth4Rotation.stopAnimation();
+      tooth4TranslateX.stopAnimation();
+      tooth4TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth4Scale.setValue(1);
+      tooth4Rotation.setValue(0);
+      tooth4TranslateX.setValue(0);
+      tooth4TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 67, top: '18.5%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth4Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth4Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }), // 1 = interpolate to -90deg from -20deg
+        Animated.spring(tooth4TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth4TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 3) {
+      // إيقاف أي أنيميشنات للسن 3
+      tooth3Scale.stopAnimation();
+      tooth3Rotation.stopAnimation();
+      tooth3TranslateX.stopAnimation();
+      tooth3TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth3Scale.setValue(1);
+      tooth3Rotation.setValue(0);
+      tooth3TranslateX.setValue(0);
+      tooth3TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 90, top: '14%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth3Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth3Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }), // 1 = interpolate to -90deg from -35deg
+        Animated.spring(tooth3TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth3TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 2) {
+      // إيقاف أي أنيميشنات للسن 2
+      tooth2Scale.stopAnimation();
+      tooth2Rotation.stopAnimation();
+      tooth2TranslateX.stopAnimation();
+      tooth2TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth2Scale.setValue(1);
+      tooth2Rotation.setValue(0);
+      tooth2TranslateX.setValue(0);
+      tooth2TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 120, top: '10%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth2Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth2Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }), // 1 = interpolate to -90deg from -60deg
+        Animated.spring(tooth2TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth2TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 1) {
+      // إيقاف أي أنيميشنات للسن 1
+      tooth1Scale.stopAnimation();
+      tooth1Rotation.stopAnimation();
+      tooth1TranslateX.stopAnimation();
+      tooth1TranslateY.stopAnimation();
+
+      // إعادة تعيين القيم
+      tooth1Scale.setValue(1);
+      tooth1Rotation.setValue(0);
+      tooth1TranslateX.setValue(0);
+      tooth1TranslateY.setValue(0);
+
+      // حساب الموضع
+      const pos = { right: 160, top: '7.5%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth1Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth1Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }), // 1 = interpolate to -90deg from -80deg
+        Animated.spring(tooth1TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth1TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 32) {
+      tooth32Scale.stopAnimation();
+      tooth32Rotation.stopAnimation();
+      tooth32TranslateX.stopAnimation();
+      tooth32TranslateY.stopAnimation();
+
+      tooth32Scale.setValue(1);
+      tooth32Rotation.setValue(0);
+      tooth32TranslateX.setValue(0);
+      tooth32TranslateY.setValue(0);
+
+      const pos = { left: 160, bottom: '7.5%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth32Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth32Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth32TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth32TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 31) {
+      tooth31Scale.stopAnimation();
+      tooth31Rotation.stopAnimation();
+      tooth31TranslateX.stopAnimation();
+      tooth31TranslateY.stopAnimation();
+
+      tooth31Scale.setValue(1);
+      tooth31Rotation.setValue(0);
+      tooth31TranslateX.setValue(0);
+      tooth31TranslateY.setValue(0);
+
+      const pos = { left: 120, bottom: '10%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth31Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth31Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth31TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth31TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 30) {
+      tooth30Scale.stopAnimation();
+      tooth30Rotation.stopAnimation();
+      tooth30TranslateX.stopAnimation();
+      tooth30TranslateY.stopAnimation();
+
+      tooth30Scale.setValue(1);
+      tooth30Rotation.setValue(0);
+      tooth30TranslateX.setValue(0);
+      tooth30TranslateY.setValue(0);
+
+      const pos = { left: 90, bottom: '14%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth30Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth30Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth30TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth30TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 29) {
+      tooth29Scale.stopAnimation();
+      tooth29Rotation.stopAnimation();
+      tooth29TranslateX.stopAnimation();
+      tooth29TranslateY.stopAnimation();
+
+      tooth29Scale.setValue(1);
+      tooth29Rotation.setValue(0);
+      tooth29TranslateX.setValue(0);
+      tooth29TranslateY.setValue(0);
+
+      const pos = { left: 67, bottom: '18.5%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth29Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth29Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth29TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth29TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 28) {
+      tooth28Scale.stopAnimation();
+      tooth28Rotation.stopAnimation();
+      tooth28TranslateX.stopAnimation();
+      tooth28TranslateY.stopAnimation();
+
+      tooth28Scale.setValue(1);
+      tooth28Rotation.setValue(0);
+      tooth28TranslateX.setValue(0);
+      tooth28TranslateY.setValue(0);
+
+      const pos = { left: 55, bottom: '24%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth28Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth28Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth28TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth28TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 27) {
+      tooth27Scale.stopAnimation();
+      tooth27Rotation.stopAnimation();
+      tooth27TranslateX.stopAnimation();
+      tooth27TranslateY.stopAnimation();
+
+      tooth27Scale.setValue(1);
+      tooth27Rotation.setValue(0);
+      tooth27TranslateX.setValue(0);
+      tooth27TranslateY.setValue(0);
+
+      const pos = { left: 45, bottom: '30%', width: 37, height: 47 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth27Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth27Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth27TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth27TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 26) {
+      tooth26Scale.stopAnimation();
+      tooth26Rotation.stopAnimation();
+      tooth26TranslateX.stopAnimation();
+      tooth26TranslateY.stopAnimation();
+
+      tooth26Scale.setValue(1);
+      tooth26Rotation.setValue(0);
+      tooth26TranslateX.setValue(0);
+      tooth26TranslateY.setValue(0);
+
+      const pos = { left: 45, bottom: '36%', width: 37, height: 47 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth26Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth26Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth26TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth26TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 25) {
+      tooth25Scale.stopAnimation();
+      tooth25Rotation.stopAnimation();
+      tooth25TranslateX.stopAnimation();
+      tooth25TranslateY.stopAnimation();
+
+      tooth25Scale.setValue(1);
+      tooth25Rotation.setValue(0);
+      tooth25TranslateX.setValue(0);
+      tooth25TranslateY.setValue(0);
+
+      const pos = { left: 45, bottom: '42%', width: 37, height: 47 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth25Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth25Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth25TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth25TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 9) {
+      tooth9Scale.stopAnimation();
+      tooth9Rotation.stopAnimation();
+      tooth9TranslateX.stopAnimation();
+      tooth9TranslateY.stopAnimation();
+
+      tooth9Scale.setValue(1);
+      tooth9Rotation.setValue(0);
+      tooth9TranslateX.setValue(0);
+      tooth9TranslateY.setValue(0);
+
+      const pos = { left: 45, top: '42%', width: 37, height: 47 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth9Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth9Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth9TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth9TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 10) {
+      tooth10Scale.stopAnimation();
+      tooth10Rotation.stopAnimation();
+      tooth10TranslateX.stopAnimation();
+      tooth10TranslateY.stopAnimation();
+
+      tooth10Scale.setValue(1);
+      tooth10Rotation.setValue(0);
+      tooth10TranslateX.setValue(0);
+      tooth10TranslateY.setValue(0);
+
+      const pos = { left: 45, top: '36%', width: 37, height: 47 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth10Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth10Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth10TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth10TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 11) {
+      tooth11Scale.stopAnimation();
+      tooth11Rotation.stopAnimation();
+      tooth11TranslateX.stopAnimation();
+      tooth11TranslateY.stopAnimation();
+
+      tooth11Scale.setValue(1);
+      tooth11Rotation.setValue(0);
+      tooth11TranslateX.setValue(0);
+      tooth11TranslateY.setValue(0);
+
+      const pos = { left: 45, top: '30%', width: 37, height: 47 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth11Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth11Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth11TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth11TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 12) {
+      tooth12Scale.stopAnimation();
+      tooth12Rotation.stopAnimation();
+      tooth12TranslateX.stopAnimation();
+      tooth12TranslateY.stopAnimation();
+
+      tooth12Scale.setValue(1);
+      tooth12Rotation.setValue(0);
+      tooth12TranslateX.setValue(0);
+      tooth12TranslateY.setValue(0);
+
+      const pos = { left: 55, top: '24%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth12Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth12Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth12TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth12TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 13) {
+      tooth13Scale.stopAnimation();
+      tooth13Rotation.stopAnimation();
+      tooth13TranslateX.stopAnimation();
+      tooth13TranslateY.stopAnimation();
+
+      tooth13Scale.setValue(1);
+      tooth13Rotation.setValue(0);
+      tooth13TranslateX.setValue(0);
+      tooth13TranslateY.setValue(0);
+
+      const pos = { left: 67, top: '18.5%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth13Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth13Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth13TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth13TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 14) {
+      tooth14Scale.stopAnimation();
+      tooth14Rotation.stopAnimation();
+      tooth14TranslateX.stopAnimation();
+      tooth14TranslateY.stopAnimation();
+
+      tooth14Scale.setValue(1);
+      tooth14Rotation.setValue(0);
+      tooth14TranslateX.setValue(0);
+      tooth14TranslateY.setValue(0);
+
+      const pos = { left: 90, top: '14%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth14Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth14Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth14TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth14TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 15) {
+      tooth15Scale.stopAnimation();
+      tooth15Rotation.stopAnimation();
+      tooth15TranslateX.stopAnimation();
+      tooth15TranslateY.stopAnimation();
+
+      tooth15Scale.setValue(1);
+      tooth15Rotation.setValue(0);
+      tooth15TranslateX.setValue(0);
+      tooth15TranslateY.setValue(0);
+
+      const pos = { left: 120, top: '10%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth15Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth15Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth15TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth15TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 16) {
+      tooth16Scale.stopAnimation();
+      tooth16Rotation.stopAnimation();
+      tooth16TranslateX.stopAnimation();
+      tooth16TranslateY.stopAnimation();
+
+      tooth16Scale.setValue(1);
+      tooth16Rotation.setValue(0);
+      tooth16TranslateX.setValue(0);
+      tooth16TranslateY.setValue(0);
+
+      const pos = { left: 160, top: '7.5%', width: 33, height: 42 };
+      const topPercent = parseFloat(pos.top) / 100;
+      const toothCenterX = pos.left + pos.width/2;
+      const toothCenterY = SCREEN_HEIGHT * topPercent + pos.height/2;
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth16Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth16Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth16TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth16TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 17) {
+      tooth17Scale.stopAnimation();
+      tooth17Rotation.stopAnimation();
+      tooth17TranslateX.stopAnimation();
+      tooth17TranslateY.stopAnimation();
+
+      tooth17Scale.setValue(1);
+      tooth17Rotation.setValue(0);
+      tooth17TranslateX.setValue(0);
+      tooth17TranslateY.setValue(0);
+
+      const pos = { right: 160, bottom: '7.5%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth17Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth17Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth17TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth17TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 18) {
+      tooth18Scale.stopAnimation();
+      tooth18Rotation.stopAnimation();
+      tooth18TranslateX.stopAnimation();
+      tooth18TranslateY.stopAnimation();
+
+      tooth18Scale.setValue(1);
+      tooth18Rotation.setValue(0);
+      tooth18TranslateX.setValue(0);
+      tooth18TranslateY.setValue(0);
+
+      const pos = { right: 120, bottom: '10%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth18Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth18Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth18TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth18TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 19) {
+      tooth19Scale.stopAnimation();
+      tooth19Rotation.stopAnimation();
+      tooth19TranslateX.stopAnimation();
+      tooth19TranslateY.stopAnimation();
+
+      tooth19Scale.setValue(1);
+      tooth19Rotation.setValue(0);
+      tooth19TranslateX.setValue(0);
+      tooth19TranslateY.setValue(0);
+
+      const pos = { right: 90, bottom: '14%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth19Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth19Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth19TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth19TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 20) {
+      tooth20Scale.stopAnimation();
+      tooth20Rotation.stopAnimation();
+      tooth20TranslateX.stopAnimation();
+      tooth20TranslateY.stopAnimation();
+
+      tooth20Scale.setValue(1);
+      tooth20Rotation.setValue(0);
+      tooth20TranslateX.setValue(0);
+      tooth20TranslateY.setValue(0);
+
+      const pos = { right: 67, bottom: '18.5%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth20Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth20Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth20TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth20TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 21) {
+      tooth21Scale.stopAnimation();
+      tooth21Rotation.stopAnimation();
+      tooth21TranslateX.stopAnimation();
+      tooth21TranslateY.stopAnimation();
+
+      tooth21Scale.setValue(1);
+      tooth21Rotation.setValue(0);
+      tooth21TranslateX.setValue(0);
+      tooth21TranslateY.setValue(0);
+
+      const pos = { right: 55, bottom: '24%', width: 33, height: 42 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth21Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth21Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth21TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth21TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 22) {
+      tooth22Scale.stopAnimation();
+      tooth22Rotation.stopAnimation();
+      tooth22TranslateX.stopAnimation();
+      tooth22TranslateY.stopAnimation();
+
+      tooth22Scale.setValue(1);
+      tooth22Rotation.setValue(0);
+      tooth22TranslateX.setValue(0);
+      tooth22TranslateY.setValue(0);
+
+      const pos = { right: 45, bottom: '30%', width: 37, height: 47 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth22Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth22Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth22TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth22TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 23) {
+      tooth23Scale.stopAnimation();
+      tooth23Rotation.stopAnimation();
+      tooth23TranslateX.stopAnimation();
+      tooth23TranslateY.stopAnimation();
+
+      tooth23Scale.setValue(1);
+      tooth23Rotation.setValue(0);
+      tooth23TranslateX.setValue(0);
+      tooth23TranslateY.setValue(0);
+
+      const pos = { right: 45, bottom: '36%', width: 37, height: 47 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth23Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth23Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth23TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth23TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    } else if (toothNumber === 24) {
+      tooth24Scale.stopAnimation();
+      tooth24Rotation.stopAnimation();
+      tooth24TranslateX.stopAnimation();
+      tooth24TranslateY.stopAnimation();
+
+      tooth24Scale.setValue(1);
+      tooth24Rotation.setValue(0);
+      tooth24TranslateX.setValue(0);
+      tooth24TranslateY.setValue(0);
+
+      const pos = { right: 45, bottom: '42%', width: 37, height: 47 };
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      const toothCenterX = SCREEN_WIDTH - (pos.right + pos.width/2);
+      const toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height/2);
+      const screenCenterX = SCREEN_WIDTH / 2;
+      const screenCenterY = SCREEN_HEIGHT / 2;
+      const moveX = screenCenterX - toothCenterX + 20;
+      const moveY = screenCenterY - toothCenterY;
+
+      Animated.parallel([
+        Animated.spring(tooth24Scale, { toValue: 8, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth24Rotation, { toValue: 1, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth24TranslateX, { toValue: moveX, useNativeDriver: true, friction: 8, tension: 40 }),
+        Animated.spring(tooth24TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
+      ]).start();
+    }
+  };
+
+  // Function لإغلاق السن المكبر
+  const handleCloseTooth = () => {
+    if (!selectedTooth) return;
+
+    setIsClosing(true);
+
+    // إظهار الأزرار (Edit, View, Oral Hygiene) مباشرة عند إغلاق السن
+    Animated.timing(buttonsOpacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+
+    // العودة إلى الحجم والزاوية والموضع الأصلي حسب السن
+    if (selectedTooth === 6) {
+      Animated.parallel([
+        Animated.spring(tooth6Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth6Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth6TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth6TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 7) {
+      Animated.parallel([
+        Animated.spring(tooth7Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth7Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth7TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth7TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 8) {
+      Animated.parallel([
+        Animated.spring(tooth8Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth8Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth8TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth8TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 5) {
+      Animated.parallel([
+        Animated.spring(tooth5Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth5Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth5TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth5TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 4) {
+      Animated.parallel([
+        Animated.spring(tooth4Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth4Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth4TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth4TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 3) {
+      Animated.parallel([
+        Animated.spring(tooth3Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth3Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth3TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth3TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 2) {
+      Animated.parallel([
+        Animated.spring(tooth2Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth2Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth2TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth2TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 1) {
+      Animated.parallel([
+        Animated.spring(tooth1Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth1Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth1TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth1TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 32) {
+      Animated.parallel([
+        Animated.spring(tooth32Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth32Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth32TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth32TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 31) {
+      Animated.parallel([
+        Animated.spring(tooth31Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth31Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth31TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth31TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 30) {
+      Animated.parallel([
+        Animated.spring(tooth30Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth30Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth30TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth30TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 29) {
+      Animated.parallel([
+        Animated.spring(tooth29Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth29Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth29TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth29TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 28) {
+      Animated.parallel([
+        Animated.spring(tooth28Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth28Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth28TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth28TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 27) {
+      Animated.parallel([
+        Animated.spring(tooth27Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth27Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth27TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth27TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 26) {
+      Animated.parallel([
+        Animated.spring(tooth26Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth26Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth26TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth26TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 25) {
+      Animated.parallel([
+        Animated.spring(tooth25Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth25Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth25TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth25TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 9) {
+      Animated.parallel([
+        Animated.spring(tooth9Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth9Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth9TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth9TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 10) {
+      Animated.parallel([
+        Animated.spring(tooth10Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth10Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth10TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth10TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 11) {
+      Animated.parallel([
+        Animated.spring(tooth11Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth11Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth11TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth11TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 12) {
+      Animated.parallel([
+        Animated.spring(tooth12Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth12Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth12TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth12TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 13) {
+      Animated.parallel([
+        Animated.spring(tooth13Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth13Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth13TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth13TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 14) {
+      Animated.parallel([
+        Animated.spring(tooth14Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth14Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth14TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth14TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 15) {
+      Animated.parallel([
+        Animated.spring(tooth15Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth15Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth15TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth15TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 16) {
+      Animated.parallel([
+        Animated.spring(tooth16Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth16Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth16TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth16TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 17) {
+      Animated.parallel([
+        Animated.spring(tooth17Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth17Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth17TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth17TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 18) {
+      Animated.parallel([
+        Animated.spring(tooth18Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth18Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth18TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth18TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 19) {
+      Animated.parallel([
+        Animated.spring(tooth19Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth19Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth19TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth19TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 20) {
+      Animated.parallel([
+        Animated.spring(tooth20Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth20Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth20TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth20TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 21) {
+      Animated.parallel([
+        Animated.spring(tooth21Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth21Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth21TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth21TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 22) {
+      Animated.parallel([
+        Animated.spring(tooth22Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth22Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth22TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth22TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 23) {
+      Animated.parallel([
+        Animated.spring(tooth23Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth23Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth23TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth23TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else if (selectedTooth === 24) {
+      Animated.parallel([
+        Animated.spring(tooth24Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth24Rotation, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth24TranslateX, { toValue: 0, useNativeDriver: true, friction: 8 }),
+        Animated.spring(tooth24TranslateY, { toValue: 0, useNativeDriver: true, friction: 8 }),
+      ]).start(() => {
+        setSelectedTooth(null);
+        setSelectedSurface(null);
+        setShowConditionMenu(false);
+        setIsClosing(false);
+      });
+    } else {
+      // لباقي الأسنان (Modal system)
+      setSelectedTooth(null);
+      setSelectedSurface(null);
+      setShowConditionMenu(false);
+      setIsClosing(false);
+    }
+  };
+
+  // Function للنقر على سطح السن
+  const handleSurfacePress = (surface: keyof ToothSurfaceConditions) => {
+    setSelectedSurface(surface);
+    setShowConditionMenu(true);
+  };
+
+  // دالة لحفظ/تحديث Tooth Status Record واحد لجميع حالات السن
+  const updateToothStatusRecord = (toothNumber: number) => {
+    // تم تعطيل هذه الدالة لأن السجلات تُضاف الآن مباشرةً في handleConditionSelect
+    // هذا يمنع حذف السجلات القديمة عند إضافة سجلات جديدة
+  };
+
+  // دالة لحفظ/تحديث Diagnosed Conditions Record واحد لجميع حالات السن
+  const updateDiagnosedConditionsRecord = (toothNumber: number) => {
+    // تم تعطيل هذه الدالة لأن السجلات تُضاف الآن مباشرةً في handleConditionSelect
+    // هذا يمنع حذف السجلات القديمة عند إضافة سجلات جديدة
+  };
+
+  // Function لاختيار حالة للسطح
+  const handleConditionSelect = (condition: ToothCondition) => {
+    if (selectedTooth && selectedSurface) {
+      // إذا كانت الحالة treated، قم بتلوين الحدود فقط
+      if (condition === 'treated') {
+        console.log(`🦷 Setting border color for tooth ${selectedTooth} to 'treated' (Root Canal Treated)`);
+        setToothBorderColors(prev => ({
+          ...prev,
+          [selectedTooth]: 'treated',
+        }));
+
+        // إضافة سجل للقائمة المعلقة (Pending) و toothRecords
+        const now = new Date();
+        const timestamp = now.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        const timestampNum = now.getTime() + Math.random() * 0.999;
+
+        const newRecord = {
+          type: 'planning' as const,
+          action: 'diagnosed' as const,
+          condition: 'Tooth Status',
+          surfaces: ['Root Canal Treated'],
+          timestamp,
+          timestampNum,
+          doctorName: user?.name || 'Dr. Unknown',
+          isChange: undefined,
+          previousCondition: undefined
+        };
+
+        // استبدال السجل السابق (Whole tooth status)
+        setPendingPlanningRecords(prev => {
+          // Remove any existing Tooth Status record for this tooth
+          const filtered = prev.filter(record =>
+            record.toothNumber !== selectedTooth ||
+            record.condition !== 'Tooth Status'
+          );
+
+          return [
+            ...filtered,
+            {
+              toothNumber: selectedTooth,
+              ...newRecord
+            }
+          ];
+        });
+
+        // استبدال في toothRecords أيضاً
+        setToothRecords(prev => {
+          const existingRecords = prev[selectedTooth] || [];
+          const filtered = existingRecords.filter(record =>
+            record.type !== 'planning' ||
+            record.condition !== 'Tooth Status'
+          );
+
+          return {
+            ...prev,
+            [selectedTooth]: [
+              ...filtered,
+              newRecord
+            ]
+          };
+        });
+
+        setShowConditionMenu(false);
+        return;
+      }
+
+      // إذا كانت الحالة missing، قم بتلوين جميع الأسطح
+      if (condition === 'missing') {
+        setToothConditions(prev => ({
+          ...prev,
+          [selectedTooth]: {
+            top: condition,
+            bottom: condition,
+            left: condition,
+            right: condition,
+            center: condition,
+          },
+        }));
+
+        // إضافة سجل للقائمة المعلقة (Pending) و toothRecords
+        const now = new Date();
+        const timestamp = now.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        const timestampNum = now.getTime() + Math.random() * 0.999;
+
+        const newRecord = {
+          type: 'planning' as const,
+          action: 'diagnosed' as const,
+          condition: 'Tooth Status',
+          surfaces: ['Missing Tooth'],
+          timestamp,
+          timestampNum,
+          doctorName: user?.name || 'Dr. Unknown',
+          isChange: undefined,
+          previousCondition: undefined
+        };
+
+        // استبدال السجل السابق (Whole tooth status)
+        setPendingPlanningRecords(prev => {
+          const filtered = prev.filter(record =>
+            record.toothNumber !== selectedTooth ||
+            record.condition !== 'Tooth Status'
+          );
+
+          return [
+            ...filtered,
+            {
+              toothNumber: selectedTooth,
+              ...newRecord
+            }
+          ];
+        });
+
+        // استبدال في toothRecords أيضاً
+        setToothRecords(prev => {
+          const existingRecords = prev[selectedTooth] || [];
+          const filtered = existingRecords.filter(record =>
+            record.type !== 'planning' ||
+            record.condition !== 'Tooth Status'
+          );
+
+          return {
+            ...prev,
+            [selectedTooth]: [
+              ...filtered,
+              newRecord
+            ]
+          };
+        });
+      }
+      // إذا كانت الحالة extraction (Condition - يحفظ Record فوراً)
+      else if (condition === 'extraction') {
+        setToothConditions(prev => ({
+          ...prev,
+          [selectedTooth]: {
+            top: condition,
+            bottom: condition,
+            left: condition,
+            right: condition,
+            center: condition,
+          },
+        }));
+
+        // حفظ planning record لـ Extraction
+        const now = new Date();
+        const timestamp = now.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        const conditionName = getConditionName(condition);
+        const timestampNum = now.getTime() + Math.random() * 0.999;
+
+        const newRecord = {
+          type: 'planning' as const,
+          action: 'diagnosed' as const,
+          condition: conditionName.english,
+          surfaces: ['All surfaces'],
+          timestamp,
+          timestampNum,
+          doctorName: user?.name || 'Dr. Unknown',
+          isChange: undefined,
+          previousCondition: undefined
+        };
+
+        // استبدال السجل السابق (Whole tooth - Extraction)
+        setToothRecords(prev => {
+          const existingRecords = prev[selectedTooth] || [];
+          const filtered = existingRecords.filter(record =>
+            record.type !== 'planning' ||
+            record.condition !== conditionName.english
+          );
+
+          return {
+            ...prev,
+            [selectedTooth]: [
+              ...filtered,
+              newRecord
+            ]
+          };
+        });
+
+        // استبدال في pendingPlanningRecords أيضاً
+        setPendingPlanningRecords(prev => {
+          const filtered = prev.filter(record =>
+            record.toothNumber !== selectedTooth ||
+            record.condition !== conditionName.english
+          );
+
+          return [
+            ...filtered,
+            {
+              toothNumber: selectedTooth,
+              ...newRecord
+            }
+          ];
+        });
+
+      } else if (condition === 'CLEAR_TOOTH_STATUS' as any) {
+        // إذا كان Clear Condition من قائمة Tooth Status - احذف border + كل الأسطح
+        if (!selectedTooth) {
+          console.error(' Invalid tooth number:', selectedTooth);
+          return;
+        }
+
+        console.log('🧹 Clear Tooth Status: Clearing border + all surfaces for tooth', selectedTooth);
+
+        // إزالة لون الحدود
+        setToothBorderColors(prev => {
+          const newBorderColors = { ...prev };
+          delete newBorderColors[selectedTooth];
+          return newBorderColors;
+        });
+
+        // إزالة اللون من جميع الأسطح
+        setToothConditions(prev => ({
+          ...prev,
+          [selectedTooth]: {
+            top: null,
+            bottom: null,
+            left: null,
+            right: null,
+            center: null,
+          },
+        }));
+
+        // حفظ planning record عند إلغاء الحالة
+        const now = new Date();
+        const timestamp = now.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        // Get ALL surfaces for this tooth (not just selected surface)
+        const surfaceOptions = getAllSurfaces(selectedTooth);
+        const allSurfaceLabels = surfaceOptions.map(opt => opt.label);
+        const timestampNum = now.getTime() + Math.random() * 0.999;
+
+        const newRecord = {
+          type: 'planning' as const,
+          action: 'canceled' as const,
+          condition: '',
+          surfaces: allSurfaceLabels, // Include ALL surfaces when clearing tooth status
+          timestamp,
+          timestampNum,
+          toothNumber: selectedTooth,
+          doctorName: user?.name || 'Dr. Unknown',
+          isChange: undefined,
+          previousCondition: undefined
+        };
+
+        setToothRecords(prev => {
+          const existingRecords = prev[selectedTooth] || [];
+          const filtered = existingRecords.filter(record => {
+            if (record.type !== 'planning') return true;
+            // Check if any of the record surfaces match any of the cleared surfaces
+            const hasMatchingSurface = record.surfaces.some(recordSurface =>
+              allSurfaceLabels.some(clearedSurface => recordSurface.includes(`(${clearedSurface})`))
+            );
+            return !hasMatchingSurface;
+          });
+
+          return {
+            ...prev,
+            [selectedTooth]: [
+              ...filtered,
+              newRecord
+            ]
+          };
+        });
+
+        setPendingPlanningRecords(prev => [...prev, newRecord]);
+
+        setShowConditionMenu(false);
+        setSelectedTooth(null);
+        setSelectedSurface('center');
+
+      } else if (condition === null) {
+        // إذا كان Clear Condition من قائمة Condition العادية
+        const currentConditions = toothConditions[selectedTooth];
+
+        // إزالة لون الحدود
+        setToothBorderColors(prev => {
+          const newBorderColors = { ...prev };
+          delete newBorderColors[selectedTooth];
+          return newBorderColors;
+        });
+
+        // تحقق إذا كانت جميع الأسطح extraction أو missing
+        if (currentConditions) {
+          const allSame =
+            currentConditions.top === currentConditions.bottom &&
+            currentConditions.bottom === currentConditions.left &&
+            currentConditions.left === currentConditions.right &&
+            currentConditions.right === currentConditions.center &&
+            (currentConditions.top === 'extraction' || currentConditions.top === 'missing');
+
+          if (allSame) {
+            // إزالة اللون من جميع الأسطح
+            setToothConditions(prev => ({
+              ...prev,
+              [selectedTooth]: {
+                top: null,
+                bottom: null,
+                left: null,
+                right: null,
+                center: null,
+              },
+            }));
+          } else {
+            // إزالة اللون من السطح المحدد فقط
+            setToothConditions(prev => ({
+              ...prev,
+              [selectedTooth]: {
+                ...(prev[selectedTooth] || {
+                  top: null,
+                  bottom: null,
+                  left: null,
+                  right: null,
+                  center: null,
+                }),
+                [selectedSurface]: null,
+              },
+            }));
+          }
+
+          // حفظ planning record عند إلغاء الحالة
+          const now = new Date();
+          const timestamp = now.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+
+          const surfaceOptions = getAllSurfaces(selectedTooth);
+          const timestampNum = now.getTime() + Math.random() * 0.999;
+
+          // If clearing extraction/missing (all surfaces), include ALL surfaces in the record
+          const surfacesToClear = allSame
+            ? surfaceOptions.map(opt => opt.label) // ALL surfaces
+            : [surfaceOptions.find(opt => opt.key === selectedSurface)?.label || selectedSurface]; // Single surface
+
+          // Clear Condition: إضافة سجل canceled (استبدال السجل السابق)
+          const newRecord = {
+            type: 'planning' as const,
+            action: 'canceled' as const,
+            condition: '',
+            surfaces: surfacesToClear,
+            timestamp,
+            timestampNum,
+            doctorName: user?.name || 'Dr. Unknown',
+            isChange: undefined,
+            previousCondition: undefined
+          };
+
+          // استبدال السجل السابق في toothRecords
+          setToothRecords(prev => {
+            const existingRecords = prev[selectedTooth] || [];
+            const filtered = existingRecords.filter(record => {
+              if (record.type !== 'planning') return true;
+
+              // Remove old record for any of the cleared surfaces
+              const hasMatchingSurface = record.surfaces.some(recordSurface =>
+                surfacesToClear.some(clearedSurface => recordSurface.includes(`(${clearedSurface})`))
+              );
+              return !hasMatchingSurface;
+            });
+
+            return {
+              ...prev,
+              [selectedTooth]: [
+                ...filtered,
+                newRecord
+              ]
+            };
+          });
+
+          // استبدال السجل السابق في pendingPlanningRecords
+          setPendingPlanningRecords(prev => {
+            const filtered = prev.filter(record => {
+              if (record.toothNumber !== selectedTooth) return true;
+
+              // Remove old record for any of the cleared surfaces
+              const hasMatchingSurface = record.surfaces.some(recordSurface =>
+                surfacesToClear.some(clearedSurface => recordSurface.includes(`(${clearedSurface})`))
+              );
+              return !hasMatchingSurface;
+            });
+
+            return [
+              ...filtered,
+              {
+                toothNumber: selectedTooth,
+                ...newRecord
+              }
+            ];
+          });
+        }
+      } else {
+        // تلوين السطح المحدد فقط
+        setToothConditions(prev => {
+          console.log(`🎨 Setting condition for tooth ${selectedTooth}, surface ${selectedSurface}:`, condition);
+          console.log('Previous conditions:', prev[selectedTooth]);
+
+          const newConditions = {
+            ...prev,
+            [selectedTooth]: {
+              ...(prev[selectedTooth] || {
+                top: null,
+                bottom: null,
+                left: null,
+                right: null,
+                center: null,
+              }),
+              [selectedSurface]: condition,
+            },
+          };
+
+          console.log('New conditions for tooth:', newConditions[selectedTooth]);
+          return newConditions;
+        });
+
+        // إضافة سجل للقائمة العامة و toothRecords مباشرةً
+        const now = new Date();
+        const timestamp = now.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        const conditionName = getConditionName(condition);
+        const surfaceOptions = getAllSurfaces(selectedTooth);
+        const surface = surfaceOptions.find(opt => opt.key === selectedSurface);
+        const surfaceLabel = surface?.label || selectedSurface;
+        const timestampNum = now.getTime() + Math.random() * 0.999;
+
+        // كشف التغيير: البحث عن آخر سجل لنفس السطح بحالة مختلفة
+        // أولوية البحث:
+        // 1. editing_records (العلاجات المنفذة - الأسطح الخضراء)
+        // 2. planning_records (التخطيطات)
+
+        let isChange = false;
+        let previousCondition = '';
+
+        // ══════════════════════════════════════════════════════════════
+        // STEP 1: البحث في editing_records أولاً (العلاجات المنفذة)
+        // ══════════════════════════════════════════════════════════════
+        const editingRecordsForTooth = toothRecords[selectedTooth] || [];
+        const sortedEditingRecords = [...editingRecordsForTooth].sort((a, b) => b.timestampNum - a.timestampNum);
+
+        console.log(`🔍 Searching in editing_records for tooth ${selectedTooth}, surface ${surfaceLabel}:`, {
+          editingRecordsCount: editingRecordsForTooth.length,
+          records: editingRecordsForTooth.map(r => ({ details: r.details, surfaces: r.surfaces }))
+        });
+
+        // البحث عن آخر علاج لنفس السطح
+        // في editing_records: surfaces = ['mesial', 'distal'], details = 'Permanent Filling'
+        const lastTreatmentForSurface = sortedEditingRecords.find(r =>
+          r.surfaces && Array.isArray(r.surfaces) && r.surfaces.some(s => s.toLowerCase() === surfaceLabel.toLowerCase())
+        );
+
+        if (lastTreatmentForSurface && lastTreatmentForSurface.details) {
+          // وجدنا علاج سابق (السطح أخضر) - استخدم details من editing_records
+          const previousConditionName = lastTreatmentForSurface.details;
+
+          console.log(` Found treatment record: ${previousConditionName} on ${surfaceLabel}`);
+
+          // التحقق إذا كانت الحالة مختلفة
+          if (previousConditionName.toLowerCase() !== conditionName.english.toLowerCase()) {
+            isChange = true;
+            previousCondition = previousConditionName;
+            console.log(`🔄 CHANGE DETECTED (from Treatment): ${previousConditionName} → ${conditionName.english} on ${surfaceLabel}`);
+          } else {
+            console.log(` Same condition (Treatment): ${conditionName.english} on ${surfaceLabel}`);
+          }
+        } else {
+          console.log(` No treatment found in editing_records, searching in planning_records...`);
+          // ══════════════════════════════════════════════════════════════
+          // STEP 2: لم نجد علاج - ابحث في planning_records (التخطيطات)
+          // ══════════════════════════════════════════════════════════════
+          const globalRecordsForTooth = allPlanningRecordsGlobal.filter(r => r.toothNumber === selectedTooth);
+          const pendingRecordsForTooth = pendingPlanningRecords.filter(r => r.toothNumber === selectedTooth);
+          const allRecordsForTooth = [...globalRecordsForTooth, ...pendingRecordsForTooth];
+
+          const sortedRecordsForTooth = allRecordsForTooth.sort((a, b) => b.timestampNum - a.timestampNum);
+
+          // أولاً: ابحث عن Extraction
+          let lastDiagnosedForSurface = sortedRecordsForTooth.find(
+            r => r.action === 'diagnosed' && r.condition === 'Extraction'
+          );
+
+          // إذا لم نجد Extraction، ابحث عن سجل لنفس السطح
+          if (!lastDiagnosedForSurface) {
+            lastDiagnosedForSurface = sortedRecordsForTooth.find(r =>
+              r.action === 'diagnosed' &&
+              r.surfaces.some(s => s.toLowerCase().includes(`(${surfaceLabel.toLowerCase()})`))
+            );
+          }
+
+          if (lastDiagnosedForSurface) {
+            // حالة خاصة: التغيير من Extraction
+            if (lastDiagnosedForSurface.condition === 'Extraction') {
+              if (conditionName.english !== 'Extraction') {
+                isChange = true;
+                previousCondition = 'Extraction';
+                console.log(`🔄 CHANGE DETECTED (from Planning): Extraction → ${conditionName.english} on ${surfaceLabel}`);
+              } else {
+                console.log(` Same condition (Planning): Extraction`);
+              }
+            } else {
+              // استخراج اسم الحالة من السجل السابق
+              const previousSurfaceText = lastDiagnosedForSurface.surfaces.find(s => s.toLowerCase().includes(`(${surfaceLabel.toLowerCase()})`));
+              if (previousSurfaceText) {
+                const previousConditionMatch = previousSurfaceText.match(/^(.+?)\s*\(/);
+                const previousConditionName = previousConditionMatch ? previousConditionMatch[1].trim() : previousSurfaceText;
+
+                // التحقق إذا كانت الحالة مختلفة
+                if (previousConditionName.toLowerCase() !== conditionName.english.toLowerCase()) {
+                  isChange = true;
+                  previousCondition = previousConditionName;
+                  console.log(`🔄 CHANGE DETECTED (from Planning): ${previousConditionName} → ${conditionName.english} on ${surfaceLabel}`);
+                } else {
+                  console.log(` Same condition (Planning): ${conditionName.english} on ${surfaceLabel}`);
+                }
+              }
+            }
+          } else {
+            console.log(`➕ NEW diagnosis: ${conditionName.english} on ${surfaceLabel}`);
+          }
+        }
+
+        const newRecord = {
+          type: 'planning' as const,
+          action: 'diagnosed' as const,
+          condition: conditionName.english, // Use actual condition name (Caries, Follow-up, etc.)
+          surfaces: [`${conditionName.english} (${surfaceLabel})`],
+          timestamp,
+          timestampNum,
+          doctorName: user?.name || 'Dr. Unknown',
+          isChange: isChange, // Track if this is a change from previous condition
+          previousCondition: isChange ? previousCondition : undefined
+        };
+
+        // استبدال السجل السابق بدلاً من الإضافة (لنفس السن ونفس السطح)
+        setPendingPlanningRecords(prev => {
+          // Remove any existing record for this tooth + surface
+          const filtered = prev.filter(record => {
+            if (record.toothNumber !== selectedTooth) return true;
+
+            // Check if this record is for the same surface
+            const recordSurface = record.surfaces.find(s => s.includes(`(${surfaceLabel})`));
+            return !recordSurface; // Keep only if different surface
+          });
+
+          // Add the new record
+          return [
+            ...filtered,
+            {
+              toothNumber: selectedTooth,
+              ...newRecord
+            }
+          ];
+        });
+
+        // استبدال السجل في toothRecords أيضاً
+        setToothRecords(prev => {
+          const existingRecordsForTooth = prev[selectedTooth] || [];
+
+          // Remove any existing planning record for this surface
+          const filtered = existingRecordsForTooth.filter(record => {
+            if (record.type !== 'planning') return true; // Keep non-planning records
+
+            // Check if this record is for the same surface
+            const recordSurface = record.surfaces.find(s => s.includes(`(${surfaceLabel})`));
+            return !recordSurface; // Keep only if different surface
+          });
+
+          return {
+            ...prev,
+            [selectedTooth]: [
+              ...filtered,
+              newRecord
+            ]
+          };
+        });
+
+        // إذا كان تغيير من Extraction، احذف اللون الأسود من كل الأسطح فوراً
+        if (isChange && previousCondition === 'Extraction') {
+          console.log('🔄 Clearing extraction color from all surfaces immediately');
+
+          // Mapping للأسطح (use helper to get correct mapping for lower teeth)
+          const surfaceNameToKey = getSurfaceNameMap(selectedTooth);
+
+          // Mapping للألوان
+          const conditionColorMap: Record<string, ToothCondition> = {
+            'Caries': 'caries',
+            'Broken/Inappropriate Filling': 'broken',
+            'Pulpectomy': 'pulpectomy',
+            'Follow-up': 'follow_up',
+            'Needs More Diagnosis': 'needs_diagnosis',
+            'Temporary Filling': 'filling_replacement',
+            'Permanent Filling': 'permanent_filling',
+            'Fracture': 'fracture',
+            'Restoration to Replace': 'filling_replacement',
+            'Impacted': 'impacted',
+          };
+
+          // احذف فقط الـ extraction colors، واحتفظ بالألوان الأخرى (مثل caries من السطح السابق)
+          setToothConditions(prevConditions => {
+            const currentConditions = prevConditions[selectedTooth] || {
+              top: null,
+              bottom: null,
+              left: null,
+              right: null,
+              center: null,
+            };
+
+            const clearedConditions = {
+              top: currentConditions.top === 'extraction' ? null : currentConditions.top,
+              bottom: currentConditions.bottom === 'extraction' ? null : currentConditions.bottom,
+              left: currentConditions.left === 'extraction' ? null : currentConditions.left,
+              right: currentConditions.right === 'extraction' ? null : currentConditions.right,
+              center: currentConditions.center === 'extraction' ? null : currentConditions.center,
+            };
+
+            // أضف اللون الجديد للسطح المحدد فقط (إذا كان له لون)
+            if (conditionColorMap[conditionName.english]) {
+              const surfaceKey = surfaceNameToKey[surfaceLabel.toLowerCase()];
+              console.log(`  → Adding new color: condition="${conditionName.english}", surface="${surfaceLabel}", surfaceKey="${surfaceKey}", color="${conditionColorMap[conditionName.english]}"`);
+              if (surfaceKey) {
+                clearedConditions[surfaceKey] = conditionColorMap[conditionName.english];
+                console.log(`   clearedConditions after adding:`, clearedConditions);
+              } else {
+                console.log(`   surfaceKey is null for "${surfaceLabel}"`);
+              }
+            } else {
+              console.log(`   No color mapping for condition "${conditionName.english}"`);
+            }
+
+            console.log(`  🎨 Final clearedConditions:`, clearedConditions);
+            return {
+              ...prevConditions,
+              [selectedTooth]: clearedConditions
+            };
+          });
+        }
+
+      }
+      setShowConditionMenu(false);
+      setSelectedSurface(null);
+    }
+  };
+
+  useEffect(() => {
+    // Blob animations
+    const animateBlob = (anim: Animated.Value, duration: number) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: duration,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration: duration,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+
+    animateBlob(blob1Anim, 6000);
+    animateBlob(blob2Anim, 7000);
+    animateBlob(blob3Anim, 8000);
+    animateBlob(blob4Anim, 6500);
+    animateBlob(blob5Anim, 7500);
+    animateBlob(blob6Anim, 6800);
+  }, []);
+
+  // DISABLED: تحديث Tooth Status Record تلقائياً عند تغيير toothConditions أو toothBorderColors
+  // This useEffect has been disabled to prevent automatic saving
+  // All changes now only save when Submit button is pressed
+  // useEffect(() => {
+  //   ... disabled code ...
+  // }, [toothConditions, toothBorderColors]);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <StatusBar translucent={true} backgroundColor="transparent" barStyle="light-content" />
+
+      {/* Gradient Mesh Background - Same as PatientProfileScreen */}
+      <LinearGradient
+        colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      <View style={styles.container}>
+        <View style={styles.gradient}>
+          {/* Animated Blobs */}
+          <Animated.View
+            style={[
+              styles.timelineBlob,
+              {
+                top: '3%',
+                left: '5%',
+                width: 180,
+                height: 180,
+                backgroundColor: 'rgba(91, 159, 237, 0.15)',
+                transform: [
+                  {
+                    translateX: blob1Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 30],
+                    }),
+                  },
+                  {
+                    translateY: blob1Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -20],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.timelineBlob,
+              {
+                top: '15%',
+                right: '10%',
+                width: 220,
+                height: 220,
+                backgroundColor: 'rgba(251, 191, 36, 0.12)',
+                transform: [
+                  {
+                    translateX: blob2Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -25],
+                    }),
+                  },
+                  {
+                    translateY: blob2Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 35],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.timelineBlob,
+              {
+                bottom: '5%',
+                left: '55%',
+                marginLeft: -100,
+                width: 200,
+                height: 200,
+                backgroundColor: 'rgba(91, 159, 237, 0.15)',
+                transform: [
+                  {
+                    translateX: blob3Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 20],
+                    }),
+                  },
+                  {
+                    translateY: blob3Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -30],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.timelineBlob,
+              {
+                top: '35%',
+                left: '75%',
+                width: 160,
+                height: 160,
+                backgroundColor: 'rgba(251, 191, 36, 0.12)',
+                transform: [
+                  {
+                    translateX: blob4Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -20],
+                    }),
+                  },
+                  {
+                    translateY: blob4Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 25],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.timelineBlob,
+              {
+                top: '20%',
+                right: '25%',
+                width: 170,
+                height: 170,
+                backgroundColor: 'rgba(91, 159, 237, 0.15)',
+                transform: [
+                  {
+                    translateX: blob5Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 28],
+                    }),
+                  },
+                  {
+                    translateY: blob5Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -32],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.timelineBlob,
+              {
+                bottom: '30%',
+                left: '15%',
+                width: 150,
+                height: 150,
+                backgroundColor: 'rgba(251, 191, 36, 0.12)',
+                transform: [
+                  {
+                    translateX: blob6Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, -18],
+                    }),
+                  },
+                  {
+                    translateY: blob6Anim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 22],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+
+          {/* Header with Back Button */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={onBack} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <Text style={styles.headerTitle}>Dental Chart</Text>
+
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Planning Submit/Cancel Buttons - Floating */}
+          {!isEditModeActive && pendingPlanningRecords.length > 0 && (
+            <>
+              {/* Cancel Button (Left) */}
+              <TouchableOpacity
+                style={styles.planningCancelButton}
+                onPress={handlePlanningCancel}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.planningCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              {/* Submit Button (Right) */}
+              <TouchableOpacity
+                style={styles.planningSubmitButton}
+                onPress={handlePlanningSubmit}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.planningSubmitButtonText}>Submit</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* Content */}
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+                {/* Edit Mode Button */}
+                <Animated.View
+                  style={[
+                    styles.editButtonContainer,
+                    {
+                      transform: [{ translateX: editButtonSlide }],
+                      opacity: isOralHygieneExpanded ? 0 : buttonsOpacity,
+                      zIndex: isOralHygieneExpanded ? 700 : (selectedTooth ? 900 : 9999),
+                      elevation: isOralHygieneExpanded ? 700 : (selectedTooth ? 900 : 9999),
+                    }
+                  ]}
+                  pointerEvents={selectedTooth ? "none" : "box-none"}
+                >
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      const newState = !isEditModeActive;
+                      console.log('✓ Edit Button Pressed! New state:', newState);
+                      setIsEditModeActive(newState);
+                    }}
+                    style={[
+                      styles.editModeButton,
+                      isEditModeActive ? styles.editModeButtonActive : styles.editModeButtonInactive,
+                    ]}
+                  >
+                    <Text style={[
+                      styles.editModeButtonText,
+                      isEditModeActive && styles.editModeButtonTextActive
+                    ]}>
+                      Edit
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+
+                {/* View Mode Button */}
+                <Animated.View style={[styles.viewButtonContainer, {
+                  opacity: isOralHygieneExpanded ? 0 : buttonsOpacity,
+                  zIndex: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
+                  elevation: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
+                  transform: [
+                    { translateX: -50 },
+                    {
+                      translateY: viewButtonPositionAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, -(SCREEN_HEIGHT * 0.41 - 100)] // من 41% إلى 100 بكسل من الأعلى
+                      })
+                    }
+                  ]
+                }]} pointerEvents={selectedTooth ? "none" : "box-none"}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      const newState = !isViewModeActive;
+                      console.log('✓ View Button Pressed! Current state:', isViewModeActive, '→ New state:', newState);
+                      setIsViewModeActive(newState);
+
+                      if (newState) {
+                        console.log('🔵 Showing referral container - hiding teeth');
+                        // إخفاء الأسنان وزر Edit والخطوط وأرقام الأسنان
+                        Animated.parallel([
+                          Animated.timing(rightTeethSlide, {
+                            toValue: 500, // إزاحة لليمين خارج الشاشة
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(leftTeethSlide, {
+                            toValue: -500, // إزاحة لليسار خارج الشاشة
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(editButtonSlide, {
+                            toValue: -300, // إزاحة زر Edit لليسار
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(verticalTopLineSlide, {
+                            toValue: -200, // إزاحة الخط العمودي العلوي للأعلى
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(verticalBottomLineSlide, {
+                            toValue: 200, // إزاحة الخط العمودي السفلي للأسفل
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(horizontalRightLineSlide, {
+                            toValue: 500, // إزاحة الخط الأفقي الأيمن لليمين
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(horizontalLeftLineSlide, {
+                            toValue: -500, // إزاحة الخط الأفقي الأيسر لليسار
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(rightNumbersSlide, {
+                            toValue: 500, // إزاحة أرقام الأسنان اليمنى لليمين
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(leftNumbersSlide, {
+                            toValue: -500, // إزاحة أرقام الأسنان اليسرى لليسار
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(oralHygieneOpacity, {
+                            toValue: 0, // إخفاء حاوية Oral Hygiene
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(viewButtonPositionAnim, {
+                            toValue: 1, // تحريك زر View إلى أعلى يمين
+                            duration: 400,
+                            useNativeDriver: true,
+                          }),
+                        ]).start(() => {
+                          console.log('🟢 Teeth hidden - now showing containers');
+                          // إعادة تعيين الحاوية للحالة المغلقة
+                          setIsReferralExpanded(false);
+                          referralSectionsHeight.setValue(0);
+                          // إعادة تعيين pushDown للحاويات الأخرى
+                          treatmentRecordPushDown.setValue(0);
+                          planningRecordPushDown.setValue(0);
+                          // بعد انتهاء اختفاء الأسنان، إظهار الحاويات بالتسلسل
+                          // 1. Referral من اليمين
+                          Animated.timing(referralContainerSlide, {
+                            toValue: 0,
+                            duration: 150,
+                            useNativeDriver: true,
+                          }).start(() => {
+                            console.log(' Referral container visible');
+                            // 2. Treatment Record من اليسار
+                            Animated.timing(treatmentRecordSlide, {
+                              toValue: 0,
+                              duration: 150,
+                              useNativeDriver: true,
+                            }).start(() => {
+                              console.log(' Treatment Record visible');
+                              // 3. Planning Record من اليمين
+                              Animated.timing(planningRecordSlide, {
+                                toValue: 0,
+                                duration: 150,
+                                useNativeDriver: true,
+                              }).start(() => {
+                                console.log(' All containers visible');
+                                // الحاويات في موقع ثابت - لا حاجة لتحريكها
+                              });
+                            });
+                          });
+                        });
+                      } else {
+                        console.log('🔴 Hiding containers - returning teeth');
+                        // إعادة تعيين الحاوية للحالة المغلقة
+                        setIsReferralExpanded(false);
+                        referralSectionsHeight.setValue(0);
+                        treatmentRecordPushDown.setValue(0);
+                        planningRecordPushDown.setValue(0);
+                        // إخفاء الحاويات بالتسلسل العكسي
+                        // 1. Planning Record (يمين)
+                        Animated.timing(planningRecordSlide, {
+                          toValue: 1000,
+                          duration: 100,
+                          useNativeDriver: true,
+                        }).start(() => {
+                          console.log('🟡 Planning Record hidden');
+                          // 2. Treatment Record (يسار)
+                          Animated.timing(treatmentRecordSlide, {
+                            toValue: -1000,
+                            duration: 100,
+                            useNativeDriver: true,
+                          }).start(() => {
+                            console.log('🟡 Treatment Record hidden');
+                            // 3. Referral (يمين)
+                            Animated.timing(referralContainerSlide, {
+                              toValue: 1000,
+                              duration: 100,
+                              useNativeDriver: true,
+                            }).start(() => {
+                              console.log('🟡 All containers hidden - now returning teeth');
+                          // ثم إرجاع الأسنان وزر Edit والخطوط وأرقام الأسنان لأماكنها
+                          Animated.parallel([
+                          Animated.timing(rightTeethSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(leftTeethSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(editButtonSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(verticalTopLineSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(verticalBottomLineSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(horizontalRightLineSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(horizontalLeftLineSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(rightNumbersSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(leftNumbersSlide, {
+                            toValue: 0,
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(oralHygieneOpacity, {
+                            toValue: 1, // إعادة إظهار حاوية Oral Hygiene
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                          Animated.timing(viewButtonPositionAnim, {
+                            toValue: 0, // إعادة زر View إلى موقعه الأصلي
+                            duration: 300,
+                            useNativeDriver: true,
+                          }),
+                        ]).start(() => {
+                          console.log(' Teeth returned to original position');
+                        });
+                            });
+                          });
+                        });
+                      }
+                    }}
+                    style={[
+                      styles.viewModeButton,
+                      isViewModeActive ? styles.viewModeButtonActive : styles.viewModeButtonInactive,
+                    ]}
+                  >
+                    <Text style={[
+                      styles.viewModeButtonText,
+                      isViewModeActive && styles.viewModeButtonTextActive
+                    ]}>
+                      View
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+
+                {/* Teeth Container */}
+                <View style={styles.crossContainer}>
+                  {/* خطوط فاصلة أصفر في المنتصف */}
+                  {/* الخط العمودي العلوي */}
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: verticalTopLineSlide }] }]} pointerEvents="none">
+                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
+                      {/* الخط العمودي الأصفر الصغير في الأعلى بين رقم 1 و1 */}
+                      <Line
+                        x1="50"
+                        y1="-30"
+                        x2="50"
+                        y2="-10"
+                        stroke="rgba(251, 191, 36, 0.3)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </Svg>
+                  </Animated.View>
+
+                  {/* الخط العمودي السفلي */}
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: verticalBottomLineSlide }] }]} pointerEvents="none">
+                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
+                      {/* الخط العمودي الأصفر الصغير في الأسفل بين رقم 1 و1 للفك السفلي */}
+                      <Line
+                        x1="50"
+                        y1="110"
+                        x2="50"
+                        y2="130"
+                        stroke="rgba(251, 191, 36, 0.3)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </Svg>
+                  </Animated.View>
+
+                  {/* الخط الأفقي الأيسر */}
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: horizontalLeftLineSlide }] }]} pointerEvents="none">
+                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
+                      {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليسار */}
+                      <Line
+                        x1="10"
+                        y1="50"
+                        x2="30"
+                        y2="50"
+                        stroke="rgba(251, 191, 36, 0.3)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </Svg>
+                  </Animated.View>
+
+                  {/* الخط الأفقي الأيمن */}
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: horizontalRightLineSlide }] }]} pointerEvents="none">
+                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
+                      {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليمين */}
+                      <Line
+                        x1="70"
+                        y1="50"
+                        x2="90"
+                        y2="50"
+                        stroke="rgba(251, 191, 36, 0.3)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </Svg>
+                  </Animated.View>
+
+                  {/* Oral Hygiene Container - حاوية في المنتصف */}
+                  <Animated.View style={[
+                    {
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      zIndex: isOralHygieneExpanded ? 10001 : 800,
+                      elevation: isOralHygieneExpanded ? 10001 : 800,
+                      opacity: Animated.multiply(buttonsOpacity, oralHygieneOpacity),
+                    }
+                  ]} pointerEvents={selectedTooth ? "none" : "auto"}>
+                    <Animated.View
+                      style={[
+                        {
+                          paddingHorizontal: 16,
+                          paddingVertical: 4,
+                          borderRadius: 16,
+                          borderWidth: 1.5,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 12,
+                        },
+                        {
+                          width: oralHygieneExpandAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [140, SCREEN_WIDTH * 0.75]
+                          }),
+                          height: oralHygieneExpandAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [38, 320]
+                          }),
+                          backgroundColor: isOralHygieneExpanded ? 'rgba(254, 215, 170, 0.2)' : 'rgba(251, 191, 36, 0.1)',
+                          borderColor: isOralHygieneExpanded ? 'rgba(254, 215, 170, 0.5)' : 'rgba(255, 255, 255, 0.5)',
+                          transform: [
+                            {
+                              translateX: oralHygieneExpandAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [-70, -(SCREEN_WIDTH * 0.75) / 2]
+                              })
+                            },
+                            {
+                              translateY: oralHygieneExpandAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [-19, -160]
+                              })
+                            }
+                          ],
+                          overflow: 'hidden',
+                        }
+                      ]}
+                    >
+                    <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill}>
+                      <View style={{ flex: 1, backgroundColor: isOralHygieneExpanded ? 'rgba(254, 215, 170, 0.3)' : 'rgba(251, 191, 36, 0.15)' }}>
+                        <TouchableOpacity
+                          onPress={handleOralHygienePress}
+                          activeOpacity={0.8}
+                          style={{ width: '100%' }}
+                        >
+                          <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingVertical: isOralHygieneExpanded ? 14 : 8,
+                            width: '100%',
+                            gap: 10
+                          }}>
+                            {isOralHygieneExpanded && (
+                              <Ionicons name="fitness-outline" size={24} color="#92400E" />
+                            )}
+                            <Text style={[
+                              styles.oralHygieneText,
+                              isOralHygieneExpanded && { fontSize: 20, fontWeight: '800', letterSpacing: 0.8 }
+                            ]}>Oral Hygiene</Text>
+                            {isOralHygieneExpanded && (
+                              <Ionicons name="chevron-up" size={20} color="#92400E" />
+                            )}
+                          </View>
+                          {isOralHygieneExpanded && (
+                            <View style={{
+                              width: '85%',
+                              height: 2.5,
+                              backgroundColor: '#92400E',
+                              borderRadius: 2,
+                              alignSelf: 'center',
+                              marginTop: 8
+                            }} />
+                          )}
+                        </TouchableOpacity>
+
+                    {isOralHygieneExpanded && (
+                      <ScrollView style={{ flex: 1, padding: 16, paddingTop: 20 }} showsVerticalScrollIndicator={false}>
+                        {/* زر Scaling Done */}
+                        <TouchableOpacity
+                          style={[styles.scalingButton, {
+                            overflow: 'hidden',
+                            ...Platform.select({
+                              ios: {
+                                shadowColor: '#059669',
+                                shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.25,
+                                shadowRadius: 8,
+                              }
+                            })
+                          }]}
+                          onPress={handleAddScaling}
+                          activeOpacity={0.7}
+                        >
+                          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill}>
+                            <View style={{
+                              flex: 1,
+                              backgroundColor: 'rgba(16, 185, 129, 0.25)',
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 10
+                            }}>
+                              <Ionicons name="checkmark-circle" size={22} color="#059669" />
+                              <Text style={[styles.scalingButtonText, { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 }]}>Scaling Done</Text>
+                            </View>
+                          </BlurView>
+                        </TouchableOpacity>
+
+                        {/* سجلات الـ Scaling */}
+                        {scalingRecords.length > 0 && (
+                          <View style={[styles.scalingRecordsContainer, {
+                            backgroundColor: 'rgba(255, 255, 255, 0.6)',
+                            borderRadius: 16,
+                            padding: 16,
+                            marginTop: 4,
+                            ...Platform.select({
+                              ios: {
+                                shadowColor: '#92400E',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.1,
+                                shadowRadius: 6,
+                              }
+                            })
+                          }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                              <Ionicons name="file-tray-full" size={20} color="#92400E" />
+                              <Text style={[styles.scalingRecordsTitle, { fontSize: 15, fontWeight: '700', marginBottom: 0 }]}>Scaling Records</Text>
+                            </View>
+                            {scalingRecords.map((record, index) => (
+                              <View key={index} style={[styles.scalingRecordItem, {
+                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                padding: 14,
+                                borderRadius: 12,
+                                marginBottom: index === scalingRecords.length - 1 ? 0 : 10,
+                                borderWidth: 1,
+                                borderColor: 'rgba(254, 215, 170, 0.4)',
+                                ...Platform.select({
+                                  ios: {
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 1 },
+                                    shadowOpacity: 0.06,
+                                    shadowRadius: 3,
+                                  }
+                                })
+                              }]}>
+                                <View style={[styles.scalingRecordIcon, {
+                                  width: 38,
+                                  height: 38,
+                                  borderRadius: 10,
+                                  backgroundColor: 'rgba(254, 215, 170, 0.3)',
+                                  borderWidth: 1.5,
+                                  borderColor: 'rgba(254, 215, 170, 0.6)'
+                                }]}>
+                                  <Ionicons name="medical" size={18} color="#92400E" />
+                                </View>
+                                <View style={[styles.scalingRecordInfo, { marginLeft: 12 }]}>
+                                  <Text style={[styles.scalingRecordDoctor, { fontSize: 14, fontWeight: '600' }]}>{record.doctorName}</Text>
+                                  <Text style={[styles.scalingRecordTime, { fontSize: 12, marginTop: 2 }]}>{record.timestamp}</Text>
+                                </View>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    Alert.alert(
+                                      'Delete Record',
+                                      'Are you sure you want to delete this scaling record?',
+                                      [
+                                        {
+                                          text: 'Cancel',
+                                          style: 'cancel'
+                                        },
+                                        {
+                                          text: 'Delete',
+                                          style: 'destructive',
+                                          onPress: async () => {
+                                            // حذف من قاعدة البيانات
+                                            const { error } = await deleteScalingRecord(record.id);
+
+                                            if (error) {
+                                              Alert.alert('Error', 'Failed to delete scaling record');
+                                              console.error('Error deleting scaling record:', error);
+                                              return;
+                                            }
+
+                                            // حذف من الـ state
+                                            setScalingRecords(prev => prev.filter((_, i) => i !== index));
+                                          }
+                                        }
+                                      ]
+                                    );
+                                  }}
+                                  style={[styles.deleteRecordButton, {
+                                    padding: 8,
+                                    borderRadius: 8,
+                                    backgroundColor: 'rgba(239, 68, 68, 0.08)'
+                                  }]}
+                                  activeOpacity={0.7}
+                                >
+                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                </TouchableOpacity>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </ScrollView>
+                    )}
+                      </View>
+                    </BlurView>
+                    </Animated.View>
+                  </Animated.View>
+
+                  {/* Tooth #8 - Upper Left (أقصى يمين الصفحة فوق المنتصف) */}
+                  <Animated.View
+                    style={[
+                      styles.tooth8,
+                      {
+                        zIndex: selectedTooth === 8 ? 1001 : 999, // دائماً فوق الطبقة الشفافة
+                        elevation: selectedTooth === 8 ? 1001 : 999, // للأندرويد
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 8 ? tooth8TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 8 ? tooth8TranslateY : 0 },
+                          { scale: selectedTooth === 8 ? tooth8Scale : 1 },
+                          { rotate: selectedTooth === 8 ? tooth8Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '-90deg'],
+                          }) : '0deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareTiny
+                      colors={toothConditions[8]}
+                      onToothPress={() => handleToothPress(8)}
+                      onSurfacePress={selectedTooth === 8 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                      borderColor={toothBorderColors[8] ? CONDITION_COLORS[toothBorderColors[8]] : undefined}
+                    />
+
+                    {/* Surface labels */}
+                    {selectedTooth === 8 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #7 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth7,
+                      {
+                        zIndex: selectedTooth === 7 ? 1001 : 999,
+                        elevation: selectedTooth === 7 ? 1001 : 999,
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 7 ? tooth7TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 7 ? tooth7TranslateY : 0 },
+                          { scale: selectedTooth === 7 ? tooth7Scale : 1 },
+                          { rotate: selectedTooth === 7 ? tooth7Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '-90deg'],
+                          }) : '0deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareTiny
+                      colors={toothConditions[7]}
+                      onToothPress={() => handleToothPress(7)}
+                      onSurfacePress={selectedTooth === 7 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                      borderColor={toothBorderColors[7] ? CONDITION_COLORS[toothBorderColors[7]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 7 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #6 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth6,
+                      {
+                        zIndex: selectedTooth === 6 ? 1001 : 999,
+                        elevation: selectedTooth === 6 ? 1001 : 999,
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 6 ? tooth6TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 6 ? tooth6TranslateY : 0 },
+                          { scale: selectedTooth === 6 ? tooth6Scale : 1 },
+                          { rotate: selectedTooth === 6 ? tooth6Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '-90deg'],
+                          }) : '0deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareTiny
+                      colors={toothConditions[6]}
+                      onToothPress={() => handleToothPress(6)}
+                      onSurfacePress={selectedTooth === 6 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                    borderColor={toothBorderColors[6] ? CONDITION_COLORS[toothBorderColors[6]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 6 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #5 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth5,
+                      {
+                        zIndex: selectedTooth === 5 ? 1001 : 999,
+                        elevation: selectedTooth === 5 ? 1001 : 999,
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 5 ? tooth5TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 5 ? tooth5TranslateY : 0 },
+                          { scale: selectedTooth === 5 ? tooth5Scale : 1 },
+                          { rotate: selectedTooth === 5 ? tooth5Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['-15deg', '-90deg'],
+                          }) : '-15deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareMedium
+                      colors={toothConditions[5]}
+                      onToothPress={() => handleToothPress(5)}
+                      onSurfacePress={selectedTooth === 5 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                    borderColor={toothBorderColors[5] ? CONDITION_COLORS[toothBorderColors[5]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 5 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #4 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth4,
+                      {
+                        zIndex: selectedTooth === 4 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 4 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 4 ? tooth4TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 4 ? tooth4TranslateY : 0 },
+                          { scale: selectedTooth === 4 ? tooth4Scale : 1 },
+                          { rotate: selectedTooth === 4 ? tooth4Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['-20deg', '-90deg'],
+                          }) : '-20deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareMedium
+                      colors={toothConditions[4]}
+                      onToothPress={() => handleToothPress(4)}
+                      onSurfacePress={selectedTooth === 4 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                    borderColor={toothBorderColors[4] ? CONDITION_COLORS[toothBorderColors[4]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 4 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #3 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth3,
+                      {
+                        zIndex: selectedTooth === 3 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 3 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 3 ? tooth3TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 3 ? tooth3TranslateY : 0 },
+                          { scale: selectedTooth === 3 ? tooth3Scale : 1 },
+                          { rotate: selectedTooth === 3 ? tooth3Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['-35deg', '-90deg'],
+                          }) : '-35deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareMedium
+                      colors={toothConditions[3]}
+                      onToothPress={() => handleToothPress(3)}
+                      onSurfacePress={selectedTooth === 3 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                    borderColor={toothBorderColors[3] ? CONDITION_COLORS[toothBorderColors[3]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 3 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #2 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth2,
+                      {
+                        zIndex: selectedTooth === 2 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 2 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 2 ? tooth2TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 2 ? tooth2TranslateY : 0 },
+                          { scale: selectedTooth === 2 ? tooth2Scale : 1 },
+                          { rotate: selectedTooth === 2 ? tooth2Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['-60deg', '-90deg'],
+                          }) : '-60deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareMedium
+                      colors={toothConditions[2]}
+                      onToothPress={() => handleToothPress(2)}
+                      onSurfacePress={selectedTooth === 2 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                    borderColor={toothBorderColors[2] ? CONDITION_COLORS[toothBorderColors[2]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 2 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #1 - UL 1 */}
+                  <Animated.View
+                    style={[
+                      styles.tooth1,
+                      {
+                        zIndex: selectedTooth === 1 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth as number) ? 998 : 1000),
+                        elevation: selectedTooth === 1 ? 1001 : (selectedTooth && [5,6,7,8].includes(selectedTooth as number) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 1 ? tooth1TranslateX : 0, rightTeethSlide) },
+                          { translateY: selectedTooth === 1 ? tooth1TranslateY : 0 },
+                          { scale: selectedTooth === 1 ? tooth1Scale : 1 },
+                          { rotate: selectedTooth === 1 ? tooth1Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['-80deg', '-90deg'],
+                          }) : '-80deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareMedium
+                      colors={toothConditions[1]}
+                      onToothPress={() => handleToothPress(1)}
+                      onSurfacePress={selectedTooth === 1 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                    borderColor={toothBorderColors[1] ? CONDITION_COLORS[toothBorderColors[1]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 1 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                      </>
+                    )}
+                  </Animated.View>
+              <Animated.View style={[styles.toothNumber1, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>1</Text>
+              </Animated.View>
+
+              {/* Tooth #2 Number */}
+              <Animated.View style={[styles.toothNumber2, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>2</Text>
+              </Animated.View>
+
+              {/* Tooth #3 Number */}
+              <Animated.View style={[styles.toothNumber3, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>3</Text>
+              </Animated.View>
+
+              {/* Tooth #4 Number */}
+              <Animated.View style={[styles.toothNumber4, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>4</Text>
+              </Animated.View>
+
+              {/* Tooth #5 Number */}
+              <Animated.View style={[styles.toothNumber5, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>5</Text>
+              </Animated.View>
+
+              {/* Tooth #6 Number */}
+              <Animated.View style={[styles.toothNumber6, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>6</Text>
+              </Animated.View>
+
+              {/* Tooth #7 Number */}
+              <Animated.View style={[styles.toothNumber7, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>7</Text>
+              </Animated.View>
+
+              {/* Tooth #8 Number */}
+              <Animated.View style={[styles.toothNumber8, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>8</Text>
+              </Animated.View>
+
+              {/* الناحية اليسرى - الأسنان 9-16 (مرآة للناحية اليمنى) */}
+
+                  {/* Tooth #9 - يسار (مثل 8) */}
+                  <Animated.View
+                    style={[
+                      styles.tooth9,
+                      {
+                        zIndex: selectedTooth === 9 ? 1001 : (selectedTooth && [9,10,11].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 9 ? 1001 : (selectedTooth && [9,10,11].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 9 ? tooth9TranslateX : 0, leftTeethSlide) },
+                          { translateY: selectedTooth === 9 ? tooth9TranslateY : 0 },
+                          { scale: selectedTooth === 9 ? tooth9Scale : 1 },
+                          { rotate: selectedTooth === 9 ? tooth9Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '90deg'],
+                          }) : '0deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareTiny
+                      colors={toothConditions[9]}
+                      onToothPress={() => handleToothPress(9)}
+                      onSurfacePress={selectedTooth === 9 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                      rotation={90}
+                      borderColor={toothBorderColors[9] ? CONDITION_COLORS[toothBorderColors[9]] : undefined}
+                    />
+
+                    {/* Surface labels - خارج حواف السن */}
+                    {selectedTooth === 9 && !isClosing && (
+                      <>
+                        {/* Mesial - خارج السطح العلوي */}
+                        <Text pointerEvents="none" style={{
+                          position: 'absolute',
+                          top: -4,
+                          left: '50%',
+                          transform: [{ translateX: -2 }],
+                          fontSize: 4,
+                          fontWeight: 'bold',
+                          color: 'rgba(135, 206, 250, 0.95)',
+                        }}>M</Text>
+
+                        {/* Distal - خارج السطح السفلي */}
+                        <Text pointerEvents="none" style={{
+                          position: 'absolute',
+                          bottom: -4,
+                          left: '50%',
+                          transform: [{ translateX: -2 }],
+                          fontSize: 4,
+                          fontWeight: 'bold',
+                          color: 'rgba(135, 206, 250, 0.95)',
+                        }}>D</Text>
+
+                        {/* Buccal - خارج السطح الأيسر */}
+                        <Text pointerEvents="none" style={{
+                          position: 'absolute',
+                          left: -4,
+                          top: '50%',
+                          transform: [{ translateY: -0.5 }],
+                          fontSize: 4,
+                          fontWeight: 'bold',
+                          color: 'rgba(135, 206, 250, 0.95)',
+                        }}>B</Text>
+
+                        {/* Palatal - خارج السطح الأيمن */}
+                        <Text pointerEvents="none" style={{
+                          position: 'absolute',
+                          right: -4,
+                          top: '50%',
+                          transform: [{ translateY: -0.5 }],
+                          fontSize: 4,
+                          fontWeight: 'bold',
+                          color: 'rgba(135, 206, 250, 0.95)',
+                        }}>P</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #10 - يسار (مثل 7) */}
+                  <Animated.View
+                    style={[
+                      styles.tooth10,
+                      {
+                        zIndex: selectedTooth === 10 ? 1001 : (selectedTooth && [9,10,11].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 10 ? 1001 : (selectedTooth && [9,10,11].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 10 ? tooth10TranslateX : 0, leftTeethSlide) },
+                          { translateY: selectedTooth === 10 ? tooth10TranslateY : 0 },
+                          { scale: selectedTooth === 10 ? tooth10Scale : 1 },
+                          { rotate: selectedTooth === 10 ? tooth10Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '90deg'],
+                          }) : '0deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareTiny
+                      colors={toothConditions[10]}
+                      onToothPress={() => handleToothPress(10)}
+                      onSurfacePress={selectedTooth === 10 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                      rotation={90}
+                      borderColor={toothBorderColors[10] ? CONDITION_COLORS[toothBorderColors[10]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 10 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #11 - يسار (مثل 6) */}
+                  <Animated.View
+                    style={[
+                      styles.tooth11,
+                      {
+                        zIndex: selectedTooth === 11 ? 1001 : (selectedTooth && [9,10,11].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 11 ? 1001 : (selectedTooth && [9,10,11].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 11 ? tooth11TranslateX : 0, leftTeethSlide) },
+                          { translateY: selectedTooth === 11 ? tooth11TranslateY : 0 },
+                          { scale: selectedTooth === 11 ? tooth11Scale : 1 },
+                          { rotate: selectedTooth === 11 ? tooth11Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '90deg'],
+                          }) : '0deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareTiny
+                      colors={toothConditions[11]}
+                      onToothPress={() => handleToothPress(11)}
+                      onSurfacePress={selectedTooth === 11 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                      rotation={90}
+                      borderColor={toothBorderColors[11] ? CONDITION_COLORS[toothBorderColors[11]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 11 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+                  {/* Tooth #12 - يسار (مثل 5) */}
+                  <Animated.View
+                    style={[
+                      styles.tooth12,
+                      {
+                        zIndex: selectedTooth === 12 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                        elevation: selectedTooth === 12 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                      },
+                      {
+                        transform: [
+                          { translateX: Animated.add(selectedTooth === 12 ? tooth12TranslateX : 0, leftTeethSlide) },
+                          { translateY: selectedTooth === 12 ? tooth12TranslateY : 0 },
+                          { scale: selectedTooth === 12 ? tooth12Scale : 1 },
+                          { rotate: selectedTooth === 12 ? tooth12Rotation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['15deg', '90deg'],
+                          }) : '15deg' },
+                        ],
+                      },
+                      isEditModeActive && styles.toothGlowEffect,
+                    ]}
+                  >
+                    <ToothWithSectionsSquareMedium
+                      colors={toothConditions[12]}
+                      onToothPress={() => handleToothPress(12)}
+                      onSurfacePress={selectedTooth === 12 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                      rotation={90}
+                      borderColor={toothBorderColors[12] ? CONDITION_COLORS[toothBorderColors[12]] : undefined}
+                    />
+
+
+                    {/* Surface labels */}
+                    {selectedTooth === 12 && !isClosing && (
+                      <>
+                        <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                        <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                      </>
+                    )}
+                  </Animated.View>
+
+              {/* Tooth #13 - يسار (مثل 4) */}
+              <Animated.View
+                style={[
+                  styles.tooth13,
+                  {
+                    zIndex: selectedTooth === 13 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 13 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 13 ? tooth13TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 13 ? tooth13TranslateY : 0 },
+                      { scale: selectedTooth === 13 ? tooth13Scale : 1 },
+                      { rotate: selectedTooth === 13 ? tooth13Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['20deg', '90deg'],
+                      }) : '20deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[13]}
+                  onToothPress={() => handleToothPress(13)}
+                  onSurfacePress={selectedTooth === 13 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                  rotation={90}
+                  borderColor={toothBorderColors[13] ? CONDITION_COLORS[toothBorderColors[13]] : undefined}
+                />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 13 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #14 - يسار (مثل 3) */}
+              <Animated.View
+                style={[
+                  styles.tooth14,
+                  {
+                    zIndex: selectedTooth === 14 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 14 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 14 ? tooth14TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 14 ? tooth14TranslateY : 0 },
+                      { scale: selectedTooth === 14 ? tooth14Scale : 1 },
+                      { rotate: selectedTooth === 14 ? tooth14Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['35deg', '90deg'],
+                      }) : '35deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[14]}
+                  onToothPress={() => handleToothPress(14)}
+                  onSurfacePress={selectedTooth === 14 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                  rotation={90}
+                  borderColor={toothBorderColors[14] ? CONDITION_COLORS[toothBorderColors[14]] : undefined}
+                />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 14 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #15 - يسار (مثل 2) */}
+              <Animated.View
+                style={[
+                  styles.tooth15,
+                  {
+                    zIndex: selectedTooth === 15 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 15 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 15 ? tooth15TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 15 ? tooth15TranslateY : 0 },
+                      { scale: selectedTooth === 15 ? tooth15Scale : 1 },
+                      { rotate: selectedTooth === 15 ? tooth15Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['60deg', '90deg'],
+                      }) : '60deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[15]}
+                  onToothPress={() => handleToothPress(15)}
+                  onSurfacePress={selectedTooth === 15 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                  rotation={90}
+                  borderColor={toothBorderColors[15] ? CONDITION_COLORS[toothBorderColors[15]] : undefined}
+                />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 15 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #16 - يسار (مثل 1) */}
+              <Animated.View
+                style={[
+                  styles.tooth16,
+                  {
+                    zIndex: selectedTooth === 16 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 16 ? 1001 : (selectedTooth && [12,13,14,15,16].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 16 ? tooth16TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 16 ? tooth16TranslateY : 0 },
+                      { scale: selectedTooth === 16 ? tooth16Scale : 1 },
+                      { rotate: selectedTooth === 16 ? tooth16Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['80deg', '90deg'],
+                      }) : '80deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[16]}
+                  onToothPress={() => handleToothPress(16)}
+                  onSurfacePress={selectedTooth === 16 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                  rotation={90}
+                  borderColor={toothBorderColors[16] ? CONDITION_COLORS[toothBorderColors[16]] : undefined}
+                />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 16 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>P</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth Numbers for Upper Left Quadrant (9-16) */}
+              <Animated.View style={[styles.toothNumber9, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>1</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber10, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>2</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber11, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>3</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber12, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>4</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber13, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>5</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber14, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>6</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber15, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>7</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber16, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>8</Text>
+              </Animated.View>
+
+              {/* الأسنان السفلية - الجانب الأيمن (17-24) */}
+
+              {/* Tooth #17 - السفلي يمين (أسفل نقطة) */}
+              <Animated.View
+                style={[
+                  styles.tooth17,
+                  {
+                    zIndex: selectedTooth === 17 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 17 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 17 ? tooth17TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 17 ? tooth17TranslateY : 0 },
+                      { scale: selectedTooth === 17 ? tooth17Scale : 1 },
+                      { rotate: selectedTooth === 17 ? tooth17Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['80deg', '90deg'],
+                      }) : '80deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[17]}
+                  onToothPress={() => handleToothPress(17)}
+                  onSurfacePress={selectedTooth === 17 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[17] ? CONDITION_COLORS[toothBorderColors[17]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 17 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #18 - السفلي يمين */}
+              <Animated.View
+                style={[
+                  styles.tooth18,
+                  {
+                    zIndex: selectedTooth === 18 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 18 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 18 ? tooth18TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 18 ? tooth18TranslateY : 0 },
+                      { scale: selectedTooth === 18 ? tooth18Scale : 1 },
+                      { rotate: selectedTooth === 18 ? tooth18Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['60deg', '90deg'],
+                      }) : '60deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[18]}
+                  onToothPress={() => handleToothPress(18)}
+                  onSurfacePress={selectedTooth === 18 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[18] ? CONDITION_COLORS[toothBorderColors[18]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 18 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #19 - السفلي يمين */}
+              <Animated.View
+                style={[
+                  styles.tooth19,
+                  {
+                    zIndex: selectedTooth === 19 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 19 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 19 ? tooth19TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 19 ? tooth19TranslateY : 0 },
+                      { scale: selectedTooth === 19 ? tooth19Scale : 1 },
+                      { rotate: selectedTooth === 19 ? tooth19Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['35deg', '90deg'],
+                      }) : '35deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[19]}
+                  onToothPress={() => handleToothPress(19)}
+                  onSurfacePress={selectedTooth === 19 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[19] ? CONDITION_COLORS[toothBorderColors[19]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 19 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #20 - السفلي يمين */}
+              <Animated.View
+                style={[
+                  styles.tooth20,
+                  {
+                    zIndex: selectedTooth === 20 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 20 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 20 ? tooth20TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 20 ? tooth20TranslateY : 0 },
+                      { scale: selectedTooth === 20 ? tooth20Scale : 1 },
+                      { rotate: selectedTooth === 20 ? tooth20Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['20deg', '90deg'],
+                      }) : '20deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[20]}
+                  onToothPress={() => handleToothPress(20)}
+                  onSurfacePress={selectedTooth === 20 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[20] ? CONDITION_COLORS[toothBorderColors[20]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 20 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #21 - السفلي يمين */}
+              <Animated.View
+                style={[
+                  styles.tooth21,
+                  {
+                    zIndex: selectedTooth === 21 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 21 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 21 ? tooth21TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 21 ? tooth21TranslateY : 0 },
+                      { scale: selectedTooth === 21 ? tooth21Scale : 1 },
+                      { rotate: selectedTooth === 21 ? tooth21Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['15deg', '90deg'],
+                      }) : '15deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[21]}
+                  onToothPress={() => handleToothPress(21)}
+                  onSurfacePress={selectedTooth === 21 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[21] ? CONDITION_COLORS[toothBorderColors[21]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 21 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #22 - السفلي يمين */}
+              <Animated.View
+                style={[
+                  styles.tooth22,
+                  {
+                    zIndex: selectedTooth === 22 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 22 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 22 ? tooth22TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 22 ? tooth22TranslateY : 0 },
+                      { scale: selectedTooth === 22 ? tooth22Scale : 1 },
+                      { rotate: selectedTooth === 22 ? tooth22Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '90deg'],
+                      }) : '0deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[22]}
+                  onToothPress={() => handleToothPress(22)}
+                  onSurfacePress={selectedTooth === 22 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[22] ? CONDITION_COLORS[toothBorderColors[22]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 22 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #23 - السفلي يمين */}
+              <Animated.View
+                style={[
+                  styles.tooth23,
+                  {
+                    zIndex: selectedTooth === 23 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 23 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 23 ? tooth23TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 23 ? tooth23TranslateY : 0 },
+                      { scale: selectedTooth === 23 ? tooth23Scale : 1 },
+                      { rotate: selectedTooth === 23 ? tooth23Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '90deg'],
+                      }) : '0deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[23]}
+                  onToothPress={() => handleToothPress(23)}
+                  onSurfacePress={selectedTooth === 23 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[23] ? CONDITION_COLORS[toothBorderColors[23]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 23 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #24 - السفلي يمين (قرب الخط الأفقي) */}
+              <Animated.View
+                style={[
+                  styles.tooth24,
+                  {
+                    zIndex: selectedTooth === 24 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 24 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 24 ? tooth24TranslateX : 0, rightTeethSlide) },
+                      { translateY: selectedTooth === 24 ? tooth24TranslateY : 0 },
+                      { scale: selectedTooth === 24 ? tooth24Scale : 1 },
+                      { rotate: selectedTooth === 24 ? tooth24Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '90deg'],
+                      }) : '0deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[24]}
+                  onToothPress={() => handleToothPress(24)}
+                  onSurfacePress={selectedTooth === 24 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[24] ? CONDITION_COLORS[toothBorderColors[24]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 24 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth Numbers for Lower Right Quadrant (17-24) */}
+              <Animated.View style={[styles.toothNumber17, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>1</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber18, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>2</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber19, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>3</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber20, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>4</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber21, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>5</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber22, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>6</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber23, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>7</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber24, { transform: [{ translateX: rightNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>8</Text>
+              </Animated.View>
+
+              {/* الأسنان السفلية - الجانب الأيسر (25-32) */}
+
+              {/* Tooth #25 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth25,
+                  {
+                    zIndex: selectedTooth === 25 ? 1001 : 1000,
+                    elevation: selectedTooth === 25 ? 1001 : 1000,
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 25 ? tooth25TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 25 ? tooth25TranslateY : 0 },
+                      { scale: selectedTooth === 25 ? tooth25Scale : 1 },
+                      { rotate: selectedTooth === 25 ? tooth25Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '-90deg'],
+                      }) : '0deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[25]}
+                  onToothPress={() => handleToothPress(25)}
+                  onSurfacePress={selectedTooth === 25 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[25] ? CONDITION_COLORS[toothBorderColors[25]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 25 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #26 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth26,
+                  {
+                    zIndex: selectedTooth === 26 ? 1001 : (selectedTooth && [25].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 26 ? 1001 : (selectedTooth && [25].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 26 ? tooth26TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 26 ? tooth26TranslateY : 0 },
+                      { scale: selectedTooth === 26 ? tooth26Scale : 1 },
+                      { rotate: selectedTooth === 26 ? tooth26Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '-90deg'],
+                      }) : '0deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[26]}
+                  onToothPress={() => handleToothPress(26)}
+                  onSurfacePress={selectedTooth === 26 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[26] ? CONDITION_COLORS[toothBorderColors[26]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 26 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #27 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth27,
+                  {
+                    zIndex: selectedTooth === 27 ? 1001 : (selectedTooth && [25,26].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 27 ? 1001 : (selectedTooth && [25,26].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 27 ? tooth27TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 27 ? tooth27TranslateY : 0 },
+                      { scale: selectedTooth === 27 ? tooth27Scale : 1 },
+                      { rotate: selectedTooth === 27 ? tooth27Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '-90deg'],
+                      }) : '0deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[27]}
+                  onToothPress={() => handleToothPress(27)}
+                  onSurfacePress={selectedTooth === 27 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[27] ? CONDITION_COLORS[toothBorderColors[27]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 27 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #28 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth28,
+                  {
+                    zIndex: selectedTooth === 28 ? 1001 : (selectedTooth && [25,26,27].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 28 ? 1001 : (selectedTooth && [25,26,27].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 28 ? tooth28TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 28 ? tooth28TranslateY : 0 },
+                      { scale: selectedTooth === 28 ? tooth28Scale : 1 },
+                      { rotate: selectedTooth === 28 ? tooth28Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['-15deg', '-90deg'],
+                      }) : '-15deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[28]}
+                  onToothPress={() => handleToothPress(28)}
+                  onSurfacePress={selectedTooth === 28 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[28] ? CONDITION_COLORS[toothBorderColors[28]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 28 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #29 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth29,
+                  {
+                    zIndex: selectedTooth === 29 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 29 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 29 ? tooth29TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 29 ? tooth29TranslateY : 0 },
+                      { scale: selectedTooth === 29 ? tooth29Scale : 1 },
+                      { rotate: selectedTooth === 29 ? tooth29Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['-20deg', '-90deg'],
+                      }) : '-20deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[29]}
+                  onToothPress={() => handleToothPress(29)}
+                  onSurfacePress={selectedTooth === 29 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[29] ? CONDITION_COLORS[toothBorderColors[29]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 29 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #30 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth30,
+                  {
+                    zIndex: selectedTooth === 30 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 30 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 30 ? tooth30TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 30 ? tooth30TranslateY : 0 },
+                      { scale: selectedTooth === 30 ? tooth30Scale : 1 },
+                      { rotate: selectedTooth === 30 ? tooth30Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['-35deg', '-90deg'],
+                      }) : '-35deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[30]}
+                  onToothPress={() => handleToothPress(30)}
+                  onSurfacePress={selectedTooth === 30 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[30] ? CONDITION_COLORS[toothBorderColors[30]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 30 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #31 - السفلي يسار */}
+              <Animated.View
+                style={[
+                  styles.tooth31,
+                  {
+                    zIndex: selectedTooth === 31 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 31 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 31 ? tooth31TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 31 ? tooth31TranslateY : 0 },
+                      { scale: selectedTooth === 31 ? tooth31Scale : 1 },
+                      { rotate: selectedTooth === 31 ? tooth31Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['-60deg', '-90deg'],
+                      }) : '-60deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[31]}
+                  onToothPress={() => handleToothPress(31)}
+                  onSurfacePress={selectedTooth === 31 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[31] ? CONDITION_COLORS[toothBorderColors[31]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 31 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth #32 - السفلي يسار (أسفل نقطة) */}
+              <Animated.View
+                style={[
+                  styles.tooth32,
+                  {
+                    zIndex: selectedTooth === 32 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                    elevation: selectedTooth === 32 ? 1001 : (selectedTooth && [25,26,27,28].includes(selectedTooth) ? 998 : 1000),
+                  },
+                  {
+                    transform: [
+                      { translateX: Animated.add(selectedTooth === 32 ? tooth32TranslateX : 0, leftTeethSlide) },
+                      { translateY: selectedTooth === 32 ? tooth32TranslateY : 0 },
+                      { scale: selectedTooth === 32 ? tooth32Scale : 1 },
+                      { rotate: selectedTooth === 32 ? tooth32Rotation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['-80deg', '-90deg'],
+                      }) : '-80deg' },
+                    ],
+                  },
+                  isEditModeActive && styles.toothGlowEffect,
+                ]}
+              >
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[32]}
+                  onToothPress={() => handleToothPress(32)}
+                  onSurfacePress={selectedTooth === 32 && !isClosing ? (surface) => handleSurfacePress(surface) : undefined}
+                borderColor={toothBorderColors[32] ? CONDITION_COLORS[toothBorderColors[32]] : undefined}
+                    />
+
+
+                {/* Surface labels */}
+                {selectedTooth === 32 && !isClosing && (
+                  <>
+                    <Text pointerEvents="none" style={{position: 'absolute', top: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>D</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', bottom: -4, left: '50%', transform: [{ translateX: -2 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>M</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', left: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>B</Text>
+                    <Text pointerEvents="none" style={{position: 'absolute', right: -4, top: '50%', transform: [{ translateY: -0.5 }], fontSize: 4, fontWeight: 'bold', color: 'rgba(135, 206, 250, 0.95)'}}>L</Text>
+                  </>
+                )}
+              </Animated.View>
+
+              {/* Tooth Numbers for Lower Left Quadrant (25-32) */}
+              <Animated.View style={[styles.toothNumber25, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>1</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber26, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>2</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber27, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>3</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber28, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>4</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber29, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>5</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber30, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>6</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber31, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>7</Text>
+              </Animated.View>
+              <Animated.View style={[styles.toothNumber32, { transform: [{ translateX: leftNumbersSlide }] }]}>
+                <Text style={styles.toothNumberText}>8</Text>
+              </Animated.View>
+              </View>
+
+            {/* Referral Container */}
+            <Animated.View
+              style={[
+                styles.referralContainer,
+                {
+                  transform: [{ translateX: referralContainerSlide }],
+                  opacity: (isTreatmentRecordExpanded || isPlanningRecordExpanded) ? 0 : 1,
+                  zIndex: isReferralExpanded ? 10010 : 10003,
+                  elevation: isReferralExpanded ? 10010 : 10003,
+                }
+              ]}
+              pointerEvents={isViewModeActive ? 'auto' : 'none'}
+            >
+              <View
+                style={styles.referralTouchable}
+                pointerEvents={isViewModeActive ? 'auto' : 'none'}
+              >
+                <BlurView
+                  intensity={80}
+                  tint="light"
+                  style={styles.referralContent}
+                >
+                  <View style={styles.referralHeader}>
+                    <Text style={styles.referralTitle}>Need Referral For</Text>
+                  </View>
+
+                  {/* Tab Buttons */}
+                  <View style={{
+                    flexDirection: 'row',
+                    gap: 10,
+                    paddingHorizontal: 16,
+                    paddingTop: 12,
+                    paddingBottom: 8,
+                  }}>
+                    <TouchableOpacity
+                      onPress={() => setReferralTab('department')}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        paddingHorizontal: 16,
+                        borderRadius: 10,
+                        backgroundColor: referralTab === 'department' ? '#0284C7' : 'rgba(186, 230, 253, 0.3)',
+                        borderWidth: 1.5,
+                        borderColor: referralTab === 'department' ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '700',
+                        color: referralTab === 'department' ? '#FFFFFF' : '#0284C7',
+                      }}>
+                        Department
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setReferralTab('records')}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        paddingHorizontal: 8,
+                        borderRadius: 10,
+                        backgroundColor: referralTab === 'records' ? '#0284C7' : 'rgba(186, 230, 253, 0.3)',
+                        borderWidth: 1.5,
+                        borderColor: referralTab === 'records' ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '700',
+                          color: referralTab === 'records' ? '#FFFFFF' : '#0284C7',
+                        }}
+                      >
+                        Referral Records
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Content Container - Always Visible - Dynamic Height */}
+                  <View style={{
+                    height: (
+                      (referralTab === 'department' && Object.entries(referrals).some(([key, checked]) =>
+                        checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
+                      )) ||
+                      (referralTab === 'records' && referralRecords.length > 0)
+                    ) ? 320 : 70,
+                    paddingHorizontal: 16,
+                    paddingBottom: 8
+                  }}>
+                    {/* Department Tab Content */}
+                    {referralTab === 'department' && (
+                      <>
+                        {/* Select Department */}
+                        <TouchableOpacity
+                          onPress={() => setShowDepartmentModal(true)}
+                          style={{
+                            marginTop: 4,
+                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                            borderWidth: 1.5,
+                            borderColor: 'rgba(186, 230, 253, 0.6)',
+                            borderRadius: 12,
+                            paddingVertical: 12,
+                            paddingHorizontal: 16,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
+                            Select Department
+                          </Text>
+                          <Ionicons name="chevron-forward" size={20} color="#7DD3FC" />
+                        </TouchableOpacity>
+
+                        {/* Selected Departments Display - Below Input with ScrollView */}
+                        {Object.entries(referrals).some(([_, checked]) => checked) && (
+                          <ScrollView
+                            style={{ marginTop: 10, maxHeight: 242 }}
+                            showsVerticalScrollIndicator={true}
+                          >
+                            {Object.entries(referrals).map(([key, checked]) => {
+                              if (!checked) return null;
+                              // إخفاء القسم إذا كانت حالته "given"
+                              if (referralStatus[key as keyof typeof referralStatus] === 'given') return null;
+
+                              // العثور على الأسنان المحالة لهذا القسم
+                              const referredTeeth = Object.entries(selectedReferralFor)
+                                .filter(([_, referralKeys]) => referralKeys?.includes(key))
+                                .map(([toothNumber, _]) => Number(toothNumber));
+
+                              return (
+                                <View
+                                  key={key}
+                                  style={{
+                                    backgroundColor: 'rgba(224, 242, 254, 0.95)',
+                                    borderWidth: 2,
+                                    borderColor: 'rgba(56, 189, 248, 0.5)',
+                                    borderRadius: 14,
+                                    padding: 16,
+                                    marginBottom: 12,
+                                    shadowColor: '#0284C7',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.1,
+                                    shadowRadius: 4,
+                                    elevation: 3,
+                                  }}
+                                >
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: referredTeeth.length > 0 ? 8 : 0 }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
+                                      {getReferralName(key)}
+                                    </Text>
+                                    <TouchableOpacity
+                                      onPress={async (e) => {
+                                        e.stopPropagation();
+                                        const currentStatus = referralStatus[key as keyof typeof referralStatus];
+
+                                        if (currentStatus === 'not_given') {
+                                          //  تحديث حالة التحويلات في قاعدة البيانات إلى Given
+                                          if (permanentPatientId) {
+                                            const referralTypeMap: Record<string, string> = {
+                                              'endodontics': 'Endodontics',
+                                              'oralSurgery': 'Oral Surgery',
+                                              'orthodontics': 'Orthodontics',
+                                              'prosthodontics': 'Prosthodontics',
+                                              'periodontics': 'Periodontics',
+                                              'pediatricDentistry': 'Pediatric Dentistry',
+                                            };
+
+                                            const referralName = referralTypeMap[key] || key;
+
+                                            // تحديث حالة جميع التحويلات من هذا النوع إلى Given
+                                            const { error } = await supabase
+                                              .from('referrals')
+                                              .update({
+                                                status: 'given',
+                                                given_at: new Date().toISOString()
+                                              })
+                                              .eq('permanent_patient_id', permanentPatientId)
+                                              .eq('referral_type', referralName)
+                                              .eq('status', 'not_given');
+
+                                            if (error) {
+                                              console.error(' Error updating referral status:', error);
+                                              return; // Don't update UI if database update failed
+                                            }
+
+                                            console.log(' Referrals marked as given in database:', referralName);
+
+                                            // إعادة تحميل البيانات لتحديث Referral Records
+                                            await loadPatientDentalData();
+
+                                            // Switch to Records tab automatically to show the result
+                                            setReferralTab('records');
+                                          }
+
+                                          // إلغاء تحديد القسم بعد Given (سيختفي من Department tab)
+                                          setReferrals(prev => ({ ...prev, [key]: false }));
+                                          // مسح الأسنان المحالة لهذا القسم
+                                          setSelectedReferralFor(prev => {
+                                            const newReferrals = { ...prev };
+                                            Object.keys(newReferrals).forEach(toothNumber => {
+                                              const referralKeys = newReferrals[toothNumber];
+                                              if (referralKeys?.includes(key)) {
+                                                // Remove this key from the array
+                                                const updatedKeys = referralKeys.filter(k => k !== key);
+                                                if (updatedKeys.length === 0) {
+                                                  delete newReferrals[toothNumber];
+                                                } else {
+                                                  newReferrals[toothNumber] = updatedKeys;
+                                                }
+                                              }
+                                            });
+                                            return newReferrals;
+                                          });
+                                        }
+
+                                        setReferralStatus(prev => ({
+                                          ...prev,
+                                          [key]: currentStatus === 'given' ? 'not_given' : 'given'
+                                        }));
+                                      }}
+                                      style={{
+                                        backgroundColor: referralStatus[key as keyof typeof referralStatus] === 'given'
+                                          ? 'rgba(34, 197, 94, 0.15)'
+                                          : 'rgba(239, 68, 68, 0.15)',
+                                        paddingVertical: 6,
+                                        paddingHorizontal: 12,
+                                        borderRadius: 8,
+                                        borderWidth: 1,
+                                        borderColor: referralStatus[key as keyof typeof referralStatus] === 'given'
+                                          ? 'rgba(34, 197, 94, 0.3)'
+                                          : 'rgba(239, 68, 68, 0.3)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 13,
+                                        fontWeight: '600',
+                                        color: referralStatus[key as keyof typeof referralStatus] === 'given'
+                                          ? '#16A34A'
+                                          : '#DC2626',
+                                      }}>
+                                        {referralStatus[key as keyof typeof referralStatus] === 'given' ? 'Given' : 'Not Given'}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  </View>
+
+                                  {/* عرض الأسنان المحالة - دائماً */}
+                                  {referredTeeth.length > 0 && (
+                                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                                      {referredTeeth.map(toothNumber => (
+                                        <ToothNumberBadge key={`${key}-${toothNumber}`} toothNumber={toothNumber} />
+                                      ))}
+                                    </View>
+                                  )}
+                                </View>
+                              );
+                            })}
+                          </ScrollView>
+                        )}
+                      </>
+                    )}
+
+                    {/* Referral Records Tab Content */}
+                    {referralTab === 'records' && (
+                      <ScrollView
+                        style={{ marginTop: 4, maxHeight: 290 }}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        {referralRecords.length === 0 ? (
+                          <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginTop: 20 }}>
+                            No referral records yet
+                          </Text>
+                        ) : (
+                          referralRecords
+                            .sort((a, b) => b.timestampNum - a.timestampNum)
+                            .map((record, index) => (
+                              <View
+                                key={index}
+                                style={{
+                                  backgroundColor: 'rgba(224, 242, 254, 0.95)',
+                                  borderWidth: 2,
+                                  borderColor: 'rgba(56, 189, 248, 0.5)',
+                                  borderRadius: 14,
+                                  padding: 16,
+                                  marginBottom: 12,
+                                  shadowColor: '#0284C7',
+                                  shadowOffset: { width: 0, height: 2 },
+                                  shadowOpacity: 0.1,
+                                  shadowRadius: 4,
+                                  elevation: 3,
+                                }}
+                              >
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
+                                    {record.departmentName}
+                                  </Text>
+                                  <View
+                                    style={{
+                                      backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                      paddingVertical: 4,
+                                      paddingHorizontal: 10,
+                                      borderRadius: 8,
+                                      borderWidth: 1,
+                                      borderColor: 'rgba(34, 197, 94, 0.3)',
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#16A34A' }}>
+                                      Given
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                {record.teeth.length > 0 && (
+                                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                                    {record.teeth.map((toothNumber, idx) => (
+                                      <ToothNumberBadge key={`${record.id}-${toothNumber}-${idx}`} toothNumber={toothNumber} />
+                                    ))}
+                                  </View>
+                                )}
+
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                                  <Text style={{ fontSize: 12, color: '#64748B' }}>
+                                    {record.doctorName}
+                                  </Text>
+                                  <Text style={{ fontSize: 12, color: '#64748B' }}>
+                                    {record.timestamp}
+                                  </Text>
+                                </View>
+                              </View>
+                            ))
+                        )}
+                      </ScrollView>
+                    )}
+                  </View>
+                </BlurView>
+              </View>
+            </Animated.View>
+
+            {/* Total Treatment Record Container */}
+            <Animated.View
+              style={[
+                styles.treatmentRecordContainer,
+                {
+                  transform: [
+                    { translateX: treatmentRecordSlide },
+                    { translateY: treatmentRecordPushDown }
+                  ],
+                  paddingTop: isTreatmentRecordExpanded ? 20 : (
+                    REFERRAL_HEADER_HEIGHT +
+                    ((
+                      (referralTab === 'department' && Object.entries(referrals).some(([key, checked]) =>
+                        checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
+                      )) ||
+                      (referralTab === 'records' && referralRecords.length > 0)
+                    ) ? REFERRAL_CONTENT_MAX : REFERRAL_CONTENT_MIN) +
+                    CONTAINER_SPACING
+                  ),
+                  paddingHorizontal: isTreatmentRecordExpanded ? 0 : 20,
+                  zIndex: isTreatmentRecordExpanded ? 10005 : 10002,
+                  elevation: isTreatmentRecordExpanded ? 10005 : 10002,
+                  opacity: isPlanningRecordExpanded ? 0 : 1
+                }
+              ]}
+              pointerEvents={isViewModeActive ? 'auto' : 'none'}
+            >
+                {isTreatmentRecordExpanded ? (
+                  <View
+                    style={{
+                      width: SCREEN_WIDTH * 0.85,
+                      height: SCREEN_HEIGHT * 0.75,
+                    }}
+                  >
+                    <BlurView
+                      intensity={80}
+                      tint="light"
+                      style={[styles.additionalContent, {
+                        width: '100%',
+                        height: '100%',
+                      }]}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <Text style={styles.additionalTitle}>Total Treatment Record</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setIsTreatmentRecordExpanded(false);
+                            Animated.spring(treatmentRecordExpandAnim, {
+                              toValue: 0,
+                              useNativeDriver: false,
+                              friction: 8,
+                              tension: 40,
+                            }).start();
+                          }}
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: 'transparent',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                  {/* محتوى السجلات العلاجية */}
+                  {isTreatmentRecordExpanded && (
+                    <ScrollView style={{ flex: 1, width: '100%', marginTop: 16, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
+                      {(() => {
+                        // جمع جميع السجلات العلاجية
+                        const allRecords: Array<{
+                          type: 'treatment' | 'scaling';
+                          toothNumber?: number;
+                          treatment?: string;
+                          details?: string;
+                          surfaces?: string[];
+                          timestamp: string;
+                          timestampNum?: number;
+                          doctorName: string;
+                        }> = [];
+
+                        // إضافة سجلات الأسنان (editing records فقط)
+                        Object.entries(toothRecords).forEach(([toothNum, records]) => {
+                          records.forEach((record) => {
+                            if (record.type === 'editing') {
+                              allRecords.push({
+                                type: 'treatment',
+                                toothNumber: parseInt(toothNum),
+                                treatment: record.treatment,
+                                details: record.details,
+                                surfaces: record.surfaces,
+                                timestamp: record.timestamp,
+                                timestampNum: record.timestampNum,
+                                doctorName: record.doctorName,
+                              });
+                            }
+                          });
+                        });
+
+                        // إضافة سجلات السكيلنج
+                        scalingRecords.forEach((record) => {
+                          allRecords.push({
+                            type: 'scaling',
+                            timestamp: record.timestamp,
+                            timestampNum: record.timestampNum,
+                            doctorName: record.doctorName,
+                          });
+                        });
+
+                        // ترتيب من الأحدث للأقدم - آخر إجراء في الأعلى
+                        allRecords.sort((a, b) => {
+                          // التأكد من وجود timestampNum صالح
+                          let timeA = 0;
+                          let timeB = 0;
+
+                          if (a.timestampNum && !isNaN(a.timestampNum)) {
+                            timeA = a.timestampNum;
+                          } else {
+                            const dateA = new Date(a.timestamp);
+                            timeA = !isNaN(dateA.getTime()) ? dateA.getTime() : 0;
+                          }
+
+                          if (b.timestampNum && !isNaN(b.timestampNum)) {
+                            timeB = b.timestampNum;
+                          } else {
+                            const dateB = new Date(b.timestamp);
+                            timeB = !isNaN(dateB.getTime()) ? dateB.getTime() : 0;
+                          }
+
+                          return timeB - timeA; // الأحدث (الأكبر) في الأعلى
+                        });
+
+                        if (allRecords.length === 0) {
+                          return (
+                            <Text style={{ color: '#666', textAlign: 'center', paddingVertical: 20 }}>
+                              No treatment records yet
+                            </Text>
+                          );
+                        }
+
+                        return allRecords.map((record, index) => (
+                          <View
+                            key={index}
+                            style={{
+                              backgroundColor: record.type === 'scaling'
+                                ? 'rgba(16, 185, 129, 0.08)'
+                                : 'rgba(37, 99, 235, 0.08)',
+                              borderRadius: 18,
+                              padding: 20,
+                              marginBottom: 16,
+                              borderWidth: 2,
+                              borderColor: record.type === 'scaling'
+                                ? 'rgba(16, 185, 129, 0.35)'
+                                : 'rgba(37, 99, 235, 0.35)',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {record.type === 'scaling' ? (
+                              <>
+                                {/* Scaling Title with Badge */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                                  <View style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: 5,
+                                    backgroundColor: '#047857',
+                                    marginRight: 10,
+                                    shadowColor: '#047857',
+                                    shadowOffset: { width: 0, height: 0 },
+                                    shadowOpacity: 0.3,
+                                    shadowRadius: 4,
+                                  }} />
+                                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#047857', letterSpacing: 0.3 }}>
+                                    Scaling Done
+                                  </Text>
+                                </View>
+
+                                {/* Footer Info */}
+                                <View style={{
+                                  borderTopWidth: 1,
+                                  borderTopColor: 'rgba(16, 185, 129, 0.2)',
+                                  paddingTop: 12,
+                                  marginTop: 8,
+                                  gap: 6,
+                                }}>
+                                  <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>
+                                    {record.timestamp}
+                                  </Text>
+                                  <Text style={{ fontSize: 13, color: '#047857', fontWeight: '600' }}>
+                                    Dr. {record.doctorName}
+                                  </Text>
+                                </View>
+                              </>
+                            ) : (
+                              <>
+                                {/* Tooth Info Header */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+                                  <ToothNumberBadge toothNumber={record.toothNumber} />
+                                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#4B5563', letterSpacing: 0.2 }}>
+                                    {getToothName(record.toothNumber).english}
+                                  </Text>
+                                </View>
+
+                                {/* Treatment Details */}
+                                <View style={{ gap: 8, marginBottom: 12 }}>
+                                  <View style={{ flexDirection: 'row' }}>
+                                    <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                      Treatment:
+                                    </Text>
+                                    {record.treatment === 'Extraction' || record.treatment === 'Filling' || record.treatment === 'Pulpectomy' ? (
+                                      <View style={{
+                                        backgroundColor:
+                                          record.treatment === 'Extraction'
+                                            ? 'rgba(156, 163, 175, 0.15)'
+                                            : record.treatment === 'Filling'
+                                              ? 'rgba(16, 185, 129, 0.15)'
+                                              : 'rgba(139, 92, 246, 0.15)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 4,
+                                        borderRadius: 8,
+                                        alignSelf: 'flex-start',
+                                      }}>
+                                        <Text style={{
+                                          fontSize: 14,
+                                          color: record.treatment === 'Extraction'
+                                            ? '#4B5563'
+                                            : record.treatment === 'Filling'
+                                              ? '#047857'
+                                              : '#7C3AED',
+                                          fontWeight: '600'
+                                        }}>
+                                          {record.treatment}
+                                        </Text>
+                                      </View>
+                                    ) : (
+                                      <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                        {record.treatment}
+                                      </Text>
+                                    )}
+                                  </View>
+
+                                  {record.details && (
+                                    <View style={{ flexDirection: 'row' }}>
+                                      <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                        Details:
+                                      </Text>
+                                      <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                        {record.details}
+                                      </Text>
+                                    </View>
+                                  )}
+
+                                  <View style={{ flexDirection: 'row' }}>
+                                    <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                      Surfaces:
+                                    </Text>
+                                    <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                      {record.treatment === 'Extraction'
+                                        ? 'N/A'
+                                        : (record.surfaces && record.surfaces.length > 0
+                                            ? record.surfaces.join(', ')
+                                            : '-'
+                                          )
+                                      }
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                {/* Footer Info */}
+                                <View style={{
+                                  borderTopWidth: 1,
+                                  borderTopColor: 'rgba(37, 99, 235, 0.2)',
+                                  paddingTop: 12,
+                                  gap: 6,
+                                }}>
+                                  <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>
+                                    {record.timestamp}
+                                  </Text>
+                                  <Text style={{ fontSize: 13, color: '#2563EB', fontWeight: '600' }}>
+                                    Dr. {record.doctorName}
+                                  </Text>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                        ));
+                      })()}
+                    </ScrollView>
+                  )}
+                    </BlurView>
+                  </View>
+                ) : (
+                  <View style={styles.referralTouchable}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        console.log('🎯 Total Treatment Record clicked!');
+                        setIsTreatmentRecordExpanded(true);
+                        Animated.spring(treatmentRecordExpandAnim, {
+                          toValue: 1,
+                          useNativeDriver: false,
+                          friction: 8,
+                          tension: 40,
+                        }).start();
+                      }}
+                    >
+                      <BlurView
+                        intensity={80}
+                        tint="light"
+                        style={styles.additionalContent}
+                      >
+                        <Text style={styles.additionalTitle}>Total Treatment Record</Text>
+                      </BlurView>
+                    </TouchableOpacity>
+                  </View>
+                )}
+            </Animated.View>
+
+            {/* Total Planning Record Container */}
+            <Animated.View
+              style={[
+                styles.planningRecordContainer,
+                {
+                  transform: [
+                    { translateX: planningRecordSlide },
+                    { translateY: planningRecordPushDown }
+                  ],
+                  paddingTop: isPlanningRecordExpanded ? 20 : (
+                    REFERRAL_HEADER_HEIGHT +
+                    ((
+                      (referralTab === 'department' && Object.entries(referrals).some(([key, checked]) =>
+                        checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
+                      )) ||
+                      (referralTab === 'records' && referralRecords.length > 0)
+                    ) ? REFERRAL_CONTENT_MAX : REFERRAL_CONTENT_MIN) +
+                    CONTAINER_SPACING +
+                    TREATMENT_PLANNING_SPACING
+                  ),
+                  paddingHorizontal: isPlanningRecordExpanded ? 0 : 20,
+                  zIndex: isPlanningRecordExpanded ? 10006 : 10001,
+                  elevation: isPlanningRecordExpanded ? 10006 : 10001,
+                  opacity: isTreatmentRecordExpanded ? 0 : 1
+                }
+              ]}
+              pointerEvents={isViewModeActive ? 'auto' : 'none'}
+            >
+              {isPlanningRecordExpanded ? (
+                // Expanded state - full view with scrollable records
+                <View style={{ width: SCREEN_WIDTH * 0.85, height: SCREEN_HEIGHT * 0.75 }}>
+                  <BlurView intensity={80} tint="light" style={[styles.additionalContent, { width: '100%', height: '100%' }]}>
+                    {/* Header with title and close button */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                      <Text style={styles.additionalTitle}>Total Planning Record</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setIsPlanningRecordExpanded(false);
+                          Animated.spring(planningRecordExpandAnim, {
+                            toValue: 0,
+                            useNativeDriver: false,
+                            friction: 8,
+                            tension: 40,
+                          }).start();
+                        }}
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 18,
+                          backgroundColor: 'transparent',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Scrollable planning records list */}
+                    <ScrollView style={{ flex: 1, width: '100%', marginTop: 16, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
+                      {(() => {
+                        // استخدام القائمة العامة وترتيبها حسب timestampNum (الأحدث أولاً)
+                        const sortedRecords = [...allPlanningRecordsGlobal].sort((a, b) => b.timestampNum - a.timestampNum);
+
+                        if (sortedRecords.length === 0) {
+                          return (
+                            <Text style={{ color: '#666', textAlign: 'center', paddingVertical: 20 }}>
+                              No planning records yet
+                            </Text>
+                          );
+                        }
+
+                        // فلترة: إخفاء السجلات القديمة التي تم استبدالها بسجلات جديدة (isChange: true)
+                        const visibleRecords = sortedRecords.filter((record) => {
+                          // إذا كان السجل تغيير (isChange: true)، نعرضه دائماً
+                          if (record.isChange) {
+                            return true;
+                          }
+
+                          // إذا كان السجل عادي (isChange: false)، نتحقق إذا تم استبداله
+                          // نبحث عن سجل أحدث (timestampNum أكبر) لنفس السن مع isChange: true
+                          const hasBeenReplaced = sortedRecords.some(r => {
+                            if (r.toothNumber !== record.toothNumber) return false;
+                            if (r.timestampNum <= record.timestampNum) return false; // يجب أن يكون أحدث
+                            if (r.isChange !== true) return false;
+                            if (r.previousCondition?.toLowerCase() !== record.condition?.toLowerCase()) return false;
+
+                            // حالة خاصة: Extraction يُستبدل بأي حالة جديدة على نفس السن
+                            if (record.condition === 'Extraction') {
+                              return true; // إخفاء Extraction القديم
+                            }
+
+                            // للحالات الأخرى: نتحقق من تطابق السطح
+                            return r.surfaces.some(newSurf => {
+                              const newSurfName = newSurf.match(/\(([^)]+)\)/)?.[1]?.toLowerCase();
+                              return record.surfaces.some(oldSurf => {
+                                const oldSurfName = oldSurf.match(/\(([^)]+)\)/)?.[1]?.toLowerCase();
+                                return newSurfName === oldSurfName;
+                              });
+                            });
+                          });
+
+                          // إذا تم استبداله، نخفيه
+                          if (hasBeenReplaced) {
+                            console.log(`🚫 Hiding replaced record: ${record.condition} on tooth ${record.toothNumber}`);
+                            return false;
+                          }
+
+                          // وإلا نعرضه
+                          return true;
+                        });
+
+                        // تجميع السجلات حسب القواعد التالية:
+                        // 1. كل طبيب مختلف في كرت منفصل
+                        // 2. السجلات المتتالية من نفس السن + نفس الطبيب + نفس النوع (diagnosed أو canceled) تُجمع معًا
+                        // 3. إذا تغير النوع (من diagnosed إلى canceled أو العكس)، كرت جديد
+                        type RecordGroup = {
+                          toothNumber: number;
+                          doctorName: string;
+                          action: 'diagnosed' | 'canceled';
+                          records: typeof visibleRecords;
+                        };
+
+                        const groupedRecords: RecordGroup[] = [];
+
+                        visibleRecords.forEach((record) => {
+                          const lastGroup = groupedRecords[groupedRecords.length - 1];
+
+                          // شروط بدء مجموعة جديدة:
+                          const shouldStartNewGroup =
+                            !lastGroup ||
+                            lastGroup.toothNumber !== record.toothNumber || // سن مختلف
+                            lastGroup.doctorName !== record.doctorName || // طبيب مختلف
+                            lastGroup.action !== record.action || // نوع مختلف (diagnosed ≠ canceled)
+                            // فصل التغييرات عن السجلات العادية (لكن جمع التغييرات مع بعضها)
+                            (record.isChange && !lastGroup.records[0]?.isChange) || // تغيير جديد بعد سجلات عادية
+                            (!record.isChange && lastGroup.records[0]?.isChange); // سجل عادي بعد تغييرات
+
+                          if (shouldStartNewGroup) {
+                            groupedRecords.push({
+                              toothNumber: record.toothNumber,
+                              doctorName: record.doctorName,
+                              action: record.action,
+                              records: [record]
+                            });
+                          } else {
+                            lastGroup.records.push(record);
+                          }
+                        });
+
+                        // عرض كل مجموعة في كرت واحد
+                        return groupedRecords.map((group, groupIndex) => {
+                          // جمع كل الـ surfaces والـ conditions من السجلات في المجموعة
+                          const allSurfaces: string[] = [];
+                          const allConditions: string[] = [];
+
+                          // جمع surfaces من السجلات الجديدة (isChange: true) فقط
+                          const changedSurfaces: string[] = [];
+
+                          group.records.forEach(rec => {
+                            if (rec.condition && !allConditions.includes(rec.condition)) {
+                              allConditions.push(rec.condition);
+                            }
+                            if (rec.surfaces) {
+                              rec.surfaces.forEach(surf => {
+                                if (!allSurfaces.includes(surf)) {
+                                  allSurfaces.push(surf);
+                                }
+                              });
+                            }
+                            // إذا كان السجل تغيير، أضف أسطحه للقائمة المنفصلة
+                            if (rec.isChange && rec.surfaces) {
+                              rec.surfaces.forEach(surf => {
+                                if (!changedSurfaces.includes(surf)) {
+                                  changedSurfaces.push(surf);
+                                }
+                              });
+                            }
+                          });
+
+                          // استخدام timestamp أول سجل في المجموعة (الأحدث)
+                          const firstRecord = group.records[0];
+
+                          return (
+                            <View
+                              key={groupIndex}
+                              style={{
+                                backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                                borderRadius: 18,
+                                padding: 20,
+                                marginBottom: 16,
+                                borderWidth: 2,
+                                borderColor: 'rgba(37, 99, 235, 0.35)',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {/* Tooth Info Header */}
+                              <View style={{ marginBottom: 14 }}>
+                                {/* Row 1: Tooth Badge + Name */}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                                  <ToothNumberBadge toothNumber={group.toothNumber} />
+                                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#4B5563', letterSpacing: 0.2 }}>
+                                    {getToothName(group.toothNumber).english}
+                                  </Text>
+                                </View>
+
+                                {/* Row 2: Diagnosed/Canceled Badge */}
+                                <View
+                                  style={{
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 4,
+                                    borderRadius: 8,
+                                    backgroundColor: group.action === 'diagnosed' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(156, 163, 175, 0.15)',
+                                    alignSelf: 'flex-start',
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 12, fontWeight: '600', color: group.action === 'diagnosed' ? '#D97706' : '#6B7280' }}>
+                                    {group.action === 'diagnosed' ? 'Diagnosed' : 'Canceled'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* عرض رسالة التغيير إذا كان السجل تغييراً */}
+                              {(() => {
+                                console.log('🔍 Planning Record Debug:', {
+                                  toothNumber: group.toothNumber,
+                                  condition: firstRecord.condition,
+                                  isChange: firstRecord.isChange,
+                                  previousCondition: firstRecord.previousCondition,
+                                  doctorName: group.doctorName
+                                });
+                                return null;
+                              })()}
+                              {firstRecord.isChange && (
+                                <View style={{
+                                  backgroundColor: 'rgba(251, 146, 60, 0.1)',
+                                  borderWidth: 2,
+                                  borderColor: 'rgba(251, 146, 60, 0.3)',
+                                  padding: 16,
+                                  borderRadius: 12,
+                                  marginBottom: 12
+                                }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                                    <Text style={{ fontSize: 18, marginRight: 8 }}>🔄</Text>
+                                    <Text style={{ fontSize: 15, color: '#EA580C', fontWeight: '700', letterSpacing: 0.3 }}>
+                                      Condition Changed
+                                    </Text>
+                                  </View>
+
+                                  <View style={{ gap: 6, marginBottom: 10 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                      <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>−</Text>
+                                      <Text style={{ fontSize: 14, color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
+                                        {firstRecord.previousCondition}
+                                      </Text>
+                                    </View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                      <Text style={{ fontSize: 16, color: '#059669', fontWeight: '600', marginRight: 6 }}>+</Text>
+                                      <Text style={{ fontSize: 14, color: '#059669', fontWeight: '600' }}>
+                                        {firstRecord.condition}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  {changedSurfaces.length > 0 && (
+                                    <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                                      <Text style={{ fontSize: 13, color: '#EA580C', fontWeight: '600', minWidth: 70 }}>
+                                        Surfaces:
+                                      </Text>
+                                      <Text style={{ fontSize: 13, color: '#9A3412', fontWeight: '500', flex: 1 }}>
+                                        {changedSurfaces.join(', ')}
+                                      </Text>
+                                    </View>
+                                  )}
+
+                                  <View style={{
+                                    borderTopWidth: 1,
+                                    borderTopColor: 'rgba(251, 146, 60, 0.2)',
+                                    paddingTop: 8,
+                                    marginTop: 4
+                                  }}>
+                                    <Text style={{ fontSize: 13, color: '#9A3412', fontWeight: '600' }}>
+                                      Modified by: Dr. {group.doctorName}
+                                    </Text>
+                                  </View>
+                                </View>
+                              )}
+
+                              {/* Planning Details */}
+                              <View style={{ gap: 8, marginBottom: 12 }}>
+                                {!firstRecord.isChange && allConditions.length > 0 && (() => {
+                                  // حالة خاصة: Root Canal Treated
+                                  // Root Canal Treated يُحفظ كـ condition="Tooth Status", surfaces=['Root Canal Treated']
+                                  const hasRootCanalTreated = allSurfaces.some(s => s === 'Root Canal Treated');
+
+                                  console.log('🔍 Planning Details Debug:', {
+                                    toothNumber: group.toothNumber,
+                                    allConditions,
+                                    allSurfaces,
+                                    hasRootCanalTreated,
+                                    recordsCount: group.records.length,
+                                    records: group.records.map(r => ({ condition: r.condition, surfaces: r.surfaces }))
+                                  });
+
+                                  if (hasRootCanalTreated) {
+                                    console.log(' Root Canal Treated detected! Special rendering...');
+
+                                    // فصل Root Canal Treated عن باقي الأسطح
+                                    const otherSurfaces = allSurfaces.filter(s => s !== 'Root Canal Treated');
+
+                                    return (
+                                      <>
+                                        {/* عرض Root Canal Treated كـ Condition رئيسي */}
+                                        <View style={{ flexDirection: 'row' }}>
+                                          <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                            Condition:
+                                          </Text>
+                                          <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                            Root Canal Treated
+                                          </Text>
+                                        </View>
+
+                                        {/* عرض باقي الأسطح تحت Surfaces */}
+                                        {otherSurfaces.length > 0 && (
+                                          <View style={{ flexDirection: 'row' }}>
+                                            <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                              Surfaces:
+                                            </Text>
+                                            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                              {otherSurfaces.join(', ')}
+                                            </Text>
+                                          </View>
+                                        )}
+                                      </>
+                                    );
+                                  } else {
+                                    // الحالة العادية: عرض كل الـ conditions بدون معالجة خاصة
+                                    return (
+                                      <View style={{ flexDirection: 'row' }}>
+                                        <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                          Condition:
+                                        </Text>
+                                        <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                          {allConditions.join(', ')}
+                                        </Text>
+                                      </View>
+                                    );
+                                  }
+                                })()}
+
+                                {!firstRecord.isChange && allSurfaces.length > 0 && !allConditions.includes('Extraction') && !allSurfaces.some(s => s === 'Root Canal Treated') && (
+                                  <View style={{ flexDirection: 'row' }}>
+                                    <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                      Surfaces:
+                                    </Text>
+                                    <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                      {allSurfaces.join(', ')}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Footer Info */}
+                              <View style={{
+                                borderTopWidth: 1,
+                                borderTopColor: 'rgba(37, 99, 235, 0.2)',
+                                paddingTop: 12,
+                                gap: 6,
+                              }}>
+                                <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>
+                                  {firstRecord.timestamp}
+                                </Text>
+                                <Text style={{ fontSize: 13, color: '#2563EB', fontWeight: '600' }}>
+                                  Dr. {group.doctorName}
+                                </Text>
+                              </View>
+
+                              {/* عرض مؤقت للتحقق من الترتيب */}
+                              <Text style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+                                Group #{groupIndex + 1} - {group.records.length} record(s)
+                              </Text>
+                            </View>
+                          );
+                        });
+                      })()}
+                    </ScrollView>
+                  </BlurView>
+                </View>
+              ) : (
+                // Collapsed state - small card
+                <View style={styles.referralTouchable}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      console.log('🎯 Total Planning Record clicked!');
+                      setIsPlanningRecordExpanded(true);
+                      Animated.spring(planningRecordExpandAnim, {
+                        toValue: 1,
+                        useNativeDriver: false,
+                        friction: 8,
+                        tension: 40,
+                      }).start();
+                    }}
+                  >
+                    <BlurView intensity={80} tint="light" style={styles.additionalContent}>
+                      <Text style={styles.additionalTitle}>Total Planning Record</Text>
+                    </BlurView>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </Animated.View>
+          </ScrollView>
+
+        {/* طبقة شفافة للنقر عليها لإغلاق الأسنان 1-32 - تغطي كل الشاشة ماعدا منطقة السن */}
+      {selectedTooth && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && !showConditionMenu && !isClosing && (() => {
+        // حساب حدود السن المكبر
+        // Tiny teeth (6,7,8,9,10,11,22,23,24,25,26,27): 37x47، Medium teeth (1-5,12-21,28-32): 33x42
+        const isTinyTooth = [6, 7, 8, 9, 10, 11, 22, 23, 24, 25, 26, 27].includes(selectedTooth);
+        const originalWidth = isTinyTooth ? 37 : 33;
+        const originalHeight = isTinyTooth ? 47 : 42;
+        // للأسنان المدورة ±90 درجة (1-32)، نعكس الأبعاد
+        const isRotatedTooth = selectedTooth >= 1 && selectedTooth <= 32;
+        let toothWidth = (isRotatedTooth ? originalHeight : originalWidth) * 8;
+        let toothHeight = (isRotatedTooth ? originalWidth : originalHeight) * 8;
+
+        let centerX = SCREEN_WIDTH / 2 - 20;
+        let centerY = SCREEN_HEIGHT / 2;
+
+        // حساب يدوي مستقل للأسنان 6, 7, 8, 9, 10, 11 (8, 7, 6 يمين ويسار فوق)
+        if (selectedTooth === 6 || selectedTooth === 7 || selectedTooth === 8 || selectedTooth === 9 || selectedTooth === 10 || selectedTooth === 11) {
+          // قيم يدوية للطبقة الشفافة
+          const originalToothWidth = 37; // tiny tooth
+          const originalToothHeight = 47; // tiny tooth
+
+          centerX = SCREEN_WIDTH / 2 - 20; // مركز الشاشة أفقياً - زيح لليسار
+          centerY = SCREEN_HEIGHT / 2 + 69; // تنزيل للأسفل - رفع نقطة
+          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (بعد الدوران)
+          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (بعد الدوران)
+        }
+
+        // حساب يدوي مستقل للأسنان 25, 26, 27 (8, 7, 6 تحت يسار) - نفس إعدادات 8, 7, 6 فوق
+        if (selectedTooth === 25 || selectedTooth === 26 || selectedTooth === 27) {
+          // قيم يدوية للطبقة الشفافة
+          const originalToothWidth = 37; // tiny tooth
+          const originalToothHeight = 47; // tiny tooth
+
+          centerX = SCREEN_WIDTH / 2 + 30; // إلى اليمين
+          centerY = SCREEN_HEIGHT / 2 + 50; // رفع قليلاً
+          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (بعد الدوران)
+          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (بعد الدوران)
+        }
+
+        // حساب يدوي مستقل للأسنان 22, 23, 24 (3, 2, 1 تحت يمين) - حجم أكبر
+        if (selectedTooth === 22 || selectedTooth === 23 || selectedTooth === 24) {
+          const originalToothWidth = 37; // tiny tooth
+          const originalToothHeight = 47; // tiny tooth
+
+          centerX = SCREEN_WIDTH / 2 + 10; // تحريك إلى اليسار
+          centerY = SCREEN_HEIGHT / 2 + 30; // تنزيل للأسفل 20 بكسل
+          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (حجم أكبر)
+          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (حجم أكبر)
+        }
+
+        // حساب يدوي مستقل للأسنان 17-21 (8-4 تحت يمين) - حجم عادي
+        if (selectedTooth >= 17 && selectedTooth <= 21) {
+          const originalToothWidth = 37; // tiny tooth
+          const originalToothHeight = 47; // tiny tooth
+
+          centerX = SCREEN_WIDTH / 2 + 10; // تحريك إلى اليسار
+          centerY = SCREEN_HEIGHT / 2 + 10; // رفع للأعلى 40 بكسل
+          toothWidth = originalToothHeight * 7; // 47 * 7 = 329
+          toothHeight = originalToothWidth * 7; // 37 * 7 = 259
+        }
+
+        // حساب يدوي مستقل للأسنان 4, 5, 12, 13 (5, 4 يمين ويسار فوق)
+        if (selectedTooth === 4 || selectedTooth === 5 || selectedTooth === 12 || selectedTooth === 13) {
+          // قيم يدوية للطبقة الشفافة
+          const originalToothWidth = 37; // tiny tooth
+          const originalToothHeight = 47; // tiny tooth
+
+          centerX = SCREEN_WIDTH / 2; // مركز الشاشة أفقياً
+          centerY = SCREEN_HEIGHT / 2 + 90; // تنزيل للأسفل أكثر
+          toothWidth = originalToothHeight * 7; // 47 * 7 = 329 (بعد الدوران - أصغر)
+          toothHeight = originalToothWidth * 7; // 37 * 7 = 259 (بعد الدوران - أصغر)
+        }
+
+        // حساب يدوي مستقل للأسنان 1, 2, 3, 14, 15, 16 (3, 2, 1 يمين ويسار فوق)
+        if (selectedTooth === 1 || selectedTooth === 2 || selectedTooth === 3 || selectedTooth === 14 || selectedTooth === 15 || selectedTooth === 16) {
+          // قيم يدوية للطبقة الشفافة - نفس حجم الأسنان 4، 5
+          centerX = SCREEN_WIDTH / 2; // مركز الشاشة أفقياً
+          centerY = SCREEN_HEIGHT / 2 + 110; // تنزيل للأسفل أكثر
+          toothWidth = 329; // نفس حجم الأسنان 4، 5
+          toothHeight = 259; // نفس حجم الأسنان 4، 5
+        }
+
+        // حساب يدوي مستقل للأسنان 28-32 (8-4 تحت يسار)
+        if (selectedTooth >= 28 && selectedTooth <= 32) {
+          const originalToothWidth = 33; // medium tooth
+          const originalToothHeight = 42; // medium tooth
+
+          centerX = SCREEN_WIDTH / 2 + 10; // تحريك 30 بكسل إلى اليمين من الافتراضي (-20 + 30 = +10)
+          centerY = SCREEN_HEIGHT / 2;
+          toothWidth = originalToothHeight * 8; // 42 * 8 = 336 (بعد الدوران)
+          toothHeight = originalToothWidth * 8; // 33 * 8 = 264 (بعد الدوران)
+        }
+
+        const toothTop = centerY - toothHeight / 2; // الحد العلوي للسن
+        const toothBottom = centerY + toothHeight / 2; // الحد السفلي للسن
+        const toothLeft = centerX - toothWidth / 2; // الحد الأيسر للسن
+        const toothRight = centerX + toothWidth / 2; // الحد الأيمن للسن
+
+        return (
+          <>
+            {/* المنطقة العلوية - من أعلى الشاشة حتى الحد العلوي للسن */}
+            <TouchableWithoutFeedback onPress={handleCloseTooth}>
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: SCREEN_WIDTH,
+                  height: toothTop,
+                  zIndex: 998,
+                  backgroundColor: 'transparent',
+                }}
+              />
+            </TouchableWithoutFeedback>
+
+            {/* المنطقة السفلية - من الحد السفلي للسن حتى أسفل الشاشة */}
+            <TouchableWithoutFeedback onPress={handleCloseTooth}>
+              <View
+                style={{
+                  position: 'absolute',
+                  top: toothBottom,
+                  left: 0,
+                  width: SCREEN_WIDTH,
+                  height: SCREEN_HEIGHT - toothBottom,
+                  zIndex: 998,
+                  backgroundColor: 'transparent',
+                }}
+              />
+            </TouchableWithoutFeedback>
+
+            {/* المنطقة اليسرى - من يسار الشاشة حتى الحد الأيسر للسن */}
+            <TouchableWithoutFeedback onPress={handleCloseTooth}>
+              <View
+                style={{
+                  position: 'absolute',
+                  top: toothTop,
+                  left: 0,
+                  width: toothLeft,
+                  height: toothHeight,
+                  zIndex: 998,
+                  backgroundColor: 'transparent',
+                }}
+              />
+            </TouchableWithoutFeedback>
+
+            {/* المنطقة اليمنى - من الحد الأيمن للسن حتى يمين الشاشة */}
+            <TouchableWithoutFeedback onPress={handleCloseTooth}>
+              <View
+                style={{
+                  position: 'absolute',
+                  top: toothTop,
+                  left: toothRight,
+                  width: SCREEN_WIDTH - toothRight,
+                  height: toothHeight,
+                  zIndex: 998,
+                  backgroundColor: 'transparent',
+                }}
+              />
+            </TouchableWithoutFeedback>
+          </>
+        );
+      })()}
+
+      {/* Enlarged Tooth Overlay - لباقي الأسنان فقط (ليس الأسنان 1-8 و 25-32) */}
+      {selectedTooth && ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && (
+        <Modal
+          transparent
+          visible={!!selectedTooth}
+          animationType="fade"
+          onRequestClose={handleCloseTooth}
+        >
+          <View style={styles.enlargedToothOverlay}>
+            {/* Background dimmer */}
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={handleCloseTooth}
+            />
+
+            {/* Close button */}
+            <TouchableOpacity
+              style={styles.enlargedToothCloseButton}
+              onPress={handleCloseTooth}
+            >
+              <Ionicons name="close-circle" size={50} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            {/* Enlarged tooth container */}
+            <View style={styles.enlargedToothContainer}>
+              {/* Render the enlarged tooth based on tooth number */}
+              {[6, 7, 8, 9, 10, 11, 22, 23, 24, 25, 26, 27].includes(selectedTooth) ? (
+                <ToothWithSectionsSquareTiny
+                  colors={toothConditions[selectedTooth]}
+                  onSurfacePress={(surface) => handleSurfacePress(surface)}
+                  swapSides={selectedTooth >= 17 && selectedTooth <= 32}
+                />
+              ) : (
+                <ToothWithSectionsSquareMedium
+                  colors={toothConditions[selectedTooth]}
+                  onSurfacePress={(surface) => handleSurfacePress(surface)}
+                  swapSides={selectedTooth >= 17 && selectedTooth <= 32}
+                />
+              )}
+
+              {/* Tooth number display */}
+              <View style={styles.enlargedToothNumberBadge}>
+                <Text style={styles.enlargedToothNumberText}>{getToothLabel(selectedTooth)}</Text>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+        {/* Condition Menu */}
+        <ConditionMenu
+          visible={showConditionMenu}
+          onSelect={handleConditionSelect}
+          onClose={handleConditionMenuClose}
+          selectedSurface={selectedSurface}
+          selectedTooth={selectedTooth}
+        />
+
+        {/* Tooth Details Modal - Edit Mode */}
+        <ToothDetailsModal
+          visible={showToothDetailsModal}
+          onClose={() => {
+            setShowToothDetailsModal(false);
+            setSelectedToothForDetails(null);
+          }}
+          permanentPatientId={permanentPatientId || ''}
+          toothNumber={selectedToothForDetails || 1}
+          currentDoctorName={user?.name || user?.email || 'Unknown'}
+          onToothDataUpdated={() => {
+            // Reload dental chart data
+            loadPatientDentalData();
+          }}
+        />
+
+        {/* Department Selection Modal */}
+        <Modal
+          transparent
+          visible={showDepartmentModal}
+          animationType="fade"
+          onRequestClose={() => setShowDepartmentModal(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+            <BlurView intensity={100} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={{
+              width: '85%',
+              maxWidth: 400,
+              backgroundColor: 'rgba(240, 249, 255, 0.98)',
+              borderRadius: 24,
+              borderWidth: 2,
+              borderColor: 'rgba(186, 230, 253, 0.6)',
+              overflow: 'hidden',
+              ...Platform.select({
+                ios: {
+                  shadowColor: '#7DD3FC',
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 20,
+                }
+              })
+            }}>
+              {/* Header */}
+              <View style={{
+                backgroundColor: 'rgba(186, 230, 253, 0.3)',
+                paddingVertical: 20,
+                paddingHorizontal: 24,
+                borderBottomWidth: 2,
+                borderBottomColor: 'rgba(186, 230, 253, 0.4)'
+              }}>
+                <Text style={{
+                  fontSize: 22,
+                  fontWeight: '700',
+                  color: '#0284C7',
+                  textAlign: 'center',
+                  letterSpacing: 0.5
+                }}>Select Departments</Text>
+              </View>
+
+              {/* Departments List */}
+              <ScrollView style={{ maxHeight: 400, padding: 20 }} showsVerticalScrollIndicator={false}>
+                {/* Endodontics */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    marginBottom: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderWidth: 1.5,
+                    borderColor: referrals.endodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                  }}
+                  onPress={() => {
+                    setReferrals(prev => {
+                      const newValue = !prev.endodontics;
+                      // إذا تم تفعيل القسم، أعد تعيينه إلى Not Given
+                      if (newValue) {
+                        setReferralStatus(prevStatus => ({ ...prevStatus, endodontics: 'not_given' }));
+                      }
+                      return { ...prev, endodontics: newValue };
+                    });
+                  }}
+                >
+                  <View style={[styles.checkbox, referrals.endodontics && styles.checkboxChecked]}>
+                    {referrals.endodontics && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.referralText}>1- Endodontics</Text>
+                </TouchableOpacity>
+
+                {/* Oral Surgery */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    marginBottom: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderWidth: 1.5,
+                    borderColor: referrals.oralSurgery ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                  }}
+                  onPress={() => {
+                    setReferrals(prev => {
+                      const newValue = !prev.oralSurgery;
+                      if (newValue) {
+                        setReferralStatus(prevStatus => ({ ...prevStatus, oralSurgery: 'not_given' }));
+                      }
+                      return { ...prev, oralSurgery: newValue };
+                    });
+                  }}
+                >
+                  <View style={[styles.checkbox, referrals.oralSurgery && styles.checkboxChecked]}>
+                    {referrals.oralSurgery && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.referralText}>2- Oral Surgery</Text>
+                </TouchableOpacity>
+
+                {/* Orthodontics */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    marginBottom: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderWidth: 1.5,
+                    borderColor: referrals.orthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                  }}
+                  onPress={() => {
+                    setReferrals(prev => {
+                      const newValue = !prev.orthodontics;
+                      if (newValue) {
+                        setReferralStatus(prevStatus => ({ ...prevStatus, orthodontics: 'not_given' }));
+                      }
+                      return { ...prev, orthodontics: newValue };
+                    });
+                  }}
+                >
+                  <View style={[styles.checkbox, referrals.orthodontics && styles.checkboxChecked]}>
+                    {referrals.orthodontics && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.referralText}>3- Orthodontics</Text>
+                </TouchableOpacity>
+
+                {/* Periodontics */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    marginBottom: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderWidth: 1.5,
+                    borderColor: referrals.periodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                  }}
+                  onPress={() => {
+                    setReferrals(prev => {
+                      const newValue = !prev.periodontics;
+                      if (newValue) {
+                        setReferralStatus(prevStatus => ({ ...prevStatus, periodontics: 'not_given' }));
+                      }
+                      return { ...prev, periodontics: newValue };
+                    });
+                  }}
+                >
+                  <View style={[styles.checkbox, referrals.periodontics && styles.checkboxChecked]}>
+                    {referrals.periodontics && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.referralText}>4- Periodontics</Text>
+                </TouchableOpacity>
+
+                {/* Prosthodontics */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    marginBottom: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderWidth: 1.5,
+                    borderColor: referrals.prosthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                  }}
+                  onPress={() => {
+                    setReferrals(prev => {
+                      const newValue = !prev.prosthodontics;
+                      if (newValue) {
+                        setReferralStatus(prevStatus => ({ ...prevStatus, prosthodontics: 'not_given' }));
+                      }
+                      return { ...prev, prosthodontics: newValue };
+                    });
+                  }}
+                >
+                  <View style={[styles.checkbox, referrals.prosthodontics && styles.checkboxChecked]}>
+                    {referrals.prosthodontics && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.referralText}>5- Prosthodontics</Text>
+                </TouchableOpacity>
+
+                {/* Oral Medicine */}
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    marginBottom: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    borderWidth: 1.5,
+                    borderColor: referrals.oralMedicine ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                  }}
+                  onPress={() => {
+                    setReferrals(prev => {
+                      const newValue = !prev.oralMedicine;
+                      if (newValue) {
+                        setReferralStatus(prevStatus => ({ ...prevStatus, oralMedicine: 'not_given' }));
+                      }
+                      return { ...prev, oralMedicine: newValue };
+                    });
+                  }}
+                >
+                  <View style={[styles.checkbox, referrals.oralMedicine && styles.checkboxChecked]}>
+                    {referrals.oralMedicine && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.referralText}>6- Oral Medicine</Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {/* Done Button */}
+              <View style={{ padding: 20, paddingTop: 12 }}>
+                <TouchableOpacity
+                  onPress={() => setShowDepartmentModal(false)}
+                  style={{
+                    backgroundColor: '#0284C7',
+                    paddingVertical: 16,
+                    borderRadius: 16,
+                    alignItems: 'center',
+                    ...Platform.select({
+                      ios: {
+                        shadowColor: '#0284C7',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 8,
+                      }
+                    })
+                  }}
+                >
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 }}>
+                    Done
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  gradient: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  timelineBlob: {
+    position: 'absolute',
+    borderRadius: 1000,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 50,
+    paddingBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  // ═══════════════════════════════════════════════════════════════
+  // Planning Submit/Cancel Buttons Styles
+  // ═══════════════════════════════════════════════════════════════
+  planningActionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  planningSubmitButton: {
+    position: 'absolute',
+    top: 130,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.3)',
+    paddingHorizontal: 28,
+    paddingVertical: 4,
+    borderRadius: 24,
+    gap: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    minHeight: 38,
+    minWidth: 100,
+    elevation: 10000,
+    zIndex: 10000,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+  },
+  planningSubmitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  planningCancelButton: {
+    position: 'absolute',
+    top: 130,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(107, 114, 128, 0.3)',
+    paddingHorizontal: 28,
+    paddingVertical: 4,
+    borderRadius: 24,
+    gap: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    minHeight: 38,
+    minWidth: 100,
+    elevation: 10000,
+    zIndex: 10000,
+    shadowColor: '#6B7280',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+  },
+  planningCancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  // ═══════════════════════════════════════════════════════════════
+  editButtonContainer: {
+    position: 'absolute',
+    top: '54%',
+    left: '39%',
+    transform: [{ translateX: -50 }],
+    marginLeft: 0,
+    marginTop: 0,
+    paddingRight: 0,
+    paddingBottom: 0,
+    alignItems: 'center',
+    alignSelf: 'center',
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  editModeButton: {
+    paddingHorizontal: 28,
+    paddingVertical: 4,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    minHeight: 38,
+    minWidth: 100,
+    zIndex: 10000,
+    elevation: 10000,
+  },
+  editModeButtonInactive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  editModeButtonActive: {
+    backgroundColor: '#60A5FA',
+    borderColor: '#FFFFFF',
+    shadowColor: '#60A5FA',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  editModeButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  editModeButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  viewButtonContainer: {
+    position: 'absolute',
+    top: '41%',
+    left: '50%',
+    marginRight: 0,
+    marginTop: 0,
+    paddingLeft: 0,
+    paddingBottom: 0,
+    alignItems: 'center',
+    alignSelf: 'center',
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  viewModeButton: {
+    paddingHorizontal: 28,
+    paddingVertical: 4,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    minHeight: 38,
+    minWidth: 100,
+    zIndex: 10000,
+    elevation: 10000,
+  },
+  viewModeButtonInactive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  viewModeButtonActive: {
+    backgroundColor: '#60A5FA',
+    borderColor: '#FFFFFF',
+    shadowColor: '#60A5FA',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  viewModeButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  viewModeButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  toothGlowEffect: {
+    shadowColor: '#60A5FA',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 15,
+    elevation: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  toothDetailsModalContainer: {
+    width: '95%',
+    maxHeight: '85%',
+    backgroundColor: '#1E293B',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#334155',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(96, 165, 250, 0.3)',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  modalSection: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#60A5FA',
+    marginBottom: 12,
+  },
+  modalInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.3)',
+  },
+  modalInfoText: {
+    fontSize: 15,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  surfacesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  surfaceChip: {
+    backgroundColor: 'rgba(96, 165, 250, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.4)',
+  },
+  surfaceChipText: {
+    color: '#60A5FA',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  conditionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  conditionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  conditionLabel: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 12,
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  noDataSubText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  modalContentPadding: {
+    padding: 16,
+  },
+  modalToothCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  modalSectionSubtitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  modalSurfaceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  surfaceColorIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  surfaceChipLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    marginVertical: 16,
+  },
+  additionalInfoSection: {
+    gap: 12,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  infoLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.8)',
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  instructionsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(96, 165, 250, 0.15)',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.3)',
+  },
+  instructionsText: {
+    flex: 1,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
+    lineHeight: 18,
+  },
+  headerSpacer: {
+    width: 44,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingVertical: 20,
+    paddingHorizontal: 10,
+    flexGrow: 1,
+    justifyContent: 'flex-start', // البدء من الأعلى
+  },
+  crossContainer: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    elevation: 1000,
+  },
+  dividerCross: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerDivider: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  oralHygieneContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    backgroundColor: 'rgba(254, 215, 170, 0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(254, 215, 170, 0.5)',
+    zIndex: 800,
+    elevation: 800,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+  },
+  oralHygieneText: {
+    color: '#92400E',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  scalingButton: {
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(16, 185, 129, 0.5)',
+    marginBottom: 16,
+  },
+  scalingButtonText: {
+    color: '#059669',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  scalingRecordsContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 12,
+    padding: 12,
+  },
+  scalingRecordsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 12,
+  },
+  scalingRecordItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  scalingRecordIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  scalingRecordInfo: {
+    flex: 1,
+  },
+  scalingRecordDoctor: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  scalingRecordTime: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  deleteRecordButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  tooth8: {
+    position: 'absolute',
+    right: 45,
+    top: '42%',
+    width: 37,
+    height: 47,
+  },
+  tooth7: {
+    position: 'absolute',
+    right: 45,
+    top: '36%',
+    width: 37,
+    height: 47,
+  },
+  tooth6: {
+    position: 'absolute',
+    right: 45,
+    top: '30%',
+    width: 37,
+    height: 47,
+  },
+  tooth5: {
+    position: 'absolute',
+    right: 55,
+    top: '24%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-15deg' }],
+  },
+  tooth4: {
+    position: 'absolute',
+    right: 67,
+    top: '18.5%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-20deg' }],
+  },
+  tooth3: {
+    position: 'absolute',
+    right: 90,
+    top: '14%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-35deg' }],
+  },
+  tooth2: {
+    position: 'absolute',
+    right: 120,
+    top: '10%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-60deg' }],
+  },
+  tooth1: {
+    position: 'absolute',
+    right: 160,
+    top: '7.5%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-80deg' }],
+  },
+  // الناحية اليسرى - الأسنان 9-16 (مرآة للأسنان 1-8)
+  tooth9: {
+    position: 'absolute',
+    left: 45,
+    top: '42%',
+    width: 37,
+    height: 47,
+  },
+  tooth10: {
+    position: 'absolute',
+    left: 45,
+    top: '36%',
+    width: 37,
+    height: 47,
+  },
+  tooth11: {
+    position: 'absolute',
+    left: 45,
+    top: '30%',
+    width: 37,
+    height: 47,
+  },
+  tooth12: {
+    position: 'absolute',
+    left: 55,
+    top: '24%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '15deg' }],
+  },
+  tooth13: {
+    position: 'absolute',
+    left: 67,
+    top: '18.5%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '20deg' }],
+  },
+  tooth14: {
+    position: 'absolute',
+    left: 90, // مرآة للسن 3
+    top: '14%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '35deg' }], // ميلان معكوس للسن 3
+  },
+  tooth15: {
+    position: 'absolute',
+    left: 120, // مرآة للسن 2
+    top: '10%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '60deg' }], // ميلان معكوس للسن 2
+  },
+  tooth16: {
+    position: 'absolute',
+    left: 160, // مرآة للسن 1
+    top: '7.5%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '80deg' }], // ميلان معكوس للسن 1
+  },
+  // الأسنان السفلية - الجانب الأيمن (17-24)
+  tooth17: {
+    position: 'absolute',
+    right: 160, // مرآة للسن 1 العلوي
+    bottom: '7.5%', // أسفل نقطة
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '80deg' }], // ميلان معكوس
+  },
+  tooth18: {
+    position: 'absolute',
+    right: 120,
+    bottom: '10%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '60deg' }], // ميلان معكوس
+  },
+  tooth19: {
+    position: 'absolute',
+    right: 90,
+    bottom: '14%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '35deg' }], // ميلان معكوس
+  },
+  tooth20: {
+    position: 'absolute',
+    right: 67,
+    bottom: '18.5%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '20deg' }],
+  },
+  tooth21: {
+    position: 'absolute',
+    right: 55,
+    bottom: '24%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '15deg' }],
+  },
+  tooth22: {
+    position: 'absolute',
+    right: 45,
+    bottom: '30%',
+    width: 37,
+    height: 47,
+  },
+  tooth23: {
+    position: 'absolute',
+    right: 45,
+    bottom: '36%',
+    width: 37,
+    height: 47,
+  },
+  tooth24: {
+    position: 'absolute',
+    right: 45,
+    bottom: '42%',
+    width: 37,
+    height: 47,
+  },
+  // الأسنان السفلية - الجانب الأيسر (25-32)
+  tooth25: {
+    position: 'absolute',
+    left: 45,
+    bottom: '42%',
+    width: 37,
+    height: 47,
+  },
+  tooth26: {
+    position: 'absolute',
+    left: 45,
+    bottom: '36%',
+    width: 37,
+    height: 47,
+  },
+  tooth27: {
+    position: 'absolute',
+    left: 45,
+    bottom: '30%',
+    width: 37,
+    height: 47,
+  },
+  tooth28: {
+    position: 'absolute',
+    left: 55,
+    bottom: '24%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-15deg' }],
+  },
+  tooth29: {
+    position: 'absolute',
+    left: 67,
+    bottom: '18.5%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-20deg' }],
+  },
+  tooth30: {
+    position: 'absolute',
+    left: 90,
+    bottom: '14%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-35deg' }], // ميلان عكس السن 19
+  },
+  tooth31: {
+    position: 'absolute',
+    left: 120,
+    bottom: '10%',
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-60deg' }], // ميلان عكس السن 18
+  },
+  tooth32: {
+    position: 'absolute',
+    left: 160,
+    bottom: '7.5%', // أسفل نقطة
+    width: 33,
+    height: 42,
+    transform: [{ rotate: '-80deg' }], // ميلان عكس السن 17
+  },
+  // Tooth Numbers 1-8
+  toothNumber1: {
+    position: 'absolute',
+    right: 165,
+    top: '5%',
+    transform: [{ rotate: '-80deg' }],
+  },
+  toothNumber2: {
+    position: 'absolute',
+    right: 115,
+    top: '8.5%',
+    transform: [{ rotate: '-50deg' }],
+  },
+  toothNumber3: {
+    position: 'absolute',
+    right: 75,
+    top: '12.5%',
+    transform: [{ rotate: '-35deg' }],
+  },
+  toothNumber4: {
+    position: 'absolute',
+    right: 40,
+    top: '19%',
+    transform: [{ rotate: '-15deg' }],
+  },
+  toothNumber5: {
+    position: 'absolute',
+    right: 30,
+    top: '23.5%',
+    transform: [{ rotate: '-15deg' }],
+  },
+  toothNumber6: {
+    position: 'absolute',
+    right: 20,
+    top: '31.5%',
+  },
+  toothNumber7: {
+    position: 'absolute',
+    right: 20,
+    top: '37.5%',
+  },
+  toothNumber8: {
+    position: 'absolute',
+    right: 20,
+    top: '43.5%',
+  },
+  // Tooth Numbers 9-16 (Upper Left Quadrant - mirror of 1-8)
+  toothNumber9: {
+    position: 'absolute',
+    left: 165,
+    top: '5%',
+    transform: [{ rotate: '80deg' }],
+  },
+  toothNumber10: {
+    position: 'absolute',
+    left: 115,
+    top: '8.5%',
+    transform: [{ rotate: '50deg' }],
+  },
+  toothNumber11: {
+    position: 'absolute',
+    left: 75,
+    top: '12.5%',
+    transform: [{ rotate: '35deg' }],
+  },
+  toothNumber12: {
+    position: 'absolute',
+    left: 40,
+    top: '19%',
+    transform: [{ rotate: '15deg' }],
+  },
+  toothNumber13: {
+    position: 'absolute',
+    left: 30,
+    top: '23.5%',
+    transform: [{ rotate: '15deg' }],
+  },
+  toothNumber14: {
+    position: 'absolute',
+    left: 20,
+    top: '31.5%',
+  },
+  toothNumber15: {
+    position: 'absolute',
+    left: 20,
+    top: '37.5%',
+  },
+  toothNumber16: {
+    position: 'absolute',
+    left: 20,
+    top: '43.5%',
+  },
+  // Tooth Numbers 17-24 (Lower Right Quadrant - mirror of 1-8)
+  toothNumber17: {
+    position: 'absolute',
+    right: 165,
+    bottom: '5%',
+    transform: [{ rotate: '80deg' }],
+  },
+  toothNumber18: {
+    position: 'absolute',
+    right: 115,
+    bottom: '8.5%',
+    transform: [{ rotate: '50deg' }],
+  },
+  toothNumber19: {
+    position: 'absolute',
+    right: 75,
+    bottom: '12.5%',
+    transform: [{ rotate: '35deg' }],
+  },
+  toothNumber20: {
+    position: 'absolute',
+    right: 40,
+    bottom: '19%',
+    transform: [{ rotate: '15deg' }],
+  },
+  toothNumber21: {
+    position: 'absolute',
+    right: 30,
+    bottom: '23.5%',
+    transform: [{ rotate: '15deg' }],
+  },
+  toothNumber22: {
+    position: 'absolute',
+    right: 20,
+    bottom: '31.5%',
+  },
+  toothNumber23: {
+    position: 'absolute',
+    right: 20,
+    bottom: '37.5%',
+  },
+  toothNumber24: {
+    position: 'absolute',
+    right: 20,
+    bottom: '43.5%',
+  },
+  // Tooth Numbers 25-32 (Lower Left Quadrant - mirror of 1-8)
+  toothNumber25: {
+    position: 'absolute',
+    left: 165,
+    bottom: '5%',
+    transform: [{ rotate: '-80deg' }],
+  },
+  toothNumber26: {
+    position: 'absolute',
+    left: 115,
+    bottom: '8.5%',
+    transform: [{ rotate: '-50deg' }],
+  },
+  toothNumber27: {
+    position: 'absolute',
+    left: 75,
+    bottom: '12.5%',
+    transform: [{ rotate: '-35deg' }],
+  },
+  toothNumber28: {
+    position: 'absolute',
+    left: 40,
+    bottom: '19%',
+    transform: [{ rotate: '-15deg' }],
+  },
+  toothNumber29: {
+    position: 'absolute',
+    left: 30,
+    bottom: '23.5%',
+    transform: [{ rotate: '-15deg' }],
+  },
+  toothNumber30: {
+    position: 'absolute',
+    left: 20,
+    bottom: '31.5%',
+  },
+  toothNumber31: {
+    position: 'absolute',
+    left: 20,
+    bottom: '37.5%',
+  },
+  toothNumber32: {
+    position: 'absolute',
+    left: 20,
+    bottom: '43.5%',
+  },
+  toothNumberText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(135, 206, 250, 0.95)',
+  },
+  toothGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toothOval: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toothNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#5B9FED',
+  },
+  // Condition Menu Styles
+  conditionMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  conditionMenuContainer: {
+    borderRadius: 20,
+    marginHorizontal: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    overflow: 'hidden',
+  },
+  conditionMenuTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    textAlign: 'center',
+  },
+  conditionMenuSubtitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#3B82F6',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  conditionModalHeaderContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  conditionMenuDivider: {
+    height: 1.5,
+    backgroundColor: 'rgba(59, 130, 246, 0.3)',
+    marginBottom: 12,
+    marginHorizontal: 16,
+  },
+  conditionMenuScroll: {
+    maxHeight: 450,
+  },
+  conditionMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginHorizontal: 12,
+    marginVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  conditionColorBox: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  conditionMenuItemText: {
+    fontSize: 16,
+    color: '#1E293B',
+    fontWeight: '600',
+    marginLeft: 14,
+  },
+  // Enlarged Tooth Overlay Styles
+  enlargedToothOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  enlargedToothCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1000,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 82, 82, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  enlargedToothContainer: {
+    width: SCREEN_WIDTH * 0.8,
+    height: SCREEN_HEIGHT * 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 30,
+    elevation: 20,
+  },
+  enlargedToothNumberBadge: {
+    position: 'absolute',
+    top: 20,
+    backgroundColor: 'rgba(91, 159, 237, 0.95)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  enlargedToothNumberText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  toothDetailsScrollView: {
+    flex: 1,
+  },
+  toothDetailsScrollContent: {
+    padding: 20,
+    paddingTop: 10,
+  },
+  toothDetailsContainer: {
+    flex: 1,
+  },
+  toothDetailsHeaderCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  toothDetailsMainTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  toothDetailsSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  emptyStateCard: {
+    borderRadius: 16,
+    padding: 40,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  toothCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  toothCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  toothNumberBadge: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'transparent',
+  },
+  // Quadrant borders - Upper Left: bottom + left
+  quadrantUpperLeft: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.8)',
+    borderLeftColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  // Quadrant borders - Upper Right: top + right
+  quadrantUpperRight: {
+    borderTopColor: 'rgba(255, 255, 255, 0.8)',
+    borderRightColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  // Quadrant borders - Lower Left: bottom + left
+  quadrantLowerLeft: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.8)',
+    borderLeftColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  // Quadrant borders - Lower Right: bottom + right
+  quadrantLowerRight: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.8)',
+    borderRightColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  toothNumberBadgeText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  toothInfoContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  toothNameText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  toothNameEnglishText: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 2,
+  },
+  conditionBadgesContainer: {
+    flexDirection: 'column',
+    gap: 6,
+    alignItems: 'flex-end',
+  },
+  conditionBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  conditionBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  toothPositionContainer: {
+    flex: 1,
+  },
+  toothPositionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  surfaceItem: {
+    backgroundColor: 'rgba(255, 255, 255, 0.30)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  toothDetailsContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.30)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  conditionsSection: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  conditionChip: {
+    backgroundColor: 'rgba(100, 181, 246, 0.2)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 181, 246, 0.3)',
+  },
+  conditionChipText: {
+    fontSize: 12,
+    color: '#2C3E50',
+    fontWeight: '500',
+  },
+  surfaceDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    marginBottom: 4,
+  },
+  surfaceNameText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#2C3E50',
+    marginBottom: 6,
+  },
+  surfaceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  surfaceLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2C3E50',
+    minWidth: 60,
+  },
+  surfaceValue: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#34495E',
+    flex: 1,
+  },
+  dropdownContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 254, 230, 0.75)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  dropdownPlaceholder: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  labelInput: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#2C3E50',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  labelInputDisabled: {
+    backgroundColor: 'rgba(209, 213, 219, 0.3)',
+    color: '#9CA3AF',
+  },
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dropdownModalContent: {
+    backgroundColor: 'rgba(255, 254, 230, 0.75)',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 250,
+    maxHeight: 300,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  dropdownOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginVertical: 4,
+    backgroundColor: 'rgba(255, 252, 220, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownOptionSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderColor: 'rgba(59, 130, 246, 0.5)',
+  },
+  dropdownOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2C3E50',
+  },
+  dropdownOptionTextSelected: {
+    color: '#3B82F6',
+  },
+  dropdownTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 12,
+    textAlign: 'center' as const,
+  },
+  dropdownDoneButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  dropdownDoneButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  conditionIndicator: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 16,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 254, 230, 0.75)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    gap: 4,
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  actionButtonActive: {
+    borderColor: '#3B82F6',
+    borderWidth: 2,
+  },
+  actionButtonTextActive: {
+    color: '#3B82F6',
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
+  dropdownDisabled: {
+    opacity: 0.5,
+  },
+  notesContainer: {
+    padding: 16,
+  },
+  notesTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginBottom: 12,
+  },
+  notesInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#2C3E50',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  recordsContainer: {
+    padding: 16,
+  },
+  recordsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginBottom: 12,
+  },
+  recordsList: {
+    maxHeight: 200,
+  },
+  noRecordsText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  recordItem: {
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+  },
+  recordText: {
+    fontSize: 13,
+    color: '#2C3E50',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  addNoteContainer: {
+    marginTop: 12,
+    gap: 8,
+  },
+  addNoteInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 8,
+    padding: 12,
+    color: '#2C3E50',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  addNoteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  addNoteButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  noteBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+  },
+  noteBadgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+  },
+  // New Modal Styles
+  newModalContainer: {
+    flex: 1,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    overflow: 'hidden',
+    elevation: 8,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.15,
+      shadowRadius: 24,
+    } : {}),
+  },
+  newModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  toothNumberBox: {
+    backgroundColor: 'rgba(96, 165, 250, 0.2)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    elevation: 2,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    } : {}),
+    // الحدود تطبق ديناميكياً حسب الربع
+  },
+  modalToothNumberText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E3A8A',
+  },
+  modalToothNameText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
+  editButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.5)',
+  },
+  editButtonActive: {
+    backgroundColor: '#60A5FA',
+    borderColor: '#3B82F6',
+    borderWidth: 2,
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    } : {}),
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  closeButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.5)',
+  },
+  modalContent: {
+    flexGrow: 0,
+    flexShrink: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  mainSectionsContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+    } : {}),
+  },
+  whiteSection: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+    } : {}),
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  sectionLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    marginVertical: 8,
+  },
+  dropdownInput: {
+    width: 170,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.5)',
+  },
+  dropdownInputActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    elevation: 2,
+  },
+  dropdownText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'center',
+  },
+  expandedOptions: {
+    marginTop: 8,
+    maxHeight: 180,
+    zIndex: 1000,
+    elevation: 10,
+  },
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 5,
+  },
+  dropdownModalContent: {
+    backgroundColor: 'rgba(240, 249, 255, 0.98)',
+    borderRadius: 24,
+    padding: 22,
+    width: '100%',
+    maxHeight: '92%',
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    elevation: 5,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+    } : {}),
+  },
+  dropdownModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+  dropdownModalList: {
+    maxHeight: 800,
+  },
+  dropdownModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.4)',
+    marginBottom: 12,
+    elevation: 1,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+    } : {}),
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(203, 213, 225, 0.4)',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxSelected: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  checkboxChecked: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+  },
+  optionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  radioButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  radioButtonSelected: {
+    borderColor: '#60A5FA',
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#60A5FA',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxSelected: {
+    borderColor: '#0284C7',
+    backgroundColor: '#0284C7',
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    marginHorizontal: 16,
+  },
+  // Tab Buttons Styles
+  tabButtons: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 10,
+    backgroundColor: 'rgba(248, 250, 252, 0.9)',
+    borderRadius: 16,
+    marginHorizontal: 4,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(203, 213, 225, 0.6)',
+  },
+  tabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    gap: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.6)',
+    elevation: 1,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+    } : {}),
+  },
+  tabBtnActive: {
+    backgroundColor: '#3B82F6',
+    borderWidth: 2,
+    borderColor: '#2563EB',
+    elevation: 4,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+    } : {}),
+  },
+  tabBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.3,
+  },
+  tabBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  // Submit Button Styles
+  submitButtonContainer: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(248, 250, 252, 0.7)',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(203, 213, 225, 0.6)',
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(226, 232, 240, 0.7)',
+    gap: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.5)',
+  },
+  submitButtonActive: {
+    backgroundColor: '#10B981',
+    borderColor: '#059669',
+    borderWidth: 2,
+    elevation: 6,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#10B981',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+    } : {}),
+  },
+  submitButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  surfacesGrid: {
+    minHeight: 60,
+  },
+  treatmentContainer: {
+    minHeight: 50,
+  },
+  detailsContainer: {
+    minHeight: 50,
+  },
+  placeholderText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontStyle: 'italic',
+  },
+  bottomButtons: {
+    flexDirection: 'row',
+    backgroundColor: 'transparent',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  bottomBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    gap: 4,
+  },
+  bottomBtnActive: {
+    backgroundColor: '#10B981',
+  },
+  bottomBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
+  // Surfaces Modal Styles
+  surfacesModalBox: {
+    width: '85%',
+    backgroundColor: 'rgba(96, 165, 250, 0.3)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    padding: 20,
+  },
+  surfacesModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  surfacesModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  surfacesList: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  surfaceCheckBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  surfaceCheckBoxSelected: {
+    backgroundColor: '#60A5FA',
+    borderColor: '#60A5FA',
+  },
+  surfaceItemText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  surfacesDoneBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  surfacesDoneBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  // Notes Section Styles
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  notesSection: {
+    gap: 14,
+  },
+  savedNotesContainer: {
+    gap: 10,
+  },
+  noteCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 12,
+    padding: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+    borderWidth: 1.5,
+    borderColor: 'rgba(203, 213, 225, 0.5)',
+    elevation: 2,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+    } : {}),
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  noteDoctorName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  noteTimestamp: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  noteText: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 20,
+  },
+  newNoteContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  noteInput: {
+    fontSize: 14,
+    color: '#1E293B',
+    minHeight: 70,
+    textAlignVertical: 'top',
+    fontWeight: '500',
+  },
+  // Records Section Styles
+  recordsMainContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+    } : {}),
+    padding: 16,
+    gap: 12,
+  },
+  recordsTypeButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+    justifyContent: 'center',
+  },
+  recordsTypeBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.6)',
+  },
+  recordsTypeBtnActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#2563EB',
+    borderWidth: 2,
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    } : {}),
+  },
+  recordsTypeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.2,
+  },
+  recordsTypeBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  recordCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 12,
+    padding: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+    borderWidth: 1.5,
+    borderColor: 'rgba(203, 213, 225, 0.5)',
+    gap: 10,
+    elevation: 2,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
+    } : {}),
+  },
+  recordHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  recordDoctorName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  recordTimestamp: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  recordRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  recordLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    minWidth: 70,
+  },
+  recordValue: {
+    fontSize: 12,
+    color: '#1E293B',
+    flex: 1,
+  },
+  noRecordsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    gap: 12,
+  },
+  planningRecordContent: {
+    paddingTop: 4,
+  },
+  planningRecordText: {
+    fontSize: 13,
+    color: '#1E293B',
+    lineHeight: 20,
+  },
+  planningRecordHighlight: {
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  referralContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 90,
+    paddingHorizontal: 20,
+    zIndex: 10003,
+  },
+  referralTouchable: {
+    width: '90%',
+    maxWidth: 400,
+  },
+  referralContent: {
+    borderRadius: 24,
+    padding: 28,
+    borderWidth: 3,
+    borderColor: 'rgba(186, 230, 253, 0.6)', // سماوي فاتح شفاف
+    backgroundColor: 'rgba(240, 249, 255, 0.25)', // خلفية بيضاء سماوية شفافة جداً
+    shadowColor: '#7DD3FC',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  referralHeader: {
+    marginBottom: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'rgba(186, 230, 253, 0.3)',
+  },
+  referralTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#7DD3FC', // سماوي فاتح
+    textAlign: 'center',
+    textShadowColor: 'rgba(125, 211, 252, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  referralItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    marginBottom: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(186, 230, 253, 0.4)',
+  },
+  referralItemSelected: {
+    backgroundColor: 'rgba(186, 230, 253, 0.3)',
+    borderColor: 'rgba(125, 211, 252, 0.8)',
+    shadowColor: '#7DD3FC',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  selectedReferralsContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+    gap: 10,
+  },
+  selectedReferralItem: {
+    flexDirection: 'column',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(186, 230, 253, 0.2)',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(125, 211, 252, 0.5)',
+  },
+  selectedReferralName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#38BDF8',
+    flex: 1,
+  },
+  statusButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderWidth: 1.5,
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  statusTextGiven: {
+    color: '#10B981', // أخضر
+  },
+  statusTextNotGiven: {
+    color: '#EF4444', // أحمر
+  },
+  additionalContainer: {
+    width: '90%',
+    maxWidth: 400,
+    marginTop: 16,
+  },
+  additionalContent: {
+    borderRadius: 24,
+    padding: 28,
+    borderWidth: 3,
+    borderColor: 'rgba(186, 230, 253, 0.6)',
+    backgroundColor: 'rgba(240, 249, 255, 0.25)',
+    shadowColor: '#7DD3FC',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  additionalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#7DD3FC',
+    textAlign: 'center',
+    textShadowColor: 'rgba(125, 211, 252, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+    marginBottom: 0,
+  },
+  referralText: {
+    fontSize: 16,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  treatmentRecordContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 230, // أسفل Need Referral (مسافة متساوية 140) + translateY animated للدفع عند فتح Referral
+    paddingHorizontal: 20,
+    zIndex: 10002,
+  },
+  planningRecordContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 340, // أسفل Treatment Record + translateY animated للدفع عند فتح Referral
+    paddingHorizontal: 20,
+    zIndex: 10001,
+  },
+});

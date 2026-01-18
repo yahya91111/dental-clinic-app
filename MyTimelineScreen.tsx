@@ -795,7 +795,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
           })}
         </ScrollView>
 
-        {/* FAB - ✅ مطابق 100% لـ App.tsx */}
+        {/* FAB -  مطابق 100% لـ App.tsx */}
         <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
           <View style={styles.fabGlass}>
             <View style={styles.fabInnerGlow} />
@@ -1160,7 +1160,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(125, 211, 192, 0.35)', // ✨ فيروزي شفاف موحد
+    backgroundColor: 'rgba(125, 211, 192, 0.35)', //  فيروزي شفاف موحد
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
     shadowColor: '#7DD3C0',
@@ -1174,7 +1174,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
+    backgroundColor: 'transparent', //  إزالة Inner Glow
   },
   headerCenter: {
     flex: 1,

@@ -165,7 +165,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
       // Generate unique virtual_center_id as UUID
       const newVirtualCenterId = uuid.v4() as string;
 
-      // ✅ Step 1: Create user in Authentication
+      //  Step 1: Create user in Authentication
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.toLowerCase(),
         password: password,
@@ -185,15 +185,15 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
         throw new Error('Failed to create user in Authentication');
       }
 
-      // ✅ Step 2: Create new doctor in pending_doctors with same UUID
+      //  Step 2: Create new doctor in pending_doctors with same UUID
       const { data: newDoctor, error: insertError } = await supabase
         .from('pending_doctors')
         .insert([
           {
-            id: authData.user.id, // ✅ Use same UUID from auth.users
+            id: authData.user.id, //  Use same UUID from auth.users
             name: `د. ${firstName} ${lastName}`,
             email: email.toLowerCase(),
-            password: password, // ✅ Store password (required by table schema)
+            password: password, //  Store password (required by table schema)
             role: 'doctor',
             clinic_id: null, // No real clinic yet
             virtual_center_id: newVirtualCenterId,

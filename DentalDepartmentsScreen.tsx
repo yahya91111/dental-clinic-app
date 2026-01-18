@@ -229,7 +229,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
   // Check if user is super admin
   const isSuperAdmin = user?.role === 'super_admin';
 
-  // ✅ Doctors screen - View Stats
+  //  Doctors screen - View Stats
   if (selectedClinic && showDoctorsScreen && currentDoctorsScreen === 'viewStats' && viewingDoctorData) {
     return (
       <MyStatisticsScreen
@@ -246,7 +246,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
     );
   }
 
-  // ✅ Doctors screen - List
+  //  Doctors screen - List
   if (selectedClinic && showDoctorsScreen && currentDoctorsScreen === 'list') {
     return (
       <DoctorsScreen

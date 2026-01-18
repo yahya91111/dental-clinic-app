@@ -1,32 +1,68 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StatusBar,
   ScrollView,
   Animated,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import DentalChartScreen from './DentalChartScreen';
+import { BlurView } from 'expo-blur';
 import { useAuth } from './AuthContext';
+import {
+  searchPermanentPatients,
+  searchPermanentPatientByFileNumberAndName,
+  createPermanentPatient,
+  getPermanentPatientById
+} from './lib/database';
+import { PermanentPatientDecrypted } from './types';
 
 interface PatientProfileScreenProps {
   onBack: () => void;
   onNavigateHome: () => void;
   onNavigateAppointments: () => void;
   onNavigateArchive: () => void;
+  initialPatientId?: string;
+  initialFileNumber?: string;
+  initialOpenDentalChart?: boolean;
 }
 
 export default function PatientProfileScreen({
   onBack,
   onNavigateHome,
   onNavigateAppointments,
-  onNavigateArchive
+  onNavigateArchive,
+  initialPatientId,
+  initialFileNumber,
+  initialOpenDentalChart = false
 }: PatientProfileScreenProps) {
   const { user } = useAuth();
+  const [currentScreen, setCurrentScreen] = useState<'profile' | 'dentalChart'>(initialOpenDentalChart ? 'dentalChart' : 'profile');
+
+  // Patients State
+  const [searchResults, setSearchResults] = useState<PermanentPatientDecrypted[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<PermanentPatientDecrypted | null>(null);
+
+  // Add Patient Modal State
+  const [isAddPatientModalVisible, setIsAddPatientModalVisible] = useState(false);
+  const [patientName, setPatientName] = useState('');
+  const [fileNumber, setFileNumber] = useState('');
+
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
 
   // Animated Blobs - Same as App.tsx
   const blob1Anim = useState(new Animated.Value(0))[0];
@@ -35,6 +71,156 @@ export default function PatientProfileScreen({
   const blob4Anim = useState(new Animated.Value(0))[0];
   const blob5Anim = useState(new Animated.Value(0))[0];
   const blob6Anim = useState(new Animated.Value(0))[0];
+
+  // Search patients by file number OR name (intelligent search)
+  useEffect(() => {
+    const searchPatients = async () => {
+      if (!searchQuery.trim() || !user?.clinicId) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const { data, error } = await searchPermanentPatients(
+          searchQuery.trim(),
+          user.clinicId
+        );
+
+        if (error) {
+          console.error('Search error:', error);
+          setSearchResults([]);
+        } else if (data && data.length > 0) {
+          setSearchResults(data); // Returns array of patients matching file number OR name
+        } else {
+          setSearchResults([]);
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    // Debounce search
+    const timeoutId = setTimeout(searchPatients, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, user?.clinicId]);
+
+  // Load initial patient if provided
+  useEffect(() => {
+    const loadInitialPatient = async () => {
+      if (initialPatientId) {
+        try {
+          const { data, error } = await getPermanentPatientById(initialPatientId);
+
+          if (error) {
+            console.error('Error loading initial patient:', error);
+            Alert.alert('خطأ', 'فشل تحميل بيانات المريض');
+            setCurrentScreen('profile');
+          } else if (data) {
+            setSelectedPatient(data);
+          }
+        } catch (error) {
+          console.error('Error loading initial patient:', error);
+          Alert.alert('خطأ', 'فشل تحميل بيانات المريض');
+          setCurrentScreen('profile');
+        }
+      }
+    };
+
+    loadInitialPatient();
+  }, [initialPatientId]);
+
+  // Add new patient to database
+  const handleAddPatient = async () => {
+    if (!patientName.trim() || !fileNumber.trim() || !user?.clinicId) {
+      Alert.alert('خطأ', 'الرجاء إدخال الاسم ورقم الملف');
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      //  STEP 1: Search for existing patient with SAME file number AND name
+      const searchResult = await searchPermanentPatientByFileNumberAndName(
+        fileNumber.trim(),
+        patientName.trim(),
+        user.clinicId
+      );
+
+      if (searchResult.data) {
+        // Patient with same file number AND name already exists
+        setSelectedPatient(searchResult.data);
+        setIsAddPatientModalVisible(false);
+        setPatientName('');
+        setFileNumber('');
+        setSearchQuery('');
+        Alert.alert(
+          'مريض موجود',
+          `المريض "${searchResult.data.name}" موجود بالفعل برقم الملف "${searchResult.data.file_number}". تم تحميل بياناته.`
+        );
+      } else {
+        //  STEP 2: Patient doesn't exist - create new one
+        // (Same file number with different name is allowed!)
+        const { data, error } = await createPermanentPatient(
+          fileNumber.trim(),
+          patientName.trim(),
+          user.clinicId
+        );
+
+        if (error) {
+          Alert.alert('خطأ', 'حدث خطأ أثناء إضافة المريض. الرجاء المحاولة مرة أخرى.');
+          console.error('Error creating patient:', error);
+        } else if (data) {
+          setSelectedPatient(data);
+          setIsAddPatientModalVisible(false);
+          setPatientName('');
+          setFileNumber('');
+          setSearchQuery('');
+          Alert.alert('تم', 'تم إضافة المريض بنجاح');
+        }
+      }
+    } catch (error) {
+      Alert.alert('خطأ', 'حدث خطأ غير متوقع');
+      console.error('Error creating patient:', error);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  // Show Dental Chart Screen
+  if (currentScreen === 'dentalChart') {
+    if (!selectedPatient) {
+      // If loading initial patient, show loading indicator
+      if (initialPatientId && initialFileNumber) {
+        return (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8' }}>
+            <ActivityIndicator size="large" color="#7DD3C0" />
+            <Text style={{ marginTop: 16, fontSize: 16, color: '#4A5568' }}>جاري تحميل بيانات المريض...</Text>
+          </View>
+        );
+      }
+      Alert.alert('خطأ', 'الرجاء اختيار مريض أولاً');
+      setCurrentScreen('profile');
+      return null;
+    }
+
+    return (
+      <DentalChartScreen
+        onBack={() => {
+          // If opened directly from Timeline, go back to Timeline
+          if (initialOpenDentalChart) {
+            onBack();
+          } else {
+            // If opened from Patient Profile, go back to profile
+            setCurrentScreen('profile');
+          }
+        }}
+        permanentPatientId={selectedPatient.id}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -229,7 +415,24 @@ export default function PatientProfileScreen({
                 {/* Info */}
                 <View style={styles.glassHeaderInfo}>
                   <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
+                  {selectedPatient && (
+                    <>
+                      <Text style={styles.patientName} numberOfLines={1}>{selectedPatient.name}</Text>
+                      <Text style={styles.patientFileNumber}>File: {selectedPatient.file_number}</Text>
+                    </>
+                  )}
                 </View>
+
+                {/* Add Patient Icon Button */}
+                <TouchableOpacity
+                  style={styles.addPatientIconButton}
+                  activeOpacity={0.7}
+                  onPress={() => setIsAddPatientModalVisible(true)}
+                >
+                  <View style={styles.addPatientIconContainer}>
+                    <Ionicons name="person-add" size={24} color="#FFFFFF" />
+                  </View>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -240,6 +443,70 @@ export default function PatientProfileScreen({
               contentContainerStyle={styles.contentContainer}
               showsVerticalScrollIndicator={false}
             >
+              {/* Search Bar */}
+              <View style={styles.searchAndAddContainer}>
+                <View style={styles.searchBarContainer}>
+                  <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search patients..."
+                    placeholderTextColor="#9CA3AF"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                      <Ionicons name="close-circle" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Search Results */}
+              {isSearching && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#A855F7" />
+                  <Text style={styles.loadingText}>جاري البحث...</Text>
+                </View>
+              )}
+
+              {!isSearching && searchResults.length > 0 && (
+                <View style={styles.patientsListContainer}>
+                  {searchResults.map((patient) => (
+                    <TouchableOpacity
+                      key={patient.id}
+                      style={styles.patientCard}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setSelectedPatient(patient);
+                        setSearchQuery('');
+                      }}
+                    >
+                      <View style={styles.patientCardContent}>
+                        <Ionicons name="person-circle" size={40} color="#A855F7" />
+                        <View style={styles.patientCardInfo}>
+                          <Text style={styles.patientCardName}>{patient.name}</Text>
+                          <Text style={styles.patientCardFileNumber}>File: {patient.file_number}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {!isSearching && searchQuery.trim() !== '' && searchResults.length === 0 && (
+                <View style={styles.noResultsContainer}>
+                  <Ionicons name="search-outline" size={48} color="#9CA3AF" />
+                  <Text style={styles.noResultsText}>لم يتم العثور على مريض بهذا الرقم</Text>
+                </View>
+              )}
+
+              {/* Glass Divider */}
+              <View style={styles.glassDividerContainer}>
+                <View style={styles.glassDivider} />
+              </View>
+
               {/* 3D Floating Menu Buttons - Overwatch Style */}
               <View style={styles.menuButtonsContainer}>
 
@@ -247,32 +514,10 @@ export default function PatientProfileScreen({
                 <TouchableOpacity
                   style={styles.menuButton}
                   activeOpacity={0.8}
-                  onPress={() => {}}
+                  onPress={() => setCurrentScreen('dentalChart')}
                 >
                   <View style={styles.menuButtonContainer}>
                     <Text style={styles.menuButtonText}>DENTAL CHART</Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* Button 2: Medical History */}
-                <TouchableOpacity
-                  style={styles.menuButton}
-                  activeOpacity={0.8}
-                  onPress={() => {}}
-                >
-                  <View style={styles.menuButtonContainer}>
-                    <Text style={styles.menuButtonText}>MEDICAL HISTORY</Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* Button 3: Referrals */}
-                <TouchableOpacity
-                  style={styles.menuButton}
-                  activeOpacity={0.8}
-                  onPress={() => {}}
-                >
-                  <View style={styles.menuButtonContainer}>
-                    <Text style={styles.menuButtonText}>REFERRALS</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -312,6 +557,100 @@ export default function PatientProfileScreen({
           </View>
         </View>
       </View>
+
+      {/* Add Patient Modal */}
+      <Modal
+        visible={isAddPatientModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsAddPatientModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setIsAddPatientModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <BlurView intensity={80} tint="light" style={styles.modalContainer}>
+                {/* Modal Header */}
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Add New Patient</Text>
+                  <TouchableOpacity
+                    onPress={() => setIsAddPatientModalVisible(false)}
+                    style={styles.modalCloseButton}
+                  >
+                    <Ionicons name="close" size={22} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Modal Content */}
+                <View style={styles.modalContent}>
+                  {/* Patient Name Input */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Patient Name</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter patient name"
+                      placeholderTextColor="#9CA3AF"
+                      value={patientName}
+                      onChangeText={setPatientName}
+                    />
+                  </View>
+
+                  {/* File Number Input */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>File Number</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0000"
+                      placeholderTextColor="#9CA3AF"
+                      value={fileNumber}
+                      onChangeText={(text) => {
+                        // Only allow 4 digits
+                        const numericText = text.replace(/[^0-9]/g, '');
+                        if (numericText.length <= 4) {
+                          setFileNumber(numericText);
+                        }
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                    />
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={styles.modalCancelButton}
+                      onPress={() => {
+                        setIsAddPatientModalVisible(false);
+                        setPatientName('');
+                        setFileNumber('');
+                      }}
+                    >
+                      <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modalSaveButton,
+                        ((!patientName.trim() || !fileNumber.trim()) || isAdding) && styles.modalSaveButtonDisabled
+                      ]}
+                      disabled={(!patientName.trim() || !fileNumber.trim()) || isAdding}
+                      onPress={handleAddPatient}
+                    >
+                      {isAdding ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                          <Text style={styles.modalSaveButtonText}>Save</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </BlurView>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 }
@@ -350,7 +689,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     zIndex: 2,
-    paddingTop: 50,
+    paddingTop: 100,
   },
   glassHeaderColorTint: {
     position: 'absolute',
@@ -366,7 +705,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 24,
     position: 'relative',
     zIndex: 1,
     width: '100%',
@@ -375,6 +714,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: -50,
   },
   glassHeaderDoctorName: {
     fontSize: 20,
@@ -383,6 +723,45 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  patientName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginTop: 6,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  patientFileNumber: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.85)',
+    marginTop: 3,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  addPatientIconButton: {
+    position: 'absolute',
+    right: 20,
+    top: '50%',
+    marginTop: -35,
+  },
+  addPatientIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
   },
   content: {
     flex: 1,
@@ -400,7 +779,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
     paddingLeft: 0,
-    paddingTop: 60,
+    paddingTop: 20,
     gap: 20,
   },
   menuButton: {
@@ -451,5 +830,240 @@ const styles = StyleSheet.create({
   navLabelActive: {
     color: '#7DD3C0',
     fontWeight: '600',
+  },
+  searchAndAddContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 0,
+    paddingBottom: 10,
+    gap: 12,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1F2937',
+    fontWeight: '500',
+  },
+  patientsListContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    gap: 12,
+  },
+  patientCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  patientCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
+  },
+  patientCardInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  patientCardName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  patientCardFileNumber: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  glassDividerContainer: {
+    paddingHorizontal: 30,
+    paddingVertical: 20,
+  },
+  glassDivider: {
+    height: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    padding: 24,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 20 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
+    shadowRadius: Platform.OS === 'android' ? 0 : 30,
+    elevation: Platform.OS === 'android' ? 0 : 15,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#374151',
+    textShadowColor: 'rgba(255, 255, 255, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    gap: 16,
+  },
+  inputGroup: {
+    gap: 10,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#4B5563',
+    textShadowColor: 'rgba(255, 255, 255, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  input: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1F2937',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 14,
+    marginTop: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modalCancelButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#4B5563',
+    textShadowColor: 'rgba(255, 255, 255, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  modalSaveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 14,
+    backgroundColor: 'rgba(34, 197, 94, 0.7)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  modalSaveButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modalSaveButtonDisabled: {
+    backgroundColor: 'rgba(209, 213, 219, 0.6)',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowOpacity: 0.1,
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  noResultsContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  noResultsText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B7280',
+    textAlign: 'center',
   },
 });
