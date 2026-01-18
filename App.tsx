@@ -1,3 +1,4 @@
+// v1.0.6 - Fixed setToothEditingPatientId
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
@@ -18,6 +19,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { shadows } from './theme';
 import { createClient } from '@supabase/supabase-js';
@@ -32,8 +34,26 @@ import ComingSoonScreen from './ComingSoonScreen';
 import MyPracticeScreen from './MyPracticeScreen';
 import MyTimelineScreen from './MyTimelineScreen';
 import PatientProfileScreen from './PatientProfileScreen';
+import ToothDetailsModal from './components/ToothDetailsModal';
 import { AuthProvider, useAuth } from './AuthContext';
 import { startAutoArchive, stopAutoArchive, testArchiveNow, archiveEventEmitter } from './autoArchiveService';
+import {
+  searchPermanentPatientsByFileNumber,
+  searchPermanentPatients,
+  getCompleteDentalChart,
+  saveToothSurfaceCondition,
+  createEditingRecord,
+  createToothNote,
+  createReferral,
+  getEditingRecords,
+  getPlanningRecords,
+  getAllToothNotes,
+  getReferrals,
+  updateReferralStatus,
+  getScalingRecords
+} from './lib/database';
+import { ToothData, ToothNumber, ToothCondition, DentalSummary, ToothSurface, Referral, ToothNote } from './types';
+import { getToothQuadrant, getToothPositionNumber, getToothName, treatmentOptions, detailsOptions } from './toothHelpers';
 
 // Supabase setup
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -55,6 +75,7 @@ const CONDITIONS = [
   { name: 'Checkup', color: '#6EE7B7' },
   { name: 'Pain', color: '#6EE7B7' },
   { name: 'Broken Tooth', color: '#6EE7B7' },
+  { name: 'Follow-up', color: '#6EE7B7' },
   { name: 'Others', color: '#6EE7B7' },
 ];
 const TREATMENTS = [
@@ -74,6 +95,7 @@ const CONDITION_COLORS: { [key: string]: string } = {
   'Checkup': '#6EE7B7',
   'Pain': '#6EE7B7',
   'Broken Tooth': '#6EE7B7',
+  'Follow-up': '#6EE7B7',
   'Others': '#6EE7B7',
 };
 
@@ -107,6 +129,10 @@ interface Patient {
   completed_at?: Date;       // وقت الانتهاء
   doctor_name?: string;      // اسم الطبيب
   assigned_by_doctor_name?: string; // اسم الطبيب الذي قام بالتعيين
+  // Permanent patient linking fields
+  permanent_patient_id?: string;   // Foreign key to permanent_patients
+  file_number?: string;            // File number for display
+  patient_type?: 'walk-in' | 'permanent'; // Patient type
 }
 
 type TimelineEvent = {
@@ -148,9 +174,10 @@ function AppContent() {
   const [showArchiveScreen, setShowArchiveScreen] = useState(false);
   const [showMyStatistics, setShowMyStatistics] = useState(false);
   const [showPatientFile, setShowPatientFile] = useState(false);
+  const [selectedPatientForProfile, setSelectedPatientForProfile] = useState<{id: string, fileNumber: string} | null>(null);
   const [showAppointments, setShowAppointments] = useState(false);
   const [showMyTimeline, setShowMyTimeline] = useState(false);
-  
+
   // Viewing doctor data (when viewing another doctor's profile/stats)
   const [viewingDoctorData, setViewingDoctorData] = useState<{id: string, name: string, clinic_id: string | null, role: string} | null>(null);
   const [currentDoctorsScreen, setCurrentDoctorsScreen] = useState<'list' | 'viewStats'>('list');
@@ -161,7 +188,7 @@ function AppContent() {
   const [showClinicDetails, setShowClinicDetails] = useState(false);
   const [showDoctorsScreen, setShowDoctorsScreen] = useState(false);
   
-  // ✅ Navigation Stack: تتبع المستوى الحالي
+  // Navigation Stack: تتبع المستوى الحالي
   // Level 1: Doctor Profile
   // Level 2: Dental Departments
   // Level 3: Clinic Details
@@ -175,14 +202,14 @@ function AppContent() {
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [selectedClinicName, setSelectedClinicName] = useState<string>('');
   
-  // ✅ حفظ clinicId للرجوع إلى Clinic Details
+  // حفظ clinicId للرجوع إلى Clinic Details
   const [savedClinicId, setSavedClinicId] = useState<string | null>(null);
   const [savedClinicName, setSavedClinicName] = useState<string>('');
   
-  // ✅ حفظ أرقام badges لكل عيادة (في App.tsx لمنع الحذف عند unmount)
+  // حفظ أرقام badges لكل عيادة (في App.tsx لمنع الحذف عند unmount)
   const [clinicBadges, setClinicBadges] = useState<{[clinicId: string]: {waiting: number, doctors: number, treatments: number}}>({});
   
-  // ✅ دالة ترجمة أسماء المراكز للعربي
+  // دالة ترجمة أسماء المراكز للعربي
   const getArabicClinicName = (englishName: string): string => {
     const clinicNames: { [key: string]: string } = {
       'Mushrif Health Center': 'مركز مشرف الصحي',
@@ -205,6 +232,31 @@ function AppContent() {
   const [cardTimelines, setCardTimelines] = useState<{ [key: string]: TimelineEvent[] }>({});
   const [showTimelineTab, setShowTimelineTab] = useState<{ [key: string]: boolean }>({});
 
+  // Permanent patient card expansion (for dental info)
+  const [expandedPermanentCardId, setExpandedPermanentCardId] = useState<string | null>(null);
+  const [activeDentalTab, setActiveDentalTab] = useState<{ [key: string]: 'treatment' | 'referrals' | 'notes' }>({});
+  const [dentalSummaries, setDentalSummaries] = useState<{ [key: string]: DentalSummary }>({});
+  const [loadingDentalData, setLoadingDentalData] = useState<{ [key: string]: boolean }>({});
+  const [patientReferrals, setPatientReferrals] = useState<{ [key: string]: Referral[] }>({});
+  const [patientToothNotes, setPatientToothNotes] = useState<{ [key: string]: ToothNote[] }>({});
+  const [lastScalingDates, setLastScalingDates] = useState<{ [key: string]: string | null }>({});
+
+  // Tooth Details Modal states (using shared ToothDetailsModal component)
+  const [showToothModal, setShowToothModal] = useState(false);
+  const [selectedTooth, setSelectedTooth] = useState<string>('');
+  const [toothModalPatientId, setToothModalPatientId] = useState<string>('');
+
+  // Referral options
+  const referralOptions = [
+    { key: 'endodontics', label: 'Endodontics' },
+    { key: 'oralSurgery', label: 'Oral Surgery' },
+    { key: 'orthodontics', label: 'Orthodontics' },
+    { key: 'periodontics', label: 'Periodontics' },
+    { key: 'prosthodontics', label: 'Prosthodontics' },
+    { key: 'oralMedicine', label: 'Oral Medicine' },
+  ];
+
+
   // Dragon Design: Animated Blobs for Timeline
   const timelineBlob1Anim = React.useState(new Animated.Value(0))[0];
   const timelineBlob2Anim = React.useState(new Animated.Value(0))[0];
@@ -220,6 +272,10 @@ function AppContent() {
   const headerTranslateY = React.useState(new Animated.Value(0))[0];
   const queueMarginTop = React.useState(new Animated.Value(0))[0];
   const HEADER_COLLAPSE_HEIGHT = 300; // Height to collapse (Header + Statistics + Queue)
+
+  // Animation for hiding header elements when permanent card expands
+  const headerElementsOpacity = React.useState(new Animated.Value(1))[0];
+  const headerElementsTranslate = React.useState(new Animated.Value(0))[0];
   
   const toggleHeaderCollapse = () => {
     const translateValue = isHeaderCollapsed ? 0 : -HEADER_COLLAPSE_HEIGHT;
@@ -239,9 +295,29 @@ function AppContent() {
         tension: 40,
       }),
     ]).start();
-    
+
     setIsHeaderCollapsed(!isHeaderCollapsed);
   };
+
+  // Animate header elements when permanent card expands/collapses
+  React.useEffect(() => {
+    const isExpanded = expandedPermanentCardId !== null;
+
+    Animated.parallel([
+      Animated.spring(headerElementsOpacity, {
+        toValue: isExpanded ? 0 : 1,
+        useNativeDriver: false,
+        tension: 40,
+        friction: 8,
+      }),
+      Animated.spring(headerElementsTranslate, {
+        toValue: isExpanded ? 0 : 0,
+        useNativeDriver: false,
+        tension: 40,
+        friction: 8,
+      }),
+    ]).start();
+  }, [expandedPermanentCardId]);
 
   // Animation states for cards
   const [animKey, setAnimKey] = useState(0);
@@ -251,6 +327,7 @@ function AppContent() {
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showViewNoteModal, setShowViewNoteModal] = useState(false);
   const [currentNote, setCurrentNote] = useState('');
+  const [viewNoteContent, setViewNoteContent] = useState('');  // Separate state for viewing note
   const [notePatientId, setNotePatientId] = useState<string | null>(null);
 
   // Treatment Done Modal states
@@ -261,11 +338,29 @@ function AppContent() {
 
   // Form state for new patient
   const [newPatientName, setNewPatientName] = useState('');
+  const [newPatientFileNumber, setNewPatientFileNumber] = useState(''); // New: File number (4 digits)
   const [newPatientQueueNumber, setNewPatientQueueNumber] = useState('');
   const [newPatientCondition, setNewPatientCondition] = useState('Condition');
   const [newPatientTreatment, setNewPatientTreatment] = useState('Treatment');
   const [isElderly, setIsElderly] = useState(false);
   const [newPatientNote, setNewPatientNote] = useState('');
+
+  // Permanent patient search state
+  const [permanentPatientSearchResults, setPermanentPatientSearchResults] = useState<any[]>([]);
+  const [selectedPermanentPatientId, setSelectedPermanentPatientId] = useState<string | null>(null);
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
+  const [showFileNumberSuggestions, setShowFileNumberSuggestions] = useState(false);
+  const [fileNumberSearchResults, setFileNumberSearchResults] = useState<any[]>([]);
+
+  // Modal expansion state
+  const [isModalExpanded, setIsModalExpanded] = useState(false);
+
+  // Patient mode: 'search' (default with search), 'walk-in' (no file number, no search), 'new-profile' (new file, no search)
+  const [patientMode, setPatientMode] = useState<'search' | 'walk-in' | 'new-profile'>('search');
+
+  // Patient edit mode state (for modal)
+  const [isPatientEditMode, setIsPatientEditMode] = useState(false);
+  const [modalEditingPatientId, setModalEditingPatientId] = useState<string | null>(null);
 
   // Ref to prevent multiple Realtime subscriptions
   const realtimeChannelRef = useRef<any>(null);
@@ -276,10 +371,10 @@ function AppContent() {
   // Load patients from Supabase with useCallback
   const loadPatients = useCallback(async (silent = false) => {
     try {
-      // ✅ استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
+      // استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
       const clinicId = selectedClinicId || userClinicId;
       
-      // ❌ إذا لم يكن هناك clinic_id محدد، لا تجلب أي شيء
+      //  إذا لم يكن هناك clinic_id محدد، لا تجلب أي شيء
       if (clinicId === null) {
         setPatients([]);
         return;
@@ -288,8 +383,8 @@ function AppContent() {
       let query = supabase
         .from('patients')
         .select('*')
-        .eq('clinic_id', clinicId) // ✅ تصفية حسب clinic_id
-        .is('archive_date', null) // ✅ فقط المرضى غير المؤرشفين
+        .eq('clinic_id', clinicId) // تصفية حسب clinic_id
+        .is('archive_date', null) // فقط المرضى غير المؤرشفين
         .order('queue_number', { ascending: true });
       
       const { data, error} = await query;
@@ -302,13 +397,18 @@ function AppContent() {
         name: p.name,
         age: p.age || 0,
         clinic_id: p.clinic_id,
-        clinic: p.clinic || (p.clinic_id ? `Clinic ${p.clinic_id}` : 'Clinic'),
+        clinic: p.clinic || 'Clinic',
         condition: p.condition || 'Condition',
         treatment: p.treatment || 'Treatment',
         timestamp: new Date(p.created_at),
         note: p.note || undefined,
         status: p.status === 'complete' || p.status === 'completed' ? 'complete' : (p.status === 'na' ? 'na' : (p.is_elderly ? 'elderly' : 'normal')),
         isElderly: p.is_elderly || false,
+        isSpecialNeeds: p.is_special_needs || false,
+        // Permanent patient fields
+        permanent_patient_id: p.permanent_patient_id || undefined,
+        file_number: p.file_number || undefined,
+        patient_type: p.patient_type || 'walk-in',
         // Timeline fields
         registered_at: p.registered_at ? new Date(p.registered_at) : undefined,
         clinic_entry_at: p.clinic_entry_at ? new Date(p.clinic_entry_at) : undefined,
@@ -319,7 +419,7 @@ function AppContent() {
 
       setPatients(formattedPatients);
     } catch (error: any) {
-      if (!silent) Alert.alert('خطأ في تحميل المرضى', error.message);
+      if (!silent) Alert.alert('Error loading patients', error.message);
     }
   }, [selectedClinicId, userClinicId]);
 
@@ -328,9 +428,9 @@ function AppContent() {
     // Start auto archive service (checks every minute for 23:59)
     startAutoArchive();
     
-    // ✅ الاستماع لحدث الأرشفة التلقائية
+    // الاستماع لحدث الأرشفة التلقائية
     const handleArchiveCompleted = (date: string) => {
-      // ✅ إعادة تحميل المرضى لتنظيف Timeline
+      // إعادة تحميل المرضى لتنظيف Timeline
       loadPatients();
     };
     
@@ -409,7 +509,7 @@ function AppContent() {
             return patientTime >= fromTime && patientTime <= toTime;
           }) || [];
           
-          // ✅ استثناء كلمة "Treatment" من العدد
+          // استثناء كلمة "Treatment" من العدد
           const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
           setMyTotalTreatments(validPatients.length);
         } catch (error) {
@@ -421,7 +521,7 @@ function AppContent() {
     fetchMyTotalTreatments();
   }, [user, patients]); // Re-fetch when user or patients change
   
-  // ✅ Realtime: التحقق من myTotalTreatments
+  // Realtime: التحقق من myTotalTreatments
   React.useEffect(() => {
     if (!user) return;
 
@@ -444,7 +544,7 @@ function AppContent() {
           return patientTime >= fromTime && patientTime <= toTime;
         }) || [];
 
-        // ✅ استثناء كلمة "Treatment" من العدد
+        // استثناء كلمة "Treatment" من العدد
         const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
         setMyTotalTreatments(validPatients.length);
       } catch (error) {
@@ -709,13 +809,13 @@ function AppContent() {
         reconnectTimeoutRef.current = null;
       }
     };
-  }, [user, userClinicId, selectedClinicId]) // ✅ Removed loadPatients from dependencies
+  }, [user, userClinicId, selectedClinicId]) // Removed loadPatients from dependencies
 
   // Auto-calculate next queue number when modal opens
   useEffect(() => {
     const fetchMaxQueueNumber = async () => {
       if (showAddModal) {
-        // ✅ استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
+        // استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
         const clinicId = selectedClinicId || userClinicId;
 
         if (clinicId === null) {
@@ -729,7 +829,7 @@ function AppContent() {
             .from('patients')
             .select('queue_number')
             .eq('clinic_id', clinicId)
-            .is('archive_date', null) // ✅ فقط المرضى غير المؤرشفين
+            .is('archive_date', null) // فقط المرضى غير المؤرشفين
             .order('queue_number', { ascending: false })
             .limit(1);
           
@@ -748,7 +848,7 @@ function AppContent() {
     };
     
     fetchMaxQueueNumber();
-  }, [showAddModal, selectedClinicId, userClinicId]); // ✅ إضافة selectedClinicId
+  }, [showAddModal, selectedClinicId, userClinicId]); // إضافة selectedClinicId
 
   const totalPatients = displayedPatients.length;
   const waitingPatients = displayedPatients.filter(p =>
@@ -810,32 +910,212 @@ function AppContent() {
     filteredPatients = filteredPatients.filter(p => p.status !== 'na');
   }
 
+  // Search permanent patient by file number
+  const handleFileNumberSearch = async (fileNumber: string) => {
+    if (fileNumber.length === 4 && user?.clinicId) {
+      try {
+        const { data, error } = await searchPermanentPatientsByFileNumber(
+          fileNumber,
+          user.clinicId.toString()
+        );
+
+        if (error) {
+          console.error('Error searching permanent patient:', error);
+          setPermanentPatientSearchResults([]);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          setPermanentPatientSearchResults(data);
+          setShowPatientSuggestions(true);
+
+          // Auto-fill name if only one result
+          if (data.length === 1) {
+            setNewPatientName(data[0].name);
+            setSelectedPermanentPatientId(data[0].id);
+          }
+        } else {
+          setPermanentPatientSearchResults([]);
+          setShowPatientSuggestions(false);
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+        setPermanentPatientSearchResults([]);
+      }
+    } else {
+      // Clear search if file number is incomplete
+      setPermanentPatientSearchResults([]);
+      setShowPatientSuggestions(false);
+      setSelectedPermanentPatientId(null);
+    }
+  };
+
+  const handlePatientNameSearch = async (name: string) => {
+    // Only search if name has at least 3 characters
+    if (name.length >= 3 && user?.clinicId) {
+      try {
+        const { data, error } = await searchPermanentPatients(
+          name,
+          user.clinicId.toString()
+        );
+
+        if (error) {
+          console.error('Error searching by name:', error);
+          setFileNumberSearchResults([]);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          // Filter to only show patients with matching names
+          const matchingPatients = data.filter(patient =>
+            patient.name.toLowerCase().includes(name.toLowerCase())
+          );
+
+          if (matchingPatients.length > 0) {
+            setFileNumberSearchResults(matchingPatients);
+            setShowFileNumberSuggestions(true);
+
+            // Auto-fill file number if only one result
+            if (matchingPatients.length === 1) {
+              const englishFileNumber = arabicToEnglish(matchingPatients[0].file_number || '');
+              setNewPatientFileNumber(englishFileNumber);
+              setSelectedPermanentPatientId(matchingPatients[0].id);
+            }
+          } else {
+            setFileNumberSearchResults([]);
+            setShowFileNumberSuggestions(false);
+          }
+        } else {
+          setFileNumberSearchResults([]);
+          setShowFileNumberSuggestions(false);
+        }
+      } catch (error) {
+        console.error('Name search error:', error);
+        setFileNumberSearchResults([]);
+      }
+    } else {
+      // Clear search if name is too short
+      setFileNumberSearchResults([]);
+      setShowFileNumberSuggestions(false);
+      if (name.length < 3) {
+        setSelectedPermanentPatientId(null);
+      }
+    }
+  };
+
+  // Convert Arabic numerals to English (utility function)
+  const arabicToEnglish = (str: string) => {
+    if (!str) return '';
+
+    const arabicNumerals = ['\u0660', '\u0661', '\u0662', '\u0663', '\u0664', '\u0665', '\u0666', '\u0667', '\u0668', '\u0669'];
+
+    // Remove null bytes and other problematic characters first
+    const cleanStr = str.replace(/\x00/g, '').replace(/\u0000/g, '').trim();
+
+    return cleanStr.split('').map(char => {
+      const index = arabicNumerals.indexOf(char);
+      return index !== -1 ? index.toString() : char;
+    }).join('');
+  };
+
   const handleAddPatient = async () => {
     if (!newPatientName.trim()) {
-      Alert.alert('خطأ', 'الرجاء إدخال اسم المريض');
+      Alert.alert('Error', 'Please enter patient name');
+      return;
+    }
+
+    // Validate file number for new-profile mode
+    if (patientMode === 'new-profile' && !newPatientFileNumber.trim()) {
+      Alert.alert('Error', 'Please enter file number for new profile');
       return;
     }
 
     try {
-      // Convert Arabic numerals to English
-      const arabicToEnglish = (str: string) => {
-        const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-        return str.split('').map(char => {
-          const index = arabicNumerals.indexOf(char);
-          return index !== -1 ? index.toString() : char;
-        }).join('');
-      };
 
       const englishQueueNumber = arabicToEnglish(newPatientQueueNumber);
       const queueNumber = parseInt(englishQueueNumber);
-      
+
       if (isNaN(queueNumber) || queueNumber < 1) {
-        Alert.alert('خطأ', 'الرجاء إدخال رقم صحيح');
+        Alert.alert('Error', 'Please enter valid number');
         return;
       }
 
+      // Convert file number Arabic numerals to English
+      const englishFileNumber = newPatientFileNumber.trim()
+        ? arabicToEnglish(newPatientFileNumber.trim())
+        : null;
+
+      // ========== EDIT MODE: Update existing patient ==========
+      if (isPatientEditMode && modalEditingPatientId) {
+        const { error } = await supabase
+          .from('patients')
+          .update({
+            name: newPatientName,
+            queue_number: queueNumber,
+            is_elderly: isElderly,
+            status: isElderly ? 'elderly' : 'normal',
+            note: newPatientNote.trim() || null,
+            condition: newPatientCondition,
+            // Note: We don't update file_number, permanent_patient_id, or patient_type
+            // as these are core identifiers that shouldn't change after creation
+          })
+          .eq('id', modalEditingPatientId);
+
+        if (error) throw error;
+
+        await loadPatients();
+        setShowAddModal(false);
+
+        // Reset all form fields
+        setNewPatientName('');
+        setNewPatientFileNumber('');
+        setNewPatientQueueNumber('');
+        setNewPatientCondition('Condition');
+        setNewPatientTreatment('Treatment');
+        setIsElderly(false);
+        setNewPatientNote('');
+        setShowConditionDropdown(false);
+        setShowTreatmentDropdown(false);
+        setPermanentPatientSearchResults([]);
+        setFileNumberSearchResults([]);
+        setSelectedPermanentPatientId(null);
+        setShowPatientSuggestions(false);
+        setShowFileNumberSuggestions(false);
+        setIsModalExpanded(false);
+        setPatientMode('search');
+
+        // Reset edit mode
+        setIsPatientEditMode(false);
+        setModalEditingPatientId(null);
+
+        Alert.alert('Success', 'Patient updated successfully');
+        return;
+      }
+
+      // ========== ADD MODE: Create new patient ==========
+      let permanentPatientId = selectedPermanentPatientId;
+
+      // If in 'new-profile' mode, create a new permanent patient record
+      if (patientMode === 'new-profile' && englishFileNumber) {
+        const { encryptPatientName, encryptFileNumber } = await import('./lib/encryption');
+        const { data: newPermanentPatient, error: permanentError } = await supabase
+          .from('permanent_patients')
+          .insert([
+            {
+              file_number_encrypted: encryptFileNumber(englishFileNumber),
+              name_encrypted: encryptPatientName(newPatientName),
+              clinic_id: selectedClinicId || userClinicId,
+            },
+          ])
+          .select()
+          .single();
+
+        if (permanentError) throw permanentError;
+        permanentPatientId = newPermanentPatient.id;
+      }
+
       const now = new Date();
-      
+
       const { data, error } = await supabase
         .from('patients')
         .insert([
@@ -845,11 +1125,14 @@ function AppContent() {
             status: isElderly ? 'elderly' : 'normal',
             is_elderly: isElderly,
             note: newPatientNote.trim() || null,
-            clinic_id: selectedClinicId || userClinicId, // ✅ استخدام selectedClinicId أولاً
             clinic: 'Clinic',
+            clinic_id: selectedClinicId || userClinicId,
             condition: newPatientCondition,
             treatment: newPatientTreatment,
-            registered_at: now.toISOString(),
+            // Permanent patient linking (Migration completed )
+            file_number: englishFileNumber,
+            permanent_patient_id: permanentPatientId || null,
+            patient_type: permanentPatientId ? 'permanent' : 'walk-in',
           },
         ])
         .select();
@@ -859,6 +1142,7 @@ function AppContent() {
       await loadPatients();
       setShowAddModal(false);
       setNewPatientName('');
+      setNewPatientFileNumber('');
       setNewPatientQueueNumber('');
       setNewPatientCondition('Condition');
       setNewPatientTreatment('Treatment');
@@ -866,42 +1150,50 @@ function AppContent() {
       setNewPatientNote('');
       setShowConditionDropdown(false);
       setShowTreatmentDropdown(false);
-      Alert.alert('نجح', 'تمت إضافة المريض بنجاح');
+      // Clear search states
+      setPermanentPatientSearchResults([]);
+      setFileNumberSearchResults([]);
+      setSelectedPermanentPatientId(null);
+      setShowPatientSuggestions(false);
+      setShowFileNumberSuggestions(false);
+      setIsModalExpanded(false);
+      setPatientMode('search');
+      Alert.alert('Success', 'Patient added successfully');
     } catch (error: any) {
-      Alert.alert('خطأ', error.message);
+      Alert.alert('Error', error.message || 'Unknown error occurred');
     }
   };
 
-  // ✅ دالة الأرشفة - نقل جميع المرضى للأرشيف
+  // دالة الأرشفة - نقل جميع المرضى للأرشيف
   const handleArchive = async () => {
     try {
       const clinicId = selectedClinicId || userClinicId;
       
       if (clinicId === null) {
-        Alert.alert('خطأ', 'الرجاء اختيار مركز أولاً');
+        Alert.alert('Error', 'Please select a clinic first');
         return;
       }
 
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-      // ✅ تحديث archive_date لجميع المرضى في المركز الحالي
+      // تحديث archive_date لجميع المرضى في المركز الحالي
       const { data, error } = await supabase
         .from('patients')
         .update({ 
           archive_date: today,
           status: 'complete' // تغيير الحالة إلى complete
         })
-        .eq('clinic_id', clinicId) // ✅ عزل حسب المركز
+        .eq('clinic_id', clinicId) // عزل حسب المركز
         .is('archive_date', null); // فقط المرضى غير المؤرشفين
 
       if (error) throw error;
 
-      // ✅ إعادة تحميل المرضى (سيكون فارغاً)
+      // إعادة تحميل المرضى (سيكون فارغاً)
       await loadPatients();
       
-      Alert.alert('نجح', `تمت أرشفة جميع مرضى ${selectedClinicName} بنجاح`);
+      Alert.alert('Success', `All patients archived for clinic ${selectedClinicName} successfully`);
     } catch (error: any) {
-      Alert.alert('خطأ', error.message || 'فشلت الأرشفة');
+      Alert.alert('Error', error.message || 'Archive failed');
     }
   };
 
@@ -909,6 +1201,34 @@ function AppContent() {
     setShowMenuForPatient(null);
 
     switch (action) {
+      case 'edit':
+        const editPatient = patients.find(p => p.id === patientId);
+        if (editPatient) {
+          // Load patient data into modal fields
+          setNewPatientName(editPatient.name);
+          setNewPatientFileNumber(editPatient.file_number || '');
+          setNewPatientQueueNumber(editPatient.queue_number || '');
+          setNewPatientCondition(editPatient.condition || 'Condition');
+          setIsElderly(editPatient.isElderly || false);
+          setNewPatientNote(editPatient.note || '');
+
+          // Set edit mode
+          setIsPatientEditMode(true);
+          setModalEditingPatientId(patientId);
+
+          // Determine patient mode based on file_number
+          if (!editPatient.file_number) {
+            setPatientMode('walk-in');
+          } else {
+            setPatientMode('search');
+            setSelectedPermanentPatientId(editPatient.permanent_patient_id || null);
+          }
+
+          // Open modal
+          setShowAddModal(true);
+          setIsModalExpanded(false);
+        }
+        break;
       case 'note':
         const patient = patients.find(p => p.id === patientId);
         setNotePatientId(patientId);
@@ -925,7 +1245,7 @@ function AppContent() {
             .eq('id', patientId);
           await loadPatients();
         } catch (error: any) {
-          Alert.alert('خطأ', error.message);
+          Alert.alert('Error', error.message);
         }
         break;
       case 'elderly':
@@ -938,7 +1258,20 @@ function AppContent() {
             .eq('id', patientId);
           await loadPatients();
         } catch (error: any) {
-          Alert.alert('خطأ', error.message);
+          Alert.alert('Error', error.message);
+        }
+        break;
+      case 'special_needs':
+        try {
+          const patient = patients.find(p => p.id === patientId);
+          const newSpecialNeeds = !patient?.isSpecialNeeds;
+          await supabase
+            .from('patients')
+            .update({ is_special_needs: newSpecialNeeds })
+            .eq('id', patientId);
+          await loadPatients();
+        } catch (error: any) {
+          Alert.alert('Error', error.message);
         }
         break;
       case 'complete':
@@ -959,9 +1292,9 @@ function AppContent() {
               .eq('id', patientId);
 
             await loadPatients();
-            Alert.alert('تم', 'تم التراجع عن إكمال العلاج');
+            Alert.alert('Done', 'Treatment unmarked as complete');
           } catch (error: any) {
-            Alert.alert('خطأ', error.message);
+            Alert.alert('Error', error.message);
           }
         } else {
           // Open treatment done modal
@@ -978,7 +1311,7 @@ function AppContent() {
             .eq('id', patientId);
           await loadPatients();
         } catch (error: any) {
-          Alert.alert('خطأ', error.message);
+          Alert.alert('Error', error.message);
         }
         break;
     }
@@ -991,9 +1324,15 @@ function AppContent() {
           .from('patients')
           .update({ note: currentNote })
           .eq('id', notePatientId);
+
+        // Update patients array locally immediately
+        setPatients(prev => prev.map(p =>
+          p.id === notePatientId ? { ...p, note: currentNote } : p
+        ));
+
         await loadPatients();
       } catch (error: any) {
-        Alert.alert('خطأ', error.message);
+        Alert.alert('Error', error.message);
       }
     }
     setShowNoteModal(false);
@@ -1005,7 +1344,7 @@ function AppContent() {
     const patient = patients.find(p => p.id === patientId);
     if (patient?.note) {
       setNotePatientId(patientId);
-      setCurrentNote(patient.note);
+      setViewNoteContent(patient.note);  // Use separate state for viewing
       setShowViewNoteModal(true);
     }
   };
@@ -1024,7 +1363,7 @@ function AppContent() {
           .single();
 
         if (userError || !userData?.clinic_id) {
-          Alert.alert('خطأ', 'لا يمكن العثور على معرف العيادة');
+          Alert.alert('Error', 'Cannot find clinic ID');
           return;
         }
 
@@ -1032,7 +1371,7 @@ function AppContent() {
       }
 
       if (clinicId === null) {
-        Alert.alert('خطأ', 'لا يمكن العثور على معرف العيادة');
+        Alert.alert('Error', 'Cannot find clinic ID');
         return;
       }
 
@@ -1043,7 +1382,7 @@ function AppContent() {
         .neq('id', user?.id || ''); // Exclude current user
 
       if (error) {
-        Alert.alert('خطأ', 'فشل في تحميل الأطباء: ' + error.message);
+        Alert.alert('Error', 'Failed to load doctors: ' + error.message);
         return;
       }
 
@@ -1053,11 +1392,11 @@ function AppContent() {
         setClinicDoctors([]);
         // Only show alert if query succeeded but no doctors found
         if (data) {
-          Alert.alert('تنبيه', 'لا يوجد أطباء آخرون في العيادة رقم ' + clinicId);
+          Alert.alert('Warning', 'No other doctors in clinic ' + clinicId);
         }
       }
     } catch (error: any) {
-      Alert.alert('خطأ', 'فشل في تحميل الأطباء');
+      Alert.alert('Error', 'Failed to load doctors');
     }
   };
 
@@ -1094,7 +1433,7 @@ function AppContent() {
       setTreatmentDonePatientId(null);
       setDoctorSearchQuery('');
     } catch (error: any) {
-      Alert.alert('خطأ', error.message);
+      Alert.alert('Error', error.message);
     }
   };
 
@@ -1115,7 +1454,7 @@ function AppContent() {
         .eq('id', patientId);
 
       if (error) {
-        Alert.alert('خطأ', error.message || 'Failed to update');
+        Alert.alert('Error', error.message || 'Failed to update');
         return;
       }
 
@@ -1126,7 +1465,7 @@ function AppContent() {
       setEditingPatientId(null);
       setEditingField(null);
     } catch (error: any) {
-      Alert.alert('خطأ', error.message || 'An error occurred');
+      Alert.alert('Error', error.message || 'An error occurred');
     }
   };
 
@@ -1139,11 +1478,12 @@ function AppContent() {
           .eq('id', notePatientId);
         await loadPatients();
       } catch (error: any) {
-        Alert.alert('خطأ', error.message);
+        Alert.alert('Error', error.message);
       }
     }
     setShowViewNoteModal(false);
     setCurrentNote('');
+    setViewNoteContent('');
     setNotePatientId(null);
   };
 
@@ -1198,6 +1538,143 @@ function AppContent() {
     setShowTimelineTab(prev => ({ ...prev, [patientId]: !prev[patientId] }));
   };
 
+  // Helper function to generate dental summary from tooth data
+  const generateDentalSummary = (teethData: ToothData[]): DentalSummary => {
+    const summary: DentalSummary = {
+      caries_count: 0,
+      caries_teeth: [],
+      rct_needed_count: 0,
+      rct_needed_teeth: [],
+      extraction_needed_count: 0,
+      extraction_needed_teeth: [],
+      filling_done_count: 0,
+      filling_done_teeth: [],
+      broken_teeth_count: 0,
+      broken_teeth: [],
+      total_issues: 0,
+    };
+
+    teethData.forEach((tooth) => {
+      const { tooth_number, surfaces } = tooth;
+      let hasCaries = false;
+      let needsRCT = false;
+      let needsExtraction = false;
+      let hasFilling = false;
+      let isBroken = false;
+
+      // Check all surfaces for conditions
+      Object.values(surfaces).forEach((condition) => {
+        if (condition === 'caries') hasCaries = true;
+        if (condition === 'pulpectomy') needsRCT = true;
+        if (condition === 'extraction') needsExtraction = true;
+        if (condition === 'filling_replacement') hasFilling = true; // Temporary filling needs permanent filling (GI is permanent)
+        if (condition === 'broken') isBroken = true;
+      });
+
+      // Add to summary
+      if (hasCaries) {
+        summary.caries_count++;
+        summary.caries_teeth.push(tooth_number);
+      }
+      if (needsRCT) {
+        summary.rct_needed_count++;
+        summary.rct_needed_teeth.push(tooth_number);
+      }
+      if (needsExtraction) {
+        summary.extraction_needed_count++;
+        summary.extraction_needed_teeth.push(tooth_number);
+      }
+      if (hasFilling) {
+        summary.filling_done_count++;
+        summary.filling_done_teeth.push(tooth_number);
+      }
+      if (isBroken) {
+        summary.broken_teeth_count++;
+        summary.broken_teeth.push(tooth_number);
+      }
+    });
+
+    summary.total_issues =
+      summary.caries_count +
+      summary.rct_needed_count +
+      summary.extraction_needed_count +
+      summary.broken_teeth_count;
+
+    return summary;
+  };
+
+  // Load dental data for permanent patient
+  const loadDentalData = async (permanentPatientId: string, patientId: string, forceReload: boolean = false) => {
+    // Check if already loaded (skip check if forceReload is true)
+    if (!forceReload && dentalSummaries[patientId]) {
+      return;
+    }
+
+    setLoadingDentalData(prev => ({ ...prev, [patientId]: true }));
+
+    try {
+      const { data, error } = await getCompleteDentalChart(permanentPatientId);
+
+      if (error) {
+        console.error('Error loading dental data:', error);
+        return;
+      }
+
+      if (data && data.teeth) {
+        const summary = generateDentalSummary(data.teeth);
+        setDentalSummaries(prev => ({ ...prev, [patientId]: summary }));
+      }
+
+      // Fetch scaling records to get last scaling date
+      const scalingResult = await getScalingRecords(permanentPatientId);
+      if (scalingResult.data && scalingResult.data.length > 0) {
+        const lastScalingDate = scalingResult.data[0].timestamp; // Already sorted descending
+        setLastScalingDates(prev => ({ ...prev, [patientId]: lastScalingDate }));
+      } else {
+        setLastScalingDates(prev => ({ ...prev, [patientId]: null }));
+      }
+
+      // Also reload referrals and tooth notes
+      const referralsResult = await getReferrals(permanentPatientId);
+      if (referralsResult.data) {
+        setPatientReferrals(prev => ({ ...prev, [permanentPatientId]: referralsResult.data || [] }));
+      }
+
+      // Add small delay to ensure database is updated
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const notesResult = await getAllToothNotes(permanentPatientId);
+      if (notesResult.data) {
+        setPatientToothNotes(prev => ({ ...prev, [permanentPatientId]: notesResult.data || [] }));
+        console.log(`✅ Loaded ${notesResult.data.length} notes in loadDentalData for patient ${permanentPatientId}`);
+      }
+    } catch (error) {
+      console.error('Error loading dental data:', error);
+    } finally {
+      setLoadingDentalData(prev => ({ ...prev, [patientId]: false }));
+    }
+  };
+
+  // Toggle permanent patient card expansion
+  const togglePermanentCardExpansion = async (patient: Patient) => {
+    const isExpanding = expandedPermanentCardId !== patient.id;
+
+    setExpandedPermanentCardId(prev => prev === patient.id ? null : patient.id);
+
+    // Auto-collapse header when expanding card
+    if (isExpanding && !isHeaderCollapsed) {
+      toggleHeaderCollapse();
+    }
+    // Auto-expand header when closing card
+    else if (!isExpanding && isHeaderCollapsed) {
+      toggleHeaderCollapse();
+    }
+
+    // Load dental data when expanding
+    if (isExpanding && patient.permanent_patient_id) {
+      await loadDentalData(patient.permanent_patient_id, patient.id);
+    }
+  };
+
   // Open timeline
   const openTimeline = (patient: Patient) => {
     setSelectedPatient(patient);
@@ -1208,7 +1685,7 @@ function AppContent() {
   // Mark treatment done
   const markTreatmentDone = async () => {
     if (!selectedPatient || !treatmentNote.trim()) {
-      Alert.alert('خطأ', 'الرجاء إدخال تفاصيل العلاج');
+      Alert.alert('Error', 'Please enter treatment details');
       return;
     }
 
@@ -1230,9 +1707,9 @@ function AppContent() {
       await loadPatients();
       setShowTimelineModal(false);
       setTreatmentNote('');
-      Alert.alert('نجح', 'تم حفظ العلاج بنجاح');
+      Alert.alert('Success', 'Treatment saved successfully');
     } catch (error: any) {
-      Alert.alert('خطأ', error.message);
+      Alert.alert('Error', error.message);
     }
   };
 
@@ -1292,7 +1769,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show My Statistics for viewing doctor (MUST be before DoctorsScreen)
+  // Show My Statistics for viewing doctor (MUST be before DoctorsScreen)
   if (showMyStatistics && viewingDoctorData && showDoctorsScreen) {
     return (
       <MyStatisticsScreen
@@ -1324,16 +1801,44 @@ function AppContent() {
   if (showPatientFile) {
     return (
       <PatientProfileScreen
-        onBack={() => setShowPatientFile(false)}
-        onNavigateHome={() => setShowPatientFile(false)}
+        onBack={async () => {
+          // Reload dental data always (whether card is expanded or not)
+          if (selectedPatientForProfile?.id) {
+            // Find the timeline patient with this permanent_patient_id
+            const timelinePatient = patients.find(p => p.permanent_patient_id === selectedPatientForProfile.id);
+            if (timelinePatient) {
+              // Force reload to get updated data
+              await loadDentalData(selectedPatientForProfile.id, timelinePatient.id, true);
+            }
+          }
+          setShowPatientFile(false);
+          setSelectedPatientForProfile(null);
+        }}
+        onNavigateHome={async () => {
+          // Reload dental data always (whether card is expanded or not)
+          if (selectedPatientForProfile?.id) {
+            const timelinePatient = patients.find(p => p.permanent_patient_id === selectedPatientForProfile.id);
+            if (timelinePatient) {
+              // Force reload to get updated data
+              await loadDentalData(selectedPatientForProfile.id, timelinePatient.id, true);
+            }
+          }
+          setShowPatientFile(false);
+          setSelectedPatientForProfile(null);
+        }}
         onNavigateAppointments={() => {
           setShowPatientFile(false);
+          setSelectedPatientForProfile(null);
           setShowAppointments(true);
         }}
         onNavigateArchive={() => {
           setShowPatientFile(false);
+          setSelectedPatientForProfile(null);
           setShowArchiveScreen(true);
         }}
+        initialPatientId={selectedPatientForProfile?.id}
+        initialFileNumber={selectedPatientForProfile?.fileNumber}
+        initialOpenDentalChart={selectedPatientForProfile !== null}
       />
     );
   }
@@ -1348,7 +1853,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Dental Departments Screen
+  // Show Dental Departments Screen
   if (showDentalDepartments && !showDoctorProfile && !showClinicDetails && selectedClinicId === null) {
     return (
       <DentalDepartmentsScreen
@@ -1360,7 +1865,7 @@ function AppContent() {
           setShowDentalDepartments(false);
           setShowDoctorProfile(true);
           setNavigationStack(['profile']);
-          // ✅ مسح savedClinicId عند الرجوع للـ Profile
+          // مسح savedClinicId عند الرجوع للـ Profile
           setSavedClinicId(null);
           setSavedClinicName('');
         }}
@@ -1375,7 +1880,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Doctor Profile when viewing another doctor (MUST be before Doctors Screen - View Stats)
+  // Show Doctor Profile when viewing another doctor (MUST be before Doctors Screen - View Stats)
   if (showDoctorProfile && viewingDoctorData !== null && !showDentalDepartments) {
     return (
       <DoctorProfileScreen
@@ -1406,7 +1911,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Doctors Screen - View Stats
+  // Show Doctors Screen - View Stats
   if (showDoctorsScreen && showClinicDetails && !showDoctorProfile && !showDentalDepartments && currentDoctorsScreen === 'viewStats' && viewingDoctorData) {
     return (
       <MyStatisticsScreen
@@ -1423,7 +1928,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Doctors Screen - List
+  // Show Doctors Screen - List
   if (showDoctorsScreen && showClinicDetails && !showDoctorProfile && !showDentalDepartments && currentDoctorsScreen === 'list') {
     return (
       <DoctorsScreen
@@ -1433,7 +1938,7 @@ function AppContent() {
         }}
         clinicId={savedClinicId!}
         onOpenDoctorProfile={(doctor) => {
-          // ✅ فتح DoctorProfileScreen للطبيب المختار
+          // فتح DoctorProfileScreen للطبيب المختار
           setViewingDoctorData({
             id: doctor.id,
             name: doctor.name,
@@ -1448,7 +1953,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Clinic Details Screen
+  // Show Clinic Details Screen
   if (showClinicDetails && !showDoctorProfile && !showDentalDepartments && selectedClinicId === null && !showDoctorsScreen) {
     return (
       <ClinicDetailsScreen
@@ -1457,7 +1962,7 @@ function AppContent() {
         onBack={() => {
           setShowClinicDetails(false);
           setShowDentalDepartments(true);
-          // ✅ مسح savedClinicId عند الرجوع
+          // مسح savedClinicId عند الرجوع
           setSavedClinicId(null);
           setSavedClinicName('');
           setNavigationStack(['profile', 'departments']);
@@ -1467,7 +1972,7 @@ function AppContent() {
           setCurrentDoctorsScreen('list');
         }}
         onTimelinePress={() => {
-          // ✅ فتح Timeline باستخدام savedClinicId
+          // فتح Timeline باستخدام savedClinicId
           if (savedClinicId !== null) {
             setSelectedClinicId(savedClinicId);
             setSelectedClinicName(savedClinicName);
@@ -1494,7 +1999,7 @@ function AppContent() {
     );
   }
 
-  // ✅ Show Doctor Profile (My Profile) when showDoctorProfile = true
+  // Show Doctor Profile (My Profile) when showDoctorProfile = true
   if (showDoctorProfile && viewingDoctorData === null && !showDentalDepartments && !showClinicDetails && selectedClinicId === null) {
     return (
       <DoctorProfileScreen
@@ -1530,7 +2035,7 @@ function AppContent() {
       <DoctorProfileScreen
         onBack={() => {}} // No back button
         onOpenTimeline={(clinicId, clinicName) => {
-          // ✅ استخدام clinicId المُمرر من DoctorProfileScreen (المركز المختار)
+          // استخدام clinicId المُمرر من DoctorProfileScreen (المركز المختار)
           setSelectedClinicId(clinicId);
           setSelectedClinicName(clinicName || 'Clinic');
           setShowDoctorProfile(false);
@@ -1727,29 +2232,35 @@ function AppContent() {
         />
         
         {/* Header */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.header,
             {
-              transform: [{ translateY: headerTranslateY }],
+              transform: [
+                { translateY: headerTranslateY },
+                { translateY: headerElementsTranslate },
+              ],
+              opacity: headerElementsOpacity,
+              zIndex: expandedPermanentCardId ? 1 : 10,
             }
           ]}
+          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
         >
           {/* زر رجوع للمدير العام والمنسق، زر ملف شخصي للطبيب */}
           {(user?.role === 'super_admin' || user?.role === 'coordinator') ? (
             <TouchableOpacity 
               style={styles.profileButton}
               onPress={() => {
-                // ✅ Navigation Stack: Timeline → Clinic Details → Departments → Profile
+                // Navigation Stack: Timeline → Clinic Details → Departments → Profile
 
                 // Timeline → Clinic Details
                 if (selectedClinicId !== null) {
-                  // ✅ حفظ clinicId قبل الرجوع
+                  // حفظ clinicId قبل الرجوع
                   setSavedClinicId(selectedClinicId);
                   setSavedClinicName(selectedClinicName);
                   setSelectedClinicId(null);
                   setSelectedClinicName('');
-                  setShowClinicDetails(true);  // ✅ إظهار ClinicDetails
+                  setShowClinicDetails(true);  // إظهار ClinicDetails
                   setShowDentalDepartments(false);
                   setNavigationStack(['profile', 'departments', 'clinicDetails']);
                 }
@@ -1757,19 +2268,19 @@ function AppContent() {
                 else if (showClinicDetails) {
                   setShowClinicDetails(false);
                   setShowDentalDepartments(true);
-                  // ✅ مسح savedClinicId عند الرجوع إلى Departments
+                  // مسح savedClinicId عند الرجوع إلى Departments
                   setSavedClinicId(null);
                   setSavedClinicName('');
                   setNavigationStack(['profile', 'departments']);
                 }
                 // Departments → Profile
                 else if (showDentalDepartments) {
-                  // ✅ مسح selectedClinicId أولاً لمنع فتح Timeline
+                  // مسح selectedClinicId أولاً لمنع فتح Timeline
                   setSelectedClinicId(null);
                   setSelectedClinicName('');
                   setSavedClinicId(null);
                   setSavedClinicName('');
-                  // ✅ ثم إغلاق Departments وفتح Profile
+                  // ثم إغلاق Departments وفتح Profile
                   setShowDentalDepartments(false);
                   setShowDoctorProfile(true);
                   setNavigationStack(['profile']);
@@ -1785,7 +2296,7 @@ function AppContent() {
             <TouchableOpacity
               style={styles.profileButton}
               onPress={() => {
-                // ✅ زر رجوع للطبيب/Team Leader
+                // زر رجوع للطبيب/Team Leader
                 setSelectedClinicId(null);
                 setSelectedClinicName('');
               }}
@@ -1808,13 +2319,19 @@ function AppContent() {
         </Animated.View>
 
         {/* Statistics */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.statsContainer,
             {
-              transform: [{ translateY: headerTranslateY }],
+              transform: [
+                { translateY: headerTranslateY },
+                { translateY: headerElementsTranslate },
+              ],
+              opacity: headerElementsOpacity,
+              zIndex: expandedPermanentCardId ? 1 : 10,
             }
           ]}
+          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
         >
           {showTreatmentStats ? (
             <TouchableOpacity 
@@ -1860,14 +2377,20 @@ function AppContent() {
         </Animated.View>
 
         {/* Queue Header */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.queueHeader,
             {
-              transform: [{ translateY: headerTranslateY }],
+              transform: [
+                { translateY: headerTranslateY },
+                { translateY: headerElementsTranslate },
+              ],
               marginTop: queueMarginTop,
+              opacity: headerElementsOpacity,
+              zIndex: expandedPermanentCardId ? 1 : 10,
             }
           ]}
+          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
         >
           <View style={styles.queueTitleContainer}>
             <Text style={styles.queueTitle}>Queue</Text>
@@ -1897,9 +2420,9 @@ function AppContent() {
             </Text>
           </TouchableOpacity>
         </Animated.View>
-        
+
         {/* Expandable Options */}
-        {expandedCardId === 'header' && (
+        {!expandedPermanentCardId && expandedCardId === 'header' && (
           <Animated.View 
             style={[
               styles.headerExpandableSection,
@@ -1945,7 +2468,9 @@ function AppContent() {
         >
           {/* Patient List */}
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {filteredPatients.map((patient, index) => (
+          {filteredPatients
+            .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
+            .map((patient, index) => (
             <AnimatedPatientCard
               key={`${patient.id}-${animKey}`}
               index={index}
@@ -1966,7 +2491,54 @@ function AppContent() {
               cardTimelines={cardTimelines}
               showTimelineTab={showTimelineTab}
               onToggleTab={handleToggleTab}
+              onPatientNamePress={(patientId, fileNumber) => {
+                setSelectedPatientForProfile({
+                  id: patientId,
+                  fileNumber: fileNumber
+                });
+                setShowPatientFile(true);
+              }}
+              expandedPermanentCardId={expandedPermanentCardId}
+              onTogglePermanentExpansion={togglePermanentCardExpansion}
+              activeDentalTab={activeDentalTab[patient.id] || 'treatment'}
+              onDentalTabChange={(tab) => setActiveDentalTab(prev => ({ ...prev, [patient.id]: tab }))}
+              dentalSummary={dentalSummaries[patient.id]}
+              loadingDentalData={loadingDentalData[patient.id]}
               animKey={animKey}
+              onToothEditPress={(permanentPatientId, tooth) => {
+                setToothModalPatientId(permanentPatientId);
+                setSelectedTooth(tooth);
+                setShowToothModal(true);
+              }}
+              patientReferrals={patient.permanent_patient_id ? patientReferrals[patient.permanent_patient_id] : undefined}
+              onLoadReferrals={async () => {
+                if (patient.permanent_patient_id && !patientReferrals[patient.permanent_patient_id]) {
+                  const result = await getReferrals(patient.permanent_patient_id);
+                  if (result.data) {
+                    setPatientReferrals(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
+                  }
+                }
+              }}
+              patientToothNotes={patient.permanent_patient_id ? patientToothNotes[patient.permanent_patient_id] : undefined}
+              onLoadToothNotes={async () => {
+                if (patient.permanent_patient_id && !patientToothNotes[patient.permanent_patient_id]) {
+                  const result = await getAllToothNotes(patient.permanent_patient_id);
+                  if (result.data) {
+                    setPatientToothNotes(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
+                  }
+                }
+              }}
+              onUpdateReferralStatus={(referralId, newStatus) => {
+                if (patient.permanent_patient_id) {
+                  setPatientReferrals(prev => ({
+                    ...prev,
+                    [patient.permanent_patient_id!]: prev[patient.permanent_patient_id!]?.map(r =>
+                      r.id === referralId ? { ...r, status: newStatus } : r
+                    ) || []
+                  }));
+                }
+              }}
+              lastScalingDates={lastScalingDates}
             />
           ))}
         </ScrollView>
@@ -2013,11 +2585,14 @@ function AppContent() {
         </View>
 
         {/* Add Patient Modal */}
-        <Modal visible={showAddModal} animationType="fade" transparent onRequestClose={() => setShowAddModal(false)}>
+        <Modal visible={showAddModal} animationType="fade" transparent onRequestClose={() => {
+          setShowAddModal(false);
+          setIsModalExpanded(false);
+        }}>
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
               <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                <View style={styles.modalContent}>
+                <View style={[styles.modalContent, { minWidth: '90%', maxHeight: '80%', borderWidth: 3, borderColor: '#FFFFFF', borderRadius: 24 }]}>
                   {/* Glass Color Tint */}
                   <LinearGradient
                     colors={[
@@ -2031,12 +2606,92 @@ function AppContent() {
                   />
 
                   <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>Add New Patient</Text>
+                    <Text style={styles.modalTitle}>{isPatientEditMode ? 'Edit Patient' : 'Add New Patient'}</Text>
                     <TouchableOpacity
-                      onPress={() => setShowAddModal(false)}
+                      onPress={() => {
+                        // إغلاق Modal
+                        setShowAddModal(false);
+                        setIsModalExpanded(false);
+                        setPatientMode('search');
+
+                        // Reset edit mode
+                        setIsPatientEditMode(false);
+                        setModalEditingPatientId(null);
+
+                        // تنظيف جميع الحقول
+                        setNewPatientName('');
+                        setNewPatientFileNumber('');
+                        setNewPatientQueueNumber('');
+                        setNewPatientCondition(CONDITIONS[0].name);
+                        setSelectedPermanentPatientId(null);
+                        setShowFileNumberSuggestions(false);
+                        setShowPatientSuggestions(false);
+                        setShowConditionDropdown(false);
+                      }}
                       style={styles.modalCloseButton}
                     >
                       <Ionicons name="close" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Mode Selection Buttons */}
+                  <View style={styles.modeButtonsContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modeButton,
+                        patientMode === 'walk-in' && styles.modeButtonActive
+                      ]}
+                      onPress={() => {
+                        if (patientMode === 'walk-in') {
+                          // Toggle off - return to search mode
+                          setPatientMode('search');
+                        } else {
+                          // Toggle on - activate walk-in mode
+                          setPatientMode('walk-in');
+                          setNewPatientFileNumber('');
+                          setSelectedPermanentPatientId(null);
+                          setShowPatientSuggestions(false);
+                          setShowFileNumberSuggestions(false);
+                        }
+                      }}
+                    >
+                      <Ionicons
+                        name="walk"
+                        size={18}
+                        color={patientMode === 'walk-in' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.7)'}
+                      />
+                      <Text style={[
+                        styles.modeButtonText,
+                        patientMode === 'walk-in' && styles.modeButtonTextActive
+                      ]}>Walk-in</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modeButton,
+                        patientMode === 'new-profile' && styles.modeButtonActive
+                      ]}
+                      onPress={() => {
+                        if (patientMode === 'new-profile') {
+                          // Toggle off - return to search mode
+                          setPatientMode('search');
+                        } else {
+                          // Toggle on - activate new-profile mode
+                          setPatientMode('new-profile');
+                          setShowPatientSuggestions(false);
+                          setShowFileNumberSuggestions(false);
+                        }
+                      }}
+                    >
+                      <Ionicons
+                        name="person-add"
+                        size={18}
+                        color={patientMode === 'new-profile' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.7)'}
+                      />
+                      <Text style={[
+                        styles.modeButtonText,
+                        patientMode === 'new-profile' && styles.modeButtonTextActive
+                      ]}>New Profile</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -2045,25 +2700,208 @@ function AppContent() {
                     nestedScrollEnabled
                   >
                     <Text style={styles.inputLabel}>Patient Name:</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Patient Name"
-                    value={newPatientName}
-                    onChangeText={setNewPatientName}
-                    returnKeyType="done"
-                  />
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.textInput}
+                        placeholder="Patient Name"
+                        value={newPatientName}
+                        onChangeText={(text) => {
+                          setNewPatientName(text);
+                          // Only search if in 'search' mode
+                          if (patientMode === 'search') {
+                            handlePatientNameSearch(text);
+                          }
+                        }}
+                        returnKeyType="done"
+                      />
+                      {newPatientName.length > 0 && (
+                        <TouchableOpacity
+                          style={[
+                            styles.clearButton,
+                            // تغيير موقع الزر حسب اتجاه الكتابة (عربي/إنجليزي)
+                            (() => {
+                              // اكتشاف اللغة: تحقق من أول حرف في النص
+                              const firstChar = newPatientName.trim()[0];
+                              // نطاق الأحرف العربية: \u0600-\u06FF
+                              const isArabic = firstChar && /[\u0600-\u06FF]/.test(firstChar);
+                              return isArabic ? { left: 12, right: undefined } : { right: 12, left: undefined };
+                            })()
+                          ]}
+                          onPress={() => {
+                            setNewPatientName('');
+                            setShowFileNumberSuggestions(false);
+                          }}
+                        >
+                          <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {/* Patient Name Search Results - Show File Numbers */}
+                    {showFileNumberSuggestions && fileNumberSearchResults.length > 0 && (
+                      <View style={styles.suggestionsContainer}>
+                        <Text style={styles.suggestionsHeader}>
+                          Found {fileNumberSearchResults.length} file(s):
+                        </Text>
+                        <ScrollView
+                          style={styles.suggestionsList}
+                          nestedScrollEnabled={true}
+                          showsVerticalScrollIndicator={true}
+                          persistentScrollbar={true}
+                          keyboardShouldPersistTaps="handled"
+                          contentContainerStyle={{ paddingBottom: 8 }}
+                        >
+                          {fileNumberSearchResults.map((patient) => (
+                            <TouchableOpacity
+                              key={patient.id}
+                              style={[
+                                styles.suggestionItem,
+                                selectedPermanentPatientId === patient.id && styles.suggestionItemSelected
+                              ]}
+                              onPress={() => {
+                                // Convert Arabic numerals to English before setting
+                                const englishFileNumber = arabicToEnglish(patient.file_number || '');
+
+                                // ملء الاسم الكامل وFile Number تلقائياً
+                                setNewPatientName(patient.name);
+                                setNewPatientFileNumber(englishFileNumber);
+                                setSelectedPermanentPatientId(patient.id);
+                                setShowFileNumberSuggestions(false);
+                              }}
+                            >
+                              <Text style={styles.suggestionItemText}>
+                                {`File #${arabicToEnglish(patient.file_number || '')} - ${patient.name}`}
+                              </Text>
+                              {selectedPermanentPatientId === patient.id && (
+                                <Ionicons name="checkmark-circle" size={20} color="#7DD3C0" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    {/* File Number - Hidden in walk-in mode */}
+                    {patientMode !== 'walk-in' && (
+                      <>
+                        <Text style={styles.inputLabel}>File Number (4 digits):</Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
+                            style={styles.textInput}
+                            placeholder="0000"
+                            value={newPatientFileNumber}
+                            onChangeText={(text) => {
+                              // Allow English and Arabic numerals, max 4 digits
+                              // Keep only numbers (0-9 and ٠-٩)
+                              const numbersOnly = text.split('').filter(char =>
+                                /[0-9\u0660-\u0669]/.test(char)
+                              ).join('').slice(0, 4);
+
+                              // Convert Arabic numerals to English
+                              const englishNumbers = arabicToEnglish(numbersOnly);
+                              setNewPatientFileNumber(englishNumbers);
+
+                              // Only search if in 'search' mode
+                              if (patientMode === 'search') {
+                                handleFileNumberSearch(englishNumbers);
+                              }
+                            }}
+                            keyboardType="numeric"
+                            maxLength={4}
+                            returnKeyType="done"
+                          />
+                          {newPatientFileNumber.length > 0 && (
+                            <TouchableOpacity
+                              style={styles.clearButton}
+                              onPress={() => {
+                                setNewPatientFileNumber('');
+                                setShowPatientSuggestions(false);
+                                setSelectedPermanentPatientId(null);
+                              }}
+                            >
+                              <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </>
+                    )}
+                    {/* File Number Search Results */}
+                    {showPatientSuggestions && permanentPatientSearchResults.length > 0 && (
+                      <View style={styles.suggestionsContainer}>
+                        <Text style={styles.suggestionsHeader}>
+                          Found {permanentPatientSearchResults.length} patient(s):
+                        </Text>
+                        <ScrollView
+                          style={styles.suggestionsList}
+                          nestedScrollEnabled={true}
+                          showsVerticalScrollIndicator={true}
+                          persistentScrollbar={true}
+                          keyboardShouldPersistTaps="handled"
+                          contentContainerStyle={{ paddingBottom: 8 }}
+                        >
+                          {permanentPatientSearchResults.map((patient) => (
+                            <TouchableOpacity
+                              key={patient.id}
+                              style={[
+                                styles.suggestionItem,
+                                selectedPermanentPatientId === patient.id && styles.suggestionItemSelected
+                              ]}
+                              onPress={() => {
+                                setNewPatientName(patient.name);
+                                setSelectedPermanentPatientId(patient.id);
+                                setShowPatientSuggestions(false);
+                              }}
+                            >
+                              <Text style={styles.suggestionItemText}>
+                                {patient.name}
+                              </Text>
+                              {selectedPermanentPatientId === patient.id && (
+                                <Ionicons name="checkmark-circle" size={20} color="#7DD3C0" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
 
                     <Text style={styles.inputLabel}>Queue Number:</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Queue Number"
-                      value={newPatientQueueNumber}
-                      onChangeText={setNewPatientQueueNumber}
-                      keyboardType="numeric"
-                      returnKeyType="done"
-                    />
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.textInput}
+                        placeholder="Queue Number"
+                        value={newPatientQueueNumber}
+                        onChangeText={setNewPatientQueueNumber}
+                        keyboardType="numeric"
+                        returnKeyType="done"
+                      />
+                      {newPatientQueueNumber.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.clearButton}
+                          onPress={() => setNewPatientQueueNumber('')}
+                        >
+                          <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
 
-                    <Text style={styles.inputLabel}>Condition:</Text>
+                    {/* Expand/Collapse Button */}
+                    <TouchableOpacity
+                      style={styles.expandButton}
+                      onPress={() => setIsModalExpanded(!isModalExpanded)}
+                    >
+                      <Text style={styles.expandButtonText}>
+                        {isModalExpanded ? 'Hide Additional Info' : 'Show Additional Info'}
+                      </Text>
+                      <Ionicons
+                        name={isModalExpanded ? "chevron-up" : "chevron-down"}
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </TouchableOpacity>
+
+                    {/* Additional Fields - Shown when expanded */}
+                    {isModalExpanded && (
+                      <>
+                        <Text style={styles.inputLabel}>Condition:</Text>
                     <TouchableOpacity
                       style={styles.textInput}
                       onPress={() => setShowConditionDropdown(!showConditionDropdown)}
@@ -2144,19 +2982,31 @@ function AppContent() {
                     </TouchableOpacity>
 
                     <Text style={styles.inputLabel}>Notes (Optional):</Text>
-                    <TextInput
-                      style={[styles.textInput, styles.textArea]}
-                      placeholder="Add notes..."
-                      value={newPatientNote}
-                      onChangeText={setNewPatientNote}
-                      multiline
-                      numberOfLines={3}
-                      returnKeyType="done"
-                      blurOnSubmit
-                    />
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={[styles.textInput, styles.textArea]}
+                        placeholder="Add notes..."
+                        value={newPatientNote}
+                        onChangeText={setNewPatientNote}
+                        multiline
+                        numberOfLines={3}
+                        returnKeyType="done"
+                        blurOnSubmit
+                      />
+                      {newPatientNote.length > 0 && (
+                        <TouchableOpacity
+                          style={[styles.clearButton, styles.clearButtonTextArea]}
+                          onPress={() => setNewPatientNote('')}
+                        >
+                          <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                      </>
+                    )}
 
                     <TouchableOpacity style={styles.addButton} onPress={handleAddPatient}>
-                      <Text style={styles.addButtonText}>Add Patient</Text>
+                      <Text style={styles.addButtonText}>{isPatientEditMode ? 'Update Patient' : 'Add Patient'}</Text>
                     </TouchableOpacity>
                   </ScrollView>
                 </View>
@@ -2186,7 +3036,16 @@ function AppContent() {
                   style={styles.modalGlassOverlay}
                 />
 
-                <TouchableOpacity 
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => handleMenuAction(showMenuForPatient, 'edit')}
+                >
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="create-outline" size={22} color="#8B5CF6" />
+                  </View>
+                  <Text style={styles.menuItemText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => handleMenuAction(showMenuForPatient, 'note')}
                 >
@@ -2204,7 +3063,7 @@ function AppContent() {
                   </View>
                   <Text style={styles.menuItemText}>Patient N/A</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => handleMenuAction(showMenuForPatient, 'elderly')}
                 >
@@ -2213,7 +3072,16 @@ function AppContent() {
                   </View>
                   <Text style={styles.menuItemText}>Elderly</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => handleMenuAction(showMenuForPatient, 'special_needs')}
+                >
+                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="accessibility" size={22} color="#8B5CF6" />
+                  </View>
+                  <Text style={styles.menuItemText}>Special Needs</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => handleMenuAction(showMenuForPatient, 'complete')}
                 >
@@ -2284,11 +3152,17 @@ function AppContent() {
         </Modal>
 
         {/* View Note Modal */}
-        <Modal visible={showViewNoteModal} animationType="fade" transparent onRequestClose={() => setShowViewNoteModal(false)}>
+        <Modal visible={showViewNoteModal} animationType="fade" transparent onRequestClose={() => {
+          setShowViewNoteModal(false);
+          setViewNoteContent('');
+        }}>
           <TouchableOpacity
             style={styles.modalOverlay}
             activeOpacity={1}
-            onPress={() => setShowViewNoteModal(false)}
+            onPress={() => {
+              setShowViewNoteModal(false);
+              setViewNoteContent('');
+            }}
           >
             <View style={styles.modalContent}>
               {/* Glass Color Tint */}
@@ -2306,14 +3180,17 @@ function AppContent() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Patient Note</Text>
                 <TouchableOpacity
-                  onPress={() => setShowViewNoteModal(false)}
+                  onPress={() => {
+                    setShowViewNoteModal(false);
+                    setViewNoteContent('');
+                  }}
                   style={styles.modalCloseButton}
                 >
                   <Ionicons name="close" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.noteText}>{currentNote}</Text>
+              <Text style={styles.noteText}>{viewNoteContent}</Text>
 
               <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteNote}>
                 <Text style={styles.deleteButtonText}>Delete Note</Text>
@@ -2585,6 +3462,48 @@ function AppContent() {
             </SafeAreaView>
           </Modal>
         )}
+
+        {/* ═══════════════════ TOOTH DETAILS MODAL (Shared Component) ═══════════════════ */}
+        <ToothDetailsModal
+          visible={showToothModal}
+          onClose={() => setShowToothModal(false)}
+          permanentPatientId={toothModalPatientId}
+          toothNumber={selectedTooth}
+          currentDoctorName={user?.name || user?.email || 'Unknown'}
+          onToothDataUpdated={async () => {
+            // Refresh dental chart data after save
+            if (toothModalPatientId) {
+              // Find timeline patient that matches this permanent patient
+              const timelinePatient = patients.find(p => p.permanent_patient_id === toothModalPatientId);
+
+              if (timelinePatient) {
+                // 1. Reload dental summary
+                const { data: dentalChart } = await getCompleteDentalChart(toothModalPatientId);
+                if (dentalChart) {
+                  const summary = generateDentalSummary(dentalChart.teeth);
+                  // Use timeline patient id as key (NOT permanent patient id)
+                  setDentalSummaries(prev => ({ ...prev, [timelinePatient.id]: summary }));
+                }
+
+                // 2. Reload referrals
+                const referralsResult = await getReferrals(toothModalPatientId);
+                if (referralsResult.data) {
+                  setPatientReferrals(prev => ({ ...prev, [toothModalPatientId]: referralsResult.data || [] }));
+                }
+
+                // 3. Reload tooth notes
+                // Add small delay to ensure database is updated
+                await new Promise(resolve => setTimeout(resolve, 150));
+                const notesResult = await getAllToothNotes(toothModalPatientId);
+                if (notesResult.data) {
+                  setPatientToothNotes(prev => ({ ...prev, [toothModalPatientId]: notesResult.data || [] }));
+                  console.log(`✅ Reloaded ${notesResult.data.length} notes for patient ${toothModalPatientId}`);
+                }
+              }
+            }
+          }}
+        />
+
       </View>
     </SafeAreaView>
     </View>
@@ -2592,21 +3511,39 @@ function AppContent() {
 }
 
 // Animated wrapper for PatientCard
-function AnimatedPatientCard({ index, animKey, ...props }: { index: number; animKey: number; patient: Patient; showTimeline: boolean; onMenuPress: () => void; onNotePress: () => void; onCardPress: () => void; onEditField: (patientId: string, field: 'clinic' | 'condition' | 'treatment') => void; expandedCardId: string | null; onViewDetails: (patientId: string) => void; cardTimelines: { [key: string]: TimelineEvent[] }; showTimelineTab: { [key: string]: boolean }; onToggleTab: (patientId: string) => void; }) {
+function AnimatedPatientCard({ index, animKey, ...props }: { index: number; animKey: number; patient: Patient; showTimeline: boolean; onMenuPress: () => void; onNotePress: () => void; onCardPress: () => void; onEditField: (patientId: string, field: 'clinic' | 'condition' | 'treatment') => void; expandedCardId: string | null; onViewDetails: (patientId: string) => void; cardTimelines: { [key: string]: TimelineEvent[] }; showTimelineTab: { [key: string]: boolean }; onToggleTab: (patientId: string) => void; onPatientNamePress?: (patientId: string, fileNumber: string) => void; expandedPermanentCardId: string | null; onTogglePermanentExpansion: (patient: Patient) => void; activeDentalTab: 'treatment' | 'referrals' | 'notes'; onDentalTabChange: (tab: 'treatment' | 'referrals' | 'notes') => void; dentalSummary?: DentalSummary; loadingDentalData?: boolean; onToothEditPress: (permanentPatientId: string, tooth: string) => void; patientReferrals?: Referral[]; onLoadReferrals?: () => void; onUpdateReferralStatus?: (referralId: string, newStatus: 'not_given' | 'given') => void; patientToothNotes?: ToothNote[]; onLoadToothNotes?: () => void; lastScalingDates?: { [key: string]: string | null }; }) {
   const slideAnim = React.useRef(new Animated.Value(0)).current;
+  const expandAnim = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     slideAnim.setValue(0);
     Animated.spring(slideAnim, {
       toValue: 1,
       delay: index * 100,
-      useNativeDriver: true,
+      useNativeDriver: false,
       tension: 50,
       friction: 7,
     }).start();
   }, [animKey]);
 
   const isFromRight = index % 2 === 0;
+
+  const isPermanentPatient = props.patient.patient_type === 'permanent' || props.patient.permanent_patient_id != null;
+  const isPermanentCardExpanded = props.expandedPermanentCardId === props.patient.id;
+
+  // Animate expansion
+  React.useEffect(() => {
+    if (isPermanentPatient) {
+      Animated.spring(expandAnim, {
+        toValue: isPermanentCardExpanded ? 1 : 0,
+        useNativeDriver: false,
+        tension: 40,
+        friction: 8,
+      }).start();
+    }
+  }, [isPermanentCardExpanded, isPermanentPatient]);
+
+  const isExpanded = props.expandedPermanentCardId === props.patient.id;
 
   return (
     <Animated.View
@@ -2618,17 +3555,26 @@ function AnimatedPatientCard({ index, animKey, ...props }: { index: number; anim
               outputRange: [isFromRight ? 100 : -100, 0],
             }),
           },
+          {
+            translateY: expandAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 0],
+            }),
+          },
         ],
         opacity: slideAnim,
+        width: isExpanded ? '100%' : 'auto',
+        alignSelf: isExpanded ? 'center' : 'auto',
+        zIndex: isExpanded ? 100 : 1, // يظهر فوق كل العناصر عند التوسع
       }}
     >
-      <PatientCard {...props} />
+      <PatientCard {...props} expandAnim={expandAnim} />
     </Animated.View>
   );
 }
 
-function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab }: { 
-  patient: Patient; 
+function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates }: {
+  patient: Patient;
   showTimeline: boolean;
   onMenuPress: () => void;
   onNotePress: () => void;
@@ -2639,12 +3585,39 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
   cardTimelines: { [key: string]: TimelineEvent[] };
   showTimelineTab: { [key: string]: boolean };
   onToggleTab: (patientId: string) => void;
+  onPatientNamePress?: (patientId: string, fileNumber: string) => void;
+  expandedPermanentCardId: string | null;
+  onTogglePermanentExpansion: (patient: Patient) => void;
+  activeDentalTab: 'treatment' | 'referrals' | 'notes';
+  onDentalTabChange: (tab: 'treatment' | 'referrals' | 'notes') => void;
+  dentalSummary?: DentalSummary;
+  loadingDentalData?: boolean;
+  expandAnim: Animated.Value;
+  onToothEditPress?: (permanentPatientId: string, tooth: string) => void;
+  patientReferrals?: Referral[];
+  onLoadReferrals?: () => void;
+  patientToothNotes?: ToothNote[];
+  onLoadToothNotes?: () => void;
+  onUpdateReferralStatus?: (referralId: string, newStatus: 'not_given' | 'given') => void;
+  lastScalingDates?: { [key: string]: string | null };
 }) {
-  // ✨ تأثير زجاجي: نفس الألوان لكن شفافة (0.75 = واضح جداً)
-  // ✨ إذا كان DONE: نفس تدرج الكرت الصلب (بدون شفافية)
-  const gradientColors: [string, string] = patient.status === 'complete' 
-    ? ['#B8D4F1', '#D4B8E8'] 
-    : ['rgba(184, 212, 241, 0.75)', 'rgba(212, 184, 232, 0.75)'];
+  // تأثير زجاجي: نفس الألوان لكن شفافة (0.75 = واضح جداً)
+  // إذا كان DONE: نفس تدرج الكرت الصلب (بدون شفافية)
+  // المريض الدائم: لون أخضر فاتح
+  const isPermanentPatient = patient.patient_type === 'permanent' || patient.permanent_patient_id != null;
+
+  const gradientColors: [string, string] = isPermanentPatient
+    ? (patient.status === 'complete'
+        ? ['#BFDBFE', '#DBEAFE']  // أزرق فاتح للمريض الدائم المكتمل
+        : ['rgba(191, 219, 254, 0.75)', 'rgba(219, 234, 254, 0.75)'])  // أزرق شفاف للمريض الدائم العادي
+    : (patient.status === 'complete'
+        ? ['#B8D4F1', '#D4B8E8']  // أزرق/بنفسجي للمريض العادي المكتمل
+        : ['rgba(184, 212, 241, 0.75)', 'rgba(212, 184, 232, 0.75)']);  // أزرق/بنفسجي شفاف للمريض العادي
+
+  // Queue Number colors - ألوان أكثر حيوية ووضوحاً
+  const queueNumberColors: [string, string] = isPermanentPatient
+    ? ['#60A5FA', '#93C5FD']  // أزرق حيوي للمريض الدائم
+    : gradientColors;  // نفس لون الكرت للمريض العادي
   const clinicColor = CLINICS.find(c => c.name === patient.clinic)?.color || '#E5E7EB';
   const conditionColor = CONDITIONS.find(c => c.name === patient.condition)?.color || '#E5E7EB';
   const treatmentColor = TREATMENTS.find(t => t.name === patient.treatment)?.color || '#E5E7EB';
@@ -2654,8 +3627,11 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
   const patientTimeline = cardTimelines[patient.id] || [];
   const showingTimeline = showTimelineTab[patient.id] !== false; // default true
 
+  // Check if permanent patient card is expanded (for dental info)
+  const isPermanentCardExpanded = expandedPermanentCardId === patient.id;
+
   // Determine card background color based on status
-  let cardBgColor = 'transparent'; // ✨ شفاف ليظهر التصميم الزجاجي
+  let cardBgColor = 'transparent'; // شفاف ليظهر التصميم الزجاجي
   if (patient.status === 'na') cardBgColor = 'rgba(209, 213, 219, 0.3)'; // رمادي شفاف
   if (patient.status === 'elderly') cardBgColor = 'rgba(254, 215, 170, 0.3)'; // برتقالي شفاف
   // complete cards use gradient, not background color
@@ -2666,67 +3642,125 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
     <View style={[styles.patientCardWrapper, shadows.card]}>
       {/* Patient Card Content */}
       {patient.status === 'complete' ? (
-        <LinearGradient 
-          colors={gradientColors} 
-          start={{ x: 0, y: 0 }} 
-          end={{ x: 1, y: 1 }} 
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={styles.patientCardContent}
         >
+          <Animated.View
+            style={{
+              flex: 1,
+              paddingRight: expandAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [60, 10], // من 60 إلى 10 عند التوسع
+              }),
+            }}
+          >
           {/* Header Row: Menu (left) - Status Badges - Name */}
           <View style={styles.cardHeader}>
             <View style={styles.leftSection}>
-              <TouchableOpacity style={styles.menuButton} onPress={onMenuPress}>
-                <Text style={[styles.menuIcon, { color: '#FFFFFF' }]}>⋮</Text>
-              </TouchableOpacity>
-              
-              <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
-                <Text style={styles.statusBadgeText}>DONE</Text>
-              </View>
-               {patient.isElderly && (
-                 <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                   <Text style={styles.statusBadgeText}>ELDR</Text>
-                 </View>
-               )}
-              {patient.note && (
-                <TouchableOpacity 
-                  style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
-                  onPress={onNotePress}
+              {/* Hide menu and badges when expanded, only show expand button */}
+              {!isPermanentCardExpanded && (
+                <>
+                  <TouchableOpacity style={styles.menuButton} onPress={onMenuPress}>
+                    <Text style={[styles.menuIcon, { color: '#FFFFFF' }]}>⋮</Text>
+                  </TouchableOpacity>
+
+                  <View style={[styles.statusBadge, { backgroundColor: isPermanentPatient ? 'rgba(147, 197, 253, 0.5)' : 'rgba(255, 255, 255, 0.3)' }]}>
+                    <Text style={styles.statusBadgeText}>DONE</Text>
+                  </View>
+                  {patient.isElderly && (
+                    <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
+                      <Text style={styles.statusBadgeText}>ELDR</Text>
+                    </View>
+                  )}
+                  {patient.isSpecialNeeds && (
+                    <View style={[styles.statusBadge, { backgroundColor: 'rgba(139, 92, 246, 0.75)' }]}>
+                      <Text style={styles.statusBadgeText}>SN</Text>
+                    </View>
+                  )}
+                  {patient.note && (
+                    <TouchableOpacity
+                      style={[styles.statusBadge, { backgroundColor: isPermanentPatient ? 'rgba(191, 219, 254, 0.4)' : 'rgba(255, 255, 255, 0.3)' }]}
+                      onPress={onNotePress}
+                    >
+                      <Text style={styles.statusBadgeText}>NOTE</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
+              {/* Expand/Collapse Button - Only for Permanent Patients - Always visible */}
+              {isPermanentPatient && (
+                <TouchableOpacity
+                  style={styles.menuButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onTogglePermanentExpansion(patient);
+                  }}
                 >
-                  <Text style={styles.statusBadgeText}>NOTE</Text>
+                  <Ionicons
+                    name={isPermanentCardExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color="#FFFFFF"
+                  />
                 </TouchableOpacity>
               )}
             </View>
-            
-            <Text style={[styles.patientName, { color: '#FFFFFF' }]}>{patient.name}</Text>
+
+            {isPermanentPatient ? (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  if (patient.permanent_patient_id && patient.file_number && onPatientNamePress) {
+                    onPatientNamePress(patient.permanent_patient_id, patient.file_number);
+                  }
+                }}
+              >
+                <Text style={[styles.patientName, { color: '#FFFFFF', fontSize: isPermanentCardExpanded ? 18 : 20 }]}>{patient.name}</Text>
+                {lastScalingDates?.[patient.id] && (
+                  <Text style={{ fontSize: 10, color: 'rgba(255, 255, 255, 0.75)', marginTop: 2, fontStyle: 'italic', fontWeight: '500' }}>
+                    Last Scaling: {new Date(lastScalingDates[patient.id]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.patientName, { color: '#FFFFFF' }]}>{patient.name}</Text>
+            )}
           </View>
         
-          {/* Divider */}
-          <View style={[styles.divider, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]} />
-          
-          {/* Tags Row */}
-          <View style={styles.tagsRow}>
-            <TouchableOpacity 
-              style={[styles.tag, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
-              onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'clinic'); }}
-            >
-              <Text style={[styles.tagText, { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{patient.clinic || 'Clinic'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.tag, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
-              onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'condition'); }}
-            >
-              <Text style={[styles.tagText, { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{patient.condition || 'Condition'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.tag, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
-              onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'treatment'); }}
-            >
-              <Text style={[styles.tagText, { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{patient.treatment || 'Treatment'}</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Divider - Only show when NOT expanded */}
+          {!isPermanentCardExpanded && (
+            <View style={[styles.divider, { backgroundColor: 'rgba(255, 255, 255, 0.4)' }]} />
+          )}
+
+          {/* Tags Row - Hide when expanded for permanent patients */}
+          {!isPermanentCardExpanded && (
+            <View style={styles.tagsRow}>
+              <TouchableOpacity
+                style={[styles.tag, { backgroundColor: isPermanentPatient ? 'rgba(147, 197, 253, 0.3)' : 'rgba(255, 255, 255, 0.3)' }]}
+                onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'clinic'); }}
+              >
+                <Text style={[styles.tagText, { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{patient.clinic || 'Clinic'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tag, { backgroundColor: isPermanentPatient ? 'rgba(191, 219, 254, 0.3)' : 'rgba(255, 255, 255, 0.3)' }]}
+                onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'condition'); }}
+              >
+                <Text style={[styles.tagText, { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{patient.condition || 'Condition'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tag, { backgroundColor: isPermanentPatient ? 'rgba(219, 234, 254, 0.3)' : 'rgba(255, 255, 255, 0.3)' }]}
+                onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'treatment'); }}
+              >
+                <Text style={[styles.tagText, { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{patient.treatment || 'Treatment'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           
           {showTimeline && (
-            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.4)' }}>
               {patient.registered_at && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                   <Ionicons name="add-circle-outline" size={14} color="#FFFFFF" />
@@ -2769,117 +3803,1696 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
               )}
             </View>
           )}
+
+          {/* Expanded Dental Info - Inside Card */}
+          {isPermanentPatient && isPermanentCardExpanded && (
+            <Animated.View
+              style={{
+                maxHeight: expandAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 580], // ارتفاع الكرت الموسع
+                }),
+                opacity: expandAnim,
+                overflow: 'hidden',
+              }}
+            >
+              <View style={{ paddingTop: 10, marginTop: 6, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' }}>
+                {/* Segmented Control - Modern iOS Style */}
+                <View
+                  style={{
+                    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+                    borderRadius: 10,
+                    padding: 3,
+                    marginBottom: 14,
+                    flexDirection: 'row',
+                  }}
+                >
+                  <TouchableOpacity
+                    onPress={() => onDentalTabChange('treatment')}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 7,
+                      backgroundColor: activeDentalTab === 'treatment' ? '#FFFFFF' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: activeDentalTab === 'treatment' ? '#1E40AF' : '#64748B',
+                    }}>Treatment</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      onDentalTabChange('referrals');
+                      if (onLoadReferrals) {
+                        onLoadReferrals();
+                      }
+                    }}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 7,
+                      backgroundColor: activeDentalTab === 'referrals' ? '#FFFFFF' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: activeDentalTab === 'referrals' ? '#1E40AF' : '#64748B',
+                    }}>Referrals</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      onDentalTabChange('notes');
+                      if (onLoadToothNotes) {
+                        onLoadToothNotes();
+                      }
+                    }}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 7,
+                      backgroundColor: activeDentalTab === 'notes' ? '#FFFFFF' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: activeDentalTab === 'notes' ? '#1E40AF' : '#64748B',
+                    }}>Notes</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Tab Content */}
+                <View style={[styles.dentalTabContent, { backgroundColor: 'rgba(255, 255, 255, 0.5)' }]}>
+                  {activeDentalTab === 'treatment' && (
+                    <>
+                      {loadingDentalData ? (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>Loading...</Text>
+                      ) : dentalSummary && dentalSummary.total_issues > 0 ? (
+                        <ScrollView
+                          showsVerticalScrollIndicator={true}
+                          contentContainerStyle={{ paddingBottom: 80 }}
+                        >
+                          <View style={styles.treatmentContainer}>
+                          {/* Caries Section - Modern Card Design */}
+                          {dentalSummary.caries_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Caries</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.caries_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.caries_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Pulpectomy Section - Modern Card Design */}
+                          {dentalSummary.rct_needed_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Pulpectomy</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.rct_needed_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.rct_needed_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Extraction Section - Modern Card Design */}
+                          {dentalSummary.extraction_needed_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Extraction</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.extraction_needed_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.extraction_needed_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Broken Teeth Section - Modern Card Design */}
+                          {dentalSummary.broken_teeth_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Broken Tooth/Filling</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.broken_teeth_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.broken_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Temporary Filling Section - Modern Card Design */}
+                          {dentalSummary.filling_done_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Need Permanent Filling</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.filling_done_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.filling_done_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>No treatment needed</Text>
+                      )}
+                    </>
+                  )}
+                  {activeDentalTab === 'referrals' && (
+                    <>
+                      {patientReferrals && patientReferrals.length > 0 ? (
+                        <ScrollView
+                          showsVerticalScrollIndicator={true}
+                          contentContainerStyle={{ paddingBottom: 80 }}
+                        >
+                          <View style={{ gap: 12 }}>
+                            {/* SECTION 1: Need Referral - Orange Cards */}
+                            {(() => {
+                              const notGivenReferrals = patientReferrals.filter(r => r.status === 'not_given');
+                              if (notGivenReferrals.length === 0) return null;
+
+                              return (
+                                <>
+                                  {/* Section Header */}
+                                  <View style={{ marginBottom: 8, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: 'rgba(254, 215, 170, 0.6)' }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#EA580C' }}>
+                                      Need Referral ({notGivenReferrals.length})
+                                    </Text>
+                                  </View>
+
+                                  {/* Individual Referral Cards */}
+                                  {notGivenReferrals.map((referral) => (
+                                    <View key={referral.id} style={{
+                                      backgroundColor: 'rgba(254, 215, 170, 0.4)',
+                                      borderRadius: 10,
+                                      padding: 14,
+                                      marginBottom: 10,
+                                      borderWidth: 2,
+                                      borderColor: '#FFFFFF',
+                                    }}>
+                                      {/* Referral Type */}
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#EA580C' }}>
+                                          {referral.referral_type}
+                                        </Text>
+                                        <TouchableOpacity
+                                          style={{
+                                            backgroundColor: 'rgba(251, 146, 60, 0.3)',
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 4,
+                                            borderRadius: 12,
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(251, 146, 60, 0.5)',
+                                          }}
+                                          onPress={async () => {
+                                            const { data, error } = await updateReferralStatus(referral.id, 'given');
+                                            if (data && onUpdateReferralStatus) {
+                                              onUpdateReferralStatus(referral.id, 'given');
+                                            }
+                                          }}
+                                          activeOpacity={0.6}
+                                        >
+                                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E' }}>Not Given</Text>
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      {/* Divider */}
+                                      <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                                      {/* Tooth Number */}
+                                      <View style={{ marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>Tooth Number</Text>
+                                        <View style={{
+                                          backgroundColor: 'rgba(234, 88, 12, 0.5)',
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 5,
+                                          borderRadius: 6,
+                                          alignSelf: 'flex-start',
+                                          borderWidth: 1,
+                                          borderColor: 'rgba(234, 88, 12, 0.7)',
+                                        }}>
+                                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{referral.tooth_number}</Text>
+                                        </View>
+                                      </View>
+
+                                      {/* Notes if exists */}
+                                      {referral.notes && (
+                                        <View style={{
+                                          backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                                          padding: 8,
+                                          borderRadius: 6,
+                                          marginBottom: 8,
+                                        }}>
+                                          <Text style={{ fontSize: 11, color: '#475569', fontStyle: 'italic' }}>
+                                            "{referral.notes}"
+                                          </Text>
+                                        </View>
+                                      )}
+
+                                      {/* Date and Doctor */}
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {new Date(referral.timestamp).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          })}
+                                        </Text>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {referral.doctor_name}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  ))}
+                                </>
+                              );
+                            })()}
+
+                            {/* SECTION 2: Referrals Records - Green Cards */}
+                            {(() => {
+                              const givenReferrals = patientReferrals.filter(r => r.status === 'given');
+                              if (givenReferrals.length === 0) return null;
+
+                              return (
+                                <>
+                                  {/* Section Header */}
+                                  <View style={{ marginBottom: 8, marginTop: 12, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: 'rgba(167, 243, 208, 0.6)' }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#059669' }}>
+                                      Referrals Records ({givenReferrals.length})
+                                    </Text>
+                                  </View>
+
+                                  {/* Individual Referral Cards */}
+                                  {givenReferrals.map((referral) => (
+                                    <View key={referral.id} style={{
+                                      backgroundColor: 'rgba(167, 243, 208, 0.4)',
+                                      borderRadius: 10,
+                                      padding: 14,
+                                      marginBottom: 10,
+                                      borderWidth: 2,
+                                      borderColor: '#FFFFFF',
+                                    }}>
+                                      {/* Referral Type */}
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#059669' }}>
+                                          {referral.referral_type}
+                                        </Text>
+                                        <View style={{
+                                          backgroundColor: 'rgba(52, 211, 153, 0.3)',
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 4,
+                                          borderRadius: 12,
+                                          borderWidth: 1,
+                                          borderColor: 'rgba(52, 211, 153, 0.5)',
+                                        }}>
+                                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#065F46' }}>Given ✓</Text>
+                                        </View>
+                                      </View>
+
+                                      {/* Divider */}
+                                      <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                                      {/* Tooth Number */}
+                                      <View style={{ marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>Tooth Number</Text>
+                                        <View style={{
+                                          backgroundColor: 'rgba(5, 150, 105, 0.5)',
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 5,
+                                          borderRadius: 6,
+                                          alignSelf: 'flex-start',
+                                          borderWidth: 1,
+                                          borderColor: 'rgba(5, 150, 105, 0.7)',
+                                        }}>
+                                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{referral.tooth_number}</Text>
+                                        </View>
+                                      </View>
+
+                                      {/* Notes if exists */}
+                                      {referral.notes && (
+                                        <View style={{
+                                          backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                                          padding: 8,
+                                          borderRadius: 6,
+                                          marginBottom: 8,
+                                        }}>
+                                          <Text style={{ fontSize: 11, color: '#475569', fontStyle: 'italic' }}>
+                                            "{referral.notes}"
+                                          </Text>
+                                        </View>
+                                      )}
+
+                                      {/* Date and Doctor */}
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {new Date(referral.timestamp).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          })}
+                                        </Text>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {referral.doctor_name}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  ))}
+                                </>
+                              );
+                            })()}
+                          </View>
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>No referrals found.</Text>
+                      )}
+                    </>
+                  )}
+                  {activeDentalTab === 'notes' && (
+                    <>
+                      {patientToothNotes && patientToothNotes.length > 0 ? (
+                        <ScrollView contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 4, paddingBottom: 80 }} showsVerticalScrollIndicator={true}>
+                          {patientToothNotes
+                            .slice()
+                            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                            .map((note) => (
+                            <View
+                              key={note.id}
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              {/* Header: Tooth Number + Badge */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <View style={{
+                                  backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 5,
+                                  borderRadius: 6,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(147, 197, 253, 0.6)',
+                                }}>
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' }}>
+                                    {note.tooth_number}
+                                  </Text>
+                                </View>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>
+                                    Note
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                              {/* Note Content */}
+                              <View style={{
+                                backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                                padding: 10,
+                                borderRadius: 8,
+                                marginBottom: 8,
+                              }}>
+                                <Text style={{ fontSize: 13, color: '#1E293B', lineHeight: 18, fontStyle: 'italic' }}>
+                                  "{note.note}"
+                                </Text>
+                              </View>
+
+                              {/* Footer: Doctor & Date */}
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+                                <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                  Dr. {note.doctor_name}
+                                </Text>
+                                <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                  {new Date(note.timestamp).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>
+                          No notes for this patient
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </View>
+              </View>
+            </Animated.View>
+          )}
+
+          </Animated.View>
         </LinearGradient>
       ) : (
-        <LinearGradient 
-          colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']} 
-          start={{ x: 0, y: 0 }} 
-          end={{ x: 1, y: 1 }} 
+        <LinearGradient
+          colors={isPermanentPatient
+            ? ['rgba(191, 219, 254, 0.25)', 'rgba(219, 234, 254, 0.25)']  // أزرق فاتح للمريض الدائم
+            : ['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}  // أزرق/بنفسجي للووك-ان
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={styles.patientCardContent}
         >
+          <Animated.View
+            style={{
+              flex: 1,
+              paddingRight: expandAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [60, 10], // من 60 إلى 10 عند التوسع
+              }),
+            }}
+          >
           {/* Header Row: Menu (left) - Status Badges - Name */}
           <View style={styles.cardHeader}>
             <View style={styles.leftSection}>
-              <TouchableOpacity style={styles.menuButton} onPress={(e) => { e.stopPropagation(); onMenuPress(); }}>
-                <Text style={[styles.menuIcon, { color: textColor }]}>⋮</Text>
-              </TouchableOpacity>
-              
-               {patient.isElderly && (
-                 <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                   <Text style={styles.statusBadgeText}>ELDR</Text>
-                 </View>
-               )}
-               {patient.status === 'na' && (
-                 <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
-                   <Text style={styles.statusBadgeText}>N/A</Text>
-                 </View>
-               )}
-              {patient.note && (
-                <TouchableOpacity 
-                  style={[styles.statusBadge, { backgroundColor: 'rgba(59, 130, 246, 0.5)' }]}
-                  onPress={(e) => { e.stopPropagation(); onNotePress(); }}
+              {/* Hide menu and badges when expanded, only show expand button */}
+              {!isPermanentCardExpanded && (
+                <>
+                  <TouchableOpacity style={styles.menuButton} onPress={(e) => { e.stopPropagation(); onMenuPress(); }}>
+                    <Text style={[styles.menuIcon, { color: isPermanentPatient ? '#1E3A8A' : textColor }]}>⋮</Text>
+                  </TouchableOpacity>
+
+                  {patient.isElderly && (
+                    <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
+                      <Text style={styles.statusBadgeText}>ELDR</Text>
+                    </View>
+                  )}
+                  {patient.isSpecialNeeds && (
+                    <View style={[styles.statusBadge, { backgroundColor: 'rgba(139, 92, 246, 0.75)' }]}>
+                      <Text style={styles.statusBadgeText}>SN</Text>
+                    </View>
+                  )}
+                  {patient.status === 'na' && (
+                    <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
+                      <Text style={styles.statusBadgeText}>N/A</Text>
+                    </View>
+                  )}
+                  {patient.note && (
+                    <TouchableOpacity
+                      style={[styles.statusBadge, { backgroundColor: isPermanentPatient ? 'rgba(147, 197, 253, 0.6)' : 'rgba(59, 130, 246, 0.5)' }]}
+                      onPress={(e) => { e.stopPropagation(); onNotePress(); }}
+                    >
+                      <Text style={styles.statusBadgeText}>NOTE</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
+              {/* Expand/Collapse Button - Only for Permanent Patients - Always visible */}
+              {isPermanentPatient && (
+                <TouchableOpacity
+                  style={styles.menuButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onTogglePermanentExpansion(patient);
+                  }}
                 >
-                  <Text style={styles.statusBadgeText}>NOTE</Text>
+                  <Ionicons
+                    name={isPermanentCardExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={isPermanentPatient ? '#1E3A8A' : textColor}
+                  />
                 </TouchableOpacity>
               )}
             </View>
-            
-            <Text style={[styles.patientName, { color: textColor }]}>{patient.name}</Text>
+
+            {isPermanentPatient ? (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  if (patient.permanent_patient_id && patient.file_number && onPatientNamePress) {
+                    onPatientNamePress(patient.permanent_patient_id, patient.file_number);
+                  }
+                }}
+              >
+                <Text style={[styles.patientName, { color: '#1E3A8A' }]}>{patient.name}</Text>
+                {isPermanentCardExpanded && lastScalingDates?.[patient.id] && (
+                  <>
+                    <Text style={{ fontSize: 11, color: '#1E40AF', marginTop: 4, fontStyle: 'italic' }}>
+                      Last Scaling Done At: {new Date(lastScalingDates[patient.id]).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </Text>
+                    <View style={{ height: 1, backgroundColor: 'rgba(30, 58, 138, 0.3)', marginTop: 8 }} />
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.patientName, { color: textColor }]}>{patient.name}</Text>
+            )}
           </View>
         
-          {/* Divider */}
-          <View style={styles.divider} />
-          
-          {/* Tags Row */}
-          <View style={styles.tagsRow}>
-            <TouchableOpacity 
-              style={[styles.tag, { backgroundColor: 'rgba(184, 212, 241, 0.75)' }]}
-              onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'clinic'); }}
-            >
-              <Text style={[styles.tagText, patient.clinic && patient.clinic !== 'Clinic' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' }]} numberOfLines={1} ellipsizeMode="tail">{patient.clinic || 'Clinic'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.tag, { backgroundColor: 'rgba(200, 198, 236, 0.75)' }]}
-              onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'condition'); }}
-            >
-              <Text style={[styles.tagText, patient.condition && patient.condition !== 'Condition' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' }]} numberOfLines={1} ellipsizeMode="tail">{patient.condition || 'Condition'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.tag, { backgroundColor: 'rgba(212, 184, 232, 0.75)' }]}
-              onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'treatment'); }}
-            >
-              <Text style={[styles.tagText, patient.treatment && patient.treatment !== 'Treatment' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' }]} numberOfLines={1} ellipsizeMode="tail">{patient.treatment || 'Treatment'}</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Divider - Only show when NOT expanded */}
+          {!isPermanentCardExpanded && (
+            <View style={styles.divider} />
+          )}
+
+          {/* Tags Row - Hide when expanded for permanent patients */}
+          {!isPermanentCardExpanded && (
+            <View style={styles.tagsRow}>
+              <TouchableOpacity
+                style={[styles.tag, { backgroundColor: isPermanentPatient ? 'rgba(147, 197, 253, 0.75)' : 'rgba(184, 212, 241, 0.75)' }]}
+                onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'clinic'); }}
+              >
+                <Text style={[styles.tagText, patient.clinic && patient.clinic !== 'Clinic' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' }]} numberOfLines={1} ellipsizeMode="tail">{patient.clinic || 'Clinic'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tag, { backgroundColor: isPermanentPatient ? 'rgba(191, 219, 254, 0.75)' : 'rgba(200, 198, 236, 0.75)' }]}
+                onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'condition'); }}
+              >
+                <Text style={[styles.tagText, patient.condition && patient.condition !== 'Condition' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' }]} numberOfLines={1} ellipsizeMode="tail">{patient.condition || 'Condition'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tag, { backgroundColor: isPermanentPatient ? 'rgba(219, 234, 254, 0.75)' : 'rgba(212, 184, 232, 0.75)' }]}
+                onPress={(e) => { e.stopPropagation(); onEditField(patient.id, 'treatment'); }}
+              >
+                <Text style={[styles.tagText, patient.treatment && patient.treatment !== 'Treatment' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' }]} numberOfLines={1} ellipsizeMode="tail">{patient.treatment || 'Treatment'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           
           {showTimeline && (
-            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
+            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.4)' }}>
               {patient.registered_at && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                  <Ionicons name="add-circle-outline" size={14} color="#9CA3AF" />
-                  <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                  <Ionicons name="add-circle-outline" size={14} color={isPermanentPatient ? '#2563EB' : '#9CA3AF'} />
+                  <Text style={{ fontSize: 11, color: isPermanentPatient ? '#2563EB' : '#9CA3AF', marginLeft: 6 }}>
                     Registered: {patient.registered_at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </Text>
                 </View>
               )}
               {patient.clinic_entry_at && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                  <Ionicons name="enter-outline" size={14} color="#9CA3AF" />
-                  <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                  <Ionicons name="enter-outline" size={14} color={isPermanentPatient ? '#2563EB' : '#9CA3AF'} />
+                  <Text style={{ fontSize: 11, color: isPermanentPatient ? '#2563EB' : '#9CA3AF', marginLeft: 6 }}>
                     Entered Clinic: {patient.clinic_entry_at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </Text>
                 </View>
               )}
               {patient.completed_at && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                  <Ionicons name="checkmark-circle-outline" size={14} color="#9CA3AF" />
-                  <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                  <Ionicons name="checkmark-circle-outline" size={14} color={isPermanentPatient ? '#2563EB' : '#9CA3AF'} />
+                  <Text style={{ fontSize: 11, color: isPermanentPatient ? '#2563EB' : '#9CA3AF', marginLeft: 6 }}>
                     Completed: {patient.completed_at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </Text>
                 </View>
               )}
               {patient.doctor_name && (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name="person-outline" size={14} color="#9CA3AF" />
-                  <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                  <Ionicons name="person-outline" size={14} color={isPermanentPatient ? '#2563EB' : '#9CA3AF'} />
+                  <Text style={{ fontSize: 11, color: isPermanentPatient ? '#2563EB' : '#9CA3AF', marginLeft: 6 }}>
                     Doctor: {patient.doctor_name}
                   </Text>
                 </View>
               )}
             </View>
           )}
+
+          {/* Expanded Dental Info - Inside Card (Non-Complete) */}
+          {isPermanentPatient && isPermanentCardExpanded && (
+            <Animated.View
+              style={{
+                maxHeight: expandAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 580], // ارتفاع الكرت الموسع
+                }),
+                opacity: expandAnim,
+                overflow: 'hidden',
+              }}
+            >
+              <View style={{ paddingTop: 10, marginTop: 6, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, overflow: 'hidden' }}>
+                {/* Segmented Control - Modern iOS Style */}
+                <View
+                  style={{
+                    backgroundColor: 'rgba(148, 163, 184, 0.15)',
+                    borderRadius: 10,
+                    padding: 3,
+                    marginBottom: 14,
+                    flexDirection: 'row',
+                  }}
+                >
+                  <TouchableOpacity
+                    onPress={() => onDentalTabChange('treatment')}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 7,
+                      backgroundColor: activeDentalTab === 'treatment' ? '#FFFFFF' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: activeDentalTab === 'treatment' ? '#1E40AF' : '#64748B',
+                    }}>Treatment</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      onDentalTabChange('referrals');
+                      if (onLoadReferrals) {
+                        onLoadReferrals();
+                      }
+                    }}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 7,
+                      backgroundColor: activeDentalTab === 'referrals' ? '#FFFFFF' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: activeDentalTab === 'referrals' ? '#1E40AF' : '#64748B',
+                    }}>Referrals</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      onDentalTabChange('notes');
+                      if (onLoadToothNotes) {
+                        onLoadToothNotes();
+                      }
+                    }}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 7,
+                      backgroundColor: activeDentalTab === 'notes' ? '#FFFFFF' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: activeDentalTab === 'notes' ? '#1E40AF' : '#64748B',
+                    }}>Notes</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Tab Content */}
+                <View style={[styles.dentalTabContent, { backgroundColor: 'rgba(255, 255, 255, 0.5)' }]}>
+                  {activeDentalTab === 'treatment' && (
+                    <>
+                      {loadingDentalData ? (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>Loading...</Text>
+                      ) : dentalSummary && dentalSummary.total_issues > 0 ? (
+                        <ScrollView
+                          showsVerticalScrollIndicator={true}
+                          contentContainerStyle={{ paddingBottom: 80 }}
+                        >
+                          <View style={styles.treatmentContainer}>
+                          {/* Caries Section - Modern Card Design */}
+                          {dentalSummary.caries_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Caries</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.caries_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.caries_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Pulpectomy Section - Modern Card Design */}
+                          {dentalSummary.rct_needed_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Pulpectomy</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.rct_needed_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.rct_needed_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Extraction Section - Modern Card Design */}
+                          {dentalSummary.extraction_needed_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Extraction</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.extraction_needed_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.extraction_needed_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Broken Teeth Section - Modern Card Design */}
+                          {dentalSummary.broken_teeth_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Broken Tooth/Filling</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.broken_teeth_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.broken_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Temporary Filling Section - Modern Card Design */}
+                          {dentalSummary.filling_done_count > 0 && (
+                            <View
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <Text style={{
+                                  fontSize: 15,
+                                  fontWeight: '700',
+                                  color: '#1E3A8A',
+                                }}>Need Permanent Filling</Text>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{
+                                    fontSize: 11,
+                                    fontWeight: '700',
+                                    color: '#1E3A8A',
+                                  }}>{dentalSummary.filling_done_count}</Text>
+                                </View>
+                              </View>
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+                              <View style={styles.teethGrid}>
+                                {dentalSummary.filling_done_teeth.map((tooth) => (
+                                  <TouchableOpacity
+                                    key={tooth}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                      if (patient.permanent_patient_id && onToothEditPress) {
+                                        onToothEditPress(patient.permanent_patient_id, tooth);
+                                      }
+                                    }}
+                                  >
+                                    <View
+                                      style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        margin: 2,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}
+                                    >
+                                      <Text style={{
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                      }}>{tooth}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>No treatment needed</Text>
+                      )}
+                    </>
+                  )}
+                  {activeDentalTab === 'referrals' && (
+                    <>
+                      {patientReferrals && patientReferrals.length > 0 ? (
+                        <ScrollView
+                          showsVerticalScrollIndicator={true}
+                          contentContainerStyle={{ paddingBottom: 80 }}
+                        >
+                          <View style={{ gap: 12 }}>
+                            {/* SECTION 1: Need Referral - Orange Cards */}
+                            {(() => {
+                              const notGivenReferrals = patientReferrals.filter(r => r.status === 'not_given');
+                              if (notGivenReferrals.length === 0) return null;
+
+                              return (
+                                <>
+                                  {/* Section Header */}
+                                  <View style={{ marginBottom: 8, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: 'rgba(254, 215, 170, 0.6)' }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#EA580C' }}>
+                                      Need Referral ({notGivenReferrals.length})
+                                    </Text>
+                                  </View>
+
+                                  {/* Individual Referral Cards */}
+                                  {notGivenReferrals.map((referral) => (
+                                    <View key={referral.id} style={{
+                                      backgroundColor: 'rgba(254, 215, 170, 0.4)',
+                                      borderRadius: 10,
+                                      padding: 14,
+                                      marginBottom: 10,
+                                      borderWidth: 2,
+                                      borderColor: '#FFFFFF',
+                                    }}>
+                                      {/* Referral Type */}
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#EA580C' }}>
+                                          {referral.referral_type}
+                                        </Text>
+                                        <TouchableOpacity
+                                          style={{
+                                            backgroundColor: 'rgba(251, 146, 60, 0.3)',
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 4,
+                                            borderRadius: 12,
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(251, 146, 60, 0.5)',
+                                          }}
+                                          onPress={async () => {
+                                            const { data, error } = await updateReferralStatus(referral.id, 'given');
+                                            if (data && onUpdateReferralStatus) {
+                                              onUpdateReferralStatus(referral.id, 'given');
+                                            }
+                                          }}
+                                          activeOpacity={0.6}
+                                        >
+                                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#92400E' }}>Not Given</Text>
+                                        </TouchableOpacity>
+                                      </View>
+
+                                      {/* Divider */}
+                                      <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                                      {/* Tooth Number */}
+                                      <View style={{ marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>Tooth Number</Text>
+                                        <View style={{
+                                          backgroundColor: 'rgba(234, 88, 12, 0.5)',
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 5,
+                                          borderRadius: 6,
+                                          alignSelf: 'flex-start',
+                                          borderWidth: 1,
+                                          borderColor: 'rgba(234, 88, 12, 0.7)',
+                                        }}>
+                                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{referral.tooth_number}</Text>
+                                        </View>
+                                      </View>
+
+                                      {/* Notes if exists */}
+                                      {referral.notes && (
+                                        <View style={{
+                                          backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                                          padding: 8,
+                                          borderRadius: 6,
+                                          marginBottom: 8,
+                                        }}>
+                                          <Text style={{ fontSize: 11, color: '#475569', fontStyle: 'italic' }}>
+                                            "{referral.notes}"
+                                          </Text>
+                                        </View>
+                                      )}
+
+                                      {/* Date and Doctor */}
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {new Date(referral.timestamp).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          })}
+                                        </Text>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {referral.doctor_name}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  ))}
+                                </>
+                              );
+                            })()}
+
+                            {/* SECTION 2: Referrals Records - Green Cards */}
+                            {(() => {
+                              const givenReferrals = patientReferrals.filter(r => r.status === 'given');
+                              if (givenReferrals.length === 0) return null;
+
+                              return (
+                                <>
+                                  {/* Section Header */}
+                                  <View style={{ marginBottom: 8, marginTop: 12, paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: 'rgba(167, 243, 208, 0.6)' }}>
+                                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#059669' }}>
+                                      Referrals Records ({givenReferrals.length})
+                                    </Text>
+                                  </View>
+
+                                  {/* Individual Referral Cards */}
+                                  {givenReferrals.map((referral) => (
+                                    <View key={referral.id} style={{
+                                      backgroundColor: 'rgba(167, 243, 208, 0.4)',
+                                      borderRadius: 10,
+                                      padding: 14,
+                                      marginBottom: 10,
+                                      borderWidth: 2,
+                                      borderColor: '#FFFFFF',
+                                    }}>
+                                      {/* Referral Type */}
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#059669' }}>
+                                          {referral.referral_type}
+                                        </Text>
+                                        <View style={{
+                                          backgroundColor: 'rgba(52, 211, 153, 0.3)',
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 4,
+                                          borderRadius: 12,
+                                          borderWidth: 1,
+                                          borderColor: 'rgba(52, 211, 153, 0.5)',
+                                        }}>
+                                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#065F46' }}>Given ✓</Text>
+                                        </View>
+                                      </View>
+
+                                      {/* Divider */}
+                                      <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                                      {/* Tooth Number */}
+                                      <View style={{ marginBottom: 8 }}>
+                                        <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>Tooth Number</Text>
+                                        <View style={{
+                                          backgroundColor: 'rgba(5, 150, 105, 0.5)',
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 5,
+                                          borderRadius: 6,
+                                          alignSelf: 'flex-start',
+                                          borderWidth: 1,
+                                          borderColor: 'rgba(5, 150, 105, 0.7)',
+                                        }}>
+                                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{referral.tooth_number}</Text>
+                                        </View>
+                                      </View>
+
+                                      {/* Notes if exists */}
+                                      {referral.notes && (
+                                        <View style={{
+                                          backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                                          padding: 8,
+                                          borderRadius: 6,
+                                          marginBottom: 8,
+                                        }}>
+                                          <Text style={{ fontSize: 11, color: '#475569', fontStyle: 'italic' }}>
+                                            "{referral.notes}"
+                                          </Text>
+                                        </View>
+                                      )}
+
+                                      {/* Date and Doctor */}
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {new Date(referral.timestamp).toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          })}
+                                        </Text>
+                                        <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                          {referral.doctor_name}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  ))}
+                                </>
+                              );
+                            })()}
+                          </View>
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>No referrals found.</Text>
+                      )}
+                    </>
+                  )}
+                  {activeDentalTab === 'notes' && (
+                    <>
+                      {patientToothNotes && patientToothNotes.length > 0 ? (
+                        <ScrollView contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 4, paddingBottom: 80 }} showsVerticalScrollIndicator={true}>
+                          {patientToothNotes
+                            .slice()
+                            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                            .map((note) => (
+                            <View
+                              key={note.id}
+                              style={{
+                                backgroundColor: 'rgba(191, 219, 254, 0.3)',
+                                borderRadius: 10,
+                                padding: 14,
+                                marginBottom: 10,
+                                borderWidth: 2,
+                                borderColor: '#FFFFFF',
+                              }}
+                            >
+                              {/* Header: Tooth Number + Badge */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <View style={{
+                                  backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 5,
+                                  borderRadius: 6,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(147, 197, 253, 0.6)',
+                                }}>
+                                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' }}>
+                                    {note.tooth_number}
+                                  </Text>
+                                </View>
+                                <View style={{
+                                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  borderRadius: 12,
+                                }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A' }}>
+                                    Note
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Divider */}
+                              <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.3)', marginBottom: 10 }} />
+
+                              {/* Note Content */}
+                              <View style={{
+                                backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                                padding: 10,
+                                borderRadius: 8,
+                                marginBottom: 8,
+                              }}>
+                                <Text style={{ fontSize: 13, color: '#1E293B', lineHeight: 18, fontStyle: 'italic' }}>
+                                  "{note.note}"
+                                </Text>
+                              </View>
+
+                              {/* Footer: Doctor & Date */}
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.3)' }}>
+                                <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                  Dr. {note.doctor_name}
+                                </Text>
+                                <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600' }}>
+                                  {new Date(note.timestamp).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      ) : (
+                        <Text style={[styles.dentalTabContentText, { color: '#1E3A8A' }]}>
+                          No notes for this patient
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </View>
+              </View>
+            </Animated.View>
+          )}
+
+          </Animated.View>
         </LinearGradient>
       )}
-      
-      {/* Queue Number Section - Right Side Integrated */}
-      <LinearGradient 
-        colors={gradientColors} 
-        start={{ x: 0, y: 0 }} 
-        end={{ x: 1, y: 1 }} 
-        style={styles.queueNumberSection}
+
+      {/* Queue Number Section - Right Side Integrated - Slides out when expanded */}
+      <Animated.View
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: 50,
+          transform: [{
+            translateX: expandAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 100], // Slide out 100px to the right when expanded
+            }),
+          }],
+          opacity: expandAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [1, 0], // Fade out when expanded
+          }),
+        }}
       >
-        <Text style={styles.queueNumberText}>{patient.queue_number === 0 ? '-' : patient.queue_number}</Text>
-      </LinearGradient>
+        <LinearGradient
+          colors={queueNumberColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.queueNumberSection}
+        >
+          <Text style={styles.queueNumberText}>{patient.queue_number === 0 ? '-' : patient.queue_number}</Text>
+        </LinearGradient>
+      </Animated.View>
 
     </View>
   );
@@ -2893,10 +5506,10 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 12, paddingBottom: 20 },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 28, fontWeight: '700', color: '#1F2937', letterSpacing: -0.5 }, // ✅ تكبير العنوان
-  headerSubtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 }, // ✅ رمادي كما كان
+  headerTitle: { fontSize: 28, fontWeight: '700', color: '#1F2937', letterSpacing: -0.5 }, // تكبير العنوان
+  headerSubtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 }, // رمادي كما كان
   iconButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  // ✅ زر البروفايل - مطابق تماماً لـ FAB
+  // زر البروفايل - مطابق تماماً لـ FAB
   profileButton: {
     width: 44,
     height: 44,
@@ -2908,7 +5521,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
@@ -2922,9 +5535,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
+    backgroundColor: 'transparent', // إزالة Inner Glow
   },
-  // ✅ زر الأرشفة الاحترافي
+  // زر الأرشفة الاحترافي
   archiveButton: {
     width: 44,
     height: 44,
@@ -2937,7 +5550,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     shadowColor: '#000',
@@ -2949,14 +5562,14 @@ const styles = StyleSheet.create({
   statsContainer: { flexDirection: 'row', paddingHorizontal: 24, gap: 16, marginBottom: 24 },
   statCard: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // ✨ زجاجي شفاف
+    backgroundColor: 'rgba(255, 255, 255, 0.4)', // زجاجي شفاف
     borderRadius: 20,
     padding: 20,
     alignItems: 'center',
     minHeight: 150,
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // ✅ حواف بيضاء
+    borderColor: 'rgba(255, 255, 255, 0.8)', // حواف بيضاء
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
@@ -2964,9 +5577,9 @@ const styles = StyleSheet.create({
     elevation: Platform.OS === 'android' ? 0 : 5,
   },
   statCardActive: {
-    backgroundColor: 'rgba(125, 211, 192, 0.3)', // ✨ زجاجي فيروزي عند التفعيل
+    backgroundColor: 'rgba(125, 211, 192, 0.3)', // زجاجي فيروزي عند التفعيل
     borderWidth: 2.5,
-    borderColor: 'rgba(125, 211, 192, 0.9)', // ✅ حواف فيروزية
+    borderColor: 'rgba(125, 211, 192, 0.9)', // حواف فيروزية
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 0 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
@@ -2975,12 +5588,12 @@ const styles = StyleSheet.create({
   },
   statCardExpanded: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // ✨ زجاجي شفاف
+    backgroundColor: 'rgba(255, 255, 255, 0.4)', // زجاجي شفاف
     borderRadius: 20,
     padding: 20,
     minHeight: 200,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // ✅ حواف بيضاء
+    borderColor: 'rgba(255, 255, 255, 0.8)', // حواف بيضاء
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
@@ -3014,7 +5627,7 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 22.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     justifyContent: 'center',
@@ -3030,13 +5643,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
+    backgroundColor: 'transparent', // إزالة Inner Glow
   },
   // Header View Details button
   viewDetailsHeaderButton: {
     paddingHorizontal: 20,
     paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
@@ -3070,10 +5683,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // ✨ زجاجي شفاف
+    backgroundColor: 'rgba(255, 255, 255, 0.4)', // زجاجي شفاف
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // ✨ حدود بيضاء لامعة
+    borderColor: 'rgba(255, 255, 255, 0.8)', // حدود بيضاء لامعة
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
@@ -3081,9 +5694,9 @@ const styles = StyleSheet.create({
     elevation: Platform.OS === 'android' ? 0 : 3,
   },
   headerOptionButtonActive: {
-    backgroundColor: 'rgba(125, 211, 192, 0.3)', // ✨ زجاجي فيروزي عند التفعيل
+    backgroundColor: 'rgba(125, 211, 192, 0.3)', // زجاجي فيروزي عند التفعيل
     borderWidth: 2.5,
-    borderColor: 'rgba(125, 211, 192, 0.9)', // ✨ حدود فيروزية لامعة
+    borderColor: 'rgba(125, 211, 192, 0.9)', // حدود فيروزية لامعة
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 3 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.3,
@@ -3102,26 +5715,33 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 24, paddingTop: 0, paddingBottom: 120 },
   patientCardWrapper: {
     flexDirection: 'row',
+    position: 'relative', // للسماح بـ absolute positioning للـ Queue Number
     marginBottom: 16,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.35)', // ✨ زجاجي شفاف
-    borderWidth: 2.5, // ✅ حواف أعرض
-    borderColor: 'rgba(255, 255, 255, 0.7)', // ✅ حواف بيضاء أوضح
+    backgroundColor: 'rgba(255, 255, 255, 0.35)', // زجاجي شفاف
+    borderWidth: 2.5, // حواف أعرض
+    borderColor: 'rgba(255, 255, 255, 0.7)', // حواف بيضاء أوضح
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
     shadowRadius: Platform.OS === 'android' ? 0 : 8,
     elevation: Platform.OS === 'android' ? 0 : 3,
   },
-  queueNumberSection: { 
-    width: 50, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    position: 'relative',
-    // ✨ نفس الشكل الأصلي - فقط اللون زجاجي
+  queueNumberSection: {
+    flex: 1,
+    width: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // نفس الشكل الأصلي - فقط اللون زجاجي
   },
-  patientCardContent: { flex: 1, padding: 10 },
+  patientCardContent: {
+    flex: 1,
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingLeft: 10,
+    paddingRight: 0, // لا فراغ من اليمين ليتصل مع القيو نمبر
+  },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   leftSection: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, minWidth: 50, maxWidth: 70, alignItems: 'center', justifyContent: 'center' },
@@ -3132,11 +5752,11 @@ const styles = StyleSheet.create({
     fontWeight: '700', 
     color: '#2D3748', 
     letterSpacing: 0.3,
-    fontFamily: 'Cairo-Bold', // ✅ خط Cairo Bold
+    fontFamily: 'Cairo-Bold', // خط Cairo Bold
     marginLeft: 70, // مسافة من اليسار
-    marginRight: 20, // ✅ إبعاد الاسم 20px عن الحافة اليمنى
+    marginRight: 20, // إبعاد الاسم 20px عن الحافة اليمنى
   },
-  divider: { height: 3, backgroundColor: 'rgba(255, 255, 255, 0.4)', marginBottom: 6 }, // ✅ أبيض شفاف أعرض (3px)
+  divider: { height: 3, backgroundColor: 'rgba(255, 255, 255, 0.4)', marginBottom: 6 }, // أبيض شفاف أعرض (3px)
   tagsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingHorizontal: 4 },
   tag: {
     flex: 1,
@@ -3146,7 +5766,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)', // ✨ Glass effect شفاف أكثر
+    backgroundColor: 'rgba(255, 255, 255, 0.1)', // Glass effect شفاف أكثر
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.3)',
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
@@ -3186,7 +5806,7 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
@@ -3200,11 +5820,11 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'transparent', // ✨ إزالة Inner Glow
+    backgroundColor: 'transparent', // إزالة Inner Glow
   },
   fabIcon: {
     fontSize: 42,
-    color: '#7DD3C0', // ✨ فيروزي لتطابق التصميم
+    color: '#7DD3C0', // فيروزي لتطابق التصميم
     fontWeight: '400',
     lineHeight: 42,
     textAlign: 'center',
@@ -3220,17 +5840,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
-    paddingHorizontal: '2.5%',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 50,
   },
   modalContent: {
-    width: '90%',
-    maxHeight: '90%',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', // ✨ Glass effect أقل شفافية
+    width: '100%',
+    maxHeight: '85%',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Frosted glass effect
     borderRadius: 24,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
-    padding: 24,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    padding: 20,
     shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
     shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 20 },
     shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
@@ -3247,7 +5868,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   dropdownModal: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.95)', // Glass effect
     borderRadius: 20,
     width: '85%',
     maxHeight: '70%',
@@ -3269,7 +5890,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
@@ -3287,7 +5908,7 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     marginBottom: 8,
     marginTop: 8,
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
@@ -3295,7 +5916,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   textInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.65)', // ✨ Glass effect أعتم للوضوح
+    backgroundColor: 'rgba(255, 255, 255, 0.65)', // Glass effect أعتم للوضوح
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 12,
@@ -3306,13 +5927,132 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     justifyContent: 'center',
   },
+  inputContainer: {
+    position: 'relative',
+    marginBottom: 0,
+  },
+  clearButton: {
+    position: 'absolute',
+    right: 12,
+    top: 16,
+    padding: 4,
+    zIndex: 10,
+  },
+  clearButtonTextArea: {
+    top: 12,
+  },
+  // Suggestions/Auto-complete styles
+  suggestionsContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(125, 211, 192, 0.6)',
+    marginBottom: 16,
+    marginTop: -8,
+    maxHeight: 250,
+    shadowColor: '#7DD3C0',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  suggestionsHeader: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+  },
+  suggestionsList: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(229, 231, 235, 0.5)',
+  },
+  suggestionItemSelected: {
+    backgroundColor: 'rgba(125, 211, 192, 0.2)',
+  },
+  suggestionItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1F2937',
+    flex: 1,
+  },
+  expandButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(125, 211, 192, 0.3)',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(125, 211, 192, 0.6)',
+    marginVertical: 16,
+  },
+  expandButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  modeButtonsContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  modeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    minHeight: 48,
+  },
+  modeButtonActive: {
+    backgroundColor: 'rgba(125, 211, 192, 0.4)',
+    borderColor: 'rgba(125, 211, 192, 0.8)',
+  },
+  modeButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  modeButtonTextActive: {
+    color: '#FFFFFF',
+  },
   textArea: { minHeight: 100, paddingTop: 16 },
   pickerContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   pickerOption: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)', // ✨ أعتم للوضوح
+    backgroundColor: 'rgba(255, 255, 255, 0.7)', // أعتم للوضوح
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.9)',
   },
@@ -3326,7 +6066,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -3334,7 +6074,7 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#7DD3C0', borderColor: '#7DD3C0', borderWidth: 2 },
   checkboxLabel: {
     fontSize: 16,
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
     textShadowOffset: { width: 0, height: 1 },
@@ -3344,7 +6084,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
     marginBottom: 16,
     borderRadius: 16,
-    backgroundColor: 'rgba(125, 211, 192, 0.3)', // ✨ Glass effect فيروزي
+    backgroundColor: 'rgba(125, 211, 192, 0.3)', // Glass effect فيروزي
     borderWidth: 2,
     borderColor: 'rgba(125, 211, 192, 0.6)',
     paddingVertical: 16,
@@ -3369,8 +6109,8 @@ const styles = StyleSheet.create({
     padding: 12,
     width: '75%',
     maxWidth: 300,
-    alignSelf: 'center', // ✨ لتوسيط النافذة
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', // ✨ Glass effect أقل شفافية
+    alignSelf: 'center', // لتوسيط النافذة
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', // Glass effect أقل شفافية
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
     shadowColor: '#000',
@@ -3388,13 +6128,13 @@ const styles = StyleSheet.create({
     gap: 14,
     borderRadius: 12,
     marginVertical: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   menuItemText: {
     fontSize: 16,
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     fontWeight: '600',
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
     textShadowOffset: { width: 0, height: 1 },
@@ -3405,7 +6145,7 @@ const styles = StyleSheet.create({
   },
   noteText: {
     fontSize: 16,
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     lineHeight: 24,
     marginBottom: 24,
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
@@ -3454,7 +6194,7 @@ const styles = StyleSheet.create({
     width: '85%',
     maxHeight: '60%',
     alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', // ✨ Glass effect أقل شفافية
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', // Glass effect أقل شفافية
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
     padding: 24,
@@ -3468,7 +6208,7 @@ const styles = StyleSheet.create({
   modalHeaderTitle: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     textAlign: 'center',
     paddingVertical: 20,
     paddingHorizontal: 24,
@@ -3490,13 +6230,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
     marginVertical: 4,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // ✨ Glass effect
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   beautifulDropdownText: {
     fontSize: 16,
-    color: '#FFFFFF', // ✨ أبيض مثل Edit Modal
+    color: '#FFFFFF', // أبيض مثل Edit Modal
     fontWeight: '600',
     marginLeft: 12,
     textShadowColor: 'rgba(0, 0, 0, 0.2)',
@@ -3720,5 +6460,643 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     marginTop: 20,
+  },
+  // Expanded Dental Section Styles (Permanent Patients)
+  dentalTabsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  dentalTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    marginHorizontal: 3,
+  },
+  dentalTabActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderBottomWidth: 3,
+    borderBottomColor: '#3B82F6',
+  },
+  dentalTabText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.4,
+  },
+  dentalTabTextActive: {
+    color: '#1E40AF',
+    fontWeight: '800',
+  },
+  dentalTabContent: {
+    maxHeight: 800,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.5)',
+  },
+  dentalTabContentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#2563EB',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  treatmentContainer: {
+    gap: 12,
+  },
+  dentalSectionContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(147, 197, 253, 0.3)',
+  },
+  dentalTreatmentSection: {
+    gap: 8,
+  },
+  dentalTreatmentHeader: {
+    marginBottom: 4,
+  },
+  dentalTreatmentTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  teethGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  toothChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  toothChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Tooth Edit Modal Styles
+  toothModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  toothModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  toothModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  toothModalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  toothModalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  toothModalCloseButton: {
+    padding: 4,
+  },
+  toothModalContent: {
+    padding: 20,
+  },
+  toothModalSection: {
+    marginBottom: 24,
+  },
+  toothModalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  toothModalButtonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  toothModalButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  toothModalButtonActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  toothModalButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  toothModalButtonTextActive: {
+    color: '#2563EB',
+  },
+  toothModalNoteInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#1F2937',
+    backgroundColor: '#F9FAFB',
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  toothModalSubmitButton: {
+    margin: 20,
+    marginTop: 0,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  toothModalSubmitButtonActive: {
+    backgroundColor: '#2563EB',
+  },
+  toothModalSubmitButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  // New Modal Styles from DentalChartScreen
+  newModalContainer: {
+    flex: 1,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    overflow: 'hidden',
+    elevation: 8,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.15,
+      shadowRadius: 24,
+    } : {}),
+  },
+  newModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  toothNumberBox: {
+    backgroundColor: 'rgba(96, 165, 250, 0.2)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    elevation: 2,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    } : {}),
+  },
+  modalToothNumberText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E3A8A',
+  },
+  modalToothNameText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
+  editButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.5)',
+  },
+  editButtonActive: {
+    backgroundColor: '#60A5FA',
+    borderColor: '#3B82F6',
+    borderWidth: 2,
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    } : {}),
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  closeButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.5)',
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    marginHorizontal: 16,
+  },
+  mainSectionsContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+    } : {}),
+  },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  sectionLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    marginVertical: 8,
+  },
+  dropdownInput: {
+    width: 170,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.5)',
+  },
+  dropdownInputActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    elevation: 2,
+  },
+  dropdownText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'center',
+  },
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 5,
+  },
+  dropdownModalContent: {
+    backgroundColor: 'rgba(240, 249, 255, 0.98)',
+    borderRadius: 24,
+    padding: 22,
+    width: '100%',
+    maxHeight: '92%',
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    elevation: 5,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+    } : {}),
+  },
+  dropdownModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+  dropdownModalList: {
+    maxHeight: 800,
+  },
+  dropdownModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.4)',
+    marginBottom: 12,
+    elevation: 1,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+    } : {}),
+  },
+  optionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  radioButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  radioButtonSelected: {
+    borderColor: '#60A5FA',
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#60A5FA',
+  },
+  newNoteContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  noteInput: {
+    fontSize: 14,
+    color: '#1E293B',
+    minHeight: 70,
+    textAlignVertical: 'top',
+    fontWeight: '500',
+  },
+  submitButtonContainer: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(248, 250, 252, 0.7)',
+    borderTopWidth: 2,
+    borderTopColor: 'rgba(203, 213, 225, 0.6)',
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(226, 232, 240, 0.7)',
+    gap: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(148, 163, 184, 0.5)',
+  },
+  submitButtonActive: {
+    backgroundColor: '#10B981',
+    borderColor: '#059669',
+    borderWidth: 2,
+    elevation: 6,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#10B981',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+    } : {}),
+  },
+  submitButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+
+  // Tab Buttons Styles
+  tabButtons: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 10,
+    backgroundColor: 'rgba(248, 250, 252, 0.9)',
+    borderRadius: 16,
+    marginHorizontal: 4,
+    marginVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(203, 213, 225, 0.6)',
+  },
+  tabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    gap: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.6)',
+    elevation: 1,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+    } : {}),
+  },
+  tabBtnActive: {
+    backgroundColor: '#3B82F6',
+    borderWidth: 2,
+    borderColor: '#2563EB',
+    elevation: 4,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+    } : {}),
+  },
+  tabBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.3,
+  },
+  tabBtnTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Records Section Styles
+  recordsMainContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+    } : {}),
+    padding: 16,
+    gap: 12,
+  },
+  recordsTypeButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+    justifyContent: 'center',
+  },
+  recordsTypeBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(203, 213, 225, 0.6)',
+  },
+  recordsTypeBtnActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#2563EB',
+    borderWidth: 2,
+    elevation: 3,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#3B82F6',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    } : {}),
+  },
+  recordsTypeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.2,
+  },
+  recordsTypeBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  recordCard: {
+    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    borderRadius: 18,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(37, 99, 235, 0.35)',
+  },
+  recordText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  recordSubText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+
+  // Notes Section Styles
+  notesSection: {
+    gap: 14,
+  },
+  newNoteContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  noteInput: {
+    fontSize: 14,
+    color: '#1E293B',
+    minHeight: 70,
+    textAlignVertical: 'top',
+    fontWeight: '500',
+  },
+  noteCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 12,
+    padding: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+    elevation: 2,
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    } : {}),
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  noteDoctorName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  noteTimestamp: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
   },
 });
