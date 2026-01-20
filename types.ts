@@ -203,7 +203,7 @@ export interface PlanningRecord {
 export interface Referral {
   id: string;
   permanent_patient_id: string;
-  tooth_number: ToothNumber;
+  tooth_number: ToothNumber | null;  // Allow null for general referrals without specific tooth
   referral_type: string;
   notes?: string;
   doctor_name: string;

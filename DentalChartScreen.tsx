@@ -29,6 +29,8 @@ import {
   getEditingRecords,
   getPlanningRecords,
   getReferrals,
+  createReferral,
+  deleteReferral,
   createScalingRecord,
   getScalingRecords,
   deleteScalingRecord,
@@ -1880,6 +1882,15 @@ export default function DentalChartScreen({
 
   // بيانات الأسنان المحفوظة
   const [selectedReferralFor, setSelectedReferralFor] = useState<Record<number | string, string[]>>({});  // Changed to array for multiple referrals
+  // Selected teeth for each department in modal (temporary - before saving)
+  const [selectedTeethForDepartments, setSelectedTeethForDepartments] = useState<Record<string, number[]>>({
+    endodontics: [],
+    oralSurgery: [],
+    orthodontics: [],
+    periodontics: [],
+    prosthodontics: [],
+    oralMedicine: [],
+  });
   // Types for tooth records
   type EditingRecord = {
     type: 'editing';
@@ -2903,19 +2914,23 @@ export default function DentalChartScreen({
         const referralsByTooth: Record<number, string[]> = {};
 
         notGivenReferrals.forEach((referral) => {
-          const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
-          if (toothNumber) {
-            // Map referral type to key
-            const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
+          // Handle referrals with specific tooth numbers
+          if (referral.tooth_number) {
+            const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
+            if (toothNumber) {
+              // Map referral type to key
+              const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
 
-            // Add to array (multiple referrals per tooth)
-            if (!referralsByTooth[toothNumber]) {
-              referralsByTooth[toothNumber] = [];
-            }
-            if (!referralsByTooth[toothNumber].includes(referralKey)) {
-              referralsByTooth[toothNumber].push(referralKey);
+              // Add to array (multiple referrals per tooth)
+              if (!referralsByTooth[toothNumber]) {
+                referralsByTooth[toothNumber] = [];
+              }
+              if (!referralsByTooth[toothNumber].includes(referralKey)) {
+                referralsByTooth[toothNumber].push(referralKey);
+              }
             }
           }
+          // General referrals (without specific tooth) will be handled in departmentsWithReferrals
         });
 
         // Rebuild referrals state for Department tab (Not Given referrals فقط)
@@ -2946,39 +2961,37 @@ export default function DentalChartScreen({
 
         givenReferrals.forEach((referral) => {
           const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
-          const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
+          const toothNumber = referral.tooth_number ? convertPalmerToNumber(referral.tooth_number as ToothNumber) : null;
 
-          if (toothNumber) {
-            // Create unique key: referralKey + timestamp (rounded to minute)
-            const givenTime = new Date(referral.timestamp || referral.created_at);
-            const roundedTime = new Date(givenTime.getFullYear(), givenTime.getMonth(), givenTime.getDate(), givenTime.getHours(), givenTime.getMinutes());
-            const batchKey = `${referralKey}-${roundedTime.getTime()}`;
+          // Create unique key: referralKey + timestamp (rounded to minute)
+          const givenTime = new Date(referral.timestamp || referral.created_at);
+          const roundedTime = new Date(givenTime.getFullYear(), givenTime.getMonth(), givenTime.getDate(), givenTime.getHours(), givenTime.getMinutes());
+          const batchKey = `${referralKey}-${roundedTime.getTime()}`;
 
-            const existingRecord = givenByDept.get(batchKey);
+          const existingRecord = givenByDept.get(batchKey);
 
-            if (existingRecord) {
-              // Add tooth to existing batch (if not already included)
-              if (!existingRecord.teeth.includes(toothNumber)) {
-                existingRecord.teeth.push(toothNumber);
-              }
-            } else {
-              // Create new batch record
-              givenByDept.set(batchKey, {
-                departmentKey: referralKey,
-                departmentName: referral.referral_type,
-                teeth: [toothNumber],
-                timestamp: givenTime.toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true
-                }),
-                timestampNum: givenTime.getTime(),
-                doctorName: referral.doctor_name || 'Dr. Unknown'
-              });
+          if (existingRecord) {
+            // Add tooth to existing batch (if not already included and tooth exists)
+            if (toothNumber && !existingRecord.teeth.includes(toothNumber)) {
+              existingRecord.teeth.push(toothNumber);
             }
+          } else {
+            // Create new batch record
+            givenByDept.set(batchKey, {
+              departmentKey: referralKey,
+              departmentName: referral.referral_type,
+              teeth: toothNumber ? [toothNumber] : [],  // Empty array for general referrals
+              timestamp: givenTime.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              }),
+              timestampNum: givenTime.getTime(),
+              doctorName: referral.doctor_name || 'Dr. Unknown'
+            });
           }
         });
 
@@ -8021,12 +8034,26 @@ export default function DentalChartScreen({
                                     </TouchableOpacity>
                                   </View>
 
-                                  {/* عرض الأسنان المحالة - دائماً */}
-                                  {referredTeeth.length > 0 && (
+                                  {/* عرض الأسنان المحالة - أو General إذا لم تكن محددة */}
+                                  {referredTeeth.length > 0 ? (
                                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
                                       {referredTeeth.map(toothNumber => (
                                         <ToothNumberBadge key={`${key}-${toothNumber}`} toothNumber={toothNumber} />
                                       ))}
+                                    </View>
+                                  ) : (
+                                    <View style={{ marginTop: 4 }}>
+                                      <View style={{
+                                        backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 5,
+                                        borderRadius: 6,
+                                        alignSelf: 'flex-start',
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(147, 197, 253, 0.6)',
+                                      }}>
+                                        <Text style={{ fontSize: 11, fontWeight: '600', color: '#0284C7' }}>General Referral</Text>
+                                      </View>
                                     </View>
                                   )}
                                 </View>
@@ -8087,11 +8114,25 @@ export default function DentalChartScreen({
                                   </View>
                                 </View>
 
-                                {record.teeth.length > 0 && (
+                                {record.teeth.length > 0 ? (
                                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
                                     {record.teeth.map((toothNumber, idx) => (
                                       <ToothNumberBadge key={`${record.id}-${toothNumber}-${idx}`} toothNumber={toothNumber} />
                                     ))}
+                                  </View>
+                                ) : (
+                                  <View style={{ marginBottom: 8 }}>
+                                    <View style={{
+                                      backgroundColor: 'rgba(147, 197, 253, 0.3)',
+                                      paddingHorizontal: 10,
+                                      paddingVertical: 5,
+                                      borderRadius: 6,
+                                      alignSelf: 'flex-start',
+                                      borderWidth: 1,
+                                      borderColor: 'rgba(147, 197, 253, 0.6)',
+                                    }}>
+                                      <Text style={{ fontSize: 11, fontWeight: '600', color: '#0284C7' }}>General Referral</Text>
+                                    </View>
                                   </View>
                                 )}
 
@@ -9130,185 +9171,1384 @@ export default function DentalChartScreen({
               {/* Departments List */}
               <ScrollView style={{ maxHeight: 400, padding: 20 }} showsVerticalScrollIndicator={false}>
                 {/* Endodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.endodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setReferrals(prev => {
-                      const newValue = !prev.endodontics;
-                      // إذا تم تفعيل القسم، أعد تعيينه إلى Not Given
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, endodontics: 'not_given' }));
-                      }
-                      return { ...prev, endodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.endodontics && styles.checkboxChecked]}>
-                    {referrals.endodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>1- Endodontics</Text>
-                </TouchableOpacity>
+                <View>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      marginBottom: referrals.endodontics ? 8 : 12,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.endodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={() => {
+                      setReferrals(prev => {
+                        const newValue = !prev.endodontics;
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, endodontics: 'not_given' }));
+                        } else {
+                          // Clear selected teeth when unchecking
+                          setSelectedTeethForDepartments(prevTeeth => ({ ...prevTeeth, endodontics: [] }));
+                        }
+                        return { ...prev, endodontics: newValue };
+                      });
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.endodontics && styles.checkboxChecked]}>
+                      {referrals.endodontics && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>1- Endodontics</Text>
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection Grid - Palmer Notation */}
+                  {referrals.endodontics && (
+                    <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>Select Teeth (Optional):</Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[9, 10, 11, 12, 13, 14, 15, 16].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.endodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    endodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.endodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum - 8}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.endodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    endodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.endodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[24, 23, 22, 21, 20, 19, 18, 17].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.endodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    endodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.endodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{25 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[32, 31, 30, 29, 28, 27, 26, 25].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.endodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    endodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.endodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.endodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{33 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
 
                 {/* Oral Surgery */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.oralSurgery ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setReferrals(prev => {
-                      const newValue = !prev.oralSurgery;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, oralSurgery: 'not_given' }));
-                      }
-                      return { ...prev, oralSurgery: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.oralSurgery && styles.checkboxChecked]}>
-                    {referrals.oralSurgery && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>2- Oral Surgery</Text>
-                </TouchableOpacity>
+                <View>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      marginBottom: referrals.oralSurgery ? 8 : 12,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.oralSurgery ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={() => {
+                      setReferrals(prev => {
+                        const newValue = !prev.oralSurgery;
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, oralSurgery: 'not_given' }));
+                        } else {
+                          setSelectedTeethForDepartments(prevTeeth => ({ ...prevTeeth, oralSurgery: [] }));
+                        }
+                        return { ...prev, oralSurgery: newValue };
+                      });
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.oralSurgery && styles.checkboxChecked]}>
+                      {referrals.oralSurgery && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>2- Oral Surgery</Text>
+                  </TouchableOpacity>
+                  {/* Teeth Selection Grid - Palmer Notation */}
+                  {referrals.oralSurgery && (
+                    <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>Select Teeth (Optional):</Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[9, 10, 11, 12, 13, 14, 15, 16].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralSurgery || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralSurgery: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralSurgery?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum - 8}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralSurgery || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralSurgery: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralSurgery?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[24, 23, 22, 21, 20, 19, 18, 17].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralSurgery || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralSurgery: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralSurgery?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{25 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[32, 31, 30, 29, 28, 27, 26, 25].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralSurgery || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralSurgery: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralSurgery?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralSurgery?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{33 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
 
                 {/* Orthodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.orthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setReferrals(prev => {
-                      const newValue = !prev.orthodontics;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, orthodontics: 'not_given' }));
-                      }
-                      return { ...prev, orthodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.orthodontics && styles.checkboxChecked]}>
-                    {referrals.orthodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>3- Orthodontics</Text>
-                </TouchableOpacity>
+                <View>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      marginBottom: referrals.orthodontics ? 8 : 12,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.orthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={() => {
+                      setReferrals(prev => {
+                        const newValue = !prev.orthodontics;
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, orthodontics: 'not_given' }));
+                        } else {
+                          // Clear selected teeth when unchecking
+                          setSelectedTeethForDepartments(prevTeeth => ({ ...prevTeeth, orthodontics: [] }));
+                        }
+                        return { ...prev, orthodontics: newValue };
+                      });
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.orthodontics && styles.checkboxChecked]}>
+                      {referrals.orthodontics && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>3- Orthodontics</Text>
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection Grid - Palmer Notation */}
+                  {referrals.orthodontics && (
+                    <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>Select Teeth (Optional):</Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[9, 10, 11, 12, 13, 14, 15, 16].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.orthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    orthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.orthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum - 8}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.orthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    orthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.orthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[24, 23, 22, 21, 20, 19, 18, 17].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.orthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    orthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.orthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{25 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[32, 31, 30, 29, 28, 27, 26, 25].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.orthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    orthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.orthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.orthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{33 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
 
                 {/* Periodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.periodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setReferrals(prev => {
-                      const newValue = !prev.periodontics;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, periodontics: 'not_given' }));
-                      }
-                      return { ...prev, periodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.periodontics && styles.checkboxChecked]}>
-                    {referrals.periodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>4- Periodontics</Text>
-                </TouchableOpacity>
+                <View>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      marginBottom: referrals.periodontics ? 8 : 12,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.periodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={() => {
+                      setReferrals(prev => {
+                        const newValue = !prev.periodontics;
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, periodontics: 'not_given' }));
+                        } else {
+                          // Clear selected teeth when unchecking
+                          setSelectedTeethForDepartments(prevTeeth => ({ ...prevTeeth, periodontics: [] }));
+                        }
+                        return { ...prev, periodontics: newValue };
+                      });
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.periodontics && styles.checkboxChecked]}>
+                      {referrals.periodontics && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>4- Periodontics</Text>
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection Grid - Palmer Notation */}
+                  {referrals.periodontics && (
+                    <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>Select Teeth (Optional):</Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[9, 10, 11, 12, 13, 14, 15, 16].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.periodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    periodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.periodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum - 8}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.periodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    periodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.periodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[24, 23, 22, 21, 20, 19, 18, 17].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.periodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    periodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.periodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{25 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[32, 31, 30, 29, 28, 27, 26, 25].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.periodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    periodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.periodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.periodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{33 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
 
                 {/* Prosthodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.prosthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setReferrals(prev => {
-                      const newValue = !prev.prosthodontics;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, prosthodontics: 'not_given' }));
-                      }
-                      return { ...prev, prosthodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.prosthodontics && styles.checkboxChecked]}>
-                    {referrals.prosthodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>5- Prosthodontics</Text>
-                </TouchableOpacity>
+                <View>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      marginBottom: referrals.prosthodontics ? 8 : 12,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.prosthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={() => {
+                      setReferrals(prev => {
+                        const newValue = !prev.prosthodontics;
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, prosthodontics: 'not_given' }));
+                        } else {
+                          // Clear selected teeth when unchecking
+                          setSelectedTeethForDepartments(prevTeeth => ({ ...prevTeeth, prosthodontics: [] }));
+                        }
+                        return { ...prev, prosthodontics: newValue };
+                      });
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.prosthodontics && styles.checkboxChecked]}>
+                      {referrals.prosthodontics && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>5- Prosthodontics</Text>
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection Grid - Palmer Notation */}
+                  {referrals.prosthodontics && (
+                    <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>Select Teeth (Optional):</Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[9, 10, 11, 12, 13, 14, 15, 16].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.prosthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    prosthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.prosthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum - 8}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.prosthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    prosthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.prosthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[24, 23, 22, 21, 20, 19, 18, 17].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.prosthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    prosthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.prosthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{25 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[32, 31, 30, 29, 28, 27, 26, 25].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.prosthodontics || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    prosthodontics: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.prosthodontics?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.prosthodontics?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{33 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
 
                 {/* Oral Medicine */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.oralMedicine ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setReferrals(prev => {
-                      const newValue = !prev.oralMedicine;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, oralMedicine: 'not_given' }));
-                      }
-                      return { ...prev, oralMedicine: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.oralMedicine && styles.checkboxChecked]}>
-                    {referrals.oralMedicine && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>6- Oral Medicine</Text>
-                </TouchableOpacity>
+                <View>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      marginBottom: referrals.oralMedicine ? 8 : 12,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.oralMedicine ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={() => {
+                      setReferrals(prev => {
+                        const newValue = !prev.oralMedicine;
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, oralMedicine: 'not_given' }));
+                        } else {
+                          // Clear selected teeth when unchecking
+                          setSelectedTeethForDepartments(prevTeeth => ({ ...prevTeeth, oralMedicine: [] }));
+                        }
+                        return { ...prev, oralMedicine: newValue };
+                      });
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.oralMedicine && styles.checkboxChecked]}>
+                      {referrals.oralMedicine && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>6- Oral Medicine</Text>
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection Grid - Palmer Notation */}
+                  {referrals.oralMedicine && (
+                    <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>Select Teeth (Optional):</Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[9, 10, 11, 12, 13, 14, 15, 16].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralMedicine || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralMedicine: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralMedicine?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum - 8}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>UR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralMedicine || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralMedicine: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralMedicine?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LL:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[24, 23, 22, 21, 20, 19, 18, 17].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralMedicine || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralMedicine: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralMedicine?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{25 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 4 }}>LR:</Text>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[32, 31, 30, 29, 28, 27, 26, 25].map(toothNum => (
+                            <TouchableOpacity
+                              key={toothNum}
+                              onPress={() => {
+                                setSelectedTeethForDepartments(prev => {
+                                  const current = prev.oralMedicine || [];
+                                  const isSelected = current.includes(toothNum);
+                                  return {
+                                    ...prev,
+                                    oralMedicine: isSelected
+                                      ? current.filter(t => t !== toothNum)
+                                      : [...current, toothNum]
+                                  };
+                                });
+                              }}
+                              style={{
+                                width: 36,
+                                height: 32,
+                                borderRadius: 6,
+                                backgroundColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.3)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderWidth: 1,
+                                borderColor: selectedTeethForDepartments.oralMedicine?.includes(toothNum)
+                                  ? '#0284C7'
+                                  : 'rgba(186, 230, 253, 0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: 11,
+                                fontWeight: '600',
+                                color: selectedTeethForDepartments.oralMedicine?.includes(toothNum) ? '#FFFFFF' : '#64748B'
+                              }}>{33 - toothNum}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
               </ScrollView>
 
               {/* Done Button */}
               <View style={{ padding: 20, paddingTop: 12 }}>
                 <TouchableOpacity
-                  onPress={() => setShowDepartmentModal(false)}
+                  onPress={async () => {
+                    // Save referrals to database
+                    if (!permanentPatientId || !user?.name) {
+                      Alert.alert('Error', 'Missing patient or user information');
+                      return;
+                    }
+
+                    const referralTypeMap: Record<string, string> = {
+                      'endodontics': 'Endodontics',
+                      'oralSurgery': 'Oral Surgery',
+                      'orthodontics': 'Orthodontics',
+                      'prosthodontics': 'Prosthodontics',
+                      'periodontics': 'Periodontics',
+                      'oralMedicine': 'Oral Medicine',
+                    };
+
+                    try {
+                      let createdCount = 0;
+
+                      // Loop through each department
+                      for (const [deptKey, isSelected] of Object.entries(referrals)) {
+                        if (isSelected) {
+                          const selectedTeeth = selectedTeethForDepartments[deptKey as keyof typeof selectedTeethForDepartments] || [];
+                          const referralType = referralTypeMap[deptKey] || deptKey;
+
+                          if (selectedTeeth.length > 0) {
+                            // Create referral for each selected tooth
+                            for (const toothNum of selectedTeeth) {
+                              const palmerNotation = convertNumberToPalmer(toothNum);
+                              if (palmerNotation) {
+                                await createReferral(
+                                  permanentPatientId,
+                                  palmerNotation,
+                                  referralType,
+                                  user.name
+                                );
+                                createdCount++;
+                              }
+                            }
+                          } else {
+                            // No teeth selected - create general referral without specific tooth
+                            await createReferral(
+                              permanentPatientId,
+                              null,  // No specific tooth
+                              referralType,
+                              user.name
+                            );
+                            createdCount++;
+                          }
+                        }
+                      }
+
+                      // Reload dental data to show new referrals
+                      await loadPatientDentalData();
+
+                      // Reset selected teeth
+                      setSelectedTeethForDepartments({
+                        endodontics: [],
+                        oralSurgery: [],
+                        orthodontics: [],
+                        periodontics: [],
+                        prosthodontics: [],
+                        oralMedicine: [],
+                      });
+
+                      setShowDepartmentModal(false);
+
+                      if (createdCount > 0) {
+                        Alert.alert('Success', `${createdCount} referral(s) created successfully`);
+                      }
+                    } catch (error) {
+                      console.error('Error saving referrals:', error);
+                      Alert.alert('Error', 'Failed to save referrals');
+                    }
+                  }}
                   style={{
                     backgroundColor: '#0284C7',
                     paddingVertical: 16,

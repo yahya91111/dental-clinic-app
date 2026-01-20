@@ -194,6 +194,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
         .from('patients')
         .select('*') //  جلب جميع الأعمدة من patients (بما فيها registered_at, clinic_entry_at, completed_at)
         .eq('archive_date', dateStr)
+        .neq('queue_number', -1) // Exclude statistics records (only show actual patient cards)
         .order('queue_number', { ascending: true });
 
       // Filter by clinic_id if available
@@ -262,7 +263,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
 
       let query = supabase
         .from('patients')
-        .select('*')
+        .select('*, queue_number, permanent_patient_id')
         .gte('archive_date', fromStr)
         .lte('archive_date', toStr)
         .eq('status', 'complete'); // Only completed treatments
@@ -282,12 +283,25 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
         const conditions: Record<string, number> = {};
         const clinicPerformance: Record<string, number> = {};
 
-        // فلترة المرضى الصحيحين فقط (استبعاد القيم الافتراضية)
-        const validPatients = data.filter((p: any) => 
-          p.treatment !== 'Treatment' && 
-          p.condition !== 'Condition' && 
-          p.clinic !== 'Clinic'
-        );
+        // فلترة المرضى الصحيحين فقط (استبعاد القيم الافتراضية والسجلات المكررة)
+        const validPatients = data.filter((p: any) => {
+          // Exclude default values
+          if (p.treatment === 'Treatment' || p.condition === 'Condition' || p.clinic === 'Clinic') {
+            return false;
+          }
+
+          // For permanent patients: only count statistics records (queue_number = -1)
+          // For regular patients: only count regular records (!permanent_patient_id)
+          const isPermanentPatient = p.permanent_patient_id != null;
+          const isStatisticsRecord = p.queue_number === -1;
+
+          if (isPermanentPatient && !isStatisticsRecord) {
+            // Skip original timeline card for permanent patients
+            return false;
+          }
+
+          return true;
+        });
 
         validPatients.forEach((p: any) => {
           // Treatments
@@ -641,37 +655,43 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                   return (
                     <View key={patient.id} style={[styles.patientCard, shadows.medium]}>
                       {patient.status === 'complete' ? (
-                        <LinearGradient 
-                          colors={gradientColors} 
-                          start={{ x: 0, y: 0 }} 
-                          end={{ x: 1, y: 1 }} 
-                          style={styles.patientCardContent}
-                        >
-                          {/* Header Row */}
-                          <View style={styles.cardHeader}>
-                            <View style={styles.leftSection}>
-                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
-                                <Text style={styles.statusBadgeText}>DONE</Text>
-                              </View>
-                              {patient.is_elderly && (
-                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                                  <Text style={styles.statusBadgeText}>ELDR</Text>
-                                </View>
-                              )}
-                              {patient.note && (
-                                <TouchableOpacity 
-                                  style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
-                                  onPress={() => {
-                                    setSelectedNote(patient.note || '');
-                                    setShowNoteModal(true);
-                                  }}
-                                >
-                                  <Text style={styles.statusBadgeText}>NOTE</Text>
-                                </TouchableOpacity>
-                              )}
+                        <>
+                          {/* Badges Container - فوق الكرت على اليسار */}
+                          <View style={styles.badgesContainer}>
+                            <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
+                              <Text style={styles.statusBadgeText}>DONE</Text>
                             </View>
-                            <Text style={[styles.patientName, { color: '#FFFFFF' }]}>{patient.name}</Text>
+                            {patient.is_elderly && (
+                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
+                                <Text style={styles.statusBadgeText}>ELDR</Text>
+                              </View>
+                            )}
+                            {patient.note && (
+                              <TouchableOpacity
+                                style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
+                                onPress={() => {
+                                  setSelectedNote(patient.note || '');
+                                  setShowNoteModal(true);
+                                }}
+                              >
+                                <Text style={styles.statusBadgeText}>NOTE</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
+
+                          <LinearGradient
+                            colors={gradientColors}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.patientCardContent}
+                          >
+                            {/* Header Row */}
+                            <View style={styles.cardHeader}>
+                              <View style={styles.leftSection}>
+                                {/* البادجات الآن فوق الكرت */}
+                              </View>
+                              <Text style={[styles.patientName, { color: '#FFFFFF' }]}>{patient.name}</Text>
+                            </View>
                         
                           <View style={[styles.divider, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]} />
                           
@@ -721,40 +741,47 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                               })}
                           </View>
                         </LinearGradient>
+                        </>
                       ) : (
-                        <LinearGradient 
-                          colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']} 
-                          start={{ x: 0, y: 0 }} 
-                          end={{ x: 1, y: 1 }} 
-                          style={styles.patientCardContent}
-                        >
-                          {/* Header Row */}
-                          <View style={styles.cardHeader}>
-                            <View style={styles.leftSection}>
-                              {patient.is_elderly && (
-                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                                  <Text style={styles.statusBadgeText}>ELDR</Text>
-                                </View>
-                              )}
-                              {patient.status === 'na' && (
-                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
-                                  <Text style={styles.statusBadgeText}>N/A</Text>
-                                </View>
-                              )}
-                              {patient.note && (
-                                <TouchableOpacity 
-                                  style={[styles.statusBadge, { backgroundColor: 'rgba(59, 130, 246, 0.5)' }]}
-                                  onPress={() => {
-                                    setSelectedNote(patient.note || '');
-                                    setShowNoteModal(true);
-                                  }}
-                                >
-                                  <Text style={styles.statusBadgeText}>NOTE</Text>
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                            <Text style={[styles.patientName, { color: textColor }]}>{patient.name}</Text>
+                        <>
+                          {/* Badges Container - فوق الكرت على اليسار */}
+                          <View style={styles.badgesContainer}>
+                            {patient.is_elderly && (
+                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
+                                <Text style={styles.statusBadgeText}>ELDR</Text>
+                              </View>
+                            )}
+                            {patient.status === 'na' && (
+                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
+                                <Text style={styles.statusBadgeText}>N/A</Text>
+                              </View>
+                            )}
+                            {patient.note && (
+                              <TouchableOpacity
+                                style={[styles.statusBadge, { backgroundColor: 'rgba(59, 130, 246, 0.5)' }]}
+                                onPress={() => {
+                                  setSelectedNote(patient.note || '');
+                                  setShowNoteModal(true);
+                                }}
+                              >
+                                <Text style={styles.statusBadgeText}>NOTE</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
+
+                          <LinearGradient
+                            colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.patientCardContent}
+                          >
+                            {/* Header Row */}
+                            <View style={styles.cardHeader}>
+                              <View style={styles.leftSection}>
+                                {/* البادجات الآن فوق الكرت */}
+                              </View>
+                              <Text style={[styles.patientName, { color: textColor }]}>{patient.name}</Text>
+                            </View>
                         
                           <View style={styles.divider} />
                           
@@ -804,6 +831,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                               })}
                           </View>
                         </LinearGradient>
+                        </>
                       )}
                       
                       {/* Queue Number */}
@@ -1447,17 +1475,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  badgesContainer: {
+    position: 'absolute',
+    top: -8,
+    left: 8,
+    flexDirection: 'row',
+    gap: 4,
+    zIndex: 10,
+  },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    minWidth: 50,
-    maxWidth: 70,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    minWidth: 35,
+    maxWidth: 50,
     alignItems: 'center',
     justifyContent: 'center',
   },
   statusBadgeText: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',

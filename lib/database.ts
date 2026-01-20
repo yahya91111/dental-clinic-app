@@ -871,7 +871,7 @@ export async function getPlanningRecords(
  */
 export async function createReferral(
   permanentPatientId: string,
-  toothNumber: ToothNumber,
+  toothNumber: ToothNumber | null,  // Allow null for general referrals
   referralType: string,
   doctorName: string,
   notes?: string
@@ -881,7 +881,7 @@ export async function createReferral(
       .from('referrals')
       .insert({
         permanent_patient_id: permanentPatientId,
-        tooth_number: toothNumber,
+        tooth_number: toothNumber,  // Can be null
         referral_type: referralType,
         notes: notes || null,
         doctor_name: doctorName,
@@ -942,6 +942,32 @@ export async function updateReferralStatus(
     return { data, error: null };
   } catch (error) {
     console.error('Error updating referral status:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+/**
+ * Delete referral by tooth and type
+ */
+export async function deleteReferral(
+  permanentPatientId: string,
+  toothNumber: ToothNumber,
+  referralType: string
+): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('referrals')
+      .delete()
+      .eq('permanent_patient_id', permanentPatientId)
+      .eq('tooth_number', toothNumber)
+      .eq('referral_type', referralType)
+      .eq('status', 'not_given'); // Only delete not_given referrals
+
+    if (error) throw error;
+
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error deleting referral:', error);
     return { data: null, error: error as Error };
   }
 }

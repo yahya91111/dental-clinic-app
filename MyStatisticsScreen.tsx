@@ -91,7 +91,9 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
           doctor_id,
           doctor_name,
           completed_at,
-          updated_at
+          updated_at,
+          queue_number,
+          permanent_patient_id
         `)
         .eq('doctor_id', targetDoctorId);
 
@@ -124,11 +126,22 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
 
       filteredPatients.forEach((patient: any) => {
         const treatment = patient.treatment || 'Unknown';
-        //  استثناء كلمة "Treatment" من الإحصائيات
-        if (treatment !== 'Treatment') {
-          treatments[treatment] = (treatments[treatment] || 0) + 1;
-          total++;
+
+        // Exclude "Treatment" from statistics
+        if (treatment === 'Treatment') return;
+
+        // For permanent patients: only count statistics records (queue_number = -1)
+        // For regular patients: only count regular records (!permanent_patient_id)
+        const isPermanentPatient = patient.permanent_patient_id != null;
+        const isStatisticsRecord = patient.queue_number === -1;
+
+        if (isPermanentPatient && !isStatisticsRecord) {
+          // Skip original timeline card for permanent patients
+          return;
         }
+
+        treatments[treatment] = (treatments[treatment] || 0) + 1;
+        total++;
       });
 
       setStatsData({ treatments, total });

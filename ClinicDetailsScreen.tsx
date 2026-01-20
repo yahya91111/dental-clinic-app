@@ -61,16 +61,14 @@ export default function ClinicDetailsScreen({
           const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
           const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
-          // Fetch waiting patients (exclude those assigned to specific clinics)
+          // Fetch waiting patients - جلب جميع المرضى غير المؤرشفين (مطابق لـ Timeline)
           const { data: waitingData } = await supabase
             .from('patients')
             .select('clinic, status')
             .eq('clinic_id', clinicId)
             .neq('status', 'complete')
             .neq('status', 'na')
-            .is('archive_date', null)
-            .gte('registered_at', startOfDay.toISOString())
-            .lte('registered_at', endOfDay.toISOString());
+            .is('archive_date', null);  // فقط غير المؤرشفين
 
           const waitingCount = waitingData?.filter(p => p.clinic === 'Clinic' || !p.clinic).length || 0;
 
@@ -242,19 +240,14 @@ export default function ClinicDetailsScreen({
     // Fetch functions
     const fetchWaitingCount = async () => {
       try {
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-
+        // جلب جميع المرضى غير المؤرشفين (مطابق لـ Timeline)
         const { data, error } = await supabase
           .from('patients')
           .select('clinic, status')
           .eq('clinic_id', effectiveClinicId)
           .neq('status', 'complete')
           .neq('status', 'na')
-          .is('archive_date', null)
-          .gte('registered_at', startOfDay.toISOString())
-          .lte('registered_at', endOfDay.toISOString());
+          .is('archive_date', null);  // فقط غير المؤرشفين
 
         if (!error) {
           const count = data?.filter(p => p.clinic === 'Clinic' || !p.clinic).length || 0;

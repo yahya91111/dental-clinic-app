@@ -106,12 +106,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const blob2Anim = useState(new Animated.Value(0))[0];
   const blob3Anim = useState(new Animated.Value(0))[0];
 
-  // Use values from Timeline (mirror Timeline data)
+  // Use values from Timeline (mirror Timeline data) - Only for Doctors Count
   React.useEffect(() => {
-    //  استخدام القيم الممررة من Timeline دائماً
-    setWaitingPatientsCount(currentWaitingCount ?? 0);
-    setTotalTreatments(currentTotalTreatments ?? 0);
-    
     //  Doctors Count: اجلب من قاعدة البيانات إذا لم يتم تمريره
     if (currentDoctorsCount !== undefined) {
       setDoctorsCount(currentDoctorsCount);
@@ -120,7 +116,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       setIsDoctorsCountLoading(true);  //  بدء التحميل
       const fetchDoctorsCount = async () => {
         if (!user) return;
-        
+
         try {
           //  للتيم ليدر والطبيب: جلب clinic_id أولاً
           if (user.role === 'team_leader' || user.role === 'doctor') {
@@ -129,13 +125,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               .select('clinic_id')
               .eq('email', user.email)
               .single();
-            
+
             //  إذا لم يتم العثور على clinic_id، لا تحديث العدد
             if (userError || !userData?.clinic_id) {
               setDoctorsCount(0);
               return;
             }
-            
+
             //  جلب عدد الأطباء في المركز فقط
             const { count: doctorsCountResult, error: doctorsError } = await supabase
               .from('doctors')
@@ -161,13 +157,16 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           setIsDoctorsCountLoading(false);  //  انتهى التحميل
         }
       };
-      
+
       fetchDoctorsCount();
     }
-    
+
     //  Pending Requests Count
     setPendingRequestsCount(0);
-  }, [user, currentWaitingCount, currentDoctorsCount, currentTotalTreatments]);
+  }, [user, currentDoctorsCount]);
+
+  // Note: waitingPatientsCount and totalTreatments are fetched from database in the next useEffect
+  // We ignore currentWaitingCount and currentTotalTreatments props to avoid conflicts
   
   //  Fetch doctors count - مع useCallback
   const fetchDoctorsCountCallback = React.useCallback(async () => {
@@ -239,19 +238,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
         if (userError || !userData?.clinic_id) return;
 
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-
+        // جلب جميع المرضى غير المؤرشفين (بدون فلتر تاريخ) - مطابق لـ App.tsx
         const { data, error } = await supabase
           .from('patients')
           .select('clinic, status')
           .eq('clinic_id', userData.clinic_id)
           .neq('status', 'complete')
           .neq('status', 'na')
-          .is('archive_date', null)
-          .gte('registered_at', startOfDay.toISOString())
-          .lte('registered_at', endOfDay.toISOString());
+          .is('archive_date', null);  // فقط غير المؤرشفين
 
         if (!error) {
           const count = data?.filter(p => p.clinic === 'Clinic' || !p.clinic).length || 0;

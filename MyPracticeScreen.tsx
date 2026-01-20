@@ -174,10 +174,12 @@ export default function MyPracticeScreen({
       
       // Get statistics using virtualCenterId from props
       if (virtualCenterId) {
+        // جلب جميع المرضى غير المؤرشفين - مطابق لـ Timeline
         const { data: patients, error: patientsError } = await supabase
           .from('patients')
           .select('*')
-          .eq('virtual_center_id', virtualCenterId);
+          .eq('virtual_center_id', virtualCenterId)
+          .is('archive_date', null);  // فقط غير المؤرشفين
 
         if (patientsError) throw patientsError;
 
@@ -188,9 +190,13 @@ export default function MyPracticeScreen({
         const completedPatients = patients?.filter(
           (p) => p.status === 'complete'
         ).length || 0;
+        // حساب المرضى الذين ينتظرون - غير المكتملين وغير NA
+        const waitingPatients = patients?.filter(
+          (p) => p.status !== 'complete' && p.status !== 'na'
+        ).length || 0;
 
         setStats({
-          totalPatients: patients?.length || 0,
+          totalPatients: waitingPatients,  // عرض الـ waiting بدلاً من الكل
           todayPatients,
           completedPatients,
         });
