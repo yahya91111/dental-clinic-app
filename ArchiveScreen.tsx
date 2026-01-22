@@ -656,39 +656,39 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                     <View key={patient.id} style={[styles.patientCard, shadows.medium]}>
                       {patient.status === 'complete' ? (
                         <>
-                          {/* Badges Container - فوق الكرت على اليسار */}
-                          <View style={styles.badgesContainer}>
-                            <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
-                              <Text style={styles.statusBadgeText}>DONE</Text>
-                            </View>
-                            {patient.is_elderly && (
-                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                                <Text style={styles.statusBadgeText}>ELDR</Text>
-                              </View>
-                            )}
-                            {patient.note && (
-                              <TouchableOpacity
-                                style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
-                                onPress={() => {
-                                  setSelectedNote(patient.note || '');
-                                  setShowNoteModal(true);
-                                }}
-                              >
-                                <Text style={styles.statusBadgeText}>NOTE</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-
                           <LinearGradient
                             colors={gradientColors}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={styles.patientCardContent}
                           >
+                            {/* Badges Container - داخل الكرت في الأعلى على اليسار */}
+                            <View style={styles.badgesContainer}>
+                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
+                                <Text style={styles.statusBadgeText}>DONE</Text>
+                              </View>
+                              {patient.is_elderly && (
+                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
+                                  <Text style={styles.statusBadgeText}>ELDR</Text>
+                                </View>
+                              )}
+                              {patient.note && (
+                                <TouchableOpacity
+                                  style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}
+                                  onPress={() => {
+                                    setSelectedNote(patient.note || '');
+                                    setShowNoteModal(true);
+                                  }}
+                                >
+                                  <Text style={styles.statusBadgeText}>NOTE</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+
                             {/* Header Row */}
                             <View style={styles.cardHeader}>
                               <View style={styles.leftSection}>
-                                {/* البادجات الآن فوق الكرت */}
+                                {/* البادجات الآن داخل الكرت */}
                               </View>
                               <Text style={[styles.patientName, { color: '#FFFFFF' }]}>{patient.name}</Text>
                             </View>
@@ -744,41 +744,41 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                         </>
                       ) : (
                         <>
-                          {/* Badges Container - فوق الكرت على اليسار */}
-                          <View style={styles.badgesContainer}>
-                            {patient.is_elderly && (
-                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                                <Text style={styles.statusBadgeText}>ELDR</Text>
-                              </View>
-                            )}
-                            {patient.status === 'na' && (
-                              <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
-                                <Text style={styles.statusBadgeText}>N/A</Text>
-                              </View>
-                            )}
-                            {patient.note && (
-                              <TouchableOpacity
-                                style={[styles.statusBadge, { backgroundColor: 'rgba(59, 130, 246, 0.5)' }]}
-                                onPress={() => {
-                                  setSelectedNote(patient.note || '');
-                                  setShowNoteModal(true);
-                                }}
-                              >
-                                <Text style={styles.statusBadgeText}>NOTE</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-
                           <LinearGradient
                             colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={styles.patientCardContent}
                           >
+                            {/* Badges Container - داخل الكرت في الأعلى على اليسار */}
+                            <View style={styles.badgesContainer}>
+                              {patient.is_elderly && (
+                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
+                                  <Text style={styles.statusBadgeText}>ELDR</Text>
+                                </View>
+                              )}
+                              {patient.status === 'na' && (
+                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
+                                  <Text style={styles.statusBadgeText}>N/A</Text>
+                                </View>
+                              )}
+                              {patient.note && (
+                                <TouchableOpacity
+                                  style={[styles.statusBadge, { backgroundColor: 'rgba(59, 130, 246, 0.5)' }]}
+                                  onPress={() => {
+                                    setSelectedNote(patient.note || '');
+                                    setShowNoteModal(true);
+                                  }}
+                                >
+                                  <Text style={styles.statusBadgeText}>NOTE</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+
                             {/* Header Row */}
                             <View style={styles.cardHeader}>
                               <View style={styles.leftSection}>
-                                {/* البادجات الآن فوق الكرت */}
+                                {/* البادجات الآن داخل الكرت */}
                               </View>
                               <Text style={[styles.patientName, { color: textColor }]}>{patient.name}</Text>
                             </View>
@@ -1477,7 +1477,7 @@ const styles = StyleSheet.create({
   },
   badgesContainer: {
     position: 'absolute',
-    top: -8,
+    top: 8,  // داخل الكرت (بدلاً من -8)
     left: 8,
     flexDirection: 'row',
     gap: 4,
