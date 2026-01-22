@@ -1998,6 +1998,11 @@ export default function DentalChartScreen({
     { key: 'temporary_filling', label: 'Temporary Filling' },
   ];
 
+  // ═══════════════════════════════════════════════════════════════
+  // Realtime Subscription References
+  // ═══════════════════════════════════════════════════════════════
+  const realtimeChannelRef = useRef<any>(null);
+
   const referralOptions = [
     { key: 'endodontics', label: 'Endodontics' },
     { key: 'oralSurgery', label: 'Oral Surgery' },
@@ -3110,9 +3115,128 @@ export default function DentalChartScreen({
     }
   };
 
-  // Load data when component mounts or permanentPatientId changes
+  // Load data when component mounts or permanentPatientId changes + Setup Realtime
   useEffect(() => {
+    if (!permanentPatientId) return;
+
+    // Initial load
     loadPatientDentalData();
+
+    // Cleanup previous subscription
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
+    // Setup Realtime subscription for dental data tables
+    // Listen to changes on all tables related to this patient
+    const dentalChannel = supabase
+      .channel(`dental-chart-${Date.now()}`)
+      // tooth_surface_conditions table
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tooth_surface_conditions',
+          filter: `permanent_patient_id=eq.${permanentPatientId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time: tooth_surface_conditions changed:', payload);
+          loadPatientDentalData(); // Silent refresh
+        }
+      )
+      // editing_records table
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'editing_records',
+          filter: `permanent_patient_id=eq.${permanentPatientId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time: editing_records changed:', payload);
+          loadPatientDentalData();
+        }
+      )
+      // planning_records table
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'planning_records',
+          filter: `permanent_patient_id=eq.${permanentPatientId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time: planning_records changed:', payload);
+          loadPatientDentalData();
+        }
+      )
+      // tooth_notes table
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tooth_notes',
+          filter: `permanent_patient_id=eq.${permanentPatientId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time: tooth_notes changed:', payload);
+          loadPatientDentalData();
+        }
+      )
+      // referrals table
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'referrals',
+          filter: `permanent_patient_id=eq.${permanentPatientId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time: referrals changed:', payload);
+          loadPatientDentalData();
+        }
+      )
+      // scaling_records table
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'scaling_records',
+          filter: `permanent_patient_id=eq.${permanentPatientId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time: scaling_records changed:', payload);
+          loadPatientDentalData();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Real-time: Subscribed to dental chart updates');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Real-time: Channel error, retrying...');
+          setTimeout(() => {
+            loadPatientDentalData();
+          }, 3000);
+        }
+      });
+
+    realtimeChannelRef.current = dentalChannel;
+
+    // Cleanup on unmount or when permanentPatientId changes
+    return () => {
+      if (realtimeChannelRef.current) {
+        console.log('🧹 Cleaning up dental chart real-time subscription');
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
   }, [permanentPatientId]);
 
   /**
