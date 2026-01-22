@@ -8,65 +8,87 @@
 // For testing purposes only. Replace with proper encryption in production.
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'YOUR_ENCRYPTION_KEY_HERE';
 
-// Polyfill for btoa/atob in React Native
-const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+// Base64 character set
+const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
-// Unicode-safe Base64 encoding (supports Arabic text)
+/**
+ * Unicode-safe Base64 encoding
+ * Converts Unicode string → UTF-8 → Base64
+ * Supports Arabic, Emoji, and all Unicode characters
+ */
 function base64Encode(str: string): string {
   try {
-    // Convert Unicode string to UTF-8 bytes representation
-    // This handles Arabic and other special characters correctly
-    const utf8String = unescape(encodeURIComponent(str));
+    // Step 1: Convert Unicode string to UTF-8 encoded URI component
+    const utf8 = encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => {
+      return String.fromCharCode(parseInt(p1, 16));
+    });
 
-    let result = '';
+    // Step 2: Convert to Base64
+    let output = '';
     let i = 0;
 
-    while (i < utf8String.length) {
-      const char1 = utf8String.charCodeAt(i++);
-      const char2 = i < utf8String.length ? utf8String.charCodeAt(i++) : 0;
-      const char3 = i < utf8String.length ? utf8String.charCodeAt(i++) : 0;
+    while (i < utf8.length) {
+      const chr1 = utf8.charCodeAt(i++);
+      const chr2 = i < utf8.length ? utf8.charCodeAt(i++) : 0;
+      const chr3 = i < utf8.length ? utf8.charCodeAt(i++) : 0;
 
-      const enc1 = char1 >> 2;
-      const enc2 = ((char1 & 3) << 4) | (char2 >> 4);
-      const enc3 = ((char2 & 15) << 2) | (char3 >> 6);
-      const enc4 = char3 & 63;
+      const enc1 = chr1 >> 2;
+      const enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
+      const enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
+      const enc4 = chr3 & 63;
 
-      result += base64Chars.charAt(enc1);
-      result += base64Chars.charAt(enc2);
-      result += i - 1 < utf8String.length ? base64Chars.charAt(enc3) : '=';
-      result += i < utf8String.length ? base64Chars.charAt(enc4) : '=';
+      output += base64Chars.charAt(enc1) + base64Chars.charAt(enc2);
+      output += (chr2 !== 0) ? base64Chars.charAt(enc3) : '=';
+      output += (chr3 !== 0) ? base64Chars.charAt(enc4) : '=';
     }
 
-    return result;
+    return output;
   } catch (e) {
     console.error('Base64 encode error:', e);
     return str;
   }
 }
 
-// Unicode-safe Base64 decoding (supports Arabic text)
+/**
+ * Unicode-safe Base64 decoding
+ * Converts Base64 → UTF-8 → Unicode string
+ * Supports Arabic, Emoji, and all Unicode characters
+ */
 function base64Decode(str: string): string {
   try {
-    str = str.replace(/=+$/, '');
-    let result = '';
+    // Step 1: Decode Base64 to UTF-8
+    let output = '';
+    let i = 0;
 
-    for (let i = 0; i < str.length; i += 4) {
-      const enc1 = base64Chars.indexOf(str.charAt(i));
-      const enc2 = base64Chars.indexOf(str.charAt(i + 1));
-      const enc3 = base64Chars.indexOf(str.charAt(i + 2));
-      const enc4 = base64Chars.indexOf(str.charAt(i + 3));
+    // Remove padding and whitespace
+    str = str.replace(/[^A-Za-z0-9+/]/g, '');
 
-      const char1 = (enc1 << 2) | (enc2 >> 4);
-      const char2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-      const char3 = ((enc3 & 3) << 6) | enc4;
+    while (i < str.length) {
+      const enc1 = base64Chars.indexOf(str.charAt(i++));
+      const enc2 = base64Chars.indexOf(str.charAt(i++));
+      const enc3 = base64Chars.indexOf(str.charAt(i++));
+      const enc4 = base64Chars.indexOf(str.charAt(i++));
 
-      result += String.fromCharCode(char1);
-      if (enc3 !== 64 && enc3 !== -1) result += String.fromCharCode(char2);
-      if (enc4 !== 64 && enc4 !== -1) result += String.fromCharCode(char3);
+      const chr1 = (enc1 << 2) | (enc2 >> 4);
+      const chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+      const chr3 = ((enc3 & 3) << 6) | enc4;
+
+      output += String.fromCharCode(chr1);
+      if (enc3 !== 64) output += String.fromCharCode(chr2);
+      if (enc4 !== 64) output += String.fromCharCode(chr3);
     }
 
-    // Convert UTF-8 bytes back to Unicode string
-    return decodeURIComponent(escape(result));
+    // Step 2: Convert UTF-8 to Unicode
+    try {
+      return decodeURIComponent(output.split('').map(c => {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+    } catch (uriError) {
+      // If decodeURIComponent fails, the data might be encrypted with old method
+      console.warn('⚠️ Unable to decode - data might be encrypted with old method');
+      console.warn('⚠️ Please delete old data and re-create patients');
+      return '[Encrypted - Old Data]'; // Return placeholder instead of crash
+    }
   } catch (e) {
     console.error('Base64 decode error:', e);
     return str;

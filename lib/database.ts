@@ -68,6 +68,7 @@ export async function createPermanentPatient(
       file_number: decryptFileNumber(data.file_number_encrypted), //  Decrypt file number
       name: decryptPatientName(data.name_encrypted), //  Decrypt name
       notes: data.notes,
+      consent: data.consent,
       clinic_id: data.clinic_id,
       created_at: data.created_at,
       updated_at: data.updated_at,
@@ -238,6 +239,7 @@ export async function searchPermanentPatientByFileNumber(
       file_number: decryptFileNumber(data.file_number_encrypted), //  Decrypt file number
       name: decryptPatientName(data.name_encrypted), //  Decrypt name
       notes: data.notes,
+      consent: data.consent,
       clinic_id: data.clinic_id,
       created_at: data.created_at,
       updated_at: data.updated_at,
@@ -270,6 +272,7 @@ export async function getPermanentPatientById(
       file_number: decryptFileNumber(data.file_number_encrypted), //  Decrypt file number
       name: decryptPatientName(data.name_encrypted), //  Decrypt name
       notes: data.notes,
+      consent: data.consent,
       clinic_id: data.clinic_id,
       created_at: data.created_at,
       updated_at: data.updated_at,
@@ -300,6 +303,28 @@ export async function updatePermanentPatientNotes(
     return { data: true, error: null };
   } catch (error) {
     console.error('Error updating permanent patient notes:', error);
+    return { data: false, error: error as Error };
+  }
+}
+
+/**
+ * Update permanent patient consent status
+ */
+export async function updatePermanentPatientConsent(
+  id: string,
+  consent: boolean
+): Promise<DatabaseResponse<boolean>> {
+  try {
+    const { error } = await supabase
+      .from('permanent_patients')
+      .update({ consent })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return { data: true, error: null };
+  } catch (error) {
+    console.error('Error updating permanent patient consent:', error);
     return { data: false, error: error as Error };
   }
 }

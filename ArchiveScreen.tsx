@@ -285,8 +285,8 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
 
         // فلترة المرضى الصحيحين فقط (استبعاد القيم الافتراضية والسجلات المكررة)
         const validPatients = data.filter((p: any) => {
-          // Exclude default values
-          if (p.treatment === 'Treatment' || p.condition === 'Condition' || p.clinic === 'Clinic') {
+          // Exclude ONLY if ALL THREE are default values
+          if (p.treatment === 'Treatment' && p.condition === 'Condition' && p.clinic === 'Clinic') {
             return false;
           }
 
@@ -304,18 +304,18 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
         });
 
         validPatients.forEach((p: any) => {
-          // Treatments
-          if (p.treatment) {
+          // Treatments - استبعاد القيمة الافتراضية "Treatment"
+          if (p.treatment && p.treatment !== 'Treatment') {
             treatments[p.treatment] = (treatments[p.treatment] || 0) + 1;
           }
 
-          // Conditions
-          if (p.condition) {
+          // Conditions - استبعاد القيمة الافتراضية "Condition"
+          if (p.condition && p.condition !== 'Condition') {
             conditions[p.condition] = (conditions[p.condition] || 0) + 1;
           }
 
-          // Clinics
-          if (p.clinic) {
+          // Clinics - استبعاد القيمة الافتراضية "Clinic"
+          if (p.clinic && p.clinic !== 'Clinic') {
             clinicPerformance[p.clinic] = (clinicPerformance[p.clinic] || 0) + 1;
           }
         });
@@ -1002,9 +1002,9 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId }
                     </View>
                   )}
 
-                  {/* Total Patients */}
+                  {/* Total Treatments */}
                   <View style={[styles.glassCard, { marginTop: 16, marginBottom: 24, alignItems: 'center', paddingVertical: 20 }]}>
-                    <Text style={{ fontSize: 18, color: '#6B7280', fontWeight: '600', marginBottom: 8 }}>Total Patients</Text>
+                    <Text style={{ fontSize: 18, color: '#6B7280', fontWeight: '600', marginBottom: 8 }}>Total Treatments</Text>
                     <Text style={{ fontSize: 48, fontWeight: '700', color: '#1F2937' }}>{statsData.total}</Text>
                   </View>
 

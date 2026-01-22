@@ -51,7 +51,10 @@ import {
   getReferrals,
   updateReferralStatus,
   getScalingRecords,
-  createScalingRecord
+  createScalingRecord,
+  updatePermanentPatientConsent,
+  getPermanentPatientById,
+  createPermanentPatient
 } from './lib/database';
 import { ToothData, ToothNumber, ToothCondition, DentalSummary, ToothSurface, Referral, ToothNote } from './types';
 import { getToothQuadrant, getToothPositionNumber, getToothName, treatmentOptions, detailsOptions } from './toothHelpers';
@@ -289,6 +292,12 @@ function AppContent() {
   const [patientReferrals, setPatientReferrals] = useState<{ [key: string]: Referral[] }>({});
   const [patientToothNotes, setPatientToothNotes] = useState<{ [key: string]: ToothNote[] }>({});
   const [lastScalingDates, setLastScalingDates] = useState<{ [key: string]: string | null }>({});
+  const [patientConsents, setPatientConsents] = useState<{ [key: string]: boolean }>({});
+
+  // Convert to Permanent Patient states
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [convertPatientId, setConvertPatientId] = useState<string | null>(null);
+  const [convertFileNumber, setConvertFileNumber] = useState('');
 
   // Tooth Details Modal states (using shared ToothDetailsModal component)
   const [showToothModal, setShowToothModal] = useState(false);
@@ -879,6 +888,12 @@ function AppContent() {
   // Auto-calculate next queue number when modal opens
   useEffect(() => {
     const fetchMaxQueueNumber = async () => {
+      // Skip if in edit mode - keep the existing queue number
+      if (isPatientEditMode) {
+        console.log('Edit mode - keeping existing queue number');
+        return;
+      }
+
       if (showAddModal) {
         // استخدام selectedClinicId أولاً (للـ Coordinator/General Manager)، ثم userClinicId (للـ Doctor/Team Leader)
         const clinicId = selectedClinicId || userClinicId;
@@ -887,7 +902,7 @@ function AppContent() {
           setNewPatientQueueNumber('1');
           return;
         }
-        
+
         try {
           // Get max queue number for this clinic (فقط المرضى غير المؤرشفين)
           const { data: patientsData, error: patientsError } = await supabase
@@ -897,11 +912,12 @@ function AppContent() {
             .is('archive_date', null) // فقط المرضى غير المؤرشفين
             .order('queue_number', { ascending: false })
             .limit(1);
-          
+
           if (patientsError) throw patientsError;
 
           if (patientsData && patientsData.length > 0) {
             const nextNumber = patientsData[0].queue_number + 1;
+            console.log('Auto-setting next queue number:', nextNumber);
             setNewPatientQueueNumber(nextNumber.toString());
           } else {
             setNewPatientQueueNumber('1');
@@ -911,9 +927,9 @@ function AppContent() {
         }
       }
     };
-    
+
     fetchMaxQueueNumber();
-  }, [showAddModal, selectedClinicId, userClinicId]); // إضافة selectedClinicId
+  }, [showAddModal, selectedClinicId, userClinicId, isPatientEditMode]); // إضافة isPatientEditMode
 
   // Total patients = number of registered patients (actual cards in timeline)
   const totalPatients = displayedPatients.length;
@@ -999,6 +1015,10 @@ function AppContent() {
         }
 
         if (data && data.length > 0) {
+          console.log('🔍 Search results:', data);
+          console.log('📝 First patient name:', data[0].name);
+          console.log('📝 First patient name type:', typeof data[0].name);
+
           setPermanentPatientSearchResults(data);
           setShowPatientSuggestions(true);
 
@@ -1055,22 +1075,32 @@ function AppContent() {
               setSelectedPermanentPatientId(matchingPatients[0].id);
             }
           } else {
+            // ✅ No results found - clear file number and hide suggestions
             setFileNumberSearchResults([]);
             setShowFileNumberSuggestions(false);
+            setNewPatientFileNumber(''); // ✅ Clear file number when no match
+            setSelectedPermanentPatientId(null);
           }
         } else {
+          // ✅ No data - clear file number
           setFileNumberSearchResults([]);
           setShowFileNumberSuggestions(false);
+          setNewPatientFileNumber('');
+          setSelectedPermanentPatientId(null);
         }
       } catch (error) {
         console.error('Name search error:', error);
         setFileNumberSearchResults([]);
+        setNewPatientFileNumber(''); // ✅ Clear on error
+        setSelectedPermanentPatientId(null);
       }
     } else {
-      // Clear search if name is too short
+      // ✅ Clear search if name is too short
       setFileNumberSearchResults([]);
       setShowFileNumberSuggestions(false);
+      // ✅ Clear file number when name becomes too short (user is deleting)
       if (name.length < 3) {
+        setNewPatientFileNumber('');
         setSelectedPermanentPatientId(null);
       }
     }
@@ -1120,21 +1150,128 @@ function AppContent() {
 
       // ========== EDIT MODE: Update existing patient ==========
       if (isPatientEditMode && modalEditingPatientId) {
+        let permanentPatientId = selectedPermanentPatientId;
+
+        // If in 'new-profile' mode while editing, create/find permanent patient
+        if (patientMode === 'new-profile' && englishFileNumber) {
+          console.log('Converting to permanent patient:', {
+            fileNumber: englishFileNumber,
+            patientName: newPatientName
+          });
+
+          // ✅ ابحث عن permanent patient بنفس رقم الملف (قد يكون هناك عدة مرضى بنفس الملف)
+          const searchResult = await searchPermanentPatientsByFileNumber(
+            englishFileNumber,
+            userClinicId || selectedClinicId
+          );
+
+          if (searchResult.data && searchResult.data.length > 0) {
+            // وُجد ملف أو عدة ملفات بنفس الرقم - ابحث عن تطابق تام مع الاسم
+            const exactMatch = searchResult.data.find(p =>
+              p.name.toLowerCase().trim() === newPatientName.toLowerCase().trim()
+            );
+
+            if (exactMatch) {
+              // ❌ DUPLICATE - same file number + same name already exists
+              console.log('❌ Duplicate found in Edit Mode - cannot convert to permanent');
+              Alert.alert(
+                'Duplicate Patient',
+                `Patient "${newPatientName}" is already registered with file number ${englishFileNumber}.\n\nCannot convert this patient to permanent. Please use a different name or file number.`,
+                [{ text: 'OK' }]
+              );
+              return; // ✅ Stop execution - prevent duplicate
+            } else {
+              // ✅ رقم الملف موجود لكن الاسم مختلف = مريض جديد في ملف عائلي مشترك
+              console.log('✅ File number exists, different name - creating new permanent patient (family file)');
+              const createResult = await createPermanentPatient(
+                englishFileNumber,
+                newPatientName,
+                userClinicId || selectedClinicId || ''
+              );
+
+              if (createResult.error || !createResult.data) {
+                console.error('Failed to create permanent patient:', createResult.error);
+                Alert.alert('خطأ', 'فشل إنشاء ملف المريض الدائم');
+                return;
+              }
+
+              permanentPatientId = createResult.data.id;
+              console.log('✅ Created new permanent patient in family file:', createResult.data);
+            }
+          } else {
+            // Create new permanent patient - first time using this file number
+            console.log('Creating new permanent patient - new file number');
+            const createResult = await createPermanentPatient(
+              englishFileNumber,
+              newPatientName,
+              userClinicId || selectedClinicId || ''
+            );
+
+            if (createResult.error || !createResult.data) {
+              console.error('Failed to create permanent patient:', createResult.error);
+              Alert.alert('خطأ', 'فشل إنشاء ملف المريض الدائم');
+              return;
+            }
+
+            console.log('Created permanent patient:', createResult.data);
+            permanentPatientId = createResult.data.id;
+          }
+        }
+
+        // Update patient record
+        const updateData: any = {
+          name: newPatientName,
+          queue_number: queueNumber,
+          is_elderly: isElderly,
+          status: isElderly ? 'elderly' : 'normal',
+          note: newPatientNote.trim() || null,
+          condition: newPatientCondition,
+        };
+
+        // If converting to permanent, update these fields
+        if (patientMode === 'new-profile' && permanentPatientId) {
+          updateData.file_number = englishFileNumber;
+          updateData.permanent_patient_id = permanentPatientId;
+          updateData.patient_type = 'permanent';
+          console.log('Updating patient with permanent data:', {
+            file_number: englishFileNumber,
+            permanent_patient_id: permanentPatientId,
+            patient_type: 'permanent'
+          });
+        }
+
+        console.log('Final updateData before database update:', updateData);
+
         const { error } = await supabase
           .from('patients')
-          .update({
-            name: newPatientName,
-            queue_number: queueNumber,
-            is_elderly: isElderly,
-            status: isElderly ? 'elderly' : 'normal',
-            note: newPatientNote.trim() || null,
-            condition: newPatientCondition,
-            // Note: We don't update file_number, permanent_patient_id, or patient_type
-            // as these are core identifiers that shouldn't change after creation
-          })
+          .update(updateData)
           .eq('id', modalEditingPatientId);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Database update error:', error);
+          throw error;
+        }
+
+        console.log('Database update successful');
+
+        // If converted to permanent, load dental data
+        if (patientMode === 'new-profile' && permanentPatientId) {
+          console.log('Loading dental data for converted patient...');
+          await loadDentalData(permanentPatientId, modalEditingPatientId, true);
+        }
+
+        // Update local state immediately
+        setPatients(prev => prev.map(p =>
+          p.id === modalEditingPatientId
+            ? {
+                ...p,
+                ...updateData,
+              }
+            : p
+        ));
+
+        // Trigger animation refresh
+        setAnimKey(prev => prev + 1);
 
         await loadPatients();
         setShowAddModal(false);
@@ -1161,30 +1298,78 @@ function AppContent() {
         setIsPatientEditMode(false);
         setModalEditingPatientId(null);
 
-        Alert.alert('Success', 'Patient updated successfully');
+        Alert.alert('Success', patientMode === 'new-profile' && permanentPatientId
+          ? 'Patient converted to permanent successfully'
+          : 'Patient updated successfully');
         return;
       }
 
       // ========== ADD MODE: Create new patient ==========
       let permanentPatientId = selectedPermanentPatientId;
 
-      // If in 'new-profile' mode, create a new permanent patient record
+      // If in 'new-profile' mode, check for duplicates first
       if (patientMode === 'new-profile' && englishFileNumber) {
-        const { encryptPatientName, encryptFileNumber } = await import('./lib/encryption');
-        const { data: newPermanentPatient, error: permanentError } = await supabase
-          .from('permanent_patients')
-          .insert([
-            {
-              file_number_encrypted: encryptFileNumber(englishFileNumber),
-              name_encrypted: encryptPatientName(newPatientName),
-              clinic_id: selectedClinicId || userClinicId,
-            },
-          ])
-          .select()
-          .single();
+        console.log('Creating permanent patient:', {
+          fileNumber: englishFileNumber,
+          patientName: newPatientName
+        });
 
-        if (permanentError) throw permanentError;
-        permanentPatientId = newPermanentPatient.id;
+        // ✅ Search for existing permanent patient with same file number
+        const searchResult = await searchPermanentPatientsByFileNumber(
+          englishFileNumber,
+          userClinicId || selectedClinicId
+        );
+
+        if (searchResult.data && searchResult.data.length > 0) {
+          // Found file(s) with same number - check for exact name match
+          const exactMatch = searchResult.data.find(p =>
+            p.name.toLowerCase().trim() === newPatientName.toLowerCase().trim()
+          );
+
+          if (exactMatch) {
+            // ❌ DUPLICATE - same file number + same name
+            Alert.alert(
+              'Duplicate Patient',
+              `Patient "${newPatientName}" is already registered with file number ${englishFileNumber}.\n\nPlease use a different name or file number.`,
+              [{ text: 'OK' }]
+            );
+            return; // ✅ Stop execution
+          } else {
+            // ✅ Same file number, different name - create new (family file)
+            console.log('✅ File number exists, different name - creating new permanent patient (family file)');
+            const createResult = await createPermanentPatient(
+              englishFileNumber,
+              newPatientName,
+              userClinicId || selectedClinicId || ''
+            );
+
+            if (createResult.error || !createResult.data) {
+              console.error('Failed to create permanent patient:', createResult.error);
+              Alert.alert('Error', 'Failed to create permanent patient profile');
+              return;
+            }
+
+            permanentPatientId = createResult.data.id;
+            console.log('✅ Created new permanent patient in family file:', createResult.data);
+          }
+        } else {
+          // ✅ New file number - create new permanent patient
+          console.log('Creating new permanent patient - new file number');
+          const createResult = await createPermanentPatient(
+            englishFileNumber,
+            newPatientName,
+            userClinicId || selectedClinicId || ''
+          );
+
+          if (createResult.error || !createResult.data) {
+            console.error('Failed to create permanent patient:', createResult.error);
+            Alert.alert('Error', 'Failed to create permanent patient profile');
+            return;
+          }
+
+          console.log('Created permanent patient:', createResult.data);
+          permanentPatientId = createResult.data.id;
+        }
       }
 
       const now = new Date();
@@ -1279,10 +1464,15 @@ function AppContent() {
       case 'edit':
         const editPatient = patients.find(p => p.id === patientId);
         if (editPatient) {
+          console.log('Editing patient:', editPatient);
+          console.log('Queue number:', editPatient.queue_number, 'Type:', typeof editPatient.queue_number);
+
           // Load patient data into modal fields
           setNewPatientName(editPatient.name);
           setNewPatientFileNumber(editPatient.file_number || '');
-          setNewPatientQueueNumber(editPatient.queue_number || '');
+          const queueNumberString = editPatient.queue_number?.toString() || '';
+          console.log('Setting queue number to:', queueNumberString);
+          setNewPatientQueueNumber(queueNumberString);
           setNewPatientCondition(editPatient.condition || 'Condition');
           setIsElderly(editPatient.isElderly || false);
           setNewPatientNote(editPatient.note || '');
@@ -1290,6 +1480,8 @@ function AppContent() {
           // Set edit mode
           setIsPatientEditMode(true);
           setModalEditingPatientId(patientId);
+
+          console.log('Edit mode set. Queue number should be:', queueNumberString);
 
           // Determine patient mode based on file_number
           if (!editPatient.file_number) {
@@ -1388,6 +1580,11 @@ function AppContent() {
         } catch (error: any) {
           Alert.alert('Error', error.message);
         }
+        break;
+      case 'new_profile':
+        setConvertPatientId(patientId);
+        setConvertFileNumber('');
+        setShowConvertModal(true);
         break;
     }
   };
@@ -1611,7 +1808,7 @@ function AppContent() {
               name: patient.name,
               file_number: patient.file_number,
               treatment: treatment,
-              condition: 'Permanent Patient',
+              condition: patient.condition || 'Permanent Patient', // ✅ استخدام condition الأصلي
               clinic: patient.clinic || 'Clinic',
               status: 'complete',
               completed_at: completedAt,
@@ -1634,7 +1831,7 @@ function AppContent() {
             name: patient.name,
             file_number: patient.file_number,
             treatment: 'Referral',
-            condition: 'Permanent Patient',
+            condition: patient.condition || 'Permanent Patient', // ✅ استخدام condition الأصلي
             clinic: patient.clinic || 'Clinic',
             status: 'complete',
             completed_at: completedAt,
@@ -1656,7 +1853,7 @@ function AppContent() {
             name: patient.name,
             file_number: patient.file_number,
             treatment: 'Scaling',
-            condition: 'Permanent Patient',
+            condition: patient.condition || 'Permanent Patient', // ✅ استخدام condition الأصلي
             clinic: patient.clinic || 'Clinic',
             status: 'complete',
             completed_at: completedAt,
@@ -1678,7 +1875,7 @@ function AppContent() {
             name: patient.name,
             file_number: patient.file_number,
             treatment: badgeTreatment,
-            condition: 'Permanent Patient',
+            condition: patient.condition || 'Permanent Patient', // ✅ استخدام condition الأصلي
             clinic: patient.clinic || 'Clinic',
             status: 'complete',
             completed_at: completedAt,
@@ -1975,7 +2172,8 @@ function AppContent() {
       summary.caries_count +
       summary.rct_needed_count +
       summary.extraction_needed_count +
-      summary.broken_teeth_count;
+      summary.broken_teeth_count +
+      summary.filling_done_count; // إضافة Need Permanent Filling
 
     return summary;
   };
@@ -2031,19 +2229,30 @@ function AppContent() {
     }
   };
 
-  // Load scaling data for all permanent patients in the list
+  // Load scaling data and consent for all permanent patients in the list
   React.useEffect(() => {
     const loadScalingData = async () => {
       for (const patient of displayedPatients) {
-        if (patient.permanent_patient_id && !lastScalingDates[patient.id]) {
+        if (patient.permanent_patient_id) {
           try {
-            const scalingResult = await getScalingRecords(patient.permanent_patient_id);
-            if (scalingResult.data && scalingResult.data.length > 0) {
-              const lastScalingDate = scalingResult.data[0].timestamp;
-              setLastScalingDates(prev => ({ ...prev, [patient.id]: lastScalingDate }));
+            // Load scaling data
+            if (!lastScalingDates[patient.id]) {
+              const scalingResult = await getScalingRecords(patient.permanent_patient_id);
+              if (scalingResult.data && scalingResult.data.length > 0) {
+                const lastScalingDate = scalingResult.data[0].timestamp;
+                setLastScalingDates(prev => ({ ...prev, [patient.id]: lastScalingDate }));
+              }
+            }
+
+            // Load consent data
+            if (patientConsents[patient.id] === undefined) {
+              const patientDataResult = await getPermanentPatientById(patient.permanent_patient_id);
+              if (patientDataResult.data) {
+                setPatientConsents(prev => ({ ...prev, [patient.id]: patientDataResult.data?.consent || false }));
+              }
             }
           } catch (error) {
-            console.error('Error loading scaling data:', error);
+            console.error('Error loading patient data:', error);
           }
         }
       }
@@ -2067,9 +2276,140 @@ function AppContent() {
       toggleHeaderCollapse();
     }
 
-    // Load dental data when expanding
+    // Load dental data when expanding - always force reload to get fresh data
     if (isExpanding && patient.permanent_patient_id) {
-      await loadDentalData(patient.permanent_patient_id, patient.id);
+      await loadDentalData(patient.permanent_patient_id, patient.id, true); // ← forceReload = true
+    }
+  };
+
+  // Toggle patient consent
+  const togglePatientConsent = async (patient: Patient) => {
+    if (!patient.permanent_patient_id) {
+      Alert.alert('Error', 'Patient ID not found');
+      return;
+    }
+
+    try {
+      const currentConsent = patientConsents[patient.id] || false;
+      const newConsent = !currentConsent;
+
+      // Optimistically update UI
+      setPatientConsents(prev => ({ ...prev, [patient.id]: newConsent }));
+
+      // Update database
+      const { error } = await updatePermanentPatientConsent(patient.permanent_patient_id, newConsent);
+
+      if (error) {
+        // Revert on error
+        setPatientConsents(prev => ({ ...prev, [patient.id]: currentConsent }));
+        Alert.alert('Error', 'Failed to update consent status');
+      }
+    } catch (err) {
+      console.error('Error updating consent:', err);
+      Alert.alert('Error', 'An unexpected error occurred');
+    }
+  };
+
+  // Convert regular patient to permanent patient
+  const convertToPermanentPatient = async () => {
+    if (!convertPatientId || !convertFileNumber.trim()) {
+      Alert.alert('Error', 'Please enter a file number');
+      return;
+    }
+
+    try {
+      const patient = patients.find(p => p.id === convertPatientId);
+      if (!patient) {
+        Alert.alert('Error', 'Patient not found');
+        return;
+      }
+
+      console.log('Converting patient:', patient.name, 'File Number:', convertFileNumber);
+
+      // Search for existing permanent patient or create new one
+      const searchResult = await searchPermanentPatientsByFileNumber(convertFileNumber.trim(), userClinicId || selectedClinicId);
+
+      let permanentPatientId: string;
+
+      if (searchResult.data && searchResult.data.length > 0) {
+        // Existing permanent patient found - take the first one
+        console.log('Found existing permanent patient:', searchResult.data[0]);
+        permanentPatientId = searchResult.data[0].id;
+      } else {
+        // Create new permanent patient
+        console.log('Creating new permanent patient');
+        const createResult = await createPermanentPatient(
+          convertFileNumber.trim(),
+          patient.name || 'Patient',
+          userClinicId || selectedClinicId || ''
+        );
+
+        if (createResult.error || !createResult.data) {
+          console.error('Failed to create permanent patient:', createResult.error);
+          Alert.alert('Error', 'Failed to create permanent patient profile');
+          return;
+        }
+
+        console.log('Created permanent patient:', createResult.data);
+        permanentPatientId = createResult.data.id;
+      }
+
+      // Update the patient record to link with permanent patient
+      console.log('Updating patient record in database...');
+      const { error } = await supabase
+        .from('patients')
+        .update({
+          permanent_patient_id: permanentPatientId,
+          file_number: convertFileNumber.trim(),
+          patient_type: 'permanent'
+        })
+        .eq('id', convertPatientId);
+
+      if (error) {
+        console.error('Database update error:', error);
+        Alert.alert('Error', 'Failed to convert patient');
+        return;
+      }
+
+      console.log('Database updated successfully');
+
+      // Update patients array immediately for instant UI update
+      setPatients(prev => {
+        const updated = prev.map(p =>
+          p.id === convertPatientId
+            ? {
+                ...p,
+                permanent_patient_id: permanentPatientId,
+                file_number: convertFileNumber.trim(),
+                patient_type: 'permanent' as const
+              }
+            : p
+        );
+        console.log('Updated local state, patient now:', updated.find(p => p.id === convertPatientId));
+        return updated;
+      });
+
+      // Close modal FIRST
+      setShowConvertModal(false);
+      setConvertPatientId(null);
+      setConvertFileNumber('');
+
+      // Load dental data for the newly converted permanent patient
+      console.log('Loading dental data for converted patient...');
+      await loadDentalData(permanentPatientId, convertPatientId, true);
+
+      // Trigger animation refresh
+      console.log('Triggering animation refresh');
+      setAnimKey(prev => prev + 1);
+
+      // Reload patients to ensure consistency
+      console.log('Reloading all patients...');
+      await loadPatients();
+
+      Alert.alert('Success', 'Patient converted to permanent profile successfully');
+    } catch (err) {
+      console.error('Error converting patient:', err);
+      Alert.alert('Error', 'An unexpected error occurred');
     }
   };
 
@@ -2944,6 +3284,8 @@ function AppContent() {
                   [patientId]: timestamp
                 }));
               }}
+              patientConsents={patientConsents}
+              onToggleConsent={togglePatientConsent}
             />
           ))}
         </ScrollView>
@@ -3107,7 +3449,19 @@ function AppContent() {
                     <Text style={styles.inputLabel}>Patient Name:</Text>
                     <View style={styles.inputContainer}>
                       <TextInput
-                        style={styles.textInput}
+                        style={[
+                          styles.textInput,
+                          // ✅ Dynamic text alignment and padding based on language
+                          (() => {
+                            const firstChar = newPatientName.trim()[0];
+                            const isArabic = firstChar && /[\u0600-\u06FF]/.test(firstChar);
+                            return {
+                              textAlign: isArabic ? 'right' : 'left',
+                              paddingRight: isArabic ? 16 : 45, // More space for X button on right
+                              paddingLeft: isArabic ? 45 : 16,  // More space for X button on left
+                            };
+                          })()
+                        ]}
                         placeholder="Patient Name"
                         value={newPatientName}
                         onChangeText={(text) => {
@@ -3123,18 +3477,20 @@ function AppContent() {
                         <TouchableOpacity
                           style={[
                             styles.clearButton,
-                            // تغيير موقع الزر حسب اتجاه الكتابة (عربي/إنجليزي)
+                            // ✅ X button always on opposite side of text
                             (() => {
-                              // اكتشاف اللغة: تحقق من أول حرف في النص
                               const firstChar = newPatientName.trim()[0];
-                              // نطاق الأحرف العربية: \u0600-\u06FF
                               const isArabic = firstChar && /[\u0600-\u06FF]/.test(firstChar);
+                              // Arabic text → X on left, English text → X on right
                               return isArabic ? { left: 12, right: undefined } : { right: 12, left: undefined };
                             })()
                           ]}
                           onPress={() => {
+                            // ✅ Clear name AND file number
                             setNewPatientName('');
+                            setNewPatientFileNumber('');
                             setShowFileNumberSuggestions(false);
+                            setSelectedPermanentPatientId(null);
                           }}
                         >
                           <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
@@ -3218,7 +3574,9 @@ function AppContent() {
                             <TouchableOpacity
                               style={styles.clearButton}
                               onPress={() => {
+                                // ✅ Clear file number AND name
                                 setNewPatientFileNumber('');
+                                setNewPatientName('');
                                 setShowPatientSuggestions(false);
                                 setSelectedPermanentPatientId(null);
                               }}
@@ -3497,6 +3855,24 @@ function AppContent() {
                   </View>
                   <Text style={styles.menuItemText}>Special Needs</Text>
                 </TouchableOpacity>
+                {/* Show "New Profile" only for regular (walk-in) patients */}
+                {(() => {
+                  const patient = patients.find(p => p.id === showMenuForPatient);
+                  if (patient && !patient.permanent_patient_id) {
+                    return (
+                      <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => handleMenuAction(showMenuForPatient, 'new_profile')}
+                      >
+                        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="person-add" size={22} color="#3B82F6" />
+                        </View>
+                        <Text style={styles.menuItemText}>New Profile</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  return null;
+                })()}
                 <TouchableOpacity
                   style={styles.menuItem}
                   onPress={() => handleMenuAction(showMenuForPatient, 'complete')}
@@ -3613,6 +3989,67 @@ function AppContent() {
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
+        </Modal>
+
+        {/* Convert to Permanent Patient Modal */}
+        <Modal visible={showConvertModal} animationType="slide" transparent onRequestClose={() => setShowConvertModal(false)}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+                <View style={styles.modalContent}>
+                  {/* Glass Color Tint */}
+                  <LinearGradient
+                    colors={[
+                      'rgba(168, 85, 247, 0.15)',
+                      'rgba(91, 159, 237, 0.15)',
+                      'rgba(125, 211, 192, 0.15)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.modalGlassOverlay}
+                  />
+
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>New Profile</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowConvertModal(false);
+                        setConvertFileNumber('');
+                      }}
+                      style={styles.modalCloseButton}
+                    >
+                      <Ionicons name="close" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={{
+                    fontSize: 14,
+                    color: '#6B7280',
+                    marginBottom: 16,
+                    textAlign: 'center',
+                  }}>
+                    Enter file number to convert this patient to a permanent profile
+                  </Text>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="File Number"
+                    value={convertFileNumber}
+                    onChangeText={setConvertFileNumber}
+                    keyboardType="default"
+                    autoFocus
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.button, { marginTop: 16 }]}
+                    onPress={convertToPermanentPatient}
+                  >
+                    <Text style={styles.buttonText}>Convert to Permanent</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
         </Modal>
 
         {/* Treatment Done Modal */}
@@ -4001,7 +4438,7 @@ function AnimatedPatientCard({ index, animKey, ...props }: { index: number; anim
   );
 }
 
-function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates, currentDoctorName, onUpdateScalingDate }: {
+function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates, currentDoctorName, onUpdateScalingDate, patientConsents, onToggleConsent }: {
   patient: Patient;
   showTimeline: boolean;
   onMenuPress: () => void;
@@ -4030,6 +4467,8 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
   lastScalingDates?: { [key: string]: string | null };
   currentDoctorName?: string;
   onUpdateScalingDate?: (patientId: string, timestamp: string) => void;
+  patientConsents?: { [key: string]: boolean };
+  onToggleConsent?: (patient: Patient) => void;
 }) {
   // تأثير زجاجي: نفس الألوان لكن شفافة (0.75 = واضح جداً)
   // إذا كان DONE: نفس تدرج الكرت الصلب (بدون شفافية)
@@ -4269,6 +4708,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                       flexDirection: 'row',
                       justifyContent: 'space-between',
                       alignItems: 'center',
+                      marginBottom: 12,
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <View style={{
@@ -4295,6 +4735,71 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                       </Text>
                     </View>
                   )}
+
+                  {/* Divider Line */}
+                  <View style={{
+                    height: 1,
+                    backgroundColor: '#FFFFFF',
+                    marginBottom: 12,
+                  }} />
+
+                  {/* Consent Row */}
+                  <View style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: '#1E40AF',
+                        marginRight: 8,
+                      }} />
+                      <Text style={{
+                        fontSize: 16,
+                        fontWeight: '700',
+                        color: '#1E40AF',
+                      }}>
+                        Consent:
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: patientConsents?.[patient.id] ? '#10b981' : '#9CA3AF',
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 3,
+                        elevation: 3,
+                      }}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        onToggleConsent?.(patient);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name={patientConsents?.[patient.id] ? 'checkmark-circle' : 'close-circle'}
+                        size={18}
+                        color="#FFFFFF"
+                      />
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '700',
+                        color: '#FFFFFF',
+                        marginLeft: 6,
+                      }}>
+                        {patientConsents?.[patient.id] ? 'Done' : 'Not Done'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </TouchableOpacity>
 
@@ -4580,7 +5085,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
               style={{
                 maxHeight: expandAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 580], // ارتفاع الكرت الموسع
+                  outputRange: [0, 800], // ارتفاع الكرت الموسع - زيادة من 580 إلى 800
                 }),
                 opacity: expandAnim,
                 overflow: 'hidden',
@@ -4719,7 +5224,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                       ) : dentalSummary && dentalSummary.total_issues > 0 ? (
                         <ScrollView
                           showsVerticalScrollIndicator={true}
-                          contentContainerStyle={{ paddingBottom: 80 }}
+                          contentContainerStyle={{ paddingBottom: 150 }}
                         >
                           <View style={styles.treatmentContainer}>
                           {/* Caries Section - Modern Card Design */}
@@ -5073,7 +5578,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                       {patientReferrals && patientReferrals.length > 0 ? (
                         <ScrollView
                           showsVerticalScrollIndicator={true}
-                          contentContainerStyle={{ paddingBottom: 80 }}
+                          contentContainerStyle={{ paddingBottom: 150 }}
                         >
                           <View style={{ gap: 12 }}>
                             {/* SECTION 1: Need Referral - Orange Cards */}
@@ -5570,6 +6075,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                         flexDirection: 'row',
                         justifyContent: 'space-between',
                         alignItems: 'center',
+                        marginBottom: 12,
                       }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                           <View style={{
@@ -5596,6 +6102,71 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                         </Text>
                       </View>
                     )}
+
+                    {/* Divider Line */}
+                    <View style={{
+                      height: 1,
+                      backgroundColor: '#FFFFFF',
+                      marginBottom: 12,
+                    }} />
+
+                    {/* Consent Row */}
+                    <View style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: '#1E40AF',
+                          marginRight: 8,
+                        }} />
+                        <Text style={{
+                          fontSize: 16,
+                          fontWeight: '700',
+                          color: '#1E40AF',
+                        }}>
+                          Consent:
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: patientConsents?.[patient.id] ? '#10b981' : '#9CA3AF',
+                          paddingHorizontal: 16,
+                          paddingVertical: 8,
+                          borderRadius: 8,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 3,
+                          elevation: 3,
+                        }}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          onToggleConsent?.(patient);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name={patientConsents?.[patient.id] ? 'checkmark-circle' : 'close-circle'}
+                          size={18}
+                          color="#FFFFFF"
+                        />
+                        <Text style={{
+                          fontSize: 14,
+                          fontWeight: '700',
+                          color: '#FFFFFF',
+                          marginLeft: 6,
+                        }}>
+                          {patientConsents?.[patient.id] ? 'Done' : 'Not Done'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </TouchableOpacity>
 
@@ -5873,7 +6444,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
               style={{
                 maxHeight: expandAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 580], // ارتفاع الكرت الموسع
+                  outputRange: [0, 800], // ارتفاع الكرت الموسع - زيادة من 580 إلى 800
                 }),
                 opacity: expandAnim,
                 overflow: 'hidden',
@@ -6012,7 +6583,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                       ) : dentalSummary && dentalSummary.total_issues > 0 ? (
                         <ScrollView
                           showsVerticalScrollIndicator={true}
-                          contentContainerStyle={{ paddingBottom: 80 }}
+                          contentContainerStyle={{ paddingBottom: 150 }}
                         >
                           <View style={styles.treatmentContainer}>
                           {/* Caries Section - Modern Card Design */}
@@ -6366,7 +6937,7 @@ function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPr
                       {patientReferrals && patientReferrals.length > 0 ? (
                         <ScrollView
                           showsVerticalScrollIndicator={true}
-                          contentContainerStyle={{ paddingBottom: 80 }}
+                          contentContainerStyle={{ paddingBottom: 150 }}
                         >
                           <View style={{ gap: 12 }}>
                             {/* SECTION 1: Need Referral - Orange Cards */}

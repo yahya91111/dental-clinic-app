@@ -81,6 +81,7 @@ export interface PermanentPatient {
   file_number_encrypted: string;  // Encrypted file number
   name_encrypted: string;          // Encrypted name
   notes?: string;
+  consent?: boolean;               // Patient consent status
   clinic_id: string;
   created_at: string;
   updated_at: string;
@@ -92,6 +93,7 @@ export interface PermanentPatientDecrypted {
   file_number: string;             // Decrypted file number
   name: string;                    // Decrypted name
   notes?: string;
+  consent?: boolean;               // Patient consent status
   clinic_id: string;
   created_at: string;
   updated_at: string;
