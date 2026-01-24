@@ -110,6 +110,7 @@ import { TeethGrid, ToothAnimValues } from './screens/DentalChart/TeethGrid';
 import { ReferralContainer } from './screens/DentalChart/ReferralContainer';
 import { TreatmentRecordContainer } from './screens/DentalChart/TreatmentRecordContainer';
 import { PlanningRecordContainer } from './screens/DentalChart/PlanningRecordContainer';
+import { OralHygieneContainer } from './screens/DentalChart/OralHygieneContainer';
 
 // إخفاء التحذيرات غير المهمة
 LogBox.ignoreLogs([
@@ -332,6 +333,17 @@ export default function DentalChartScreen({
 
     // إغلاق الحاوية بعد الإضافة
     setIsOralHygieneExpanded(false);
+  };
+
+  // دالة لحذف سجل Scaling
+  const handleDeleteScalingRecord = async (recordId: string, index: number) => {
+    const { error } = await deleteScalingRecord(recordId);
+    if (error) {
+      Alert.alert('Error', 'Failed to delete scaling record');
+      console.error('Error deleting scaling record:', error);
+      return;
+    }
+    setScalingRecords(prev => prev.filter((_, i) => i !== index));
   };
 
   // NOTE: Individual tooth animations and stopToothAnimations are now handled by useToothAnimations hook
@@ -2636,229 +2648,18 @@ export default function DentalChartScreen({
                     </Svg>
                   </Animated.View>
 
-                  {/* Oral Hygiene Container - حاوية في المنتصف */}
-                  <Animated.View style={[
-                    {
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      zIndex: isOralHygieneExpanded ? 10001 : 800,
-                      elevation: isOralHygieneExpanded ? 10001 : 800,
-                      opacity: Animated.multiply(toothAnims.buttonsOpacity, toothAnims.oralHygieneOpacity),
-                    }
-                  ]} pointerEvents={selectedTooth ? "none" : "auto"}>
-                    <Animated.View
-                      style={[
-                        {
-                          paddingHorizontal: 16,
-                          paddingVertical: 4,
-                          borderRadius: 16,
-                          borderWidth: 1.5,
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 4 },
-                          shadowOpacity: 0.1,
-                          shadowRadius: 12,
-                        },
-                        {
-                          width: oralHygieneExpandAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [140, SCREEN_WIDTH * 0.75]
-                          }),
-                          height: oralHygieneExpandAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [38, 320]
-                          }),
-                          backgroundColor: isOralHygieneExpanded ? 'rgba(254, 215, 170, 0.2)' : 'rgba(251, 191, 36, 0.1)',
-                          borderColor: isOralHygieneExpanded ? 'rgba(254, 215, 170, 0.5)' : 'rgba(255, 255, 255, 0.5)',
-                          transform: [
-                            {
-                              translateX: oralHygieneExpandAnim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [-70, -(SCREEN_WIDTH * 0.75) / 2]
-                              })
-                            },
-                            {
-                              translateY: oralHygieneExpandAnim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [-19, -160]
-                              })
-                            }
-                          ],
-                          overflow: 'hidden',
-                        }
-                      ]}
-                    >
-                    <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill}>
-                      <View style={{ flex: 1, backgroundColor: isOralHygieneExpanded ? 'rgba(254, 215, 170, 0.3)' : 'rgba(251, 191, 36, 0.15)' }}>
-                        <TouchableOpacity
-                          onPress={handleOralHygienePress}
-                          activeOpacity={0.8}
-                          style={{ width: '100%' }}
-                        >
-                          <View style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            paddingVertical: isOralHygieneExpanded ? 14 : 8,
-                            width: '100%',
-                            gap: 10
-                          }}>
-                            {isOralHygieneExpanded && (
-                              <Ionicons name="fitness-outline" size={24} color="#92400E" />
-                            )}
-                            <Text style={[
-                              styles.oralHygieneText,
-                              isOralHygieneExpanded && { fontSize: 20, fontWeight: '800', letterSpacing: 0.8 }
-                            ]}>Oral Hygiene</Text>
-                            {isOralHygieneExpanded && (
-                              <Ionicons name="chevron-up" size={20} color="#92400E" />
-                            )}
-                          </View>
-                          {isOralHygieneExpanded && (
-                            <View style={{
-                              width: '85%',
-                              height: 2.5,
-                              backgroundColor: '#92400E',
-                              borderRadius: 2,
-                              alignSelf: 'center',
-                              marginTop: 8
-                            }} />
-                          )}
-                        </TouchableOpacity>
-
-                    {isOralHygieneExpanded && (
-                      <ScrollView style={{ flex: 1, padding: 16, paddingTop: 20 }} showsVerticalScrollIndicator={false}>
-                        {/* زر Scaling Done */}
-                        <TouchableOpacity
-                          style={[styles.scalingButton, {
-                            overflow: 'hidden',
-                            ...Platform.select({
-                              ios: {
-                                shadowColor: '#059669',
-                                shadowOffset: { width: 0, height: 4 },
-                                shadowOpacity: 0.25,
-                                shadowRadius: 8,
-                              }
-                            })
-                          }]}
-                          onPress={handleAddScaling}
-                          activeOpacity={0.7}
-                        >
-                          <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill}>
-                            <View style={{
-                              flex: 1,
-                              backgroundColor: 'rgba(16, 185, 129, 0.25)',
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 10
-                            }}>
-                              <Ionicons name="checkmark-circle" size={22} color="#059669" />
-                              <Text style={[styles.scalingButtonText, { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 }]}>Scaling Done</Text>
-                            </View>
-                          </BlurView>
-                        </TouchableOpacity>
-
-                        {/* سجلات الـ Scaling */}
-                        {scalingRecords.length > 0 && (
-                          <View style={[styles.scalingRecordsContainer, {
-                            backgroundColor: 'rgba(255, 255, 255, 0.6)',
-                            borderRadius: 16,
-                            padding: 16,
-                            marginTop: 4,
-                            ...Platform.select({
-                              ios: {
-                                shadowColor: '#92400E',
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.1,
-                                shadowRadius: 6,
-                              }
-                            })
-                          }]}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                              <Ionicons name="file-tray-full" size={20} color="#92400E" />
-                              <Text style={[styles.scalingRecordsTitle, { fontSize: 15, fontWeight: '700', marginBottom: 0 }]}>Scaling Records</Text>
-                            </View>
-                            {scalingRecords.map((record, index) => (
-                              <View key={index} style={[styles.scalingRecordItem, {
-                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                padding: 14,
-                                borderRadius: 12,
-                                marginBottom: index === scalingRecords.length - 1 ? 0 : 10,
-                                borderWidth: 1,
-                                borderColor: 'rgba(254, 215, 170, 0.4)',
-                                ...Platform.select({
-                                  ios: {
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 1 },
-                                    shadowOpacity: 0.06,
-                                    shadowRadius: 3,
-                                  }
-                                })
-                              }]}>
-                                <View style={[styles.scalingRecordIcon, {
-                                  width: 38,
-                                  height: 38,
-                                  borderRadius: 10,
-                                  backgroundColor: 'rgba(254, 215, 170, 0.3)',
-                                  borderWidth: 1.5,
-                                  borderColor: 'rgba(254, 215, 170, 0.6)'
-                                }]}>
-                                  <Ionicons name="medical" size={18} color="#92400E" />
-                                </View>
-                                <View style={[styles.scalingRecordInfo, { marginLeft: 12 }]}>
-                                  <Text style={[styles.scalingRecordDoctor, { fontSize: 14, fontWeight: '600' }]}>{record.doctorName}</Text>
-                                  <Text style={[styles.scalingRecordTime, { fontSize: 12, marginTop: 2 }]}>{record.timestamp}</Text>
-                                </View>
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    Alert.alert(
-                                      'Delete Record',
-                                      'Are you sure you want to delete this scaling record?',
-                                      [
-                                        {
-                                          text: 'Cancel',
-                                          style: 'cancel'
-                                        },
-                                        {
-                                          text: 'Delete',
-                                          style: 'destructive',
-                                          onPress: async () => {
-                                            // حذف من قاعدة البيانات
-                                            const { error } = await deleteScalingRecord(record.id);
-
-                                            if (error) {
-                                              Alert.alert('Error', 'Failed to delete scaling record');
-                                              console.error('Error deleting scaling record:', error);
-                                              return;
-                                            }
-
-                                            // حذف من الـ state
-                                            setScalingRecords(prev => prev.filter((_, i) => i !== index));
-                                          }
-                                        }
-                                      ]
-                                    );
-                                  }}
-                                  style={[styles.deleteRecordButton, {
-                                    padding: 8,
-                                    borderRadius: 8,
-                                    backgroundColor: 'rgba(239, 68, 68, 0.08)'
-                                  }]}
-                                  activeOpacity={0.7}
-                                >
-                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                                </TouchableOpacity>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                      </ScrollView>
-                    )}
-                      </View>
-                    </BlurView>
-                    </Animated.View>
-                  </Animated.View>
+                  {/* Oral Hygiene Container */}
+                  <OralHygieneContainer
+                    isExpanded={isOralHygieneExpanded}
+                    onToggle={handleOralHygienePress}
+                    onAddScaling={handleAddScaling}
+                    onDeleteRecord={handleDeleteScalingRecord}
+                    scalingRecords={scalingRecords}
+                    buttonsOpacity={toothAnims.buttonsOpacity}
+                    oralHygieneOpacity={toothAnims.oralHygieneOpacity}
+                    expandAnim={oralHygieneExpandAnim}
+                    isToothSelected={!!selectedTooth}
+                  />
 
                   {/* TeethGrid Component - All 32 teeth with numbers */}
                   <TeethGrid
