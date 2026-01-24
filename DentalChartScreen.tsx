@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -77,8 +77,22 @@ import {
   getSurfaceMap,
   getSurfaceNameMap,
 } from './screens/DentalChart/dentalHelpers';
+import {
+  ToothWithSections,
+  ToothWithSectionsSquare,
+  ToothWithSectionsSquareTiny,
+  ToothWithSectionsSquareMedium,
+  ToothWithSectionsCanineSmall,
+  ToothWithSectionsIncisorSmall,
+  ToothWithSectionsPremolar,
+  ToothWithSectionsCanine,
+  ToothWithSectionsIncisor,
+  ToothWithSectionsIncisorNoCenter,
+  ToothWithSectionsCanineNoCenter,
+  ToothWithSectionsProps,
+} from './screens/DentalChart/ToothShapes';
 
-// إخفاء التحذيرات غير المهمة
+// Ø¥Ø®ÙØ§Ø¡ Ø§Ù„ØªØ­Ø°ÙŠØ±Ø§Øª ØºÙŠØ± Ø§Ù„Ù…Ù‡Ù…Ø©
 LogBox.ignoreLogs([
   "Style property 'height' is not supported by native animated module",
   "Style property 'width' is not supported by native animated module",
@@ -86,1144 +100,10 @@ LogBox.ignoreLogs([
 
 interface DentalChartScreenProps {
   onBack: () => void;
-  permanentPatientId?: string; // ID المريض الدائم من permanent_patients
+  permanentPatientId?: string; // ID Ø§Ù„Ù…Ø±ÙŠØ¶ Ø§Ù„Ø¯Ø§Ø¦Ù… Ù…Ù† permanent_patients
 }
 
-// مكون السن مع الأقسام - تصميم جديد بمربع مركزي وخطوط قطرية (للأضراس - Molars)
-const ToothWithSections: React.FC = () => {
-  return (
-    <View style={{ width: 40, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="40" height="52" viewBox="0 0 40 52">
-        {/* الحدود الخارجية للسن - شكل بيضاوي */}
-        <Rect
-          x="2"
-          y="2"
-          width="36"
-          height="48"
-          rx="18"
-          ry="18"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* المربع المركزي */}
-        <Rect
-          x="14"
-          y="18"
-          width="12"
-          height="16"
-          rx="2"
-          ry="2"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية */}
-        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
-        <Line
-          x1="14"
-          y1="18"
-          x2="8"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
-        <Line
-          x1="26"
-          y1="18"
-          x2="32"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
-        <Line
-          x1="14"
-          y1="34"
-          x2="8"
-          y2="44"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
-        <Line
-          x1="26"
-          y1="34"
-          x2="32"
-          y2="44"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون الأضراس بشكل مربع (للأسنان 6، 7، 8 فقط)
-const ToothWithSectionsSquare: React.FC = () => {
-  return (
-    <View style={{ width: 40, height: 52, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="40" height="52" viewBox="0 0 40 52">
-        {/* الحدود الخارجية للسن - شكل مربع أكثر */}
-        <Rect
-          x="2"
-          y="2"
-          width="36"
-          height="48"
-          rx="8"
-          ry="8"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* المربع المركزي */}
-        <Rect
-          x="14"
-          y="18"
-          width="12"
-          height="16"
-          rx="2"
-          ry="2"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية - متصلة بالحواف */}
-        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى الحافة العلوية اليسرى للسن */}
-        <Line
-          x1="14"
-          y1="18"
-          x2="4"
-          y2="4"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى الحافة العلوية اليمنى للسن */}
-        <Line
-          x1="26"
-          y1="18"
-          x2="36"
-          y2="4"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى الحافة السفلية اليسرى للسن */}
-        <Line
-          x1="14"
-          y1="34"
-          x2="4"
-          y2="48"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى الحافة السفلية اليمنى للسن */}
-        <Line
-          x1="26"
-          y1="34"
-          x2="36"
-          y2="48"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-// Interface للأسنان مع الألوان والتفاعل
-interface ToothWithSectionsProps {
-  colors?: ToothSurfaceConditions;
-  onToothPress?: () => void;
-  onSurfacePress?: (surface: keyof ToothSurfaceConditions) => void;
-  rotation?: number; // زاوية الدوران: 0, 90, -90
-  swapSides?: boolean; // تبديل الميزيال والدستل (اليسار واليمين)
-  borderColor?: string; // لون حدود السن المخصص
-}
-
-// مكون الأضراس الصغير جداً بشكل مربع (للأسنان 6، 7، 8 مع خطوط أصغر)
-const ToothWithSectionsSquareTiny: React.FC<ToothWithSectionsProps> = ({
-  colors,
-  onToothPress,
-  onSurfacePress,
-  rotation = 0,
-  swapSides = false,
-  borderColor,
-}) => {
-  // أنيميشن النبض البطيء للحالات التي تحتاج تشخيص أدق
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  const getColor = (surface: keyof ToothSurfaceConditions) => {
-    // تبديل اليسار واليمين إذا كان swapSides مفعل
-    let actualSurface = surface;
-    if (swapSides) {
-      if (surface === 'left') actualSurface = 'right';
-      else if (surface === 'right') actualSurface = 'left';
-    }
-
-    if (colors && colors[actualSurface]) {
-      return CONDITION_COLORS[colors[actualSurface] as string];
-    }
-    return 'rgba(251, 191, 36, 0.12)';
-  };
-
-  // التحقق إذا كان السن مفقود (أي سطح فيه missing)
-  const isMissing = colors && Object.values(colors).some(condition => condition === 'missing');
-
-  // التحقق إذا كان هناك سطح يحتاج لتشخيص أدق
-  const needsDiagnosis = colors && Object.values(colors).some(condition => condition === 'needs_diagnosis');
-
-  // بدء أنيميشن النبض إذا كان يحتاج لتشخيص أدق
-  useEffect(() => {
-    if (needsDiagnosis) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.4,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [needsDiagnosis, pulseAnim]);
-
-  // تحديد لون الحدود (رمادي فاتح للمفقود، مخصص إذا وجد، أو أزرق افتراضي)
-  const finalBorderColor = isMissing
-    ? "#666666"
-    : borderColor || "rgba(135, 206, 250, 0.95)";
-
-  return (
-    <TouchableOpacity
-      style={{ width: 37, height: 47, alignItems: 'center', justifyContent: 'center' }}
-      onPress={onToothPress}
-      activeOpacity={0.7}
-    >
-      <Animated.View style={{ opacity: pulseAnim }}>
-        <Svg width="37" height="47" viewBox="0 0 37 47">
-          <Defs>
-          <ClipPath id="toothClipTiny">
-            <Rect
-              x="2.5"
-              y="2.5"
-              width="32"
-              height="42"
-              rx="8.5"
-              ry="12"
-            />
-          </ClipPath>
-        </Defs>
-
-        {/* Glass Morphism Effect - خلفية شبه شفافة بلون أصفر */}
-        <Rect
-          x="1.8"
-          y="1.8"
-          width="33.4"
-          height="43.4"
-          rx="9"
-          ry="12.6"
-          fill="rgba(251, 191, 36, 0.15)"
-          stroke="rgba(251, 191, 36, 0.3)"
-          strokeWidth="1"
-        />
-
-        <G clipPath="url(#toothClipTiny)">
-          {/* السطح العلوي (Top) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="2.5,2.5 34.5,2.5 24.1,16.3 13,16.3"
-            fill={getColor('top')}
-            opacity={0.85}
-          />
-
-          {/* السطح السفلي (Bottom) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="13,30.8 24.1,30.8 34.5,44.5 2.5,44.5"
-            fill={getColor('bottom')}
-            opacity={0.85}
-          />
-
-          {/* السطح الأيسر (Left) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="2.5,2.5 13,16.3 13,30.8 2.5,44.5"
-            fill={getColor('left')}
-            opacity={0.85}
-          />
-
-          {/* السطح الأيمن (Right) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="24.1,16.3 34.5,2.5 34.5,44.5 24.1,30.8"
-            fill={getColor('right')}
-            opacity={0.85}
-          />
-
-          {/* المربع المركزي - مع حواف مستديرة */}
-          <Rect
-            x="13"
-            y="16.3"
-            width="11.1"
-            height="14.5"
-            rx="2"
-            ry="2"
-            fill={getColor('center')}
-            opacity={0.85}
-          />
-        </G>
-
-        {/* الحدود الخارجية للسن */}
-        <Rect
-          x="1.8"
-          y="1.8"
-          width="33.4"
-          height="43.4"
-          rx="9"
-          ry="12.6"
-          fill="transparent"
-          stroke={finalBorderColor}
-          strokeWidth="2.5"
-        />
-
-        {/* المربع المركزي - حدود فقط (مخفي عند السن المفقود) */}
-        {!isMissing && (
-          <Rect
-            x="13"
-            y="16.3"
-            width="11.1"
-            height="14.5"
-            rx="2"
-            ry="2"
-            fill="transparent"
-            stroke={finalBorderColor}
-            strokeWidth="1.8"
-            strokeOpacity={0.9}
-          />
-        )}
-
-        {/* الخطوط القطرية */}
-        <Line
-          x1="13"
-          y1="16.3"
-          x2="5"
-          y2="5"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-        <Line
-          x1="24.1"
-          y1="16.3"
-          x2="32"
-          y2="5"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-        <Line
-          x1="13"
-          y1="30.8"
-          x2="5"
-          y2="42"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-        <Line
-          x1="24.1"
-          y1="30.8"
-          x2="32"
-          y2="42"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-
-        {/* علامة X للسن المفقود */}
-        {isMissing && (
-          <>
-            <Line
-              x1="8"
-              y1="8"
-              x2="29"
-              y2="39"
-              stroke="#666666"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-            <Line
-              x1="29"
-              y1="8"
-              x2="8"
-              y2="39"
-              stroke="#666666"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-          </>
-        )}
-      </Svg>
-      </Animated.View>
-
-      {/* Invisible Touchable Overlays for surfaces */}
-      {onSurfacePress && (
-        <>
-          {/* Top Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 3.7, top: 3.6, width: 29.6, height: 12.7, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }}
-            activeOpacity={0.5}
-          />
-          {/* Bottom Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 3.7, top: 30.8, width: 29.6, height: 12.6, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }}
-            activeOpacity={0.5}
-          />
-          {/* Left Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 3.7, top: 16.3, width: 9.3, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }}
-            activeOpacity={0.5}
-          />
-          {/* Right Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 24.1, top: 16.3, width: 9.2, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }}
-            activeOpacity={0.5}
-          />
-          {/* Center Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 13, top: 16.3, width: 11.1, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }}
-            activeOpacity={0.5}
-          />
-        </>
-      )}
-    </TouchableOpacity>
-  );
-};
-
-// مكون الأضراس المتوسط بشكل مربع (للأسنان 4 و 5)
-const ToothWithSectionsSquareMedium: React.FC<ToothWithSectionsProps> = ({
-  colors,
-  onToothPress,
-  onSurfacePress,
-  rotation = 0,
-  swapSides = false,
-  borderColor,
-}) => {
-  // أنيميشن النبض البطيء للحالات التي تحتاج تشخيص أدق
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  const getColor = (surface: keyof ToothSurfaceConditions) => {
-    // تبديل اليسار واليمين إذا كان swapSides مفعل
-    let actualSurface = surface;
-    if (swapSides) {
-      if (surface === 'left') actualSurface = 'right';
-      else if (surface === 'right') actualSurface = 'left';
-    }
-
-    if (colors && colors[actualSurface]) {
-      return CONDITION_COLORS[colors[actualSurface] as string];
-    }
-    return 'rgba(251, 191, 36, 0.12)';
-  };
-
-  // التحقق إذا كان السن مفقود
-  const isMissing = colors && Object.values(colors).some(condition => condition === 'missing');
-
-  // التحقق إذا كان هناك سطح يحتاج لتشخيص أدق
-  const needsDiagnosis = colors && Object.values(colors).some(condition => condition === 'needs_diagnosis');
-
-  // بدء أنيميشن النبض إذا كان يحتاج لتشخيص أدق
-  useEffect(() => {
-    if (needsDiagnosis) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.4,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [needsDiagnosis, pulseAnim]);
-
-  // تحديد لون الحدود (رمادي فاتح للمفقود)
-  const finalBorderColor = isMissing
-    ? "#666666"
-    : borderColor || "rgba(135, 206, 250, 0.95)";
-
-  return (
-    <TouchableOpacity
-      style={{ width: 33, height: 42, alignItems: 'center', justifyContent: 'center' }}
-      onPress={onToothPress}
-      activeOpacity={0.7}
-    >
-      <Animated.View style={{ opacity: pulseAnim }}>
-        <Svg width="33" height="42" viewBox="0 0 33 42">
-          <Defs>
-          <ClipPath id="toothClipMedium">
-            <Rect
-              x="2.3"
-              y="2.3"
-              width="28.4"
-              height="37.4"
-              rx="7.75"
-              ry="10.7"
-            />
-          </ClipPath>
-        </Defs>
-
-        {/* Glass Morphism Effect - أصفر */}
-        <Rect
-          x="1.65"
-          y="1.6"
-          width="29.7"
-          height="38.8"
-          rx="8.25"
-          ry="11.3"
-          fill="rgba(251, 191, 36, 0.15)"
-          stroke="rgba(251, 191, 36, 0.3)"
-          strokeWidth="1"
-        />
-
-        <G clipPath="url(#toothClipMedium)">
-          {/* السطح العلوي (Top) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="2,2 31,2 21.45,14.5 11.55,14.5"
-            fill={getColor('top')}
-            opacity={0.85}
-          />
-
-          {/* السطح السفلي (Bottom) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="11.55,27.4 21.45,27.4 31,40 2,40"
-            fill={getColor('bottom')}
-            opacity={0.85}
-          />
-
-          {/* السطح الأيسر (Left) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="2,2 11.55,14.5 11.55,27.4 2,40"
-            fill={getColor('left')}
-            opacity={0.85}
-          />
-
-          {/* السطح الأيمن (Right) - شبه منحرف يتبع الخطوط */}
-          <Polygon
-            points="21.45,14.5 31,2 31,40 21.45,27.4"
-            fill={getColor('right')}
-            opacity={0.85}
-          />
-
-          {/* المربع المركزي - مع حواف مستديرة */}
-          <Rect
-            x="11.55"
-            y="14.5"
-            width="9.9"
-            height="12.9"
-            rx="2"
-            ry="2"
-            fill={getColor('center')}
-            opacity={0.85}
-          />
-        </G>
-
-        <Rect
-          x="1.65"
-          y="1.6"
-          width="29.7"
-          height="38.8"
-          rx="8.25"
-          ry="11.3"
-          fill="transparent"
-          stroke={finalBorderColor}
-          strokeWidth="2.5"
-        />
-
-        {/* المربع المركزي - حدود فقط (مخفي عند السن المفقود) */}
-        {!isMissing && (
-          <Rect
-            x="11.55"
-            y="14.5"
-            width="9.9"
-            height="12.9"
-            rx="2"
-            ry="2"
-            fill="transparent"
-            stroke={finalBorderColor}
-            strokeWidth="1.8"
-            strokeOpacity={0.9}
-          />
-        )}
-
-        {/* الخطوط القطرية */}
-        <Line
-          x1="11.55"
-          y1="14.5"
-          x2="4.5"
-          y2="4.5"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-        <Line
-          x1="21.45"
-          y1="14.5"
-          x2="28.5"
-          y2="4.5"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-        <Line
-          x1="11.55"
-          y1="27.4"
-          x2="4.5"
-          y2="37.5"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-        <Line
-          x1="21.45"
-          y1="27.4"
-          x2="28.5"
-          y2="37.5"
-          stroke={finalBorderColor}
-          strokeWidth="1.8"
-          strokeOpacity={0.8}
-        />
-
-        {/* علامة X للسن المفقود */}
-        {isMissing && (
-          <>
-            <Line
-              x1="7"
-              y1="7"
-              x2="26"
-              y2="35"
-              stroke="#666666"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-            <Line
-              x1="26"
-              y1="7"
-              x2="7"
-              y2="35"
-              stroke="#666666"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-          </>
-        )}
-      </Svg>
-      </Animated.View>
-
-      {/* Invisible Touchable Overlays for surfaces */}
-      {onSurfacePress && (
-        <>
-          {/* Top Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 3.3, top: 3.2, width: 26.4, height: 11.3, zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }}
-            activeOpacity={1}
-          />
-          {/* Bottom Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 3.3, top: 27.5, width: 26.4, height: 11.3, zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }}
-            activeOpacity={1}
-          />
-          {/* Left Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 3.3, top: 14.5, width: 8.25, height: 13, zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }}
-            activeOpacity={1}
-          />
-          {/* Right Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 21.45, top: 14.5, width: 8.25, height: 13, zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }}
-            activeOpacity={1}
-          />
-          {/* Center Surface */}
-          <TouchableOpacity
-            style={{ position: 'absolute', left: 11.55, top: 14.5, width: 9.9, height: 12.9, zIndex: 1005, elevation: 1005 }}
-            onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }}
-            activeOpacity={1}
-          />
-        </>
-      )}
-    </TouchableOpacity>
-  );
-};
-
-// مكون الناب الصغير (للسن 3 بحجم 30×38)
-const ToothWithSectionsCanineSmall: React.FC = () => {
-  return (
-    <View style={{ width: 30, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="38" viewBox="0 0 32 50">
-        {/* Glass Morphism Effect - أصفر */}
-        <Rect
-          x="2"
-          y="2"
-          width="28"
-          height="46"
-          rx="14"
-          ry="20"
-          fill="rgba(251, 191, 36, 0.15)"
-          stroke="rgba(251, 191, 36, 0.3)"
-          strokeWidth="1"
-        />
-        <Rect
-          x="2"
-          y="2"
-          width="28"
-          height="46"
-          rx="14"
-          ry="20"
-          fill="transparent"
-          stroke="rgba(135, 206, 250, 0.95)"
-          strokeWidth="2.5"
-        />
-        {/* المربع المركزي - Glass effect أزرق فاتح */}
-        <Rect x="10" y="17" width="12" height="16" rx="2" ry="2" fill="rgba(251, 191, 36, 0.12)" stroke="rgba(135, 206, 250, 0.85)" strokeWidth="1.8" />
-        {/* الخطوط القطرية - Glass effect أزرق فاتح */}
-        <Line x1="10" y1="17" x2="5" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-        <Line x1="22" y1="17" x2="27" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-        <Line x1="10" y1="33" x2="5" y2="43" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-        <Line x1="22" y1="33" x2="27" y2="43" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون القواطع الصغير (للأسنان 1 و 2 بحجم 30×38)
-const ToothWithSectionsIncisorSmall: React.FC = () => {
-  return (
-    <View style={{ width: 30, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="38" viewBox="0 0 30 48">
-        {/* Glass Morphism Effect - أصفر */}
-        <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="rgba(251, 191, 36, 0.15)" stroke="rgba(251, 191, 36, 0.3)" strokeWidth="1" />
-        <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(135, 206, 250, 0.95)" strokeWidth="2.5" />
-        {/* المربع المركزي - Glass effect أزرق فاتح */}
-        <Rect x="9" y="16" width="12" height="16" rx="2" ry="2" fill="rgba(251, 191, 36, 0.12)" stroke="rgba(135, 206, 250, 0.85)" strokeWidth="1.8" />
-        {/* الخطوط القطرية - Glass effect أزرق فاتح */}
-        <Line x1="9" y1="16" x2="4" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-        <Line x1="21" y1="16" x2="26" y2="7" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-        <Line x1="9" y1="32" x2="4" y2="41" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-        <Line x1="21" y1="32" x2="26" y2="41" stroke="rgba(135, 206, 250, 0.8)" strokeWidth="1.8" />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون السن الأصغر مع الأقسام (للضواحك - Premolars)
-const ToothWithSectionsPremolar: React.FC = () => {
-  return (
-    <View style={{ width: 35, height: 45, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="35" height="45" viewBox="0 0 35 45">
-        {/* الحدود الخارجية للسن - شكل بيضاوي */}
-        <Rect
-          x="2"
-          y="2"
-          width="31"
-          height="41"
-          rx="15"
-          ry="15"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* المربع المركزي */}
-        <Rect
-          x="12"
-          y="16"
-          width="11"
-          height="13"
-          rx="2"
-          ry="2"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية */}
-        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
-        <Line
-          x1="12"
-          y1="16"
-          x2="7"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
-        <Line
-          x1="23"
-          y1="16"
-          x2="28"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
-        <Line
-          x1="12"
-          y1="29"
-          x2="7"
-          y2="37"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
-        <Line
-          x1="23"
-          y1="29"
-          x2="28"
-          y2="37"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون الناب مع الأقسام (للأنياب - Canine) - شكل بيضاوي أكثر
-const ToothWithSectionsCanine: React.FC = () => {
-  return (
-    <View style={{ width: 32, height: 50, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="32" height="50" viewBox="0 0 32 50">
-        {/* الحدود الخارجية للسن - شكل بيضاوي طويل */}
-        <Rect
-          x="2"
-          y="2"
-          width="28"
-          height="46"
-          rx="14"
-          ry="20"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* المربع المركزي */}
-        <Rect
-          x="11"
-          y="18"
-          width="10"
-          height="14"
-          rx="2"
-          ry="2"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية */}
-        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
-        <Line
-          x1="11"
-          y1="18"
-          x2="6"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
-        <Line
-          x1="21"
-          y1="18"
-          x2="26"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
-        <Line
-          x1="11"
-          y1="32"
-          x2="6"
-          y2="42"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
-        <Line
-          x1="21"
-          y1="32"
-          x2="26"
-          y2="42"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون القواطع مع الأقسام (للقواطع - Incisors) - شكل مستطيل ومسطح
-const ToothWithSectionsIncisor: React.FC = () => {
-  return (
-    <View style={{ width: 30, height: 48, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="48" viewBox="0 0 30 48">
-        {/* الحدود الخارجية للسن - شكل بيضاوي مسطح */}
-        <Rect
-          x="2"
-          y="2"
-          width="26"
-          height="44"
-          rx="13"
-          ry="18"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* المربع المركزي */}
-        <Rect
-          x="10"
-          y="17"
-          width="10"
-          height="14"
-          rx="2"
-          ry="2"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية */}
-        {/* خط قطري من الزاوية العلوية اليسرى للمربع إلى أعلى السن */}
-        <Line
-          x1="10"
-          y1="17"
-          x2="5"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية العلوية اليمنى للمربع إلى أعلى السن */}
-        <Line
-          x1="20"
-          y1="17"
-          x2="25"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليسرى للمربع إلى أسفل السن */}
-        <Line
-          x1="10"
-          y1="31"
-          x2="5"
-          y2="40"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من الزاوية السفلية اليمنى للمربع إلى أسفل السن */}
-        <Line
-          x1="20"
-          y1="31"
-          x2="25"
-          y2="40"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون القواطع بدون المربع المركزي - مع خط مركزي عمودي وخطوط قطرية (للأسنان 1 و 2)
-const ToothWithSectionsIncisorNoCenter: React.FC = () => {
-  return (
-    <View style={{ width: 30, height: 48, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="48" viewBox="0 0 30 48">
-        {/* الحدود الخارجية للسن - شكل بيضاوي */}
-        <Rect
-          x="2"
-          y="2"
-          width="26"
-          height="44"
-          rx="13"
-          ry="18"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* الخط المركزي العمودي (بدل المربع) */}
-        <Line
-          x1="15"
-          y1="8"
-          x2="15"
-          y2="40"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية - مثل باقي الأسنان */}
-        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليسرى */}
-        <Line
-          x1="15"
-          y1="17"
-          x2="5"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليمنى */}
-        <Line
-          x1="15"
-          y1="17"
-          x2="25"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليسرى */}
-        <Line
-          x1="15"
-          y1="31"
-          x2="5"
-          y2="40"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليمنى */}
-        <Line
-          x1="15"
-          y1="31"
-          x2="25"
-          y2="40"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-// مكون الناب بدون المربع المركزي - مع خط مركزي عمودي وخطوط قطرية (للسن 3)
-const ToothWithSectionsCanineNoCenter: React.FC = () => {
-  return (
-    <View style={{ width: 32, height: 50, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="32" height="50" viewBox="0 0 32 50">
-        {/* الحدود الخارجية للسن - شكل بيضاوي طويل */}
-        <Rect
-          x="2"
-          y="2"
-          width="28"
-          height="46"
-          rx="14"
-          ry="20"
-          fill="transparent"
-          stroke="rgba(255, 255, 255, 0.9)"
-          strokeWidth="2"
-        />
-
-        {/* الخط المركزي العمودي (بدل المربع) */}
-        <Line
-          x1="16"
-          y1="8"
-          x2="16"
-          y2="42"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* الخطوط القطرية - مثل باقي الأسنان */}
-        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليسرى */}
-        <Line
-          x1="16"
-          y1="18"
-          x2="6"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من أعلى الخط المركزي إلى الزاوية العلوية اليمنى */}
-        <Line
-          x1="16"
-          y1="18"
-          x2="26"
-          y2="8"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليسرى */}
-        <Line
-          x1="16"
-          y1="32"
-          x2="6"
-          y2="42"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-
-        {/* خط قطري من أسفل الخط المركزي إلى الزاوية السفلية اليمنى */}
-        <Line
-          x1="16"
-          y1="32"
-          x2="26"
-          y2="42"
-          stroke="rgba(255, 255, 255, 0.7)"
-          strokeWidth="1.5"
-        />
-      </Svg>
-    </View>
-  );
-};
-
-
-// Component لعرض رقم السن مع الحدود (uses imported helper functions)
+// Component Ù„Ø¹Ø±Ø¶ Ø±Ù‚Ù… Ø§Ù„Ø³Ù† Ù…Ø¹ Ø§Ù„Ø­Ø¯ÙˆØ¯ (uses imported helper functions)
 const ToothNumberBadge: React.FC<{ toothNumber: number }> = ({ toothNumber }) => {
   const quadrant = getToothQuadrant(toothNumber);
   const displayNumber = getToothPositionNumber(toothNumber);
@@ -1255,7 +135,7 @@ const ToothNumberBadge: React.FC<{ toothNumber: number }> = ({ toothNumber }) =>
   );
 };
 
-// مكون قائمة اختيار الحالة
+// Ù…ÙƒÙˆÙ† Ù‚Ø§Ø¦Ù…Ø© Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ø­Ø§Ù„Ø©
 interface ConditionMenuProps {
   visible: boolean;
   onSelect: (condition: ToothCondition) => void;
@@ -1387,7 +267,7 @@ const ConditionMenu: React.FC<ConditionMenuProps> = ({ visible, onSelect, onClos
                         </TouchableOpacity>
                       ))}
 
-                      {/* خيار إزالة الحالة */}
+                      {/* Ø®ÙŠØ§Ø± Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„Ø© */}
                       <TouchableOpacity
                         style={styles.conditionMenuItem}
                         onPress={() => onSelect(null)}
@@ -1418,7 +298,7 @@ const ConditionMenu: React.FC<ConditionMenuProps> = ({ visible, onSelect, onClos
                         </TouchableOpacity>
                       ))}
 
-                      {/* خيار إزالة الحالة */}
+                      {/* Ø®ÙŠØ§Ø± Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„Ø© */}
                       <TouchableOpacity
                         style={styles.conditionMenuItem}
                         onPress={() => onSelect('CLEAR_TOOTH_STATUS' as any)}
@@ -1456,30 +336,30 @@ export default function DentalChartScreen({
   const blob5Anim = useState(new Animated.Value(0))[0];
   const blob6Anim = useState(new Animated.Value(0))[0];
 
-  // State Management لحالات الأسنان
+  // State Management Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø£Ø³Ù†Ø§Ù†
   const [toothConditions, setToothConditions] = useState<Record<number | string, ToothSurfaceConditions>>({});
   const [toothBorderColors, setToothBorderColors] = useState<Record<number | string, ToothCondition>>({});
   const [selectedTooth, setSelectedTooth] = useState<number | string | null>(null);
   const [selectedSurface, setSelectedSurface] = useState<keyof ToothSurfaceConditions | null>(null);
   const [showConditionMenu, setShowConditionMenu] = useState(false);
-  const [isClosing, setIsClosing] = useState(false); // لتتبع حالة الإغلاق
-  const [isEditModeActive, setIsEditModeActive] = useState(false); // لتتبع حالة Edit Mode
-  const [showToothDetailsModal, setShowToothDetailsModal] = useState(false); // لعرض تفاصيل السن في Edit Mode
-  const [isViewModeActive, setIsViewModeActive] = useState(false); // لتتبع حالة View Mode
-  const [selectedToothForDetails, setSelectedToothForDetails] = useState<number | null>(null); // السن المحدد للتفاصيل
-  const [showSurfaceOptions, setShowSurfaceOptions] = useState(false); // لعرض خيارات الأسطح
-  const [showTreatmentOptions, setShowTreatmentOptions] = useState(false); // لعرض خيارات العلاج
-  const [showDetailsOptions, setShowDetailsOptions] = useState(false); // لعرض خيارات التفاصيل
-  const [showReferralOptions, setShowReferralOptions] = useState(false); // لعرض خيارات التحويل
-  const [hasModalChanges, setHasModalChanges] = useState(false); // لتتبع التغييرات في المودال
-  const [isEditMode, setIsEditMode] = useState(false); // وضع التعديل
-  const [showNotesSection, setShowNotesSection] = useState(false); // لعرض قسم الملاحظات
-  const [showDetailsSection, setShowDetailsSection] = useState(true); // لعرض قسم البنود (Surfaces, Treatment, Details)
-  const [showRecordsSection, setShowRecordsSection] = useState(false); // لعرض قسم السجلات
-  const [showReferralSection, setShowReferralSection] = useState(false); // لعرض قسم التحويلات
-  const [recordsType, setRecordsType] = useState<'editing' | 'planning'>('editing'); // نوع السجلات المعروضة
-  const [currentNote, setCurrentNote] = useState(''); // للملاحظة الحالية
-  const [unreadNotes, setUnreadNotes] = useState<Record<number | string, number>>({}); // عدد الملاحظات غير المقروءة لكل سن
+  const [isClosing, setIsClosing] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© Ø§Ù„Ø¥ØºÙ„Ø§Ù‚
+  const [isEditModeActive, setIsEditModeActive] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© Edit Mode
+  const [showToothDetailsModal, setShowToothDetailsModal] = useState(false); // Ù„Ø¹Ø±Ø¶ ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø³Ù† ÙÙŠ Edit Mode
+  const [isViewModeActive, setIsViewModeActive] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© View Mode
+  const [selectedToothForDetails, setSelectedToothForDetails] = useState<number | null>(null); // Ø§Ù„Ø³Ù† Ø§Ù„Ù…Ø­Ø¯Ø¯ Ù„Ù„ØªÙØ§ØµÙŠÙ„
+  const [showSurfaceOptions, setShowSurfaceOptions] = useState(false); // Ù„Ø¹Ø±Ø¶ Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„Ø£Ø³Ø·Ø­
+  const [showTreatmentOptions, setShowTreatmentOptions] = useState(false); // Ù„Ø¹Ø±Ø¶ Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„Ø¹Ù„Ø§Ø¬
+  const [showDetailsOptions, setShowDetailsOptions] = useState(false); // Ù„Ø¹Ø±Ø¶ Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„ØªÙØ§ØµÙŠÙ„
+  const [showReferralOptions, setShowReferralOptions] = useState(false); // Ù„Ø¹Ø±Ø¶ Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„ØªØ­ÙˆÙŠÙ„
+  const [hasModalChanges, setHasModalChanges] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª ÙÙŠ Ø§Ù„Ù…ÙˆØ¯Ø§Ù„
+  const [isEditMode, setIsEditMode] = useState(false); // ÙˆØ¶Ø¹ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„
+  const [showNotesSection, setShowNotesSection] = useState(false); // Ù„Ø¹Ø±Ø¶ Ù‚Ø³Ù… Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø§Øª
+  const [showDetailsSection, setShowDetailsSection] = useState(true); // Ù„Ø¹Ø±Ø¶ Ù‚Ø³Ù… Ø§Ù„Ø¨Ù†ÙˆØ¯ (Surfaces, Treatment, Details)
+  const [showRecordsSection, setShowRecordsSection] = useState(false); // Ù„Ø¹Ø±Ø¶ Ù‚Ø³Ù… Ø§Ù„Ø³Ø¬Ù„Ø§Øª
+  const [showReferralSection, setShowReferralSection] = useState(false); // Ù„Ø¹Ø±Ø¶ Ù‚Ø³Ù… Ø§Ù„ØªØ­ÙˆÙŠÙ„Ø§Øª
+  const [recordsType, setRecordsType] = useState<'editing' | 'planning'>('editing'); // Ù†ÙˆØ¹ Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ù…Ø¹Ø±ÙˆØ¶Ø©
+  const [currentNote, setCurrentNote] = useState(''); // Ù„Ù„Ù…Ù„Ø§Ø­Ø¸Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©
+  const [unreadNotes, setUnreadNotes] = useState<Record<number | string, number>>({}); // Ø¹Ø¯Ø¯ Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø§Øª ØºÙŠØ± Ø§Ù„Ù…Ù‚Ø±ÙˆØ¡Ø© Ù„ÙƒÙ„ Ø³Ù†
 
   // Referral state
   const [referrals, setReferrals] = useState({
@@ -1491,20 +371,20 @@ export default function DentalChartScreen({
     oralMedicine: false,
   });
   const [referralStatus, setReferralStatus] = useState({
-    endodontics: 'not_given', // 'given' أو 'not_given'
+    endodontics: 'not_given', // 'given' Ø£Ùˆ 'not_given'
     oralSurgery: 'not_given',
     orthodontics: 'not_given',
     periodontics: 'not_given',
     prosthodontics: 'not_given',
     oralMedicine: 'not_given',
   });
-  const [selectedReferral, setSelectedReferral] = useState<string | null>(null); // للتمييز البصري
-  const [isReferralExpanded, setIsReferralExpanded] = useState(false); // لتتبع حالة فتح/إغلاق الأقسام (مغلقة افتراضياً)
-  const [showDepartmentModal, setShowDepartmentModal] = useState(false); // للتحكم في فتح/إغلاق Modal الأقسام
-  const [departmentModalMode, setDepartmentModalMode] = useState<'new' | 'edit'>('new'); // وضع الموديل: جديد أو تعديل
-  const [savedReferralsState, setSavedReferralsState] = useState<any>(null); // لحفظ حالة referrals مؤقتاً
-  const [savedSelectedReferralFor, setSavedSelectedReferralFor] = useState<any>(null); // لحفظ حالة selectedReferralFor مؤقتاً
-  const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null); // للتحكم في عرض الأسنان تحت القسم
+  const [selectedReferral, setSelectedReferral] = useState<string | null>(null); // Ù„Ù„ØªÙ…ÙŠÙŠØ² Ø§Ù„Ø¨ØµØ±ÙŠ
+  const [isReferralExpanded, setIsReferralExpanded] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© ÙØªØ­/Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø£Ù‚Ø³Ø§Ù… (Ù…ØºÙ„Ù‚Ø© Ø§ÙØªØ±Ø§Ø¶ÙŠØ§Ù‹)
+  const [showDepartmentModal, setShowDepartmentModal] = useState(false); // Ù„Ù„ØªØ­ÙƒÙ… ÙÙŠ ÙØªØ­/Ø¥ØºÙ„Ø§Ù‚ Modal Ø§Ù„Ø£Ù‚Ø³Ø§Ù…
+  const [departmentModalMode, setDepartmentModalMode] = useState<'new' | 'edit'>('new'); // ÙˆØ¶Ø¹ Ø§Ù„Ù…ÙˆØ¯ÙŠÙ„: Ø¬Ø¯ÙŠØ¯ Ø£Ùˆ ØªØ¹Ø¯ÙŠÙ„
+  const [savedReferralsState, setSavedReferralsState] = useState<any>(null); // Ù„Ø­ÙØ¸ Ø­Ø§Ù„Ø© referrals Ù…Ø¤Ù‚ØªØ§Ù‹
+  const [savedSelectedReferralFor, setSavedSelectedReferralFor] = useState<any>(null); // Ù„Ø­ÙØ¸ Ø­Ø§Ù„Ø© selectedReferralFor Ù…Ø¤Ù‚ØªØ§Ù‹
+  const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null); // Ù„Ù„ØªØ­ÙƒÙ… ÙÙŠ Ø¹Ø±Ø¶ Ø§Ù„Ø£Ø³Ù†Ø§Ù† ØªØ­Øª Ø§Ù„Ù‚Ø³Ù…
   // Temporary states for "new" mode - not saved to database until Save is clicked
   const [tempReferrals, setTempReferrals] = useState<typeof referrals>({
     endodontics: false,
@@ -1515,7 +395,7 @@ export default function DentalChartScreen({
     oralMedicine: false,
   });
   const [tempSelectedReferralFor, setTempSelectedReferralFor] = useState<Record<number, string[]>>({});
-  const [referralTab, setReferralTab] = useState<'department' | 'records'>('department'); // للتبديل بين Department و Referral Records
+  const [referralTab, setReferralTab] = useState<'department' | 'records'>('department'); // Ù„Ù„ØªØ¨Ø¯ÙŠÙ„ Ø¨ÙŠÙ† Department Ùˆ Referral Records
   const [referralRecords, setReferralRecords] = useState<Array<{
     departmentKey: string;
     departmentName: string;
@@ -1523,32 +403,32 @@ export default function DentalChartScreen({
     timestamp: string;
     doctorName: string;
     timestampNum: number
-  }>>([]); // سجلات التحويلات
+  }>>([]); // Ø³Ø¬Ù„Ø§Øª Ø§Ù„ØªØ­ÙˆÙŠÙ„Ø§Øª
 
   // Oral Hygiene (Scaling) state
-  const [isOralHygieneExpanded, setIsOralHygieneExpanded] = useState(false); // لتتبع حالة توسع حاوية Oral Hygiene
-  const oralHygieneExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
+  const [isOralHygieneExpanded, setIsOralHygieneExpanded] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© ØªÙˆØ³Ø¹ Ø­Ø§ÙˆÙŠØ© Oral Hygiene
+  const oralHygieneExpandAnim = useRef(new Animated.Value(0)).current; // Ø£Ù†ÙŠÙ…ÙŠØ´Ù† Ø§Ù„ØªÙˆØ³Ø¹
   const [scalingRecords, setScalingRecords] = useState<Array<{ id: string; timestamp: string; doctorName: string; timestampNum: number }>>([]);
 
   // Total Treatment Record state
-  const [isTreatmentRecordExpanded, setIsTreatmentRecordExpanded] = useState(false); // لتتبع حالة توسع Total Treatment Record
-  const treatmentRecordExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
+  const [isTreatmentRecordExpanded, setIsTreatmentRecordExpanded] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© ØªÙˆØ³Ø¹ Total Treatment Record
+  const treatmentRecordExpandAnim = useRef(new Animated.Value(0)).current; // Ø£Ù†ÙŠÙ…ÙŠØ´Ù† Ø§Ù„ØªÙˆØ³Ø¹
 
   // Total Planning Record state
-  const [isPlanningRecordExpanded, setIsPlanningRecordExpanded] = useState(false); // لتتبع حالة توسع Total Planning Record
-  const planningRecordExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
+  const [isPlanningRecordExpanded, setIsPlanningRecordExpanded] = useState(false); // Ù„ØªØªØ¨Ø¹ Ø­Ø§Ù„Ø© ØªÙˆØ³Ø¹ Total Planning Record
+  const planningRecordExpandAnim = useRef(new Animated.Value(0)).current; // Ø£Ù†ÙŠÙ…ÙŠØ´Ù† Ø§Ù„ØªÙˆØ³Ø¹
 
-  // حفظ القيم الأصلية قبل التعديل
+  // Ø­ÙØ¸ Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø£ØµÙ„ÙŠØ© Ù‚Ø¨Ù„ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„
   const [originalValues, setOriginalValues] = useState<{
     treatment?: string;
     details?: string;
     surfaces?: string[];
   }>({});
 
-  // Ref لتعطيل Planning Record عند العمل من Tooth Details Modal
+  // Ref Ù„ØªØ¹Ø·ÙŠÙ„ Planning Record Ø¹Ù†Ø¯ Ø§Ù„Ø¹Ù…Ù„ Ù…Ù† Tooth Details Modal
   const skipPlanningRecordRef = useRef(false);
 
-  // بيانات الأسنان المحفوظة
+  // Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ù…Ø­ÙÙˆØ¸Ø©
   const [selectedTreatments, setSelectedTreatments] = useState<Record<number | string, string>>({});
   const [selectedDetails, setSelectedDetails] = useState<Record<number | string, string>>({});
   const [selectedReferralFor, setSelectedReferralFor] = useState<Record<number | string, string[]>>({});  // Changed to array for multiple referrals
@@ -1574,15 +454,15 @@ export default function DentalChartScreen({
     timestamp: string;
     timestampNum: number;
     doctorName: string;
-    isChange?: boolean; // هل هذا تغيير لحالة موجودة؟
-    previousCondition?: string; // الحالة السابقة
+    isChange?: boolean; // Ù‡Ù„ Ù‡Ø°Ø§ ØªØºÙŠÙŠØ± Ù„Ø­Ø§Ù„Ø© Ù…ÙˆØ¬ÙˆØ¯Ø©ØŸ
+    previousCondition?: string; // Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø³Ø§Ø¨Ù‚Ø©
   };
 
   type ToothRecord = EditingRecord | PlanningRecord;
 
   const [toothRecords, setToothRecords] = useState<Record<number | string, ToothRecord[]>>({});
 
-  // قائمة عامة لكل planning records بترتيب الإضافة الفعلي
+  // Ù‚Ø§Ø¦Ù…Ø© Ø¹Ø§Ù…Ø© Ù„ÙƒÙ„ planning records Ø¨ØªØ±ØªÙŠØ¨ Ø§Ù„Ø¥Ø¶Ø§ÙØ© Ø§Ù„ÙØ¹Ù„ÙŠ
   const [allPlanningRecordsGlobal, setAllPlanningRecordsGlobal] = useState<Array<{
     toothNumber: number;
     action: 'diagnosed' | 'canceled';
@@ -1595,9 +475,9 @@ export default function DentalChartScreen({
     previousCondition?: string;
   }>>([]);
 
-  // ═══════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Pending Planning Records State (Before Submit)
-  // ═══════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const [pendingPlanningRecords, setPendingPlanningRecords] = useState<Array<{
     toothNumber: number;
     action: 'diagnosed' | 'canceled';
@@ -1625,9 +505,9 @@ export default function DentalChartScreen({
     { key: 'temporary_filling', label: 'Temporary Filling' },
   ];
 
-  // ═══════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Realtime Subscription References
-  // ═══════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const realtimeChannelRef = useRef<any>(null);
 
   const referralOptions = [
@@ -1639,185 +519,185 @@ export default function DentalChartScreen({
     { key: 'oralMedicine', label: 'Oral Medicine' },
   ];
 
-  // Animated Values للأنيميشن - قيم منفصلة لكل سن
-  // السن 6
+  // Animated Values Ù„Ù„Ø£Ù†ÙŠÙ…ÙŠØ´Ù† - Ù‚ÙŠÙ… Ù…Ù†ÙØµÙ„Ø© Ù„ÙƒÙ„ Ø³Ù†
+  // Ø§Ù„Ø³Ù† 6
   const tooth6Scale = React.useRef(new Animated.Value(1)).current;
   const tooth6Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth6TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth6TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 7
+  // Ø§Ù„Ø³Ù† 7
   const tooth7Scale = React.useRef(new Animated.Value(1)).current;
   const tooth7Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth7TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth7TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 8
+  // Ø§Ù„Ø³Ù† 8
   const tooth8Scale = React.useRef(new Animated.Value(1)).current;
   const tooth8Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth8TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth8TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 5
+  // Ø§Ù„Ø³Ù† 5
   const tooth5Scale = React.useRef(new Animated.Value(1)).current;
   const tooth5Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth5TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth5TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 4
+  // Ø§Ù„Ø³Ù† 4
   const tooth4Scale = React.useRef(new Animated.Value(1)).current;
   const tooth4Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth4TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth4TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 3
+  // Ø§Ù„Ø³Ù† 3
   const tooth3Scale = React.useRef(new Animated.Value(1)).current;
   const tooth3Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth3TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth3TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 2
+  // Ø§Ù„Ø³Ù† 2
   const tooth2Scale = React.useRef(new Animated.Value(1)).current;
   const tooth2Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth2TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth2TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 1
+  // Ø§Ù„Ø³Ù† 1
   const tooth1Scale = React.useRef(new Animated.Value(1)).current;
   const tooth1Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth1TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth1TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 32 (السفلية يسار #8)
+  // Ø§Ù„Ø³Ù† 32 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #8)
   const tooth32Scale = React.useRef(new Animated.Value(1)).current;
   const tooth32Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth32TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth32TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 31 (السفلية يسار #7)
+  // Ø§Ù„Ø³Ù† 31 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #7)
   const tooth31Scale = React.useRef(new Animated.Value(1)).current;
   const tooth31Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth31TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth31TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 30 (السفلية يسار #6)
+  // Ø§Ù„Ø³Ù† 30 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #6)
   const tooth30Scale = React.useRef(new Animated.Value(1)).current;
   const tooth30Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth30TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth30TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 29 (السفلية يسار #5)
+  // Ø§Ù„Ø³Ù† 29 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #5)
   const tooth29Scale = React.useRef(new Animated.Value(1)).current;
   const tooth29Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth29TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth29TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 28 (السفلية يسار #4)
+  // Ø§Ù„Ø³Ù† 28 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #4)
   const tooth28Scale = React.useRef(new Animated.Value(1)).current;
   const tooth28Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth28TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth28TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 27 (السفلية يسار #3)
+  // Ø§Ù„Ø³Ù† 27 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #3)
   const tooth27Scale = React.useRef(new Animated.Value(1)).current;
   const tooth27Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth27TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth27TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 26 (السفلية يسار #2)
+  // Ø§Ù„Ø³Ù† 26 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #2)
   const tooth26Scale = React.useRef(new Animated.Value(1)).current;
   const tooth26Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth26TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth26TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 25 (السفلية يسار #1)
+  // Ø§Ù„Ø³Ù† 25 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠØ³Ø§Ø± #1)
   const tooth25Scale = React.useRef(new Animated.Value(1)).current;
   const tooth25Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth25TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth25TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 9 (العلوية يسار #1)
+  // Ø§Ù„Ø³Ù† 9 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #1)
   const tooth9Scale = React.useRef(new Animated.Value(1)).current;
   const tooth9Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth9TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth9TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 10 (العلوية يسار #2)
+  // Ø§Ù„Ø³Ù† 10 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #2)
   const tooth10Scale = React.useRef(new Animated.Value(1)).current;
   const tooth10Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth10TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth10TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 11 (العلوية يسار #3)
+  // Ø§Ù„Ø³Ù† 11 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #3)
   const tooth11Scale = React.useRef(new Animated.Value(1)).current;
   const tooth11Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth11TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth11TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 12 (العلوية يسار #4)
+  // Ø§Ù„Ø³Ù† 12 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #4)
   const tooth12Scale = React.useRef(new Animated.Value(1)).current;
   const tooth12Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth12TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth12TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 13 (العلوية يسار #5)
+  // Ø§Ù„Ø³Ù† 13 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #5)
   const tooth13Scale = React.useRef(new Animated.Value(1)).current;
   const tooth13Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth13TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth13TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 14 (العلوية يسار #6)
+  // Ø§Ù„Ø³Ù† 14 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #6)
   const tooth14Scale = React.useRef(new Animated.Value(1)).current;
   const tooth14Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth14TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth14TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 15 (العلوية يسار #7)
+  // Ø§Ù„Ø³Ù† 15 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #7)
   const tooth15Scale = React.useRef(new Animated.Value(1)).current;
   const tooth15Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth15TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth15TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 16 (العلوية يسار #8)
+  // Ø§Ù„Ø³Ù† 16 (Ø§Ù„Ø¹Ù„ÙˆÙŠØ© ÙŠØ³Ø§Ø± #8)
   const tooth16Scale = React.useRef(new Animated.Value(1)).current;
   const tooth16Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth16TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth16TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 17 (السفلية يمين #8)
+  // Ø§Ù„Ø³Ù† 17 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #8)
   const tooth17Scale = React.useRef(new Animated.Value(1)).current;
   const tooth17Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth17TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth17TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // Animated Values للـ View Mode - إزاحة الأسنان وزر Edit
-  const rightTeethSlide = React.useRef(new Animated.Value(0)).current; // أسنان اليمين (1-8 و 17-24)
-  const leftTeethSlide = React.useRef(new Animated.Value(0)).current; // أسنان اليسار (9-16 و 25-32)
-  const editButtonSlide = React.useRef(new Animated.Value(0)).current; // زر Edit
-  const verticalTopLineSlide = React.useRef(new Animated.Value(0)).current; // الخط العمودي العلوي (للأعلى)
-  const verticalBottomLineSlide = React.useRef(new Animated.Value(0)).current; // الخط العمودي السفلي (للأسفل)
-  const horizontalRightLineSlide = React.useRef(new Animated.Value(0)).current; // الخط الأفقي الأيمن (لليمين)
-  const horizontalLeftLineSlide = React.useRef(new Animated.Value(0)).current; // الخط الأفقي الأيسر (لليسار)
-  const rightNumbersSlide = React.useRef(new Animated.Value(0)).current; // أرقام الأسنان اليمنى
-  const leftNumbersSlide = React.useRef(new Animated.Value(0)).current; // أرقام الأسنان اليسرى
-  const oralHygieneOpacity = React.useRef(new Animated.Value(1)).current; // شفافية حاوية Oral Hygiene
-  const viewButtonPositionAnim = React.useRef(new Animated.Value(0)).current; // أنيميشن موقع زر View (0 = موقع أصلي, 1 = أعلى يمين)
-  const buttonsOpacity = React.useRef(new Animated.Value(1)).current; // شفافية الأزرار (Edit, View, Oral Hygiene) - تختفي عند فتح السن
-  const referralContainerSlide = React.useRef(new Animated.Value(1000)).current; // حاوية Referral (تبدأ خارج الشاشة من اليمين)
-  const referralSectionsHeight = React.useRef(new Animated.Value(0)).current; // لفتح/إغلاق أقسام Referral (0 = مغلق, 1 = مفتوح) - تبدأ مغلقة
-  const treatmentRecordSlide = React.useRef(new Animated.Value(-1000)).current; // حاوية Treatment Record (تبدأ خارج الشاشة من اليسار)
-  const planningRecordSlide = React.useRef(new Animated.Value(1000)).current; // حاوية Planning Record (تبدأ خارج الشاشة من اليمين)
-  const treatmentRecordPushDown = React.useRef(new Animated.Value(0)).current; // تحريك Treatment Record للأسفل عند فتح Referral (0 = عادي, 400 = مدفوع للأسفل)
-  const planningRecordPushDown = React.useRef(new Animated.Value(0)).current; // تحريك Planning Record للأسفل عند فتح Referral (0 = عادي, 400 = مدفوع للأسفل)
+  // Animated Values Ù„Ù„Ù€ View Mode - Ø¥Ø²Ø§Ø­Ø© Ø§Ù„Ø£Ø³Ù†Ø§Ù† ÙˆØ²Ø± Edit
+  const rightTeethSlide = React.useRef(new Animated.Value(0)).current; // Ø£Ø³Ù†Ø§Ù† Ø§Ù„ÙŠÙ…ÙŠÙ† (1-8 Ùˆ 17-24)
+  const leftTeethSlide = React.useRef(new Animated.Value(0)).current; // Ø£Ø³Ù†Ø§Ù† Ø§Ù„ÙŠØ³Ø§Ø± (9-16 Ùˆ 25-32)
+  const editButtonSlide = React.useRef(new Animated.Value(0)).current; // Ø²Ø± Edit
+  const verticalTopLineSlide = React.useRef(new Animated.Value(0)).current; // Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø¹Ù„ÙˆÙŠ (Ù„Ù„Ø£Ø¹Ù„Ù‰)
+  const verticalBottomLineSlide = React.useRef(new Animated.Value(0)).current; // Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø³ÙÙ„ÙŠ (Ù„Ù„Ø£Ø³ÙÙ„)
+  const horizontalRightLineSlide = React.useRef(new Animated.Value(0)).current; // Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ÙŠÙ…Ù† (Ù„Ù„ÙŠÙ…ÙŠÙ†)
+  const horizontalLeftLineSlide = React.useRef(new Animated.Value(0)).current; // Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ÙŠØ³Ø± (Ù„Ù„ÙŠØ³Ø§Ø±)
+  const rightNumbersSlide = React.useRef(new Animated.Value(0)).current; // Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„ÙŠÙ…Ù†Ù‰
+  const leftNumbersSlide = React.useRef(new Animated.Value(0)).current; // Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„ÙŠØ³Ø±Ù‰
+  const oralHygieneOpacity = React.useRef(new Animated.Value(1)).current; // Ø´ÙØ§ÙÙŠØ© Ø­Ø§ÙˆÙŠØ© Oral Hygiene
+  const viewButtonPositionAnim = React.useRef(new Animated.Value(0)).current; // Ø£Ù†ÙŠÙ…ÙŠØ´Ù† Ù…ÙˆÙ‚Ø¹ Ø²Ø± View (0 = Ù…ÙˆÙ‚Ø¹ Ø£ØµÙ„ÙŠ, 1 = Ø£Ø¹Ù„Ù‰ ÙŠÙ…ÙŠÙ†)
+  const buttonsOpacity = React.useRef(new Animated.Value(1)).current; // Ø´ÙØ§ÙÙŠØ© Ø§Ù„Ø£Ø²Ø±Ø§Ø± (Edit, View, Oral Hygiene) - ØªØ®ØªÙÙŠ Ø¹Ù†Ø¯ ÙØªØ­ Ø§Ù„Ø³Ù†
+  const referralContainerSlide = React.useRef(new Animated.Value(1000)).current; // Ø­Ø§ÙˆÙŠØ© Referral (ØªØ¨Ø¯Ø£ Ø®Ø§Ø±Ø¬ Ø§Ù„Ø´Ø§Ø´Ø© Ù…Ù† Ø§Ù„ÙŠÙ…ÙŠÙ†)
+  const referralSectionsHeight = React.useRef(new Animated.Value(0)).current; // Ù„ÙØªØ­/Ø¥ØºÙ„Ø§Ù‚ Ø£Ù‚Ø³Ø§Ù… Referral (0 = Ù…ØºÙ„Ù‚, 1 = Ù…ÙØªÙˆØ­) - ØªØ¨Ø¯Ø£ Ù…ØºÙ„Ù‚Ø©
+  const treatmentRecordSlide = React.useRef(new Animated.Value(-1000)).current; // Ø­Ø§ÙˆÙŠØ© Treatment Record (ØªØ¨Ø¯Ø£ Ø®Ø§Ø±Ø¬ Ø§Ù„Ø´Ø§Ø´Ø© Ù…Ù† Ø§Ù„ÙŠØ³Ø§Ø±)
+  const planningRecordSlide = React.useRef(new Animated.Value(1000)).current; // Ø­Ø§ÙˆÙŠØ© Planning Record (ØªØ¨Ø¯Ø£ Ø®Ø§Ø±Ø¬ Ø§Ù„Ø´Ø§Ø´Ø© Ù…Ù† Ø§Ù„ÙŠÙ…ÙŠÙ†)
+  const treatmentRecordPushDown = React.useRef(new Animated.Value(0)).current; // ØªØ­Ø±ÙŠÙƒ Treatment Record Ù„Ù„Ø£Ø³ÙÙ„ Ø¹Ù†Ø¯ ÙØªØ­ Referral (0 = Ø¹Ø§Ø¯ÙŠ, 400 = Ù…Ø¯ÙÙˆØ¹ Ù„Ù„Ø£Ø³ÙÙ„)
+  const planningRecordPushDown = React.useRef(new Animated.Value(0)).current; // ØªØ­Ø±ÙŠÙƒ Planning Record Ù„Ù„Ø£Ø³ÙÙ„ Ø¹Ù†Ø¯ ÙØªØ­ Referral (0 = Ø¹Ø§Ø¯ÙŠ, 400 = Ù…Ø¯ÙÙˆØ¹ Ù„Ù„Ø£Ø³ÙÙ„)
 
-  // الحاويات في موقع ثابت - لا حاجة لتحريكها
+  // Ø§Ù„Ø­Ø§ÙˆÙŠØ§Øª ÙÙŠ Ù…ÙˆÙ‚Ø¹ Ø«Ø§Ø¨Øª - Ù„Ø§ Ø­Ø§Ø¬Ø© Ù„ØªØ­Ø±ÙŠÙƒÙ‡Ø§
   React.useEffect(() => {
-    // قيمة 0 تعني أن الحاويات في موقعها الطبيعي الثابت
+    // Ù‚ÙŠÙ…Ø© 0 ØªØ¹Ù†ÙŠ Ø£Ù† Ø§Ù„Ø­Ø§ÙˆÙŠØ§Øª ÙÙŠ Ù…ÙˆÙ‚Ø¹Ù‡Ø§ Ø§Ù„Ø·Ø¨ÙŠØ¹ÙŠ Ø§Ù„Ø«Ø§Ø¨Øª
     treatmentRecordPushDown.setValue(0);
     planningRecordPushDown.setValue(0);
   }, []);
 
-  // أنيميشن توسع حاوية Oral Hygiene
+  // Ø£Ù†ÙŠÙ…ÙŠØ´Ù† ØªÙˆØ³Ø¹ Ø­Ø§ÙˆÙŠØ© Oral Hygiene
   useEffect(() => {
     Animated.timing(oralHygieneExpandAnim, {
       toValue: isOralHygieneExpanded ? 1 : 0,
@@ -1826,12 +706,12 @@ export default function DentalChartScreen({
     }).start();
   }, [isOralHygieneExpanded]);
 
-  // دالة للنقر على حاوية Oral Hygiene
+  // Ø¯Ø§Ù„Ø© Ù„Ù„Ù†Ù‚Ø± Ø¹Ù„Ù‰ Ø­Ø§ÙˆÙŠØ© Oral Hygiene
   const handleOralHygienePress = () => {
     setIsOralHygieneExpanded(!isOralHygieneExpanded);
   };
 
-  // دالة لإضافة سجل Scaling جديد
+  // Ø¯Ø§Ù„Ø© Ù„Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„ Scaling Ø¬Ø¯ÙŠØ¯
   const handleAddScaling = async () => {
     if (!permanentPatientId) {
       Alert.alert('Error', 'No patient selected');
@@ -1847,7 +727,7 @@ export default function DentalChartScreen({
       minute: '2-digit'
     });
 
-    // حفظ في قاعدة البيانات
+    // Ø­ÙØ¸ ÙÙŠ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª
     const { data, error } = await createScalingRecord(
       permanentPatientId,
       user?.name || 'Dr. Unknown'
@@ -1859,7 +739,7 @@ export default function DentalChartScreen({
       return;
     }
 
-    // إضافة للـ state
+    // Ø¥Ø¶Ø§ÙØ© Ù„Ù„Ù€ state
     if (data) {
       setScalingRecords(prev => [
         {
@@ -1872,60 +752,60 @@ export default function DentalChartScreen({
       ]);
     }
 
-    // إغلاق الحاوية بعد الإضافة
+    // Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø­Ø§ÙˆÙŠØ© Ø¨Ø¹Ø¯ Ø§Ù„Ø¥Ø¶Ø§ÙØ©
     setIsOralHygieneExpanded(false);
   };
 
-  // السن 18 (السفلية يمين #7)
+  // Ø§Ù„Ø³Ù† 18 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #7)
   const tooth18Scale = React.useRef(new Animated.Value(1)).current;
   const tooth18Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth18TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth18TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 19 (السفلية يمين #6)
+  // Ø§Ù„Ø³Ù† 19 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #6)
   const tooth19Scale = React.useRef(new Animated.Value(1)).current;
   const tooth19Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth19TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth19TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 20 (السفلية يمين #5)
+  // Ø§Ù„Ø³Ù† 20 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #5)
   const tooth20Scale = React.useRef(new Animated.Value(1)).current;
   const tooth20Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth20TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth20TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 21 (السفلية يمين #4)
+  // Ø§Ù„Ø³Ù† 21 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #4)
   const tooth21Scale = React.useRef(new Animated.Value(1)).current;
   const tooth21Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth21TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth21TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 22 (السفلية يمين #3)
+  // Ø§Ù„Ø³Ù† 22 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #3)
   const tooth22Scale = React.useRef(new Animated.Value(1)).current;
   const tooth22Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth22TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth22TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 23 (السفلية يمين #2)
+  // Ø§Ù„Ø³Ù† 23 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #2)
   const tooth23Scale = React.useRef(new Animated.Value(1)).current;
   const tooth23Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth23TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth23TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // السن 24 (السفلية يمين #1)
+  // Ø§Ù„Ø³Ù† 24 (Ø§Ù„Ø³ÙÙ„ÙŠØ© ÙŠÙ…ÙŠÙ† #1)
   const tooth24Scale = React.useRef(new Animated.Value(1)).current;
   const tooth24Rotation = React.useRef(new Animated.Value(0)).current;
   const tooth24TranslateX = React.useRef(new Animated.Value(0)).current;
   const tooth24TranslateY = React.useRef(new Animated.Value(0)).current;
 
-  // Function لإيقاف جميع الأنيميشنات لسن معين
+  // Function Ù„Ø¥ÙŠÙ‚Ø§Ù Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ø³Ù† Ù…Ø¹ÙŠÙ†
   const stopToothAnimations = (toothNumber: number) => {
     if (toothNumber === 6) {
       tooth6Scale.stopAnimation();
       tooth6Rotation.stopAnimation();
       tooth6TranslateX.stopAnimation();
       tooth6TranslateY.stopAnimation();
-      // إعادة القيم للوضع الطبيعي
+      // Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ù‚ÙŠÙ… Ù„Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø·Ø¨ÙŠØ¹ÙŠ
       tooth6Scale.setValue(1);
       tooth6Rotation.setValue(0);
       tooth6TranslateX.setValue(0);
@@ -2212,29 +1092,29 @@ export default function DentalChartScreen({
     }
   };
 
-  // ═══════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Database Integration Functions
-  // ═══════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   /**
    * Convert tooth number (1-32) to Palmer Notation (UR1-UR8, UL1-UL8, LR1-LR8, LL1-LL8)
    */
   const convertNumberToPalmer = (toothNumber: number): ToothNumber | null => {
-    // Upper Left (1-8 → UL1-UL8)
+    // Upper Left (1-8 â†’ UL1-UL8)
     if (toothNumber >= 1 && toothNumber <= 8) {
       return `UL${toothNumber}` as ToothNumber;
     }
-    // Upper Right (9-16 → UR8-UR1)
+    // Upper Right (9-16 â†’ UR8-UR1)
     if (toothNumber >= 9 && toothNumber <= 16) {
       const position = 17 - toothNumber;
       return `UR${position}` as ToothNumber;
     }
-    // Lower Left (17-24 → LL1-LL8)
+    // Lower Left (17-24 â†’ LL1-LL8)
     if (toothNumber >= 17 && toothNumber <= 24) {
       const position = toothNumber - 16;
       return `LL${position}` as ToothNumber;
     }
-    // Lower Right (25-32 → LR8-LR1)
+    // Lower Right (25-32 â†’ LR8-LR1)
     if (toothNumber >= 25 && toothNumber <= 32) {
       const position = 33 - toothNumber;
       return `LR${position}` as ToothNumber;
@@ -2250,16 +1130,16 @@ export default function DentalChartScreen({
     const position = parseInt(palmer.substring(2)); // 1-8
 
     if (quadrant === 'UL') {
-      return position; // UL1→1, UL2→2, ..., UL8→8
+      return position; // UL1â†’1, UL2â†’2, ..., UL8â†’8
     }
     if (quadrant === 'UR') {
-      return 17 - position; // UR1→16, UR2→15, ..., UR8→9
+      return 17 - position; // UR1â†’16, UR2â†’15, ..., UR8â†’9
     }
     if (quadrant === 'LL') {
-      return 16 + position; // LL1→17, LL2→18, ..., LL8→24
+      return 16 + position; // LL1â†’17, LL2â†’18, ..., LL8â†’24
     }
     if (quadrant === 'LR') {
-      return 33 - position; // LR1→32, LR2→31, ..., LR8→25
+      return 33 - position; // LR1â†’32, LR2â†’31, ..., LR8â†’25
     }
     return null;
   };
@@ -2274,10 +1154,10 @@ export default function DentalChartScreen({
     }
 
     try {
-      console.log('🚀 Loading dental data for patient (PARALLEL):', permanentPatientId);
+      console.log('ðŸš€ Loading dental data for patient (PARALLEL):', permanentPatientId);
       const startTime = performance.now();
 
-      // ⚡ Load ALL data in PARALLEL (much faster!)
+      // âš¡ Load ALL data in PARALLEL (much faster!)
       const [
         toothDataResult,
         editingDataResult,
@@ -2302,7 +1182,7 @@ export default function DentalChartScreen({
 
       if (toothError) {
         console.error('Error loading tooth data:', toothError);
-        Alert.alert('خطأ', 'فشل تحميل بيانات الأسنان');
+        Alert.alert('Ø®Ø·Ø£', 'ÙØ´Ù„ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ù†Ø§Ù†');
         return;
       }
 
@@ -2379,7 +1259,7 @@ export default function DentalChartScreen({
                 center: 'missing',
               };
             } else if (record.details && Array.isArray(parsedSurfaces)) {
-              console.log(`🔍 Processing tooth ${toothNumber}: details="${record.details}", surfaces=`, parsedSurfaces);
+              console.log(`ðŸ” Processing tooth ${toothNumber}: details="${record.details}", surfaces=`, parsedSurfaces);
 
               // Map surface names to keys (database uses lowercase)
               // Use helper function to get correct mapping for lower teeth
@@ -2388,18 +1268,18 @@ export default function DentalChartScreen({
               // Determine color based on details
               let conditionColor: ToothCondition | null = null;
               if (record.details === 'Temporary Filling') {
-                conditionColor = 'filling_replacement';  // رمادي
+                conditionColor = 'filling_replacement';  // Ø±Ù…Ø§Ø¯ÙŠ
               } else if (record.details === 'Permanent Filling') {
-                conditionColor = 'permanent_filling';    // أخضر
+                conditionColor = 'permanent_filling';    // Ø£Ø®Ø¶Ø±
               } else if (record.details === 'GI Filling') {
-                conditionColor = 'gi';                   // أخضر
+                conditionColor = 'gi';                   // Ø£Ø®Ø¶Ø±
               } else if (record.details === 'Direct Pulp Capping') {
-                conditionColor = 'direct_pulp_capping';  // أخضر
+                conditionColor = 'direct_pulp_capping';  // Ø£Ø®Ø¶Ø±
               } else if (record.details === 'Indirect Pulp Capping') {
-                conditionColor = 'indirect_pulp_capping'; // أخضر
+                conditionColor = 'indirect_pulp_capping'; // Ø£Ø®Ø¶Ø±
               }
 
-              console.log(`   → Mapped to color: ${conditionColor}`);
+              console.log(`   â†’ Mapped to color: ${conditionColor}`);
 
               if (conditionColor && Array.isArray(parsedSurfaces)) {
                 if (!conditionsFromEditing[toothNumber]) {
@@ -2535,10 +1415,10 @@ export default function DentalChartScreen({
         // Detect Root Canal Treated from planning records and set border colors
         const borderColorsFromPlanning: Record<number, ToothCondition> = {};
         newPlanningRecords.forEach((record) => {
-          console.log(`🔍 Planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, record.surfaces);
+          console.log(`ðŸ” Planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, record.surfaces);
           if (record.surfaces.includes('Root Canal Treated')) {
             borderColorsFromPlanning[record.toothNumber] = 'treated';
-            console.log(`🦷 Tooth ${record.toothNumber}: Root Canal Treated detected → setting border color to 'treated'`);
+            console.log(`ðŸ¦· Tooth ${record.toothNumber}: Root Canal Treated detected â†’ setting border color to 'treated'`);
           }
         });
 
@@ -2607,11 +1487,11 @@ export default function DentalChartScreen({
           'Pediatric Dentistry': 'pediatricDentistry',
         };
 
-        // فصل التحويلات حسب الحالة
+        // ÙØµÙ„ Ø§Ù„ØªØ­ÙˆÙŠÙ„Ø§Øª Ø­Ø³Ø¨ Ø§Ù„Ø­Ø§Ù„Ø©
         const notGivenReferrals = referralsData.filter(r => r.status === 'not_given' || !r.status);
         const givenReferrals = referralsData.filter(r => r.status === 'given');
 
-        // Group referrals by tooth (فقط Not Given) - Multiple referrals per tooth
+        // Group referrals by tooth (ÙÙ‚Ø· Not Given) - Multiple referrals per tooth
         const referralsByTooth: Record<number, string[]> = {};
 
         notGivenReferrals.forEach((referral) => {
@@ -2633,7 +1513,7 @@ export default function DentalChartScreen({
           }
         });
 
-        // Rebuild referrals state for Department tab (Not Given referrals فقط)
+        // Rebuild referrals state for Department tab (Not Given referrals ÙÙ‚Ø·)
         const departmentsWithReferrals: Record<string, boolean> = {};
         const departmentStatuses: Record<string, 'not_given' | 'given'> = {};
 
@@ -2765,7 +1645,7 @@ export default function DentalChartScreen({
       console.log('Dental data loading complete');
     } catch (error) {
       console.error('Error in loadPatientDentalData:', error);
-      Alert.alert('خطأ', 'حدث خطأ أثناء تحميل البيانات');
+      Alert.alert('Ø®Ø·Ø£', 'Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª');
     }
   };
 
@@ -2782,7 +1662,7 @@ export default function DentalChartScreen({
       realtimeChannelRef.current = null;
     }
 
-    // ❌ Real-time DISABLED for Dental Chart
+    // âŒ Real-time DISABLED for Dental Chart
     // Reason: Manual refresh is preferred to avoid constant reloads
     /*
     // Setup Realtime subscription for dental data tables
@@ -2799,7 +1679,7 @@ export default function DentalChartScreen({
           filter: `permanent_patient_id=eq.${permanentPatientId}`
         },
         (payload) => {
-          console.log('🔄 Real-time: tooth_surface_conditions changed:', payload);
+          console.log('ðŸ”„ Real-time: tooth_surface_conditions changed:', payload);
           loadPatientDentalData(); // Silent refresh
         }
       )
@@ -2813,7 +1693,7 @@ export default function DentalChartScreen({
           filter: `permanent_patient_id=eq.${permanentPatientId}`
         },
         (payload) => {
-          console.log('🔄 Real-time: editing_records changed:', payload);
+          console.log('ðŸ”„ Real-time: editing_records changed:', payload);
           loadPatientDentalData();
         }
       )
@@ -2827,7 +1707,7 @@ export default function DentalChartScreen({
           filter: `permanent_patient_id=eq.${permanentPatientId}`
         },
         (payload) => {
-          console.log('🔄 Real-time: planning_records changed:', payload);
+          console.log('ðŸ”„ Real-time: planning_records changed:', payload);
           loadPatientDentalData();
         }
       )
@@ -2841,7 +1721,7 @@ export default function DentalChartScreen({
           filter: `permanent_patient_id=eq.${permanentPatientId}`
         },
         (payload) => {
-          console.log('🔄 Real-time: tooth_notes changed:', payload);
+          console.log('ðŸ”„ Real-time: tooth_notes changed:', payload);
           loadPatientDentalData();
         }
       )
@@ -2855,7 +1735,7 @@ export default function DentalChartScreen({
           filter: `permanent_patient_id=eq.${permanentPatientId}`
         },
         (payload) => {
-          console.log('🔄 Real-time: referrals changed:', payload);
+          console.log('ðŸ”„ Real-time: referrals changed:', payload);
           loadPatientDentalData();
         }
       )
@@ -2869,15 +1749,15 @@ export default function DentalChartScreen({
           filter: `permanent_patient_id=eq.${permanentPatientId}`
         },
         (payload) => {
-          console.log('🔄 Real-time: scaling_records changed:', payload);
+          console.log('ðŸ”„ Real-time: scaling_records changed:', payload);
           loadPatientDentalData();
         }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Real-time: Subscribed to dental chart updates');
+          console.log('âœ… Real-time: Subscribed to dental chart updates');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Real-time: Channel error, retrying...');
+          console.error('âŒ Real-time: Channel error, retrying...');
           setTimeout(() => {
             loadPatientDentalData();
           }, 3000);
@@ -2890,7 +1770,7 @@ export default function DentalChartScreen({
     // Cleanup on unmount or when permanentPatientId changes
     return () => {
       if (realtimeChannelRef.current) {
-        console.log('🧹 Cleaning up dental chart real-time subscription');
+        console.log('ðŸ§¹ Cleaning up dental chart real-time subscription');
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
       }
@@ -2985,9 +1865,9 @@ export default function DentalChartScreen({
   };
 
   /**
-   * ═══════════════════════════════════════════════════════════════
+   * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    * Handle Planning Submit - Save all pending planning records as batch
-   * ═══════════════════════════════════════════════════════════════
+   * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    */
   const handlePlanningSubmit = async () => {
     if (!permanentPatientId || !user?.name || pendingPlanningRecords.length === 0) {
@@ -2996,7 +1876,7 @@ export default function DentalChartScreen({
     }
 
     try {
-      console.log('🔵 Submitting planning batch with', pendingPlanningRecords.length, 'records');
+      console.log('ðŸ”µ Submitting planning batch with', pendingPlanningRecords.length, 'records');
 
       // Step 1: Create a new planning batch
       const { data: batchData, error: batchError } = await createPlanningBatch(
@@ -3006,7 +1886,7 @@ export default function DentalChartScreen({
 
       if (batchError || !batchData) {
         console.error(' Error creating planning batch:', batchError);
-        Alert.alert('خطأ', 'فشل حفظ التخطيط. حاول مرة أخرى.');
+        Alert.alert('Ø®Ø·Ø£', 'ÙØ´Ù„ Ø­ÙØ¸ Ø§Ù„ØªØ®Ø·ÙŠØ·. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.');
         return;
       }
 
@@ -3030,7 +1910,7 @@ export default function DentalChartScreen({
           return s.toLowerCase(); // Convert surface names to lowercase
         }) as ToothSurface[];
 
-        console.log(`💾 Saving planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, surfaceArray);
+        console.log(`ðŸ’¾ Saving planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, surfaceArray);
 
         return createPlanningRecord(
           permanentPatientId,
@@ -3041,7 +1921,7 @@ export default function DentalChartScreen({
           user.name,
           record.isChange,
           record.previousCondition,
-          batchId  // ← Include batch_id
+          batchId  // â† Include batch_id
         );
       });
 
@@ -3050,18 +1930,18 @@ export default function DentalChartScreen({
 
       if (errors.length > 0) {
         console.error(' Some planning records failed to save:', errors);
-        Alert.alert('تحذير', 'تم حفظ بعض السجلات فقط. تحقق من البيانات.');
+        Alert.alert('ØªØ­Ø°ÙŠØ±', 'ØªÙ… Ø­ÙØ¸ Ø¨Ø¹Ø¶ Ø§Ù„Ø³Ø¬Ù„Ø§Øª ÙÙ‚Ø·. ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.');
       } else {
         console.log(' All planning records saved successfully with batch_id:', batchId);
       }
 
       // Step 2.5: Save/Delete tooth surface conditions from pendingPlanningRecords
-      console.log('🔵 Saving tooth surface conditions from pending records...');
+      console.log('ðŸ”µ Saving tooth surface conditions from pending records...');
 
       // Helper function to extract surface name from strings like "Caries (Mesial)" or "Mesial"
       const extractSurfaceName = (surfaceLabel: string): string => {
         if (surfaceLabel.includes('(')) {
-          // Extract from "Caries (Mesial)" → "Mesial"
+          // Extract from "Caries (Mesial)" â†’ "Mesial"
           const match = surfaceLabel.match(/\(([^)]+)\)/);
           return match ? match[1].trim() : surfaceLabel;
         }
@@ -3070,13 +1950,13 @@ export default function DentalChartScreen({
 
       const conditionColorMap: Record<string, ToothCondition> = {
         // Condition options (surface-specific)
-        'Caries': 'caries',                                    // أحمر
-        'Broken/Inappropriate Filling': 'broken',              // وردي
-        'Pulpectomy': 'pulpectomy',                            // عنابي (السطح المختار فقط)
-        'Follow-up': 'follow_up',                              // أزرق
-        'Needs More Diagnosis': 'needs_diagnosis',             // برتقالي
-        'Temporary Filling': 'filling_replacement',            // رمادي (السطح المختار فقط)
-        'Permanent Filling': 'permanent_filling',              // أخضر (السطح المختار فقط)
+        'Caries': 'caries',                                    // Ø£Ø­Ù…Ø±
+        'Broken/Inappropriate Filling': 'broken',              // ÙˆØ±Ø¯ÙŠ
+        'Pulpectomy': 'pulpectomy',                            // Ø¹Ù†Ø§Ø¨ÙŠ (Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ù…Ø®ØªØ§Ø± ÙÙ‚Ø·)
+        'Follow-up': 'follow_up',                              // Ø£Ø²Ø±Ù‚
+        'Needs More Diagnosis': 'needs_diagnosis',             // Ø¨Ø±ØªÙ‚Ø§Ù„ÙŠ
+        'Temporary Filling': 'filling_replacement',            // Ø±Ù…Ø§Ø¯ÙŠ (Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ù…Ø®ØªØ§Ø± ÙÙ‚Ø·)
+        'Permanent Filling': 'permanent_filling',              // Ø£Ø®Ø¶Ø± (Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ù…Ø®ØªØ§Ø± ÙÙ‚Ø·)
         'Fracture': 'fracture',
         'Restoration to Replace': 'filling_replacement',
         'Impacted': 'impacted',
@@ -3092,7 +1972,7 @@ export default function DentalChartScreen({
         const palmerNotation = convertNumberToPalmer(record.toothNumber);
         if (!palmerNotation) continue;
 
-        console.log(`🔍 Processing record: ${record.condition}, surfaces:`, record.surfaces);
+        console.log(`ðŸ” Processing record: ${record.condition}, surfaces:`, record.surfaces);
 
         // Get correct surface mapping for this tooth
         const surfaceMap = getSurfaceMap(record.toothNumber);
@@ -3107,9 +1987,9 @@ export default function DentalChartScreen({
           'occlusal': 'occlusal',
         };
 
-        // إذا كان تغيير من Extraction إلى شيء آخر، احذف "extraction" من كل الأسطح أولاً
+        // Ø¥Ø°Ø§ ÙƒØ§Ù† ØªØºÙŠÙŠØ± Ù…Ù† Extraction Ø¥Ù„Ù‰ Ø´ÙŠØ¡ Ø¢Ø®Ø±ØŒ Ø§Ø­Ø°Ù "extraction" Ù…Ù† ÙƒÙ„ Ø§Ù„Ø£Ø³Ø·Ø­ Ø£ÙˆÙ„Ø§Ù‹
         if (record.isChange && record.previousCondition === 'Extraction') {
-          console.log(`   Changing from Extraction → clearing all surfaces first`);
+          console.log(`   Changing from Extraction â†’ clearing all surfaces first`);
           for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
             const dbSurface = surfaceMap[surfaceKey];
             deleteOperationPromises.push(
@@ -3124,7 +2004,7 @@ export default function DentalChartScreen({
           record.surfaces.forEach(surfaceLabel => {
             const surfaceName = extractSurfaceName(surfaceLabel);
             const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
-            console.log(`  → Clear: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}"`);
+            console.log(`  â†’ Clear: "${surfaceLabel}" â†’ surface:"${surfaceName}" â†’ dbSurface:"${dbSurface}"`);
             if (dbSurface) {
               deleteOperationPromises.push(
                 deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
@@ -3138,7 +2018,7 @@ export default function DentalChartScreen({
           record.surfaces.forEach(surfaceLabel => {
             const surfaceName = extractSurfaceName(surfaceLabel);
             const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
-            console.log(`  → ${record.condition}: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}" → color:"${color}"`);
+            console.log(`  â†’ ${record.condition}: "${surfaceLabel}" â†’ surface:"${surfaceName}" â†’ dbSurface:"${dbSurface}" â†’ color:"${color}"`);
             if (dbSurface) {
               saveOperationPromises.push(
                 saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, color)
@@ -3148,7 +2028,7 @@ export default function DentalChartScreen({
         }
         // Handle Extraction (Condition)
         else if (record.condition === 'Extraction') {
-          console.log('  → Extraction: saving "extraction" to all surfaces');
+          console.log('  â†’ Extraction: saving "extraction" to all surfaces');
           for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
             const dbSurface = surfaceMap[surfaceKey];
             saveOperationPromises.push(
@@ -3158,7 +2038,7 @@ export default function DentalChartScreen({
         }
         // Handle Missing Tooth (Tooth Status)
         else if (record.surfaces.includes('Missing Tooth')) {
-          console.log('  → Missing Tooth: saving "missing" to all surfaces');
+          console.log('  â†’ Missing Tooth: saving "missing" to all surfaces');
           for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
             const dbSurface = surfaceMap[surfaceKey];
             saveOperationPromises.push(
@@ -3168,7 +2048,7 @@ export default function DentalChartScreen({
         }
         // Root Canal Treated: border color only, NO surface colors saved
         else if (record.surfaces.includes('Root Canal Treated')) {
-          console.log('  → Root Canal Treated: border color only (no surface colors saved)');
+          console.log('  â†’ Root Canal Treated: border color only (no surface colors saved)');
           // Do NOT save any surface conditions
           // Border color will be detected from planning_records on reload
         }
@@ -3176,7 +2056,7 @@ export default function DentalChartScreen({
 
       // STEP 1: Execute DELETE operations FIRST and wait for completion
       if (deleteOperationPromises.length > 0) {
-        console.log(`🗑️ Executing ${deleteOperationPromises.length} delete operations...`);
+        console.log(`ðŸ—‘ï¸ Executing ${deleteOperationPromises.length} delete operations...`);
         const deleteResults = await Promise.all(deleteOperationPromises);
 
         const deleteErrors = deleteResults.filter(r => r?.error);
@@ -3189,7 +2069,7 @@ export default function DentalChartScreen({
 
       // STEP 2: Execute SAVE operations AFTER deletes are complete
       if (saveOperationPromises.length > 0) {
-        console.log(`💾 Executing ${saveOperationPromises.length} save operations...`);
+        console.log(`ðŸ’¾ Executing ${saveOperationPromises.length} save operations...`);
         const saveResults = await Promise.all(saveOperationPromises);
 
         const saveErrors = saveResults.filter(r => r?.error);
@@ -3211,21 +2091,21 @@ export default function DentalChartScreen({
       setPendingPlanningRecords([]);
 
       // Step 5: Show success message
-      Alert.alert(' نجح', 'تم حفظ التخطيط بنجاح!');
+      Alert.alert(' Ù†Ø¬Ø­', 'ØªÙ… Ø­ÙØ¸ Ø§Ù„ØªØ®Ø·ÙŠØ· Ø¨Ù†Ø¬Ø§Ø­!');
 
       // Step 6: Reload data to show updated Planning Records
       await loadPatientDentalData();
 
     } catch (error) {
       console.error(' Exception in handlePlanningSubmit:', error);
-      Alert.alert('خطأ', 'حدث خطأ أثناء حفظ التخطيط.');
+      Alert.alert('Ø®Ø·Ø£', 'Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø­ÙØ¸ Ø§Ù„ØªØ®Ø·ÙŠØ·.');
     }
   };
 
   /**
-   * ═══════════════════════════════════════════════════════════════
+   * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    * Handle Planning Cancel - Discard all pending planning records
-   * ═══════════════════════════════════════════════════════════════
+   * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    */
   const handlePlanningCancel = () => {
     if (pendingPlanningRecords.length === 0) {
@@ -3233,15 +2113,15 @@ export default function DentalChartScreen({
     }
 
     Alert.alert(
-      'إلغاء التخطيط',
-      'هل تريد إلغاء كل التخطيطات المعلقة؟',
+      'Ø¥Ù„ØºØ§Ø¡ Ø§Ù„ØªØ®Ø·ÙŠØ·',
+      'Ù‡Ù„ ØªØ±ÙŠØ¯ Ø¥Ù„ØºØ§Ø¡ ÙƒÙ„ Ø§Ù„ØªØ®Ø·ÙŠØ·Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø©ØŸ',
       [
-        { text: 'لا', style: 'cancel' },
+        { text: 'Ù„Ø§', style: 'cancel' },
         {
-          text: 'نعم',
+          text: 'Ù†Ø¹Ù…',
           style: 'destructive',
           onPress: async () => {
-            console.log('🔴 Canceling planning session - clearing', pendingPlanningRecords.length, 'pending records');
+            console.log('ðŸ”´ Canceling planning session - clearing', pendingPlanningRecords.length, 'pending records');
 
             // Step 1: Remove pending planning records from toothRecords
             // (they were added locally but not saved to database)
@@ -3300,28 +2180,28 @@ export default function DentalChartScreen({
     setSelectedSurface(null);
   };
 
-  // Function للحصول على تسمية السن
+  // Function Ù„Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ ØªØ³Ù…ÙŠØ© Ø§Ù„Ø³Ù†
   const getToothLabel = (toothNumber: number): string => {
     if (toothNumber >= 25 && toothNumber <= 32) {
-      const position = 33 - toothNumber; // 25→8, 26→7, 27→6, etc.
+      const position = 33 - toothNumber; // 25â†’8, 26â†’7, 27â†’6, etc.
       return `lower right ${position}`;
     }
     if (toothNumber >= 17 && toothNumber <= 24) {
-      const position = toothNumber - 16; // 17→1, 18→2, 19→3, etc.
+      const position = toothNumber - 16; // 17â†’1, 18â†’2, 19â†’3, etc.
       return `lower left ${position}`;
     }
-    return `السن #${toothNumber}`;
+    return `Ø§Ù„Ø³Ù† #${toothNumber}`;
   };
 
-  // Function للنقر على السن - تكبيره وتدويره
+  // Function Ù„Ù„Ù†Ù‚Ø± Ø¹Ù„Ù‰ Ø§Ù„Ø³Ù† - ØªÙƒØ¨ÙŠØ±Ù‡ ÙˆØªØ¯ÙˆÙŠØ±Ù‡
   const handleToothPress = (toothNumber: number | string) => {
-    // السيناريو الثاني: إذا كان Edit Mode نشط، نعرض modal التفاصيل بدلاً من الانيميشن
+    // Ø§Ù„Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆ Ø§Ù„Ø«Ø§Ù†ÙŠ: Ø¥Ø°Ø§ ÙƒØ§Ù† Edit Mode Ù†Ø´Ø·ØŒ Ù†Ø¹Ø±Ø¶ modal Ø§Ù„ØªÙØ§ØµÙŠÙ„ Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø§Ù†ÙŠÙ…ÙŠØ´Ù†
     console.log('handleToothPress - toothNumber:', toothNumber, 'isEditModeActive:', isEditModeActive);
     if (isEditModeActive) {
       console.log('Opening tooth details modal for tooth:', toothNumber);
       setSelectedToothForDetails(toothNumber);
 
-      // حفظ القيم الأصلية قبل فتح المودال
+      // Ø­ÙØ¸ Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø£ØµÙ„ÙŠØ© Ù‚Ø¨Ù„ ÙØªØ­ Ø§Ù„Ù…ÙˆØ¯Ø§Ù„
       setOriginalValues({
         treatment: selectedTreatments[toothNumber],
         details: selectedDetails[toothNumber],
@@ -3330,79 +2210,79 @@ export default function DentalChartScreen({
 
       setShowToothDetailsModal(true);
       setHasModalChanges(false); // Reset changes flag when opening modal
-      setIsEditMode(false); // تعطيل وضع التعديل عند الفتح
+      setIsEditMode(false); // ØªØ¹Ø·ÙŠÙ„ ÙˆØ¶Ø¹ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ Ø¹Ù†Ø¯ Ø§Ù„ÙØªØ­
       setShowNotesSection(false); // Hide notes section by default
       setShowDetailsSection(true); // Show details section by default
       setShowRecordsSection(false); // Hide records section by default
       setRecordsType('editing'); // Reset records type to editing
       setCurrentNote(''); // Clear current note input
 
-      // إعادة تعيين Treatment و Details و Referral إلى Select عند فتح الموديل
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Treatment Ùˆ Details Ùˆ Referral Ø¥Ù„Ù‰ Select Ø¹Ù†Ø¯ ÙØªØ­ Ø§Ù„Ù…ÙˆØ¯ÙŠÙ„
       setSelectedTreatments(prev => ({ ...prev, [toothNumber]: '' }));
       setSelectedDetails(prev => ({ ...prev, [toothNumber]: '' }));
       setSelectedReferralFor(prev => ({ ...prev, [toothNumber]: [] }));  // Empty array for multiple referrals
       return;
     }
 
-    // السيناريو الأول: الوضع العادي (انيميشن)
-    // إذا تم النقر على نفس السن المفتوح وليس في حالة إغلاق، نتجاهل (السن مفتوح بالفعل)
+    // Ø§Ù„Ø³ÙŠÙ†Ø§Ø±ÙŠÙˆ Ø§Ù„Ø£ÙˆÙ„: Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø¹Ø§Ø¯ÙŠ (Ø§Ù†ÙŠÙ…ÙŠØ´Ù†)
+    // Ø¥Ø°Ø§ ØªÙ… Ø§Ù„Ù†Ù‚Ø± Ø¹Ù„Ù‰ Ù†ÙØ³ Ø§Ù„Ø³Ù† Ø§Ù„Ù…ÙØªÙˆØ­ ÙˆÙ„ÙŠØ³ ÙÙŠ Ø­Ø§Ù„Ø© Ø¥ØºÙ„Ø§Ù‚ØŒ Ù†ØªØ¬Ø§Ù‡Ù„ (Ø§Ù„Ø³Ù† Ù…ÙØªÙˆØ­ Ø¨Ø§Ù„ÙØ¹Ù„)
     if (selectedTooth === toothNumber && !isClosing) return;
 
-    // إذا تم النقر على نفس السن أثناء الإغلاق، نوقف الإغلاق ونفتحه مرة أخرى
+    // Ø¥Ø°Ø§ ØªÙ… Ø§Ù„Ù†Ù‚Ø± Ø¹Ù„Ù‰ Ù†ÙØ³ Ø§Ù„Ø³Ù† Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ø¥ØºÙ„Ø§Ù‚ØŒ Ù†ÙˆÙ‚Ù Ø§Ù„Ø¥ØºÙ„Ø§Ù‚ ÙˆÙ†ÙØªØ­Ù‡ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰
     if (selectedTooth === toothNumber && isClosing && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(toothNumber)) {
-      // إيقاف أنيميشن الإغلاق فوراً
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£Ù†ÙŠÙ…ÙŠØ´Ù† Ø§Ù„Ø¥ØºÙ„Ø§Ù‚ ÙÙˆØ±Ø§Ù‹
       stopToothAnimations(toothNumber);
-      // إلغاء حالة الإغلاق
+      // Ø¥Ù„ØºØ§Ø¡ Ø­Ø§Ù„Ø© Ø§Ù„Ø¥ØºÙ„Ø§Ù‚
       setIsClosing(false);
-      // فتح السن مرة أخرى
+      // ÙØªØ­ Ø§Ù„Ø³Ù† Ù…Ø±Ø© Ø£Ø®Ø±Ù‰
       openTooth(toothNumber);
       return;
     }
 
-    // إذا كان هناك سن آخر مفتوح (من 1-32)
+    // Ø¥Ø°Ø§ ÙƒØ§Ù† Ù‡Ù†Ø§Ùƒ Ø³Ù† Ø¢Ø®Ø± Ù…ÙØªÙˆØ­ (Ù…Ù† 1-32)
     if (selectedTooth && selectedTooth !== toothNumber && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth)) {
-      // إيقاف جميع الأنيميشنات للسن القديم فوراً
+      // Ø¥ÙŠÙ‚Ø§Ù Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† Ø§Ù„Ù‚Ø¯ÙŠÙ… ÙÙˆØ±Ø§Ù‹
       stopToothAnimations(selectedTooth);
-      // إلغاء حالة الإغلاق
+      // Ø¥Ù„ØºØ§Ø¡ Ø­Ø§Ù„Ø© Ø§Ù„Ø¥ØºÙ„Ø§Ù‚
       setIsClosing(false);
-      // فتح السن الجديد مباشرة
+      // ÙØªØ­ Ø§Ù„Ø³Ù† Ø§Ù„Ø¬Ø¯ÙŠØ¯ Ù…Ø¨Ø§Ø´Ø±Ø©
       openTooth(toothNumber);
       return;
     }
 
-    // فتح السن مباشرة
+    // ÙØªØ­ Ø§Ù„Ø³Ù† Ù…Ø¨Ø§Ø´Ø±Ø©
     openTooth(toothNumber);
   };
 
-  // Function لفتح السن
+  // Function Ù„ÙØªØ­ Ø§Ù„Ø³Ù†
   const openTooth = (toothNumber: number) => {
     setSelectedTooth(toothNumber);
     setSelectedSurface(null);
     setShowConditionMenu(false);
     setIsClosing(false);
 
-    // إخفاء الأزرار (Edit, View, Oral Hygiene) تدريجياً عند فتح السن
+    // Ø¥Ø®ÙØ§Ø¡ Ø§Ù„Ø£Ø²Ø±Ø§Ø± (Edit, View, Oral Hygiene) ØªØ¯Ø±ÙŠØ¬ÙŠØ§Ù‹ Ø¹Ù†Ø¯ ÙØªØ­ Ø§Ù„Ø³Ù†
     Animated.timing(buttonsOpacity, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
     }).start();
 
-    // Animation: تكبير السن وتدويره ونقله للمنتصف (للأسنان 6 و 7 و 8)
+    // Animation: ØªÙƒØ¨ÙŠØ± Ø§Ù„Ø³Ù† ÙˆØªØ¯ÙˆÙŠØ±Ù‡ ÙˆÙ†Ù‚Ù„Ù‡ Ù„Ù„Ù…Ù†ØªØµÙ (Ù„Ù„Ø£Ø³Ù†Ø§Ù† 6 Ùˆ 7 Ùˆ 8)
     if (toothNumber === 6) {
-      // إيقاف أي أنيميشنات للسن 6
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 6
       tooth6Scale.stopAnimation();
       tooth6Rotation.stopAnimation();
       tooth6TranslateX.stopAnimation();
       tooth6TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth6Scale.setValue(1);
       tooth6Rotation.setValue(0);
       tooth6TranslateX.setValue(0);
       tooth6TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 45, top: '30%', width: 37, height: 47 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3419,19 +2299,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth6TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 7) {
-      // إيقاف أي أنيميشنات للسن 7
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 7
       tooth7Scale.stopAnimation();
       tooth7Rotation.stopAnimation();
       tooth7TranslateX.stopAnimation();
       tooth7TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth7Scale.setValue(1);
       tooth7Rotation.setValue(0);
       tooth7TranslateX.setValue(0);
       tooth7TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 45, top: '36%', width: 37, height: 47 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3448,19 +2328,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth7TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 8) {
-      // إيقاف أي أنيميشنات للسن 8
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 8
       tooth8Scale.stopAnimation();
       tooth8Rotation.stopAnimation();
       tooth8TranslateX.stopAnimation();
       tooth8TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth8Scale.setValue(1);
       tooth8Rotation.setValue(0);
       tooth8TranslateX.setValue(0);
       tooth8TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 45, top: '42%', width: 37, height: 47 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3477,19 +2357,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth8TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 5) {
-      // إيقاف أي أنيميشنات للسن 5
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 5
       tooth5Scale.stopAnimation();
       tooth5Rotation.stopAnimation();
       tooth5TranslateX.stopAnimation();
       tooth5TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth5Scale.setValue(1);
       tooth5Rotation.setValue(0);
       tooth5TranslateX.setValue(0);
       tooth5TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 55, top: '24%', width: 33, height: 42 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3506,19 +2386,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth5TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 4) {
-      // إيقاف أي أنيميشنات للسن 4
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 4
       tooth4Scale.stopAnimation();
       tooth4Rotation.stopAnimation();
       tooth4TranslateX.stopAnimation();
       tooth4TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth4Scale.setValue(1);
       tooth4Rotation.setValue(0);
       tooth4TranslateX.setValue(0);
       tooth4TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 67, top: '18.5%', width: 33, height: 42 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3535,19 +2415,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth4TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 3) {
-      // إيقاف أي أنيميشنات للسن 3
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 3
       tooth3Scale.stopAnimation();
       tooth3Rotation.stopAnimation();
       tooth3TranslateX.stopAnimation();
       tooth3TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth3Scale.setValue(1);
       tooth3Rotation.setValue(0);
       tooth3TranslateX.setValue(0);
       tooth3TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 90, top: '14%', width: 33, height: 42 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3564,19 +2444,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth3TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 2) {
-      // إيقاف أي أنيميشنات للسن 2
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 2
       tooth2Scale.stopAnimation();
       tooth2Rotation.stopAnimation();
       tooth2TranslateX.stopAnimation();
       tooth2TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth2Scale.setValue(1);
       tooth2Rotation.setValue(0);
       tooth2TranslateX.setValue(0);
       tooth2TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 120, top: '10%', width: 33, height: 42 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -3593,19 +2473,19 @@ export default function DentalChartScreen({
         Animated.spring(tooth2TranslateY, { toValue: moveY, useNativeDriver: true, friction: 8, tension: 40 }),
       ]).start();
     } else if (toothNumber === 1) {
-      // إيقاف أي أنيميشنات للسن 1
+      // Ø¥ÙŠÙ‚Ø§Ù Ø£ÙŠ Ø£Ù†ÙŠÙ…ÙŠØ´Ù†Ø§Øª Ù„Ù„Ø³Ù† 1
       tooth1Scale.stopAnimation();
       tooth1Rotation.stopAnimation();
       tooth1TranslateX.stopAnimation();
       tooth1TranslateY.stopAnimation();
 
-      // إعادة تعيين القيم
+      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ù‚ÙŠÙ…
       tooth1Scale.setValue(1);
       tooth1Rotation.setValue(0);
       tooth1TranslateX.setValue(0);
       tooth1TranslateY.setValue(0);
 
-      // حساب الموضع
+      // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¶Ø¹
       const pos = { right: 160, top: '7.5%', width: 33, height: 42 };
       const topPercent = parseFloat(pos.top) / 100;
       const toothCenterX = SCREEN_WIDTH - pos.right - pos.width/2;
@@ -4248,20 +3128,20 @@ export default function DentalChartScreen({
     }
   };
 
-  // Function لإغلاق السن المكبر
+  // Function Ù„Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø³Ù† Ø§Ù„Ù…ÙƒØ¨Ø±
   const handleCloseTooth = () => {
     if (!selectedTooth) return;
 
     setIsClosing(true);
 
-    // إظهار الأزرار (Edit, View, Oral Hygiene) مباشرة عند إغلاق السن
+    // Ø¥Ø¸Ù‡Ø§Ø± Ø§Ù„Ø£Ø²Ø±Ø§Ø± (Edit, View, Oral Hygiene) Ù…Ø¨Ø§Ø´Ø±Ø© Ø¹Ù†Ø¯ Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø³Ù†
     Animated.timing(buttonsOpacity, {
       toValue: 1,
       duration: 200,
       useNativeDriver: true,
     }).start();
 
-    // العودة إلى الحجم والزاوية والموضع الأصلي حسب السن
+    // Ø§Ù„Ø¹ÙˆØ¯Ø© Ø¥Ù„Ù‰ Ø§Ù„Ø­Ø¬Ù… ÙˆØ§Ù„Ø²Ø§ÙˆÙŠØ© ÙˆØ§Ù„Ù…ÙˆØ¶Ø¹ Ø§Ù„Ø£ØµÙ„ÙŠ Ø­Ø³Ø¨ Ø§Ù„Ø³Ù†
     if (selectedTooth === 6) {
       Animated.parallel([
         Animated.spring(tooth6Scale, { toValue: 1, useNativeDriver: true, friction: 8 }),
@@ -4647,7 +3527,7 @@ export default function DentalChartScreen({
         setIsClosing(false);
       });
     } else {
-      // لباقي الأسنان (Modal system)
+      // Ù„Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø£Ø³Ù†Ø§Ù† (Modal system)
       setSelectedTooth(null);
       setSelectedSurface(null);
       setShowConditionMenu(false);
@@ -4655,36 +3535,36 @@ export default function DentalChartScreen({
     }
   };
 
-  // Function للنقر على سطح السن
+  // Function Ù„Ù„Ù†Ù‚Ø± Ø¹Ù„Ù‰ Ø³Ø·Ø­ Ø§Ù„Ø³Ù†
   const handleSurfacePress = (surface: keyof ToothSurfaceConditions) => {
     setSelectedSurface(surface);
     setShowConditionMenu(true);
   };
 
-  // دالة لحفظ/تحديث Tooth Status Record واحد لجميع حالات السن
+  // Ø¯Ø§Ù„Ø© Ù„Ø­ÙØ¸/ØªØ­Ø¯ÙŠØ« Tooth Status Record ÙˆØ§Ø­Ø¯ Ù„Ø¬Ù…ÙŠØ¹ Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø³Ù†
   const updateToothStatusRecord = (toothNumber: number) => {
-    // تم تعطيل هذه الدالة لأن السجلات تُضاف الآن مباشرةً في handleConditionSelect
-    // هذا يمنع حذف السجلات القديمة عند إضافة سجلات جديدة
+    // ØªÙ… ØªØ¹Ø·ÙŠÙ„ Ù‡Ø°Ù‡ Ø§Ù„Ø¯Ø§Ù„Ø© Ù„Ø£Ù† Ø§Ù„Ø³Ø¬Ù„Ø§Øª ØªÙØ¶Ø§Ù Ø§Ù„Ø¢Ù† Ù…Ø¨Ø§Ø´Ø±Ø©Ù‹ ÙÙŠ handleConditionSelect
+    // Ù‡Ø°Ø§ ÙŠÙ…Ù†Ø¹ Ø­Ø°Ù Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© Ø¹Ù†Ø¯ Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„Ø§Øª Ø¬Ø¯ÙŠØ¯Ø©
   };
 
-  // دالة لحفظ/تحديث Diagnosed Conditions Record واحد لجميع حالات السن
+  // Ø¯Ø§Ù„Ø© Ù„Ø­ÙØ¸/ØªØ­Ø¯ÙŠØ« Diagnosed Conditions Record ÙˆØ§Ø­Ø¯ Ù„Ø¬Ù…ÙŠØ¹ Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø³Ù†
   const updateDiagnosedConditionsRecord = (toothNumber: number) => {
-    // تم تعطيل هذه الدالة لأن السجلات تُضاف الآن مباشرةً في handleConditionSelect
-    // هذا يمنع حذف السجلات القديمة عند إضافة سجلات جديدة
+    // ØªÙ… ØªØ¹Ø·ÙŠÙ„ Ù‡Ø°Ù‡ Ø§Ù„Ø¯Ø§Ù„Ø© Ù„Ø£Ù† Ø§Ù„Ø³Ø¬Ù„Ø§Øª ØªÙØ¶Ø§Ù Ø§Ù„Ø¢Ù† Ù…Ø¨Ø§Ø´Ø±Ø©Ù‹ ÙÙŠ handleConditionSelect
+    // Ù‡Ø°Ø§ ÙŠÙ…Ù†Ø¹ Ø­Ø°Ù Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© Ø¹Ù†Ø¯ Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„Ø§Øª Ø¬Ø¯ÙŠØ¯Ø©
   };
 
-  // Function لاختيار حالة للسطح
+  // Function Ù„Ø§Ø®ØªÙŠØ§Ø± Ø­Ø§Ù„Ø© Ù„Ù„Ø³Ø·Ø­
   const handleConditionSelect = (condition: ToothCondition) => {
     if (selectedTooth && selectedSurface) {
-      // إذا كانت الحالة treated، قم بتلوين الحدود فقط
+      // Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø§Ù„Ø­Ø§Ù„Ø© treatedØŒ Ù‚Ù… Ø¨ØªÙ„ÙˆÙŠÙ† Ø§Ù„Ø­Ø¯ÙˆØ¯ ÙÙ‚Ø·
       if (condition === 'treated') {
-        console.log(`🦷 Setting border color for tooth ${selectedTooth} to 'treated' (Root Canal Treated)`);
+        console.log(`ðŸ¦· Setting border color for tooth ${selectedTooth} to 'treated' (Root Canal Treated)`);
         setToothBorderColors(prev => ({
           ...prev,
           [selectedTooth]: 'treated',
         }));
 
-        // إضافة سجل للقائمة المعلقة (Pending) و toothRecords
+        // Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© (Pending) Ùˆ toothRecords
         const now = new Date();
         const timestamp = now.toLocaleString('en-US', {
           month: 'short',
@@ -4707,7 +3587,7 @@ export default function DentalChartScreen({
           previousCondition: undefined
         };
 
-        // استبدال السجل السابق (Whole tooth status)
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚ (Whole tooth status)
         setPendingPlanningRecords(prev => {
           // Remove any existing Tooth Status record for this tooth
           const filtered = prev.filter(record =>
@@ -4724,7 +3604,7 @@ export default function DentalChartScreen({
           ];
         });
 
-        // استبدال في toothRecords أيضاً
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ ÙÙŠ toothRecords Ø£ÙŠØ¶Ø§Ù‹
         setToothRecords(prev => {
           const existingRecords = prev[selectedTooth] || [];
           const filtered = existingRecords.filter(record =>
@@ -4746,7 +3626,7 @@ export default function DentalChartScreen({
         return;
       }
 
-      // إذا كانت الحالة missing، قم بتلوين جميع الأسطح
+      // Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø§Ù„Ø­Ø§Ù„Ø© missingØŒ Ù‚Ù… Ø¨ØªÙ„ÙˆÙŠÙ† Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ø³Ø·Ø­
       if (condition === 'missing') {
         setToothConditions(prev => ({
           ...prev,
@@ -4759,7 +3639,7 @@ export default function DentalChartScreen({
           },
         }));
 
-        // إضافة سجل للقائمة المعلقة (Pending) و toothRecords
+        // Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© (Pending) Ùˆ toothRecords
         const now = new Date();
         const timestamp = now.toLocaleString('en-US', {
           month: 'short',
@@ -4782,7 +3662,7 @@ export default function DentalChartScreen({
           previousCondition: undefined
         };
 
-        // استبدال السجل السابق (Whole tooth status)
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚ (Whole tooth status)
         setPendingPlanningRecords(prev => {
           const filtered = prev.filter(record =>
             record.toothNumber !== selectedTooth ||
@@ -4798,7 +3678,7 @@ export default function DentalChartScreen({
           ];
         });
 
-        // استبدال في toothRecords أيضاً
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ ÙÙŠ toothRecords Ø£ÙŠØ¶Ø§Ù‹
         setToothRecords(prev => {
           const existingRecords = prev[selectedTooth] || [];
           const filtered = existingRecords.filter(record =>
@@ -4817,7 +3697,7 @@ export default function DentalChartScreen({
 
         setHasModalChanges(true);
       }
-      // إذا كانت الحالة extraction (Condition - يحفظ Record فوراً)
+      // Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø§Ù„Ø­Ø§Ù„Ø© extraction (Condition - ÙŠØ­ÙØ¸ Record ÙÙˆØ±Ø§Ù‹)
       else if (condition === 'extraction') {
         setToothConditions(prev => ({
           ...prev,
@@ -4830,7 +3710,7 @@ export default function DentalChartScreen({
           },
         }));
 
-        // حفظ planning record لـ Extraction
+        // Ø­ÙØ¸ planning record Ù„Ù€ Extraction
         const now = new Date();
         const timestamp = now.toLocaleString('en-US', {
           month: 'short',
@@ -4855,7 +3735,7 @@ export default function DentalChartScreen({
           previousCondition: undefined
         };
 
-        // استبدال السجل السابق (Whole tooth - Extraction)
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚ (Whole tooth - Extraction)
         setToothRecords(prev => {
           const existingRecords = prev[selectedTooth] || [];
           const filtered = existingRecords.filter(record =>
@@ -4872,7 +3752,7 @@ export default function DentalChartScreen({
           };
         });
 
-        // استبدال في pendingPlanningRecords أيضاً
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ ÙÙŠ pendingPlanningRecords Ø£ÙŠØ¶Ø§Ù‹
         setPendingPlanningRecords(prev => {
           const filtered = prev.filter(record =>
             record.toothNumber !== selectedTooth ||
@@ -4889,22 +3769,22 @@ export default function DentalChartScreen({
         });
 
       } else if (condition === 'CLEAR_TOOTH_STATUS' as any) {
-        // إذا كان Clear Condition من قائمة Tooth Status - احذف border + كل الأسطح
+        // Ø¥Ø°Ø§ ÙƒØ§Ù† Clear Condition Ù…Ù† Ù‚Ø§Ø¦Ù…Ø© Tooth Status - Ø§Ø­Ø°Ù border + ÙƒÙ„ Ø§Ù„Ø£Ø³Ø·Ø­
         if (!selectedTooth) {
           console.error(' Invalid tooth number:', selectedTooth);
           return;
         }
 
-        console.log('🧹 Clear Tooth Status: Clearing border + all surfaces for tooth', selectedTooth);
+        console.log('ðŸ§¹ Clear Tooth Status: Clearing border + all surfaces for tooth', selectedTooth);
 
-        // إزالة لون الحدود
+        // Ø¥Ø²Ø§Ù„Ø© Ù„ÙˆÙ† Ø§Ù„Ø­Ø¯ÙˆØ¯
         setToothBorderColors(prev => {
           const newBorderColors = { ...prev };
           delete newBorderColors[selectedTooth];
           return newBorderColors;
         });
 
-        // إزالة اللون من جميع الأسطح
+        // Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù„ÙˆÙ† Ù…Ù† Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ø³Ø·Ø­
         setToothConditions(prev => ({
           ...prev,
           [selectedTooth]: {
@@ -4916,7 +3796,7 @@ export default function DentalChartScreen({
           },
         }));
 
-        // حفظ planning record عند إلغاء الحالة
+        // Ø­ÙØ¸ planning record Ø¹Ù†Ø¯ Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø­Ø§Ù„Ø©
         const now = new Date();
         const timestamp = now.toLocaleString('en-US', {
           month: 'short',
@@ -4968,17 +3848,17 @@ export default function DentalChartScreen({
         setSelectedSurface('center');
 
       } else if (condition === null) {
-        // إذا كان Clear Condition من قائمة Condition العادية
+        // Ø¥Ø°Ø§ ÙƒØ§Ù† Clear Condition Ù…Ù† Ù‚Ø§Ø¦Ù…Ø© Condition Ø§Ù„Ø¹Ø§Ø¯ÙŠØ©
         const currentConditions = toothConditions[selectedTooth];
 
-        // إزالة لون الحدود
+        // Ø¥Ø²Ø§Ù„Ø© Ù„ÙˆÙ† Ø§Ù„Ø­Ø¯ÙˆØ¯
         setToothBorderColors(prev => {
           const newBorderColors = { ...prev };
           delete newBorderColors[selectedTooth];
           return newBorderColors;
         });
 
-        // تحقق إذا كانت جميع الأسطح extraction أو missing
+        // ØªØ­Ù‚Ù‚ Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ø³Ø·Ø­ extraction Ø£Ùˆ missing
         if (currentConditions) {
           const allSame =
             currentConditions.top === currentConditions.bottom &&
@@ -4988,7 +3868,7 @@ export default function DentalChartScreen({
             (currentConditions.top === 'extraction' || currentConditions.top === 'missing');
 
           if (allSame) {
-            // إزالة اللون من جميع الأسطح
+            // Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù„ÙˆÙ† Ù…Ù† Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ø³Ø·Ø­
             setToothConditions(prev => ({
               ...prev,
               [selectedTooth]: {
@@ -5000,7 +3880,7 @@ export default function DentalChartScreen({
               },
             }));
           } else {
-            // إزالة اللون من السطح المحدد فقط
+            // Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù„ÙˆÙ† Ù…Ù† Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ù…Ø­Ø¯Ø¯ ÙÙ‚Ø·
             setToothConditions(prev => ({
               ...prev,
               [selectedTooth]: {
@@ -5016,7 +3896,7 @@ export default function DentalChartScreen({
             }));
           }
 
-          // حفظ planning record عند إلغاء الحالة
+          // Ø­ÙØ¸ planning record Ø¹Ù†Ø¯ Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø­Ø§Ù„Ø©
           const now = new Date();
           const timestamp = now.toLocaleString('en-US', {
             month: 'short',
@@ -5031,7 +3911,7 @@ export default function DentalChartScreen({
           const surfaceLabel = surface?.label || selectedSurface;
           const timestampNum = now.getTime() + Math.random() * 0.999;
 
-          // Clear Condition: إضافة سجل canceled (استبدال السجل السابق)
+          // Clear Condition: Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„ canceled (Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚)
           const newRecord = {
             type: 'planning' as const,
             action: 'canceled' as const,
@@ -5044,7 +3924,7 @@ export default function DentalChartScreen({
             previousCondition: undefined
           };
 
-          // استبدال السجل السابق في toothRecords
+          // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚ ÙÙŠ toothRecords
           setToothRecords(prev => {
             const existingRecords = prev[selectedTooth] || [];
             const filtered = existingRecords.filter(record => {
@@ -5064,7 +3944,7 @@ export default function DentalChartScreen({
             };
           });
 
-          // استبدال السجل السابق في pendingPlanningRecords
+          // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚ ÙÙŠ pendingPlanningRecords
           setPendingPlanningRecords(prev => {
             const filtered = prev.filter(record => {
               if (record.toothNumber !== selectedTooth) return true;
@@ -5084,7 +3964,7 @@ export default function DentalChartScreen({
           });
         }
       } else {
-        // تلوين السطح المحدد فقط
+        // ØªÙ„ÙˆÙŠÙ† Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ù…Ø­Ø¯Ø¯ ÙÙ‚Ø·
         setToothConditions(prev => ({
           ...prev,
           [selectedTooth]: {
@@ -5099,7 +3979,7 @@ export default function DentalChartScreen({
           },
         }));
 
-        // إضافة سجل للقائمة العامة و toothRecords مباشرةً
+        // Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¹Ø§Ù…Ø© Ùˆ toothRecords Ù…Ø¨Ø§Ø´Ø±Ø©Ù‹
         const now = new Date();
         const timestamp = now.toLocaleString('en-US', {
           month: 'short',
@@ -5115,62 +3995,62 @@ export default function DentalChartScreen({
         const surfaceLabel = surface?.label || selectedSurface;
         const timestampNum = now.getTime() + Math.random() * 0.999;
 
-        // كشف التغيير: البحث عن آخر سجل لنفس السطح بحالة مختلفة
-        // أولوية البحث:
-        // 1. editing_records (العلاجات المنفذة - الأسطح الخضراء)
-        // 2. planning_records (التخطيطات)
+        // ÙƒØ´Ù Ø§Ù„ØªØºÙŠÙŠØ±: Ø§Ù„Ø¨Ø­Ø« Ø¹Ù† Ø¢Ø®Ø± Ø³Ø¬Ù„ Ù„Ù†ÙØ³ Ø§Ù„Ø³Ø·Ø­ Ø¨Ø­Ø§Ù„Ø© Ù…Ø®ØªÙ„ÙØ©
+        // Ø£ÙˆÙ„ÙˆÙŠØ© Ø§Ù„Ø¨Ø­Ø«:
+        // 1. editing_records (Ø§Ù„Ø¹Ù„Ø§Ø¬Ø§Øª Ø§Ù„Ù…Ù†ÙØ°Ø© - Ø§Ù„Ø£Ø³Ø·Ø­ Ø§Ù„Ø®Ø¶Ø±Ø§Ø¡)
+        // 2. planning_records (Ø§Ù„ØªØ®Ø·ÙŠØ·Ø§Øª)
 
         let isChange = false;
         let previousCondition = '';
 
-        // ══════════════════════════════════════════════════════════════
-        // STEP 1: البحث في editing_records أولاً (العلاجات المنفذة)
-        // ══════════════════════════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // STEP 1: Ø§Ù„Ø¨Ø­Ø« ÙÙŠ editing_records Ø£ÙˆÙ„Ø§Ù‹ (Ø§Ù„Ø¹Ù„Ø§Ø¬Ø§Øª Ø§Ù„Ù…Ù†ÙØ°Ø©)
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         const editingRecordsForTooth = toothRecords[selectedTooth] || [];
         const sortedEditingRecords = [...editingRecordsForTooth].sort((a, b) => b.timestampNum - a.timestampNum);
 
-        console.log(`🔍 Searching in editing_records for tooth ${selectedTooth}, surface ${surfaceLabel}:`, {
+        console.log(`ðŸ” Searching in editing_records for tooth ${selectedTooth}, surface ${surfaceLabel}:`, {
           editingRecordsCount: editingRecordsForTooth.length,
           records: editingRecordsForTooth.map(r => ({ details: r.details, surfaces: r.surfaces }))
         });
 
-        // البحث عن آخر علاج لنفس السطح
-        // في editing_records: surfaces = ['mesial', 'distal'], details = 'Permanent Filling'
+        // Ø§Ù„Ø¨Ø­Ø« Ø¹Ù† Ø¢Ø®Ø± Ø¹Ù„Ø§Ø¬ Ù„Ù†ÙØ³ Ø§Ù„Ø³Ø·Ø­
+        // ÙÙŠ editing_records: surfaces = ['mesial', 'distal'], details = 'Permanent Filling'
         const lastTreatmentForSurface = sortedEditingRecords.find(r =>
           r.surfaces && Array.isArray(r.surfaces) && r.surfaces.some(s => s.toLowerCase() === surfaceLabel.toLowerCase())
         );
 
         if (lastTreatmentForSurface && lastTreatmentForSurface.details) {
-          // وجدنا علاج سابق (السطح أخضر) - استخدم details من editing_records
+          // ÙˆØ¬Ø¯Ù†Ø§ Ø¹Ù„Ø§Ø¬ Ø³Ø§Ø¨Ù‚ (Ø§Ù„Ø³Ø·Ø­ Ø£Ø®Ø¶Ø±) - Ø§Ø³ØªØ®Ø¯Ù… details Ù…Ù† editing_records
           const previousConditionName = lastTreatmentForSurface.details;
 
           console.log(` Found treatment record: ${previousConditionName} on ${surfaceLabel}`);
 
-          // التحقق إذا كانت الحالة مختلفة
+          // Ø§Ù„ØªØ­Ù‚Ù‚ Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø§Ù„Ø­Ø§Ù„Ø© Ù…Ø®ØªÙ„ÙØ©
           if (previousConditionName.toLowerCase() !== conditionName.english.toLowerCase()) {
             isChange = true;
             previousCondition = previousConditionName;
-            console.log(`🔄 CHANGE DETECTED (from Treatment): ${previousConditionName} → ${conditionName.english} on ${surfaceLabel}`);
+            console.log(`ðŸ”„ CHANGE DETECTED (from Treatment): ${previousConditionName} â†’ ${conditionName.english} on ${surfaceLabel}`);
           } else {
             console.log(` Same condition (Treatment): ${conditionName.english} on ${surfaceLabel}`);
           }
         } else {
           console.log(` No treatment found in editing_records, searching in planning_records...`);
-          // ══════════════════════════════════════════════════════════════
-          // STEP 2: لم نجد علاج - ابحث في planning_records (التخطيطات)
-          // ══════════════════════════════════════════════════════════════
+          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+          // STEP 2: Ù„Ù… Ù†Ø¬Ø¯ Ø¹Ù„Ø§Ø¬ - Ø§Ø¨Ø­Ø« ÙÙŠ planning_records (Ø§Ù„ØªØ®Ø·ÙŠØ·Ø§Øª)
+          // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           const globalRecordsForTooth = allPlanningRecordsGlobal.filter(r => r.toothNumber === selectedTooth);
           const pendingRecordsForTooth = pendingPlanningRecords.filter(r => r.toothNumber === selectedTooth);
           const allRecordsForTooth = [...globalRecordsForTooth, ...pendingRecordsForTooth];
 
           const sortedRecordsForTooth = allRecordsForTooth.sort((a, b) => b.timestampNum - a.timestampNum);
 
-          // أولاً: ابحث عن Extraction
+          // Ø£ÙˆÙ„Ø§Ù‹: Ø§Ø¨Ø­Ø« Ø¹Ù† Extraction
           let lastDiagnosedForSurface = sortedRecordsForTooth.find(
             r => r.action === 'diagnosed' && r.condition === 'Extraction'
           );
 
-          // إذا لم نجد Extraction، ابحث عن سجل لنفس السطح
+          // Ø¥Ø°Ø§ Ù„Ù… Ù†Ø¬Ø¯ ExtractionØŒ Ø§Ø¨Ø­Ø« Ø¹Ù† Ø³Ø¬Ù„ Ù„Ù†ÙØ³ Ø§Ù„Ø³Ø·Ø­
           if (!lastDiagnosedForSurface) {
             lastDiagnosedForSurface = sortedRecordsForTooth.find(r =>
               r.action === 'diagnosed' &&
@@ -5179,34 +4059,34 @@ export default function DentalChartScreen({
           }
 
           if (lastDiagnosedForSurface) {
-            // حالة خاصة: التغيير من Extraction
+            // Ø­Ø§Ù„Ø© Ø®Ø§ØµØ©: Ø§Ù„ØªØºÙŠÙŠØ± Ù…Ù† Extraction
             if (lastDiagnosedForSurface.condition === 'Extraction') {
               if (conditionName.english !== 'Extraction') {
                 isChange = true;
                 previousCondition = 'Extraction';
-                console.log(`🔄 CHANGE DETECTED (from Planning): Extraction → ${conditionName.english} on ${surfaceLabel}`);
+                console.log(`ðŸ”„ CHANGE DETECTED (from Planning): Extraction â†’ ${conditionName.english} on ${surfaceLabel}`);
               } else {
                 console.log(` Same condition (Planning): Extraction`);
               }
             } else {
-              // استخراج اسم الحالة من السجل السابق
+              // Ø§Ø³ØªØ®Ø±Ø§Ø¬ Ø§Ø³Ù… Ø§Ù„Ø­Ø§Ù„Ø© Ù…Ù† Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚
               const previousSurfaceText = lastDiagnosedForSurface.surfaces.find(s => s.toLowerCase().includes(`(${surfaceLabel.toLowerCase()})`));
               if (previousSurfaceText) {
                 const previousConditionMatch = previousSurfaceText.match(/^(.+?)\s*\(/);
                 const previousConditionName = previousConditionMatch ? previousConditionMatch[1].trim() : previousSurfaceText;
 
-                // التحقق إذا كانت الحالة مختلفة
+                // Ø§Ù„ØªØ­Ù‚Ù‚ Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø§Ù„Ø­Ø§Ù„Ø© Ù…Ø®ØªÙ„ÙØ©
                 if (previousConditionName.toLowerCase() !== conditionName.english.toLowerCase()) {
                   isChange = true;
                   previousCondition = previousConditionName;
-                  console.log(`🔄 CHANGE DETECTED (from Planning): ${previousConditionName} → ${conditionName.english} on ${surfaceLabel}`);
+                  console.log(`ðŸ”„ CHANGE DETECTED (from Planning): ${previousConditionName} â†’ ${conditionName.english} on ${surfaceLabel}`);
                 } else {
                   console.log(` Same condition (Planning): ${conditionName.english} on ${surfaceLabel}`);
                 }
               }
             }
           } else {
-            console.log(`➕ NEW diagnosis: ${conditionName.english} on ${surfaceLabel}`);
+            console.log(`âž• NEW diagnosis: ${conditionName.english} on ${surfaceLabel}`);
           }
         }
 
@@ -5222,7 +4102,7 @@ export default function DentalChartScreen({
           previousCondition: isChange ? previousCondition : undefined
         };
 
-        // استبدال السجل السابق بدلاً من الإضافة (لنفس السن ونفس السطح)
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„Ø³Ø§Ø¨Ù‚ Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø¥Ø¶Ø§ÙØ© (Ù„Ù†ÙØ³ Ø§Ù„Ø³Ù† ÙˆÙ†ÙØ³ Ø§Ù„Ø³Ø·Ø­)
         setPendingPlanningRecords(prev => {
           // Remove any existing record for this tooth + surface
           const filtered = prev.filter(record => {
@@ -5243,7 +4123,7 @@ export default function DentalChartScreen({
           ];
         });
 
-        // استبدال السجل في toothRecords أيضاً
+        // Ø§Ø³ØªØ¨Ø¯Ø§Ù„ Ø§Ù„Ø³Ø¬Ù„ ÙÙŠ toothRecords Ø£ÙŠØ¶Ø§Ù‹
         setToothRecords(prev => {
           const existingRecordsForTooth = prev[selectedTooth] || [];
 
@@ -5265,11 +4145,11 @@ export default function DentalChartScreen({
           };
         });
 
-        // إذا كان تغيير من Extraction، احذف اللون الأسود من كل الأسطح فوراً
+        // Ø¥Ø°Ø§ ÙƒØ§Ù† ØªØºÙŠÙŠØ± Ù…Ù† ExtractionØŒ Ø§Ø­Ø°Ù Ø§Ù„Ù„ÙˆÙ† Ø§Ù„Ø£Ø³ÙˆØ¯ Ù…Ù† ÙƒÙ„ Ø§Ù„Ø£Ø³Ø·Ø­ ÙÙˆØ±Ø§Ù‹
         if (isChange && previousCondition === 'Extraction') {
-          console.log('🔄 Clearing extraction color from all surfaces immediately');
+          console.log('ðŸ”„ Clearing extraction color from all surfaces immediately');
 
-          // احذف كل الألوان أولاً
+          // Ø§Ø­Ø°Ù ÙƒÙ„ Ø§Ù„Ø£Ù„ÙˆØ§Ù† Ø£ÙˆÙ„Ø§Ù‹
           const clearedConditions = {
             top: null,
             bottom: null,
@@ -5278,10 +4158,10 @@ export default function DentalChartScreen({
             center: null,
           };
 
-          // Mapping للأسطح (use helper to get correct mapping for lower teeth)
+          // Mapping Ù„Ù„Ø£Ø³Ø·Ø­ (use helper to get correct mapping for lower teeth)
           const surfaceNameToKey = getSurfaceNameMap(selectedTooth);
 
-          // Mapping للألوان
+          // Mapping Ù„Ù„Ø£Ù„ÙˆØ§Ù†
           const conditionColorMap: Record<string, ToothCondition> = {
             'Caries': 'caries',
             'Broken/Inappropriate Filling': 'broken',
@@ -5295,10 +4175,10 @@ export default function DentalChartScreen({
             'Impacted': 'impacted',
           };
 
-          // أضف اللون الجديد للسطح المحدد فقط (إذا كان له لون)
+          // Ø£Ø¶Ù Ø§Ù„Ù„ÙˆÙ† Ø§Ù„Ø¬Ø¯ÙŠØ¯ Ù„Ù„Ø³Ø·Ø­ Ø§Ù„Ù…Ø­Ø¯Ø¯ ÙÙ‚Ø· (Ø¥Ø°Ø§ ÙƒØ§Ù† Ù„Ù‡ Ù„ÙˆÙ†)
           if (conditionColorMap[conditionName.english]) {
             const surfaceKey = surfaceNameToKey[surfaceLabel.toLowerCase()];
-            console.log(`  → Adding new color: condition="${conditionName.english}", surface="${surfaceLabel}", surfaceKey="${surfaceKey}", color="${conditionColorMap[conditionName.english]}"`);
+            console.log(`  â†’ Adding new color: condition="${conditionName.english}", surface="${surfaceLabel}", surfaceKey="${surfaceKey}", color="${conditionColorMap[conditionName.english]}"`);
             if (surfaceKey) {
               clearedConditions[surfaceKey] = conditionColorMap[conditionName.english];
               console.log(`   clearedConditions after adding:`, clearedConditions);
@@ -5309,7 +4189,7 @@ export default function DentalChartScreen({
             console.log(`   No color mapping for condition "${conditionName.english}"`);
           }
 
-          console.log(`  🎨 Final clearedConditions:`, clearedConditions);
+          console.log(`  ðŸŽ¨ Final clearedConditions:`, clearedConditions);
           setToothConditions(prev => ({
             ...prev,
             [selectedTooth]: clearedConditions
@@ -5349,7 +4229,7 @@ export default function DentalChartScreen({
     animateBlob(blob6Anim, 6800);
   }, []);
 
-  // DISABLED: تحديث Tooth Status Record تلقائياً عند تغيير toothConditions أو toothBorderColors
+  // DISABLED: ØªØ­Ø¯ÙŠØ« Tooth Status Record ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ø¹Ù†Ø¯ ØªØºÙŠÙŠØ± toothConditions Ø£Ùˆ toothBorderColors
   // This useEffect has been disabled to prevent automatic saving
   // All changes now only save when Submit button is pressed
   // useEffect(() => {
@@ -5610,7 +4490,7 @@ export default function DentalChartScreen({
                     activeOpacity={0.8}
                     onPress={() => {
                       const newState = !isEditModeActive;
-                      console.log('✓ Edit Button Pressed! New state:', newState);
+                      console.log('âœ“ Edit Button Pressed! New state:', newState);
                       setIsEditModeActive(newState);
                     }}
                     style={[
@@ -5637,7 +4517,7 @@ export default function DentalChartScreen({
                     {
                       translateY: viewButtonPositionAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0, -(SCREEN_HEIGHT * 0.41 - 100)] // من 41% إلى 100 بكسل من الأعلى
+                        outputRange: [0, -(SCREEN_HEIGHT * 0.41 - 100)] // Ù…Ù† 41% Ø¥Ù„Ù‰ 100 Ø¨ÙƒØ³Ù„ Ù…Ù† Ø§Ù„Ø£Ø¹Ù„Ù‰
                       })
                     }
                   ]
@@ -5646,133 +4526,133 @@ export default function DentalChartScreen({
                     activeOpacity={0.8}
                     onPress={() => {
                       const newState = !isViewModeActive;
-                      console.log('✓ View Button Pressed! Current state:', isViewModeActive, '→ New state:', newState);
+                      console.log('âœ“ View Button Pressed! Current state:', isViewModeActive, 'â†’ New state:', newState);
                       setIsViewModeActive(newState);
 
                       if (newState) {
-                        console.log('🔵 Showing referral container - hiding teeth');
-                        // إخفاء الأسنان وزر Edit والخطوط وأرقام الأسنان
+                        console.log('ðŸ”µ Showing referral container - hiding teeth');
+                        // Ø¥Ø®ÙØ§Ø¡ Ø§Ù„Ø£Ø³Ù†Ø§Ù† ÙˆØ²Ø± Edit ÙˆØ§Ù„Ø®Ø·ÙˆØ· ÙˆØ£Ø±Ù‚Ø§Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                         Animated.parallel([
                           Animated.timing(rightTeethSlide, {
-                            toValue: 500, // إزاحة لليمين خارج الشاشة
+                            toValue: 500, // Ø¥Ø²Ø§Ø­Ø© Ù„Ù„ÙŠÙ…ÙŠÙ† Ø®Ø§Ø±Ø¬ Ø§Ù„Ø´Ø§Ø´Ø©
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(leftTeethSlide, {
-                            toValue: -500, // إزاحة لليسار خارج الشاشة
+                            toValue: -500, // Ø¥Ø²Ø§Ø­Ø© Ù„Ù„ÙŠØ³Ø§Ø± Ø®Ø§Ø±Ø¬ Ø§Ù„Ø´Ø§Ø´Ø©
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(editButtonSlide, {
-                            toValue: -300, // إزاحة زر Edit لليسار
+                            toValue: -300, // Ø¥Ø²Ø§Ø­Ø© Ø²Ø± Edit Ù„Ù„ÙŠØ³Ø§Ø±
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(verticalTopLineSlide, {
-                            toValue: -200, // إزاحة الخط العمودي العلوي للأعلى
+                            toValue: -200, // Ø¥Ø²Ø§Ø­Ø© Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø¹Ù„ÙˆÙŠ Ù„Ù„Ø£Ø¹Ù„Ù‰
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(verticalBottomLineSlide, {
-                            toValue: 200, // إزاحة الخط العمودي السفلي للأسفل
+                            toValue: 200, // Ø¥Ø²Ø§Ø­Ø© Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø³ÙÙ„ÙŠ Ù„Ù„Ø£Ø³ÙÙ„
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(horizontalRightLineSlide, {
-                            toValue: 500, // إزاحة الخط الأفقي الأيمن لليمين
+                            toValue: 500, // Ø¥Ø²Ø§Ø­Ø© Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ÙŠÙ…Ù† Ù„Ù„ÙŠÙ…ÙŠÙ†
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(horizontalLeftLineSlide, {
-                            toValue: -500, // إزاحة الخط الأفقي الأيسر لليسار
+                            toValue: -500, // Ø¥Ø²Ø§Ø­Ø© Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ÙŠØ³Ø± Ù„Ù„ÙŠØ³Ø§Ø±
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(rightNumbersSlide, {
-                            toValue: 500, // إزاحة أرقام الأسنان اليمنى لليمين
+                            toValue: 500, // Ø¥Ø²Ø§Ø­Ø© Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„ÙŠÙ…Ù†Ù‰ Ù„Ù„ÙŠÙ…ÙŠÙ†
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(leftNumbersSlide, {
-                            toValue: -500, // إزاحة أرقام الأسنان اليسرى لليسار
+                            toValue: -500, // Ø¥Ø²Ø§Ø­Ø© Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„ÙŠØ³Ø±Ù‰ Ù„Ù„ÙŠØ³Ø§Ø±
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(oralHygieneOpacity, {
-                            toValue: 0, // إخفاء حاوية Oral Hygiene
+                            toValue: 0, // Ø¥Ø®ÙØ§Ø¡ Ø­Ø§ÙˆÙŠØ© Oral Hygiene
                             duration: 400,
                             useNativeDriver: true,
                           }),
                           Animated.timing(viewButtonPositionAnim, {
-                            toValue: 1, // تحريك زر View إلى أعلى يمين
+                            toValue: 1, // ØªØ­Ø±ÙŠÙƒ Ø²Ø± View Ø¥Ù„Ù‰ Ø£Ø¹Ù„Ù‰ ÙŠÙ…ÙŠÙ†
                             duration: 400,
                             useNativeDriver: true,
                           }),
                         ]).start(() => {
-                          console.log('🟢 Teeth hidden - now showing containers');
-                          // إعادة تعيين الحاوية للحالة المغلقة
+                          console.log('ðŸŸ¢ Teeth hidden - now showing containers');
+                          // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ø­Ø§ÙˆÙŠØ© Ù„Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ù…ØºÙ„Ù‚Ø©
                           setIsReferralExpanded(false);
                           referralSectionsHeight.setValue(0);
-                          // إعادة تعيين pushDown للحاويات الأخرى
+                          // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† pushDown Ù„Ù„Ø­Ø§ÙˆÙŠØ§Øª Ø§Ù„Ø£Ø®Ø±Ù‰
                           treatmentRecordPushDown.setValue(0);
                           planningRecordPushDown.setValue(0);
-                          // بعد انتهاء اختفاء الأسنان، إظهار الحاويات بالتسلسل
-                          // 1. Referral من اليمين
+                          // Ø¨Ø¹Ø¯ Ø§Ù†ØªÙ‡Ø§Ø¡ Ø§Ø®ØªÙØ§Ø¡ Ø§Ù„Ø£Ø³Ù†Ø§Ù†ØŒ Ø¥Ø¸Ù‡Ø§Ø± Ø§Ù„Ø­Ø§ÙˆÙŠØ§Øª Ø¨Ø§Ù„ØªØ³Ù„Ø³Ù„
+                          // 1. Referral Ù…Ù† Ø§Ù„ÙŠÙ…ÙŠÙ†
                           Animated.timing(referralContainerSlide, {
                             toValue: 0,
                             duration: 150,
                             useNativeDriver: true,
                           }).start(() => {
                             console.log(' Referral container visible');
-                            // 2. Treatment Record من اليسار
+                            // 2. Treatment Record Ù…Ù† Ø§Ù„ÙŠØ³Ø§Ø±
                             Animated.timing(treatmentRecordSlide, {
                               toValue: 0,
                               duration: 150,
                               useNativeDriver: true,
                             }).start(() => {
                               console.log(' Treatment Record visible');
-                              // 3. Planning Record من اليمين
+                              // 3. Planning Record Ù…Ù† Ø§Ù„ÙŠÙ…ÙŠÙ†
                               Animated.timing(planningRecordSlide, {
                                 toValue: 0,
                                 duration: 150,
                                 useNativeDriver: true,
                               }).start(() => {
                                 console.log(' All containers visible');
-                                // الحاويات في موقع ثابت - لا حاجة لتحريكها
+                                // Ø§Ù„Ø­Ø§ÙˆÙŠØ§Øª ÙÙŠ Ù…ÙˆÙ‚Ø¹ Ø«Ø§Ø¨Øª - Ù„Ø§ Ø­Ø§Ø¬Ø© Ù„ØªØ­Ø±ÙŠÙƒÙ‡Ø§
                               });
                             });
                           });
                         });
                       } else {
-                        console.log('🔴 Hiding containers - returning teeth');
-                        // إعادة تعيين الحاوية للحالة المغلقة
+                        console.log('ðŸ”´ Hiding containers - returning teeth');
+                        // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ø­Ø§ÙˆÙŠØ© Ù„Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ù…ØºÙ„Ù‚Ø©
                         setIsReferralExpanded(false);
                         referralSectionsHeight.setValue(0);
                         treatmentRecordPushDown.setValue(0);
                         planningRecordPushDown.setValue(0);
-                        // إخفاء الحاويات بالتسلسل العكسي
-                        // 1. Planning Record (يمين)
+                        // Ø¥Ø®ÙØ§Ø¡ Ø§Ù„Ø­Ø§ÙˆÙŠØ§Øª Ø¨Ø§Ù„ØªØ³Ù„Ø³Ù„ Ø§Ù„Ø¹ÙƒØ³ÙŠ
+                        // 1. Planning Record (ÙŠÙ…ÙŠÙ†)
                         Animated.timing(planningRecordSlide, {
                           toValue: 1000,
                           duration: 100,
                           useNativeDriver: true,
                         }).start(() => {
-                          console.log('🟡 Planning Record hidden');
-                          // 2. Treatment Record (يسار)
+                          console.log('ðŸŸ¡ Planning Record hidden');
+                          // 2. Treatment Record (ÙŠØ³Ø§Ø±)
                           Animated.timing(treatmentRecordSlide, {
                             toValue: -1000,
                             duration: 100,
                             useNativeDriver: true,
                           }).start(() => {
-                            console.log('🟡 Treatment Record hidden');
-                            // 3. Referral (يمين)
+                            console.log('ðŸŸ¡ Treatment Record hidden');
+                            // 3. Referral (ÙŠÙ…ÙŠÙ†)
                             Animated.timing(referralContainerSlide, {
                               toValue: 1000,
                               duration: 100,
                               useNativeDriver: true,
                             }).start(() => {
-                              console.log('🟡 All containers hidden - now returning teeth');
-                          // ثم إرجاع الأسنان وزر Edit والخطوط وأرقام الأسنان لأماكنها
+                              console.log('ðŸŸ¡ All containers hidden - now returning teeth');
+                          // Ø«Ù… Ø¥Ø±Ø¬Ø§Ø¹ Ø§Ù„Ø£Ø³Ù†Ø§Ù† ÙˆØ²Ø± Edit ÙˆØ§Ù„Ø®Ø·ÙˆØ· ÙˆØ£Ø±Ù‚Ø§Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ù„Ø£Ù…Ø§ÙƒÙ†Ù‡Ø§
                           Animated.parallel([
                           Animated.timing(rightTeethSlide, {
                             toValue: 0,
@@ -5820,12 +4700,12 @@ export default function DentalChartScreen({
                             useNativeDriver: true,
                           }),
                           Animated.timing(oralHygieneOpacity, {
-                            toValue: 1, // إعادة إظهار حاوية Oral Hygiene
+                            toValue: 1, // Ø¥Ø¹Ø§Ø¯Ø© Ø¥Ø¸Ù‡Ø§Ø± Ø­Ø§ÙˆÙŠØ© Oral Hygiene
                             duration: 300,
                             useNativeDriver: true,
                           }),
                           Animated.timing(viewButtonPositionAnim, {
-                            toValue: 0, // إعادة زر View إلى موقعه الأصلي
+                            toValue: 0, // Ø¥Ø¹Ø§Ø¯Ø© Ø²Ø± View Ø¥Ù„Ù‰ Ù…ÙˆÙ‚Ø¹Ù‡ Ø§Ù„Ø£ØµÙ„ÙŠ
                             duration: 300,
                             useNativeDriver: true,
                           }),
@@ -5853,11 +4733,11 @@ export default function DentalChartScreen({
 
                 {/* Teeth Container */}
                 <View style={styles.crossContainer}>
-                  {/* خطوط فاصلة أصفر في المنتصف */}
-                  {/* الخط العمودي العلوي */}
+                  {/* Ø®Ø·ÙˆØ· ÙØ§ØµÙ„Ø© Ø£ØµÙØ± ÙÙŠ Ø§Ù„Ù…Ù†ØªØµÙ */}
+                  {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø¹Ù„ÙˆÙŠ */}
                   <Animated.View style={[styles.centerDivider, { transform: [{ translateY: verticalTopLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط العمودي الأصفر الصغير في الأعلى بين رقم 1 و1 */}
+                      {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø£ØµÙØ± Ø§Ù„ØµØºÙŠØ± ÙÙŠ Ø§Ù„Ø£Ø¹Ù„Ù‰ Ø¨ÙŠÙ† Ø±Ù‚Ù… 1 Ùˆ1 */}
                       <Line
                         x1="50"
                         y1="-30"
@@ -5870,10 +4750,10 @@ export default function DentalChartScreen({
                     </Svg>
                   </Animated.View>
 
-                  {/* الخط العمودي السفلي */}
+                  {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø³ÙÙ„ÙŠ */}
                   <Animated.View style={[styles.centerDivider, { transform: [{ translateY: verticalBottomLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط العمودي الأصفر الصغير في الأسفل بين رقم 1 و1 للفك السفلي */}
+                      {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠ Ø§Ù„Ø£ØµÙØ± Ø§Ù„ØµØºÙŠØ± ÙÙŠ Ø§Ù„Ø£Ø³ÙÙ„ Ø¨ÙŠÙ† Ø±Ù‚Ù… 1 Ùˆ1 Ù„Ù„ÙÙƒ Ø§Ù„Ø³ÙÙ„ÙŠ */}
                       <Line
                         x1="50"
                         y1="110"
@@ -5886,10 +4766,10 @@ export default function DentalChartScreen({
                     </Svg>
                   </Animated.View>
 
-                  {/* الخط الأفقي الأيسر */}
+                  {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ÙŠØ³Ø± */}
                   <Animated.View style={[styles.centerDivider, { transform: [{ translateX: horizontalLeftLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليسار */}
+                      {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ØµÙØ± Ø§Ù„ØµØºÙŠØ± Ø¨ÙŠÙ† 8 Ùˆ 8 Ø¹Ù„Ù‰ Ø§Ù„ÙŠØ³Ø§Ø± */}
                       <Line
                         x1="10"
                         y1="50"
@@ -5902,10 +4782,10 @@ export default function DentalChartScreen({
                     </Svg>
                   </Animated.View>
 
-                  {/* الخط الأفقي الأيمن */}
+                  {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ÙŠÙ…Ù† */}
                   <Animated.View style={[styles.centerDivider, { transform: [{ translateX: horizontalRightLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليمين */}
+                      {/* Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ Ø§Ù„Ø£ØµÙØ± Ø§Ù„ØµØºÙŠØ± Ø¨ÙŠÙ† 8 Ùˆ 8 Ø¹Ù„Ù‰ Ø§Ù„ÙŠÙ…ÙŠÙ† */}
                       <Line
                         x1="70"
                         y1="50"
@@ -5918,7 +4798,7 @@ export default function DentalChartScreen({
                     </Svg>
                   </Animated.View>
 
-                  {/* Oral Hygiene Container - حاوية في المنتصف */}
+                  {/* Oral Hygiene Container - Ø­Ø§ÙˆÙŠØ© ÙÙŠ Ø§Ù„Ù…Ù†ØªØµÙ */}
                   <Animated.View style={[
                     {
                       position: 'absolute',
@@ -6010,7 +4890,7 @@ export default function DentalChartScreen({
 
                     {isOralHygieneExpanded && (
                       <ScrollView style={{ flex: 1, padding: 16, paddingTop: 20 }} showsVerticalScrollIndicator={false}>
-                        {/* زر Scaling Done */}
+                        {/* Ø²Ø± Scaling Done */}
                         <TouchableOpacity
                           style={[styles.scalingButton, {
                             overflow: 'hidden',
@@ -6041,7 +4921,7 @@ export default function DentalChartScreen({
                           </BlurView>
                         </TouchableOpacity>
 
-                        {/* سجلات الـ Scaling */}
+                        {/* Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ù€ Scaling */}
                         {scalingRecords.length > 0 && (
                           <View style={[styles.scalingRecordsContainer, {
                             backgroundColor: 'rgba(255, 255, 255, 0.6)',
@@ -6106,7 +4986,7 @@ export default function DentalChartScreen({
                                           text: 'Delete',
                                           style: 'destructive',
                                           onPress: async () => {
-                                            // حذف من قاعدة البيانات
+                                            // Ø­Ø°Ù Ù…Ù† Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª
                                             const { error } = await deleteScalingRecord(record.id);
 
                                             if (error) {
@@ -6115,7 +4995,7 @@ export default function DentalChartScreen({
                                               return;
                                             }
 
-                                            // حذف من الـ state
+                                            // Ø­Ø°Ù Ù…Ù† Ø§Ù„Ù€ state
                                             setScalingRecords(prev => prev.filter((_, i) => i !== index));
                                           }
                                         }
@@ -6142,13 +5022,13 @@ export default function DentalChartScreen({
                     </Animated.View>
                   </Animated.View>
 
-                  {/* Tooth #8 - Upper Left (أقصى يمين الصفحة فوق المنتصف) */}
+                  {/* Tooth #8 - Upper Left (Ø£Ù‚ØµÙ‰ ÙŠÙ…ÙŠÙ† Ø§Ù„ØµÙØ­Ø© ÙÙˆÙ‚ Ø§Ù„Ù…Ù†ØªØµÙ) */}
                   <Animated.View
                     style={[
                       styles.tooth8,
                       {
-                        zIndex: selectedTooth === 8 ? 1001 : 999, // دائماً فوق الطبقة الشفافة
-                        elevation: selectedTooth === 8 ? 1001 : 999, // للأندرويد
+                        zIndex: selectedTooth === 8 ? 1001 : 999, // Ø¯Ø§Ø¦Ù…Ø§Ù‹ ÙÙˆÙ‚ Ø§Ù„Ø·Ø¨Ù‚Ø© Ø§Ù„Ø´ÙØ§ÙØ©
+                        elevation: selectedTooth === 8 ? 1001 : 999, // Ù„Ù„Ø£Ù†Ø¯Ø±ÙˆÙŠØ¯
                       },
                       {
                         transform: [
@@ -6507,9 +5387,9 @@ export default function DentalChartScreen({
                 <Text style={styles.toothNumberText}>8</Text>
               </Animated.View>
 
-              {/* الناحية اليسرى - الأسنان 9-16 (مرآة للناحية اليمنى) */}
+              {/* Ø§Ù„Ù†Ø§Ø­ÙŠØ© Ø§Ù„ÙŠØ³Ø±Ù‰ - Ø§Ù„Ø£Ø³Ù†Ø§Ù† 9-16 (Ù…Ø±Ø¢Ø© Ù„Ù„Ù†Ø§Ø­ÙŠØ© Ø§Ù„ÙŠÙ…Ù†Ù‰) */}
 
-                  {/* Tooth #9 - يسار (مثل 8) */}
+                  {/* Tooth #9 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 8) */}
                   <Animated.View
                     style={[
                       styles.tooth9,
@@ -6539,10 +5419,10 @@ export default function DentalChartScreen({
                       borderColor={toothBorderColors[9] ? CONDITION_COLORS[toothBorderColors[9]] : undefined}
                     />
 
-                    {/* Surface labels - خارج حواف السن */}
+                    {/* Surface labels - Ø®Ø§Ø±Ø¬ Ø­ÙˆØ§Ù Ø§Ù„Ø³Ù† */}
                     {selectedTooth === 9 && !isClosing && (
                       <>
-                        {/* Mesial - خارج السطح العلوي */}
+                        {/* Mesial - Ø®Ø§Ø±Ø¬ Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ø¹Ù„ÙˆÙŠ */}
                         <Text pointerEvents="none" style={{
                           position: 'absolute',
                           top: -4,
@@ -6553,7 +5433,7 @@ export default function DentalChartScreen({
                           color: 'rgba(135, 206, 250, 0.95)',
                         }}>M</Text>
 
-                        {/* Distal - خارج السطح السفلي */}
+                        {/* Distal - Ø®Ø§Ø±Ø¬ Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ø³ÙÙ„ÙŠ */}
                         <Text pointerEvents="none" style={{
                           position: 'absolute',
                           bottom: -4,
@@ -6564,7 +5444,7 @@ export default function DentalChartScreen({
                           color: 'rgba(135, 206, 250, 0.95)',
                         }}>D</Text>
 
-                        {/* Buccal - خارج السطح الأيسر */}
+                        {/* Buccal - Ø®Ø§Ø±Ø¬ Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ø£ÙŠØ³Ø± */}
                         <Text pointerEvents="none" style={{
                           position: 'absolute',
                           left: -4,
@@ -6575,7 +5455,7 @@ export default function DentalChartScreen({
                           color: 'rgba(135, 206, 250, 0.95)',
                         }}>B</Text>
 
-                        {/* Palatal - خارج السطح الأيمن */}
+                        {/* Palatal - Ø®Ø§Ø±Ø¬ Ø§Ù„Ø³Ø·Ø­ Ø§Ù„Ø£ÙŠÙ…Ù† */}
                         <Text pointerEvents="none" style={{
                           position: 'absolute',
                           right: -4,
@@ -6589,7 +5469,7 @@ export default function DentalChartScreen({
                     )}
                   </Animated.View>
 
-                  {/* Tooth #10 - يسار (مثل 7) */}
+                  {/* Tooth #10 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 7) */}
                   <Animated.View
                     style={[
                       styles.tooth10,
@@ -6631,7 +5511,7 @@ export default function DentalChartScreen({
                     )}
                   </Animated.View>
 
-                  {/* Tooth #11 - يسار (مثل 6) */}
+                  {/* Tooth #11 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 6) */}
                   <Animated.View
                     style={[
                       styles.tooth11,
@@ -6673,7 +5553,7 @@ export default function DentalChartScreen({
                     )}
                   </Animated.View>
 
-                  {/* Tooth #12 - يسار (مثل 5) */}
+                  {/* Tooth #12 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 5) */}
                   <Animated.View
                     style={[
                       styles.tooth12,
@@ -6715,7 +5595,7 @@ export default function DentalChartScreen({
                     )}
                   </Animated.View>
 
-              {/* Tooth #13 - يسار (مثل 4) */}
+              {/* Tooth #13 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 4) */}
               <Animated.View
                 style={[
                   styles.tooth13,
@@ -6757,7 +5637,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #14 - يسار (مثل 3) */}
+              {/* Tooth #14 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 3) */}
               <Animated.View
                 style={[
                   styles.tooth14,
@@ -6799,7 +5679,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #15 - يسار (مثل 2) */}
+              {/* Tooth #15 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 2) */}
               <Animated.View
                 style={[
                   styles.tooth15,
@@ -6841,7 +5721,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #16 - يسار (مثل 1) */}
+              {/* Tooth #16 - ÙŠØ³Ø§Ø± (Ù…Ø«Ù„ 1) */}
               <Animated.View
                 style={[
                   styles.tooth16,
@@ -6909,9 +5789,9 @@ export default function DentalChartScreen({
                 <Text style={styles.toothNumberText}>8</Text>
               </Animated.View>
 
-              {/* الأسنان السفلية - الجانب الأيمن (17-24) */}
+              {/* Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ø³ÙÙ„ÙŠØ© - Ø§Ù„Ø¬Ø§Ù†Ø¨ Ø§Ù„Ø£ÙŠÙ…Ù† (17-24) */}
 
-              {/* Tooth #17 - السفلي يمين (أسفل نقطة) */}
+              {/* Tooth #17 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† (Ø£Ø³ÙÙ„ Ù†Ù‚Ø·Ø©) */}
               <Animated.View
                 style={[
                   styles.tooth17,
@@ -6952,7 +5832,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #18 - السفلي يمين */}
+              {/* Tooth #18 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† */}
               <Animated.View
                 style={[
                   styles.tooth18,
@@ -6993,7 +5873,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #19 - السفلي يمين */}
+              {/* Tooth #19 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† */}
               <Animated.View
                 style={[
                   styles.tooth19,
@@ -7034,7 +5914,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #20 - السفلي يمين */}
+              {/* Tooth #20 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† */}
               <Animated.View
                 style={[
                   styles.tooth20,
@@ -7075,7 +5955,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #21 - السفلي يمين */}
+              {/* Tooth #21 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† */}
               <Animated.View
                 style={[
                   styles.tooth21,
@@ -7116,7 +5996,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #22 - السفلي يمين */}
+              {/* Tooth #22 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† */}
               <Animated.View
                 style={[
                   styles.tooth22,
@@ -7157,7 +6037,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #23 - السفلي يمين */}
+              {/* Tooth #23 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† */}
               <Animated.View
                 style={[
                   styles.tooth23,
@@ -7198,7 +6078,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #24 - السفلي يمين (قرب الخط الأفقي) */}
+              {/* Tooth #24 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠÙ…ÙŠÙ† (Ù‚Ø±Ø¨ Ø§Ù„Ø®Ø· Ø§Ù„Ø£ÙÙ‚ÙŠ) */}
               <Animated.View
                 style={[
                   styles.tooth24,
@@ -7265,9 +6145,9 @@ export default function DentalChartScreen({
                 <Text style={styles.toothNumberText}>8</Text>
               </Animated.View>
 
-              {/* الأسنان السفلية - الجانب الأيسر (25-32) */}
+              {/* Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ø³ÙÙ„ÙŠØ© - Ø§Ù„Ø¬Ø§Ù†Ø¨ Ø§Ù„Ø£ÙŠØ³Ø± (25-32) */}
 
-              {/* Tooth #25 - السفلي يسار */}
+              {/* Tooth #25 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth25,
@@ -7308,7 +6188,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #26 - السفلي يسار */}
+              {/* Tooth #26 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth26,
@@ -7349,7 +6229,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #27 - السفلي يسار */}
+              {/* Tooth #27 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth27,
@@ -7390,7 +6270,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #28 - السفلي يسار */}
+              {/* Tooth #28 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth28,
@@ -7431,7 +6311,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #29 - السفلي يسار */}
+              {/* Tooth #29 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth29,
@@ -7472,7 +6352,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #30 - السفلي يسار */}
+              {/* Tooth #30 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth30,
@@ -7513,7 +6393,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #31 - السفلي يسار */}
+              {/* Tooth #31 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± */}
               <Animated.View
                 style={[
                   styles.tooth31,
@@ -7554,7 +6434,7 @@ export default function DentalChartScreen({
                 )}
               </Animated.View>
 
-              {/* Tooth #32 - السفلي يسار (أسفل نقطة) */}
+              {/* Tooth #32 - Ø§Ù„Ø³ÙÙ„ÙŠ ÙŠØ³Ø§Ø± (Ø£Ø³ÙÙ„ Ù†Ù‚Ø·Ø©) */}
               <Animated.View
                 style={[
                   styles.tooth32,
@@ -7724,12 +6604,12 @@ export default function DentalChartScreen({
                         {/* Select Department */}
                         <TouchableOpacity
                           onPress={() => {
-                            // فتح في وضع New - نظيف بدون تحديدات سابقة
+                            // ÙØªØ­ ÙÙŠ ÙˆØ¶Ø¹ New - Ù†Ø¸ÙŠÙ Ø¨Ø¯ÙˆÙ† ØªØ­Ø¯ÙŠØ¯Ø§Øª Ø³Ø§Ø¨Ù‚Ø©
                             setDepartmentModalMode('new');
-                            // حفظ الحالة الحالية (للاحتفاظ بها في حال Cancel)
+                            // Ø­ÙØ¸ Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ© (Ù„Ù„Ø§Ø­ØªÙØ§Ø¸ Ø¨Ù‡Ø§ ÙÙŠ Ø­Ø§Ù„ Cancel)
                             setSavedReferralsState(referrals);
                             setSavedSelectedReferralFor(selectedReferralFor);
-                            // تهيئة الحالات المؤقتة - نظيفة تماماً
+                            // ØªÙ‡ÙŠØ¦Ø© Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© - Ù†Ø¸ÙŠÙØ© ØªÙ…Ø§Ù…Ø§Ù‹
                             setTempReferrals({
                               endodontics: false,
                               oralSurgery: false,
@@ -7770,7 +6650,7 @@ export default function DentalChartScreen({
                                 nestedScrollEnabled={true}
                                 scrollEnabled={true}
                                 onScrollBeginDrag={() => {
-                                  // إغلاق القائمة عند بدء السكرول
+                                  // Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø¹Ù†Ø¯ Ø¨Ø¯Ø¡ Ø§Ù„Ø³ÙƒØ±ÙˆÙ„
                                   if (openReferralMenu !== null) {
                                     setOpenReferralMenu(null);
                                   }
@@ -7778,10 +6658,10 @@ export default function DentalChartScreen({
                               >
                                 {Object.entries(referrals).map(([key, checked]) => {
                               if (!checked) return null;
-                              // إخفاء القسم إذا كانت حالته "given"
+                              // Ø¥Ø®ÙØ§Ø¡ Ø§Ù„Ù‚Ø³Ù… Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø­Ø§Ù„ØªÙ‡ "given"
                               if (referralStatus[key as keyof typeof referralStatus] === 'given') return null;
 
-                              // العثور على الأسنان المحالة لهذا القسم
+                              // Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ù…Ø­Ø§Ù„Ø© Ù„Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù…
                               const referredTeeth = Object.entries(selectedReferralFor)
                                 .filter(([_, referralKeys]) => referralKeys?.includes(key))
                                 .map(([toothNumber, _]) => Number(toothNumber));
@@ -7829,7 +6709,7 @@ export default function DentalChartScreen({
                                         const currentStatus = referralStatus[key as keyof typeof referralStatus];
 
                                         if (currentStatus === 'not_given') {
-                                          //  تحديث حالة التحويلات في قاعدة البيانات إلى given
+                                          //  ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„ØªØ­ÙˆÙŠÙ„Ø§Øª ÙÙŠ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø¥Ù„Ù‰ given
                                           if (permanentPatientId) {
                                             const referralTypeMap: Record<string, string> = {
                                               'endodontics': 'Endodontics',
@@ -7842,7 +6722,7 @@ export default function DentalChartScreen({
 
                                             const referralName = referralTypeMap[key] || key;
 
-                                            // تحديث حالة جميع التحويلات من هذا النوع إلى given
+                                            // ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø¬Ù…ÙŠØ¹ Ø§Ù„ØªØ­ÙˆÙŠÙ„Ø§Øª Ù…Ù† Ù‡Ø°Ø§ Ø§Ù„Ù†ÙˆØ¹ Ø¥Ù„Ù‰ given
                                             supabase
                                               .from('referrals')
                                               .update({
@@ -7857,15 +6737,15 @@ export default function DentalChartScreen({
                                                   console.error(' Error updating referral status:', error);
                                                 } else {
                                                   console.log(' Referrals marked as given in database:', referralName);
-                                                  // إعادة تحميل البيانات لتحديث Referral Records
+                                                  // Ø¥Ø¹Ø§Ø¯Ø© ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù„ØªØ­Ø¯ÙŠØ« Referral Records
                                                   loadPatientDentalData();
                                                 }
                                               });
                                           }
 
-                                          // إلغاء تحديد القسم بعد given (سيختفي من Department tab)
+                                          // Ø¥Ù„ØºØ§Ø¡ ØªØ­Ø¯ÙŠØ¯ Ø§Ù„Ù‚Ø³Ù… Ø¨Ø¹Ø¯ given (Ø³ÙŠØ®ØªÙÙŠ Ù…Ù† Department tab)
                                           setReferrals(prev => ({ ...prev, [key]: false }));
-                                          // مسح الأسنان المحالة لهذا القسم
+                                          // Ù…Ø³Ø­ Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ù…Ø­Ø§Ù„Ø© Ù„Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù…
                                           setSelectedReferralFor(prev => {
                                             const newReferrals = { ...prev };
                                             Object.keys(newReferrals).forEach(toothNumber => {
@@ -7915,7 +6795,7 @@ export default function DentalChartScreen({
                                     </View>
                                   </View>
 
-                                  {/* عرض الأسنان المحالة - دائماً */}
+                                  {/* Ø¹Ø±Ø¶ Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ù…Ø­Ø§Ù„Ø© - Ø¯Ø§Ø¦Ù…Ø§Ù‹ */}
                                   {referredTeeth.length > 0 && (
                                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
                                       {referredTeeth.map(toothNumber => (
@@ -7947,9 +6827,9 @@ export default function DentalChartScreen({
                                       <TouchableOpacity
                                         onPress={() => {
                                           setOpenReferralMenu(null);
-                                          // فتح في وضع Edit - مع التحديدات الحالية
+                                          // ÙØªØ­ ÙÙŠ ÙˆØ¶Ø¹ Edit - Ù…Ø¹ Ø§Ù„ØªØ­Ø¯ÙŠØ¯Ø§Øª Ø§Ù„Ø­Ø§Ù„ÙŠØ©
                                           setDepartmentModalMode('edit');
-                                          // فتح القسم المحدد تلقائياً لتعديل الأسنان
+                                          // ÙØªØ­ Ø§Ù„Ù‚Ø³Ù… Ø§Ù„Ù…Ø­Ø¯Ø¯ ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ù„ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                                           setExpandedDepartment(key);
                                           setShowDepartmentModal(true);
                                         }}
@@ -8199,15 +7079,15 @@ export default function DentalChartScreen({
                             justifyContent: 'center',
                           }}
                         >
-                          <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
+                          <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>âœ•</Text>
                         </TouchableOpacity>
                       </View>
 
-                  {/* محتوى السجلات العلاجية */}
+                  {/* Ù…Ø­ØªÙˆÙ‰ Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¹Ù„Ø§Ø¬ÙŠØ© */}
                   {isTreatmentRecordExpanded && (
                     <ScrollView style={{ flex: 1, width: '100%', marginTop: 16, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
                       {(() => {
-                        // جمع جميع السجلات العلاجية
+                        // Ø¬Ù…Ø¹ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¹Ù„Ø§Ø¬ÙŠØ©
                         const allRecords: Array<{
                           type: 'treatment' | 'scaling';
                           toothNumber?: number;
@@ -8219,7 +7099,7 @@ export default function DentalChartScreen({
                           doctorName: string;
                         }> = [];
 
-                        // إضافة سجلات الأسنان (editing records فقط)
+                        // Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø£Ø³Ù†Ø§Ù† (editing records ÙÙ‚Ø·)
                         Object.entries(toothRecords).forEach(([toothNum, records]) => {
                           records.forEach((record) => {
                             if (record.type === 'editing') {
@@ -8237,7 +7117,7 @@ export default function DentalChartScreen({
                           });
                         });
 
-                        // إضافة سجلات السكيلنج
+                        // Ø¥Ø¶Ø§ÙØ© Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø³ÙƒÙŠÙ„Ù†Ø¬
                         scalingRecords.forEach((record) => {
                           allRecords.push({
                             type: 'scaling',
@@ -8247,9 +7127,9 @@ export default function DentalChartScreen({
                           });
                         });
 
-                        // ترتيب من الأحدث للأقدم - آخر إجراء في الأعلى
+                        // ØªØ±ØªÙŠØ¨ Ù…Ù† Ø§Ù„Ø£Ø­Ø¯Ø« Ù„Ù„Ø£Ù‚Ø¯Ù… - Ø¢Ø®Ø± Ø¥Ø¬Ø±Ø§Ø¡ ÙÙŠ Ø§Ù„Ø£Ø¹Ù„Ù‰
                         allRecords.sort((a, b) => {
-                          // التأكد من وجود timestampNum صالح
+                          // Ø§Ù„ØªØ£ÙƒØ¯ Ù…Ù† ÙˆØ¬ÙˆØ¯ timestampNum ØµØ§Ù„Ø­
                           let timeA = 0;
                           let timeB = 0;
 
@@ -8267,7 +7147,7 @@ export default function DentalChartScreen({
                             timeB = !isNaN(dateB.getTime()) ? dateB.getTime() : 0;
                           }
 
-                          return timeB - timeA; // الأحدث (الأكبر) في الأعلى
+                          return timeB - timeA; // Ø§Ù„Ø£Ø­Ø¯Ø« (Ø§Ù„Ø£ÙƒØ¨Ø±) ÙÙŠ Ø§Ù„Ø£Ø¹Ù„Ù‰
                         });
 
                         if (allRecords.length === 0) {
@@ -8434,7 +7314,7 @@ export default function DentalChartScreen({
                     <TouchableOpacity
                       activeOpacity={0.8}
                       onPress={() => {
-                        console.log('🎯 Total Treatment Record clicked!');
+                        console.log('ðŸŽ¯ Total Treatment Record clicked!');
                         setIsTreatmentRecordExpanded(true);
                         Animated.spring(treatmentRecordExpandAnim, {
                           toValue: 1,
@@ -8510,14 +7390,14 @@ export default function DentalChartScreen({
                           justifyContent: 'center',
                         }}
                       >
-                        <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
+                        <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>âœ•</Text>
                       </TouchableOpacity>
                     </View>
 
                     {/* Scrollable planning records list */}
                     <ScrollView style={{ flex: 1, width: '100%', marginTop: 16, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
                       {(() => {
-                        // استخدام القائمة العامة وترتيبها حسب timestampNum (الأحدث أولاً)
+                        // Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¹Ø§Ù…Ø© ÙˆØªØ±ØªÙŠØ¨Ù‡Ø§ Ø­Ø³Ø¨ timestampNum (Ø§Ù„Ø£Ø­Ø¯Ø« Ø£ÙˆÙ„Ø§Ù‹)
                         const sortedRecords = [...allPlanningRecordsGlobal].sort((a, b) => b.timestampNum - a.timestampNum);
 
                         if (sortedRecords.length === 0) {
@@ -8528,27 +7408,27 @@ export default function DentalChartScreen({
                           );
                         }
 
-                        // فلترة: إخفاء السجلات القديمة التي تم استبدالها بسجلات جديدة (isChange: true)
+                        // ÙÙ„ØªØ±Ø©: Ø¥Ø®ÙØ§Ø¡ Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© Ø§Ù„ØªÙŠ ØªÙ… Ø§Ø³ØªØ¨Ø¯Ø§Ù„Ù‡Ø§ Ø¨Ø³Ø¬Ù„Ø§Øª Ø¬Ø¯ÙŠØ¯Ø© (isChange: true)
                         const visibleRecords = sortedRecords.filter((record) => {
-                          // إذا كان السجل تغيير (isChange: true)، نعرضه دائماً
+                          // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ø¬Ù„ ØªØºÙŠÙŠØ± (isChange: true)ØŒ Ù†Ø¹Ø±Ø¶Ù‡ Ø¯Ø§Ø¦Ù…Ø§Ù‹
                           if (record.isChange) {
                             return true;
                           }
 
-                          // إذا كان السجل عادي (isChange: false)، نتحقق إذا تم استبداله
-                          // نبحث عن سجل أحدث (timestampNum أكبر) لنفس السن مع isChange: true
+                          // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ø¬Ù„ Ø¹Ø§Ø¯ÙŠ (isChange: false)ØŒ Ù†ØªØ­Ù‚Ù‚ Ø¥Ø°Ø§ ØªÙ… Ø§Ø³ØªØ¨Ø¯Ø§Ù„Ù‡
+                          // Ù†Ø¨Ø­Ø« Ø¹Ù† Ø³Ø¬Ù„ Ø£Ø­Ø¯Ø« (timestampNum Ø£ÙƒØ¨Ø±) Ù„Ù†ÙØ³ Ø§Ù„Ø³Ù† Ù…Ø¹ isChange: true
                           const hasBeenReplaced = sortedRecords.some(r => {
                             if (r.toothNumber !== record.toothNumber) return false;
-                            if (r.timestampNum <= record.timestampNum) return false; // يجب أن يكون أحدث
+                            if (r.timestampNum <= record.timestampNum) return false; // ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø£Ø­Ø¯Ø«
                             if (r.isChange !== true) return false;
                             if (r.previousCondition?.toLowerCase() !== record.condition?.toLowerCase()) return false;
 
-                            // حالة خاصة: Extraction يُستبدل بأي حالة جديدة على نفس السن
+                            // Ø­Ø§Ù„Ø© Ø®Ø§ØµØ©: Extraction ÙŠÙØ³ØªØ¨Ø¯Ù„ Ø¨Ø£ÙŠ Ø­Ø§Ù„Ø© Ø¬Ø¯ÙŠØ¯Ø© Ø¹Ù„Ù‰ Ù†ÙØ³ Ø§Ù„Ø³Ù†
                             if (record.condition === 'Extraction') {
-                              return true; // إخفاء Extraction القديم
+                              return true; // Ø¥Ø®ÙØ§Ø¡ Extraction Ø§Ù„Ù‚Ø¯ÙŠÙ…
                             }
 
-                            // للحالات الأخرى: نتحقق من تطابق السطح
+                            // Ù„Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø£Ø®Ø±Ù‰: Ù†ØªØ­Ù‚Ù‚ Ù…Ù† ØªØ·Ø§Ø¨Ù‚ Ø§Ù„Ø³Ø·Ø­
                             return r.surfaces.some(newSurf => {
                               const newSurfName = newSurf.match(/\(([^)]+)\)/)?.[1]?.toLowerCase();
                               return record.surfaces.some(oldSurf => {
@@ -8558,20 +7438,20 @@ export default function DentalChartScreen({
                             });
                           });
 
-                          // إذا تم استبداله، نخفيه
+                          // Ø¥Ø°Ø§ ØªÙ… Ø§Ø³ØªØ¨Ø¯Ø§Ù„Ù‡ØŒ Ù†Ø®ÙÙŠÙ‡
                           if (hasBeenReplaced) {
-                            console.log(`🚫 Hiding replaced record: ${record.condition} on tooth ${record.toothNumber}`);
+                            console.log(`ðŸš« Hiding replaced record: ${record.condition} on tooth ${record.toothNumber}`);
                             return false;
                           }
 
-                          // وإلا نعرضه
+                          // ÙˆØ¥Ù„Ø§ Ù†Ø¹Ø±Ø¶Ù‡
                           return true;
                         });
 
-                        // تجميع السجلات حسب القواعد التالية:
-                        // 1. السجلات من نفس السن + نفس النوع (diagnosed أو canceled) تُجمع معًا في كرت واحد
-                        // 2. التغييرات (isChange) تظهر في نفس الكرت حتى لو من طبيب مختلف
-                        // 3. إذا تغير النوع (من diagnosed إلى canceled أو العكس)، كرت جديد
+                        // ØªØ¬Ù…ÙŠØ¹ Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø­Ø³Ø¨ Ø§Ù„Ù‚ÙˆØ§Ø¹Ø¯ Ø§Ù„ØªØ§Ù„ÙŠØ©:
+                        // 1. Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ù…Ù† Ù†ÙØ³ Ø§Ù„Ø³Ù† + Ù†ÙØ³ Ø§Ù„Ù†ÙˆØ¹ (diagnosed Ø£Ùˆ canceled) ØªÙØ¬Ù…Ø¹ Ù…Ø¹Ù‹Ø§ ÙÙŠ ÙƒØ±Øª ÙˆØ§Ø­Ø¯
+                        // 2. Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª (isChange) ØªØ¸Ù‡Ø± ÙÙŠ Ù†ÙØ³ Ø§Ù„ÙƒØ±Øª Ø­ØªÙ‰ Ù„Ùˆ Ù…Ù† Ø·Ø¨ÙŠØ¨ Ù…Ø®ØªÙ„Ù
+                        // 3. Ø¥Ø°Ø§ ØªØºÙŠØ± Ø§Ù„Ù†ÙˆØ¹ (Ù…Ù† diagnosed Ø¥Ù„Ù‰ canceled Ø£Ùˆ Ø§Ù„Ø¹ÙƒØ³)ØŒ ÙƒØ±Øª Ø¬Ø¯ÙŠØ¯
                         type RecordGroup = {
                           toothNumber: number;
                           doctorName: string;
@@ -8584,11 +7464,11 @@ export default function DentalChartScreen({
                         visibleRecords.forEach((record) => {
                           const lastGroup = groupedRecords[groupedRecords.length - 1];
 
-                          // شروط بدء مجموعة جديدة:
+                          // Ø´Ø±ÙˆØ· Ø¨Ø¯Ø¡ Ù…Ø¬Ù…ÙˆØ¹Ø© Ø¬Ø¯ÙŠØ¯Ø©:
                           const shouldStartNewGroup =
                             !lastGroup ||
-                            lastGroup.toothNumber !== record.toothNumber || // سن مختلف
-                            lastGroup.action !== record.action; // نوع مختلف (diagnosed ≠ canceled)
+                            lastGroup.toothNumber !== record.toothNumber || // Ø³Ù† Ù…Ø®ØªÙ„Ù
+                            lastGroup.action !== record.action; // Ù†ÙˆØ¹ Ù…Ø®ØªÙ„Ù (diagnosed â‰  canceled)
 
                           if (shouldStartNewGroup) {
                             groupedRecords.push({
@@ -8602,13 +7482,13 @@ export default function DentalChartScreen({
                           }
                         });
 
-                        // عرض كل مجموعة في كرت واحد
+                        // Ø¹Ø±Ø¶ ÙƒÙ„ Ù…Ø¬Ù…ÙˆØ¹Ø© ÙÙŠ ÙƒØ±Øª ÙˆØ§Ø­Ø¯
                         return groupedRecords.map((group, groupIndex) => {
-                          // جمع كل الـ surfaces والـ conditions من السجلات في المجموعة
+                          // Ø¬Ù…Ø¹ ÙƒÙ„ Ø§Ù„Ù€ surfaces ÙˆØ§Ù„Ù€ conditions Ù…Ù† Ø§Ù„Ø³Ø¬Ù„Ø§Øª ÙÙŠ Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹Ø©
                           const allSurfaces: string[] = [];
                           const allConditions: string[] = [];
 
-                          // جمع surfaces من السجلات الجديدة (isChange: true) فقط
+                          // Ø¬Ù…Ø¹ surfaces Ù…Ù† Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© (isChange: true) ÙÙ‚Ø·
                           const changedSurfaces: string[] = [];
 
                           group.records.forEach(rec => {
@@ -8622,7 +7502,7 @@ export default function DentalChartScreen({
                                 }
                               });
                             }
-                            // إذا كان السجل تغيير، أضف أسطحه للقائمة المنفصلة
+                            // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ø¬Ù„ ØªØºÙŠÙŠØ±ØŒ Ø£Ø¶Ù Ø£Ø³Ø·Ø­Ù‡ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ù†ÙØµÙ„Ø©
                             if (rec.isChange && rec.surfaces) {
                               rec.surfaces.forEach(surf => {
                                 if (!changedSurfaces.includes(surf)) {
@@ -8632,7 +7512,7 @@ export default function DentalChartScreen({
                             }
                           });
 
-                          // استخدام timestamp أول سجل في المجموعة (الأحدث)
+                          // Ø§Ø³ØªØ®Ø¯Ø§Ù… timestamp Ø£ÙˆÙ„ Ø³Ø¬Ù„ ÙÙŠ Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹Ø© (Ø§Ù„Ø£Ø­Ø¯Ø«)
                           const firstRecord = group.records[0];
 
                           return (
@@ -8674,9 +7554,9 @@ export default function DentalChartScreen({
                                 </View>
                               </View>
 
-                              {/* عرض رسالة التغيير إذا كان السجل تغييراً */}
+                              {/* Ø¹Ø±Ø¶ Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªØºÙŠÙŠØ± Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ø¬Ù„ ØªØºÙŠÙŠØ±Ø§Ù‹ */}
                               {(() => {
-                                console.log('🔍 Planning Record Debug:', {
+                                console.log('ðŸ” Planning Record Debug:', {
                                   toothNumber: group.toothNumber,
                                   condition: firstRecord.condition,
                                   isChange: firstRecord.isChange,
@@ -8695,7 +7575,7 @@ export default function DentalChartScreen({
                                   marginBottom: 12
                                 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                                    <Text style={{ fontSize: 18, marginRight: 8 }}>🔄</Text>
+                                    <Text style={{ fontSize: 18, marginRight: 8 }}>ðŸ”„</Text>
                                     <Text style={{ fontSize: 15, color: '#EA580C', fontWeight: '700', letterSpacing: 0.3 }}>
                                       Condition Changed
                                     </Text>
@@ -8703,7 +7583,7 @@ export default function DentalChartScreen({
 
                                   <View style={{ gap: 6, marginBottom: 10 }}>
                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                      <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>−</Text>
+                                      <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>âˆ’</Text>
                                       <Text style={{ fontSize: 14, color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
                                         {firstRecord.previousCondition}
                                       </Text>
@@ -8743,11 +7623,11 @@ export default function DentalChartScreen({
                               {/* Planning Details */}
                               <View style={{ gap: 8, marginBottom: 12 }}>
                                 {!firstRecord.isChange && allConditions.length > 0 && (() => {
-                                  // حالة خاصة: Root Canal Treated
-                                  // Root Canal Treated يُحفظ كـ condition="Tooth Status", surfaces=['Root Canal Treated']
+                                  // Ø­Ø§Ù„Ø© Ø®Ø§ØµØ©: Root Canal Treated
+                                  // Root Canal Treated ÙŠÙØ­ÙØ¸ ÙƒÙ€ condition="Tooth Status", surfaces=['Root Canal Treated']
                                   const hasRootCanalTreated = allSurfaces.some(s => s === 'Root Canal Treated');
 
-                                  console.log('🔍 Planning Details Debug:', {
+                                  console.log('ðŸ” Planning Details Debug:', {
                                     toothNumber: group.toothNumber,
                                     allConditions,
                                     allSurfaces,
@@ -8759,12 +7639,12 @@ export default function DentalChartScreen({
                                   if (hasRootCanalTreated) {
                                     console.log(' Root Canal Treated detected! Special rendering...');
 
-                                    // فصل Root Canal Treated عن باقي الأسطح
+                                    // ÙØµÙ„ Root Canal Treated Ø¹Ù† Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø£Ø³Ø·Ø­
                                     const otherSurfaces = allSurfaces.filter(s => s !== 'Root Canal Treated');
 
                                     return (
                                       <>
-                                        {/* عرض Root Canal Treated كـ Condition رئيسي */}
+                                        {/* Ø¹Ø±Ø¶ Root Canal Treated ÙƒÙ€ Condition Ø±Ø¦ÙŠØ³ÙŠ */}
                                         <View style={{ flexDirection: 'row' }}>
                                           <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
                                             Condition:
@@ -8774,7 +7654,7 @@ export default function DentalChartScreen({
                                           </Text>
                                         </View>
 
-                                        {/* عرض باقي الأسطح تحت Surfaces */}
+                                        {/* Ø¹Ø±Ø¶ Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø£Ø³Ø·Ø­ ØªØ­Øª Surfaces */}
                                         {otherSurfaces.length > 0 && (
                                           <View style={{ flexDirection: 'row' }}>
                                             <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
@@ -8788,7 +7668,7 @@ export default function DentalChartScreen({
                                       </>
                                     );
                                   } else {
-                                    // الحالة العادية: عرض كل الـ conditions بدون معالجة خاصة
+                                    // Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ø§Ø¯ÙŠØ©: Ø¹Ø±Ø¶ ÙƒÙ„ Ø§Ù„Ù€ conditions Ø¨Ø¯ÙˆÙ† Ù…Ø¹Ø§Ù„Ø¬Ø© Ø®Ø§ØµØ©
                                     return (
                                       <View style={{ flexDirection: 'row' }}>
                                         <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
@@ -8829,7 +7709,7 @@ export default function DentalChartScreen({
                                 </Text>
                               </View>
 
-                              {/* عرض مؤقت للتحقق من الترتيب */}
+                              {/* Ø¹Ø±Ø¶ Ù…Ø¤Ù‚Øª Ù„Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ØªØ±ØªÙŠØ¨ */}
                               <Text style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
                                 Group #{groupIndex + 1} - {group.records.length} record(s)
                               </Text>
@@ -8846,7 +7726,7 @@ export default function DentalChartScreen({
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() => {
-                      console.log('🎯 Total Planning Record clicked!');
+                      console.log('ðŸŽ¯ Total Planning Record clicked!');
                       setIsPlanningRecordExpanded(true);
                       Animated.spring(planningRecordExpandAnim, {
                         toValue: 1,
@@ -8865,14 +7745,14 @@ export default function DentalChartScreen({
             </Animated.View>
           </ScrollView>
 
-        {/* طبقة شفافة للنقر عليها لإغلاق الأسنان 1-32 - تغطي كل الشاشة ماعدا منطقة السن */}
+        {/* Ø·Ø¨Ù‚Ø© Ø´ÙØ§ÙØ© Ù„Ù„Ù†Ù‚Ø± Ø¹Ù„ÙŠÙ‡Ø§ Ù„Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø£Ø³Ù†Ø§Ù† 1-32 - ØªØºØ·ÙŠ ÙƒÙ„ Ø§Ù„Ø´Ø§Ø´Ø© Ù…Ø§Ø¹Ø¯Ø§ Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø³Ù† */}
       {selectedTooth && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && !showConditionMenu && !isClosing && (() => {
-        // حساب حدود السن المكبر
-        // Tiny teeth (6,7,8,9,10,11,22,23,24,25,26,27): 37x47، Medium teeth (1-5,12-21,28-32): 33x42
+        // Ø­Ø³Ø§Ø¨ Ø­Ø¯ÙˆØ¯ Ø§Ù„Ø³Ù† Ø§Ù„Ù…ÙƒØ¨Ø±
+        // Tiny teeth (6,7,8,9,10,11,22,23,24,25,26,27): 37x47ØŒ Medium teeth (1-5,12-21,28-32): 33x42
         const isTinyTooth = [6, 7, 8, 9, 10, 11, 22, 23, 24, 25, 26, 27].includes(selectedTooth);
         const originalWidth = isTinyTooth ? 37 : 33;
         const originalHeight = isTinyTooth ? 47 : 42;
-        // للأسنان المدورة ±90 درجة (1-32)، نعكس الأبعاد
+        // Ù„Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ù…Ø¯ÙˆØ±Ø© Â±90 Ø¯Ø±Ø¬Ø© (1-32)ØŒ Ù†Ø¹ÙƒØ³ Ø§Ù„Ø£Ø¨Ø¹Ø§Ø¯
         const isRotatedTooth = selectedTooth >= 1 && selectedTooth <= 32;
         let toothWidth = (isRotatedTooth ? originalHeight : originalWidth) * 8;
         let toothHeight = (isRotatedTooth ? originalWidth : originalHeight) * 8;
@@ -8880,92 +7760,92 @@ export default function DentalChartScreen({
         let centerX = SCREEN_WIDTH / 2 - 20;
         let centerY = SCREEN_HEIGHT / 2;
 
-        // حساب يدوي مستقل للأسنان 6, 7, 8, 9, 10, 11 (8, 7, 6 يمين ويسار فوق)
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 6, 7, 8, 9, 10, 11 (8, 7, 6 ÙŠÙ…ÙŠÙ† ÙˆÙŠØ³Ø§Ø± ÙÙˆÙ‚)
         if (selectedTooth === 6 || selectedTooth === 7 || selectedTooth === 8 || selectedTooth === 9 || selectedTooth === 10 || selectedTooth === 11) {
-          // قيم يدوية للطبقة الشفافة
+          // Ù‚ÙŠÙ… ÙŠØ¯ÙˆÙŠØ© Ù„Ù„Ø·Ø¨Ù‚Ø© Ø§Ù„Ø´ÙØ§ÙØ©
           const originalToothWidth = 37; // tiny tooth
           const originalToothHeight = 47; // tiny tooth
 
-          centerX = SCREEN_WIDTH / 2 - 20; // مركز الشاشة أفقياً - زيح لليسار
-          centerY = SCREEN_HEIGHT / 2 + 69; // تنزيل للأسفل - رفع نقطة
-          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (بعد الدوران)
-          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (بعد الدوران)
+          centerX = SCREEN_WIDTH / 2 - 20; // Ù…Ø±ÙƒØ² Ø§Ù„Ø´Ø§Ø´Ø© Ø£ÙÙ‚ÙŠØ§Ù‹ - Ø²ÙŠØ­ Ù„Ù„ÙŠØ³Ø§Ø±
+          centerY = SCREEN_HEIGHT / 2 + 69; // ØªÙ†Ø²ÙŠÙ„ Ù„Ù„Ø£Ø³ÙÙ„ - Ø±ÙØ¹ Ù†Ù‚Ø·Ø©
+          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù†)
+          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù†)
         }
 
-        // حساب يدوي مستقل للأسنان 25, 26, 27 (8, 7, 6 تحت يسار) - نفس إعدادات 8, 7, 6 فوق
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 25, 26, 27 (8, 7, 6 ØªØ­Øª ÙŠØ³Ø§Ø±) - Ù†ÙØ³ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª 8, 7, 6 ÙÙˆÙ‚
         if (selectedTooth === 25 || selectedTooth === 26 || selectedTooth === 27) {
-          // قيم يدوية للطبقة الشفافة
+          // Ù‚ÙŠÙ… ÙŠØ¯ÙˆÙŠØ© Ù„Ù„Ø·Ø¨Ù‚Ø© Ø§Ù„Ø´ÙØ§ÙØ©
           const originalToothWidth = 37; // tiny tooth
           const originalToothHeight = 47; // tiny tooth
 
-          centerX = SCREEN_WIDTH / 2 + 30; // إلى اليمين
-          centerY = SCREEN_HEIGHT / 2 + 50; // رفع قليلاً
-          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (بعد الدوران)
-          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (بعد الدوران)
+          centerX = SCREEN_WIDTH / 2 + 30; // Ø¥Ù„Ù‰ Ø§Ù„ÙŠÙ…ÙŠÙ†
+          centerY = SCREEN_HEIGHT / 2 + 50; // Ø±ÙØ¹ Ù‚Ù„ÙŠÙ„Ø§Ù‹
+          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù†)
+          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù†)
         }
 
-        // حساب يدوي مستقل للأسنان 22, 23, 24 (3, 2, 1 تحت يمين) - حجم أكبر
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 22, 23, 24 (3, 2, 1 ØªØ­Øª ÙŠÙ…ÙŠÙ†) - Ø­Ø¬Ù… Ø£ÙƒØ¨Ø±
         if (selectedTooth === 22 || selectedTooth === 23 || selectedTooth === 24) {
           const originalToothWidth = 37; // tiny tooth
           const originalToothHeight = 47; // tiny tooth
 
-          centerX = SCREEN_WIDTH / 2 + 10; // تحريك إلى اليسار
-          centerY = SCREEN_HEIGHT / 2 + 30; // تنزيل للأسفل 20 بكسل
-          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (حجم أكبر)
-          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (حجم أكبر)
+          centerX = SCREEN_WIDTH / 2 + 10; // ØªØ­Ø±ÙŠÙƒ Ø¥Ù„Ù‰ Ø§Ù„ÙŠØ³Ø§Ø±
+          centerY = SCREEN_HEIGHT / 2 + 30; // ØªÙ†Ø²ÙŠÙ„ Ù„Ù„Ø£Ø³ÙÙ„ 20 Ø¨ÙƒØ³Ù„
+          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (Ø­Ø¬Ù… Ø£ÙƒØ¨Ø±)
+          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (Ø­Ø¬Ù… Ø£ÙƒØ¨Ø±)
         }
 
-        // حساب يدوي مستقل للأسنان 17-21 (8-4 تحت يمين) - حجم عادي
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 17-21 (8-4 ØªØ­Øª ÙŠÙ…ÙŠÙ†) - Ø­Ø¬Ù… Ø¹Ø§Ø¯ÙŠ
         if (selectedTooth >= 17 && selectedTooth <= 21) {
           const originalToothWidth = 37; // tiny tooth
           const originalToothHeight = 47; // tiny tooth
 
-          centerX = SCREEN_WIDTH / 2 + 10; // تحريك إلى اليسار
-          centerY = SCREEN_HEIGHT / 2 + 10; // رفع للأعلى 40 بكسل
+          centerX = SCREEN_WIDTH / 2 + 10; // ØªØ­Ø±ÙŠÙƒ Ø¥Ù„Ù‰ Ø§Ù„ÙŠØ³Ø§Ø±
+          centerY = SCREEN_HEIGHT / 2 + 10; // Ø±ÙØ¹ Ù„Ù„Ø£Ø¹Ù„Ù‰ 40 Ø¨ÙƒØ³Ù„
           toothWidth = originalToothHeight * 7; // 47 * 7 = 329
           toothHeight = originalToothWidth * 7; // 37 * 7 = 259
         }
 
-        // حساب يدوي مستقل للأسنان 4, 5, 12, 13 (5, 4 يمين ويسار فوق)
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 4, 5, 12, 13 (5, 4 ÙŠÙ…ÙŠÙ† ÙˆÙŠØ³Ø§Ø± ÙÙˆÙ‚)
         if (selectedTooth === 4 || selectedTooth === 5 || selectedTooth === 12 || selectedTooth === 13) {
-          // قيم يدوية للطبقة الشفافة
+          // Ù‚ÙŠÙ… ÙŠØ¯ÙˆÙŠØ© Ù„Ù„Ø·Ø¨Ù‚Ø© Ø§Ù„Ø´ÙØ§ÙØ©
           const originalToothWidth = 37; // tiny tooth
           const originalToothHeight = 47; // tiny tooth
 
-          centerX = SCREEN_WIDTH / 2; // مركز الشاشة أفقياً
-          centerY = SCREEN_HEIGHT / 2 + 90; // تنزيل للأسفل أكثر
-          toothWidth = originalToothHeight * 7; // 47 * 7 = 329 (بعد الدوران - أصغر)
-          toothHeight = originalToothWidth * 7; // 37 * 7 = 259 (بعد الدوران - أصغر)
+          centerX = SCREEN_WIDTH / 2; // Ù…Ø±ÙƒØ² Ø§Ù„Ø´Ø§Ø´Ø© Ø£ÙÙ‚ÙŠØ§Ù‹
+          centerY = SCREEN_HEIGHT / 2 + 90; // ØªÙ†Ø²ÙŠÙ„ Ù„Ù„Ø£Ø³ÙÙ„ Ø£ÙƒØ«Ø±
+          toothWidth = originalToothHeight * 7; // 47 * 7 = 329 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù† - Ø£ØµØºØ±)
+          toothHeight = originalToothWidth * 7; // 37 * 7 = 259 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù† - Ø£ØµØºØ±)
         }
 
-        // حساب يدوي مستقل للأسنان 1, 2, 3, 14, 15, 16 (3, 2, 1 يمين ويسار فوق)
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 1, 2, 3, 14, 15, 16 (3, 2, 1 ÙŠÙ…ÙŠÙ† ÙˆÙŠØ³Ø§Ø± ÙÙˆÙ‚)
         if (selectedTooth === 1 || selectedTooth === 2 || selectedTooth === 3 || selectedTooth === 14 || selectedTooth === 15 || selectedTooth === 16) {
-          // قيم يدوية للطبقة الشفافة - نفس حجم الأسنان 4، 5
-          centerX = SCREEN_WIDTH / 2; // مركز الشاشة أفقياً
-          centerY = SCREEN_HEIGHT / 2 + 110; // تنزيل للأسفل أكثر
-          toothWidth = 329; // نفس حجم الأسنان 4، 5
-          toothHeight = 259; // نفس حجم الأسنان 4، 5
+          // Ù‚ÙŠÙ… ÙŠØ¯ÙˆÙŠØ© Ù„Ù„Ø·Ø¨Ù‚Ø© Ø§Ù„Ø´ÙØ§ÙØ© - Ù†ÙØ³ Ø­Ø¬Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† 4ØŒ 5
+          centerX = SCREEN_WIDTH / 2; // Ù…Ø±ÙƒØ² Ø§Ù„Ø´Ø§Ø´Ø© Ø£ÙÙ‚ÙŠØ§Ù‹
+          centerY = SCREEN_HEIGHT / 2 + 110; // ØªÙ†Ø²ÙŠÙ„ Ù„Ù„Ø£Ø³ÙÙ„ Ø£ÙƒØ«Ø±
+          toothWidth = 329; // Ù†ÙØ³ Ø­Ø¬Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† 4ØŒ 5
+          toothHeight = 259; // Ù†ÙØ³ Ø­Ø¬Ù… Ø§Ù„Ø£Ø³Ù†Ø§Ù† 4ØŒ 5
         }
 
-        // حساب يدوي مستقل للأسنان 28-32 (8-4 تحت يسار)
+        // Ø­Ø³Ø§Ø¨ ÙŠØ¯ÙˆÙŠ Ù…Ø³ØªÙ‚Ù„ Ù„Ù„Ø£Ø³Ù†Ø§Ù† 28-32 (8-4 ØªØ­Øª ÙŠØ³Ø§Ø±)
         if (selectedTooth >= 28 && selectedTooth <= 32) {
           const originalToothWidth = 33; // medium tooth
           const originalToothHeight = 42; // medium tooth
 
-          centerX = SCREEN_WIDTH / 2 + 10; // تحريك 30 بكسل إلى اليمين من الافتراضي (-20 + 30 = +10)
+          centerX = SCREEN_WIDTH / 2 + 10; // ØªØ­Ø±ÙŠÙƒ 30 Ø¨ÙƒØ³Ù„ Ø¥Ù„Ù‰ Ø§Ù„ÙŠÙ…ÙŠÙ† Ù…Ù† Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠ (-20 + 30 = +10)
           centerY = SCREEN_HEIGHT / 2;
-          toothWidth = originalToothHeight * 8; // 42 * 8 = 336 (بعد الدوران)
-          toothHeight = originalToothWidth * 8; // 33 * 8 = 264 (بعد الدوران)
+          toothWidth = originalToothHeight * 8; // 42 * 8 = 336 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù†)
+          toothHeight = originalToothWidth * 8; // 33 * 8 = 264 (Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙˆØ±Ø§Ù†)
         }
 
-        const toothTop = centerY - toothHeight / 2; // الحد العلوي للسن
-        const toothBottom = centerY + toothHeight / 2; // الحد السفلي للسن
-        const toothLeft = centerX - toothWidth / 2; // الحد الأيسر للسن
-        const toothRight = centerX + toothWidth / 2; // الحد الأيمن للسن
+        const toothTop = centerY - toothHeight / 2; // Ø§Ù„Ø­Ø¯ Ø§Ù„Ø¹Ù„ÙˆÙŠ Ù„Ù„Ø³Ù†
+        const toothBottom = centerY + toothHeight / 2; // Ø§Ù„Ø­Ø¯ Ø§Ù„Ø³ÙÙ„ÙŠ Ù„Ù„Ø³Ù†
+        const toothLeft = centerX - toothWidth / 2; // Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£ÙŠØ³Ø± Ù„Ù„Ø³Ù†
+        const toothRight = centerX + toothWidth / 2; // Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£ÙŠÙ…Ù† Ù„Ù„Ø³Ù†
 
         return (
           <>
-            {/* المنطقة العلوية - من أعلى الشاشة حتى الحد العلوي للسن */}
+            {/* Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø¹Ù„ÙˆÙŠØ© - Ù…Ù† Ø£Ø¹Ù„Ù‰ Ø§Ù„Ø´Ø§Ø´Ø© Ø­ØªÙ‰ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø¹Ù„ÙˆÙŠ Ù„Ù„Ø³Ù† */}
             <TouchableWithoutFeedback onPress={handleCloseTooth}>
               <View
                 style={{
@@ -8980,7 +7860,7 @@ export default function DentalChartScreen({
               />
             </TouchableWithoutFeedback>
 
-            {/* المنطقة السفلية - من الحد السفلي للسن حتى أسفل الشاشة */}
+            {/* Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø³ÙÙ„ÙŠØ© - Ù…Ù† Ø§Ù„Ø­Ø¯ Ø§Ù„Ø³ÙÙ„ÙŠ Ù„Ù„Ø³Ù† Ø­ØªÙ‰ Ø£Ø³ÙÙ„ Ø§Ù„Ø´Ø§Ø´Ø© */}
             <TouchableWithoutFeedback onPress={handleCloseTooth}>
               <View
                 style={{
@@ -8995,7 +7875,7 @@ export default function DentalChartScreen({
               />
             </TouchableWithoutFeedback>
 
-            {/* المنطقة اليسرى - من يسار الشاشة حتى الحد الأيسر للسن */}
+            {/* Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ø§Ù„ÙŠØ³Ø±Ù‰ - Ù…Ù† ÙŠØ³Ø§Ø± Ø§Ù„Ø´Ø§Ø´Ø© Ø­ØªÙ‰ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£ÙŠØ³Ø± Ù„Ù„Ø³Ù† */}
             <TouchableWithoutFeedback onPress={handleCloseTooth}>
               <View
                 style={{
@@ -9010,7 +7890,7 @@ export default function DentalChartScreen({
               />
             </TouchableWithoutFeedback>
 
-            {/* المنطقة اليمنى - من الحد الأيمن للسن حتى يمين الشاشة */}
+            {/* Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ø§Ù„ÙŠÙ…Ù†Ù‰ - Ù…Ù† Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£ÙŠÙ…Ù† Ù„Ù„Ø³Ù† Ø­ØªÙ‰ ÙŠÙ…ÙŠÙ† Ø§Ù„Ø´Ø§Ø´Ø© */}
             <TouchableWithoutFeedback onPress={handleCloseTooth}>
               <View
                 style={{
@@ -9028,7 +7908,7 @@ export default function DentalChartScreen({
         );
       })()}
 
-      {/* Enlarged Tooth Overlay - لباقي الأسنان فقط (ليس الأسنان 1-8 و 25-32) */}
+      {/* Enlarged Tooth Overlay - Ù„Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø£Ø³Ù†Ø§Ù† ÙÙ‚Ø· (Ù„ÙŠØ³ Ø§Ù„Ø£Ø³Ù†Ø§Ù† 1-8 Ùˆ 25-32) */}
       {selectedTooth && ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && (
         <Modal
           transparent
@@ -9093,9 +7973,9 @@ export default function DentalChartScreen({
           animationType="fade"
           transparent={true}
           onRequestClose={() => {
-            // استعادة القيم الأصلية أو حذف القيم الجديدة عند الإغلاق دون Submit
+            // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø£ØµÙ„ÙŠØ© Ø£Ùˆ Ø­Ø°Ù Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© Ø¹Ù†Ø¯ Ø§Ù„Ø¥ØºÙ„Ø§Ù‚ Ø¯ÙˆÙ† Submit
             if (selectedToothForDetails) {
-              // استعادة أو حذف Treatment
+              // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£Ùˆ Ø­Ø°Ù Treatment
               setSelectedTreatments(prev => {
                 const newState = { ...prev };
                 if (originalValues.treatment) {
@@ -9106,7 +7986,7 @@ export default function DentalChartScreen({
                 return newState;
               });
 
-              // استعادة أو حذف Details
+              // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£Ùˆ Ø­Ø°Ù Details
               setSelectedDetails(prev => {
                 const newState = { ...prev };
                 if (originalValues.details) {
@@ -9117,7 +7997,7 @@ export default function DentalChartScreen({
                 return newState;
               });
 
-              // استعادة أو حذف Surfaces
+              // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£Ùˆ Ø­Ø°Ù Surfaces
               setSelectedSurfaces(prev => {
                 const newState = { ...prev };
                 if (originalValues.surfaces && originalValues.surfaces.length > 0) {
@@ -9163,7 +8043,7 @@ export default function DentalChartScreen({
                       style={[styles.editButton, isEditMode && styles.editButtonActive]}
                       onPress={() => {
                         setIsEditMode(!isEditMode);
-                        // عند إلغاء Edit mode، إلغاء أي تغييرات
+                        // Ø¹Ù†Ø¯ Ø¥Ù„ØºØ§Ø¡ Edit modeØŒ Ø¥Ù„ØºØ§Ø¡ Ø£ÙŠ ØªØºÙŠÙŠØ±Ø§Øª
                         if (isEditMode) {
                           setHasModalChanges(false);
                         }
@@ -9173,9 +8053,9 @@ export default function DentalChartScreen({
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => {
-                        // استعادة القيم الأصلية أو حذف القيم الجديدة عند الإغلاق دون Submit
+                        // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø£ØµÙ„ÙŠØ© Ø£Ùˆ Ø­Ø°Ù Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© Ø¹Ù†Ø¯ Ø§Ù„Ø¥ØºÙ„Ø§Ù‚ Ø¯ÙˆÙ† Submit
                         if (selectedToothForDetails) {
-                          // استعادة أو حذف Treatment
+                          // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£Ùˆ Ø­Ø°Ù Treatment
                           setSelectedTreatments(prev => {
                             const newState = { ...prev };
                             if (originalValues.treatment) {
@@ -9186,7 +8066,7 @@ export default function DentalChartScreen({
                             return newState;
                           });
 
-                          // استعادة أو حذف Details
+                          // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£Ùˆ Ø­Ø°Ù Details
                           setSelectedDetails(prev => {
                             const newState = { ...prev };
                             if (originalValues.details) {
@@ -9197,7 +8077,7 @@ export default function DentalChartScreen({
                             return newState;
                           });
 
-                          // استعادة أو حذف Surfaces
+                          // Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£Ùˆ Ø­Ø°Ù Surfaces
                           setSelectedSurfaces(prev => {
                             const newState = { ...prev };
                             if (originalValues.surfaces && originalValues.surfaces.length > 0) {
@@ -9311,7 +8191,7 @@ export default function DentalChartScreen({
                     {/* Details Section - Surfaces, Treatment, Details */}
                     {showDetailsSection && (
                       <>
-                    {/* Surfaces Section - مخفي عند اختيار Extraction أو إذا كان السن Missing أو Extraction */}
+                    {/* Surfaces Section - Ù…Ø®ÙÙŠ Ø¹Ù†Ø¯ Ø§Ø®ØªÙŠØ§Ø± Extraction Ø£Ùˆ Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ù† Missing Ø£Ùˆ Extraction */}
                     {selectedToothForDetails && (() => {
                       const conditions = toothConditions[selectedToothForDetails];
                       const isMissingTooth = conditions && Object.values(conditions).every(condition => condition === 'missing');
@@ -9334,7 +8214,7 @@ export default function DentalChartScreen({
                         {(() => {
                           if (!selectedToothForDetails) return 'Select';
                           const allSurfaces = selectedSurfaces[selectedToothForDetails] || [];
-                          // فلترة الأسطح المعالجة والمتابعة - عرض المشاكل فقط
+                          // ÙÙ„ØªØ±Ø© Ø§Ù„Ø£Ø³Ø·Ø­ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø© ÙˆØ§Ù„Ù…ØªØ§Ø¨Ø¹Ø© - Ø¹Ø±Ø¶ Ø§Ù„Ù…Ø´Ø§ÙƒÙ„ ÙÙ‚Ø·
                           const conditions = toothConditions[selectedToothForDetails] || {};
                           const toothSurfaces = allSurfaces.filter(surface => {
                             const condition = conditions[surface as keyof ToothSurfaceConditions];
@@ -9376,7 +8256,7 @@ export default function DentalChartScreen({
                             const toothSurfaces = selectedSurfaces[selectedToothForDetails] || [];
                             const conditions = toothConditions[selectedToothForDetails] || {};
                             const surfaceCondition = conditions[surface.key as keyof ToothSurfaceConditions];
-                            // إخفاء الأسطح المعالجة والمتابعة من الاختيار
+                            // Ø¥Ø®ÙØ§Ø¡ Ø§Ù„Ø£Ø³Ø·Ø­ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø© ÙˆØ§Ù„Ù…ØªØ§Ø¨Ø¹Ø© Ù…Ù† Ø§Ù„Ø§Ø®ØªÙŠØ§Ø±
                             const isSelected = toothSurfaces.includes(surface.key) &&
                                               surfaceCondition !== 'treated' &&
                                               surfaceCondition !== 'permanent_filling' &&
@@ -9516,7 +8396,7 @@ export default function DentalChartScreen({
 
                   <View style={styles.sectionDivider} />
 
-                  {/* Details Section - مخفي عند اختيار Extraction أو إذا كان السن Missing أو Extraction */}
+                  {/* Details Section - Ù…Ø®ÙÙŠ Ø¹Ù†Ø¯ Ø§Ø®ØªÙŠØ§Ø± Extraction Ø£Ùˆ Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ù† Missing Ø£Ùˆ Extraction */}
                   {selectedToothForDetails && (() => {
                     const conditions = toothConditions[selectedToothForDetails];
                     const isMissingTooth = conditions && Object.values(conditions).every(condition => condition === 'missing');
@@ -9776,13 +8656,13 @@ export default function DentalChartScreen({
                         {selectedToothForDetails && toothRecords[selectedToothForDetails]?.filter(r => r.type === recordsType).length > 0 ? (
                           <>
                             {(() => {
-                              // فلترة السجلات حسب النوع (planning أو editing)
+                              // ÙÙ„ØªØ±Ø© Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø­Ø³Ø¨ Ø§Ù„Ù†ÙˆØ¹ (planning Ø£Ùˆ editing)
                               const filteredRecords = toothRecords[selectedToothForDetails].filter(r => r.type === recordsType);
 
-                              // ترتيب حسب timestampNum (الأحدث أولاً)
+                              // ØªØ±ØªÙŠØ¨ Ø­Ø³Ø¨ timestampNum (Ø§Ù„Ø£Ø­Ø¯Ø« Ø£ÙˆÙ„Ø§Ù‹)
                               const sortedRecords = [...filteredRecords].sort((a, b) => b.timestampNum - a.timestampNum);
 
-                              // إذا كان النوع هو editing، نعرض كل سجل بشكل منفصل (كما هو)
+                              // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ù†ÙˆØ¹ Ù‡Ùˆ editingØŒ Ù†Ø¹Ø±Ø¶ ÙƒÙ„ Ø³Ø¬Ù„ Ø¨Ø´ÙƒÙ„ Ù…Ù†ÙØµÙ„ (ÙƒÙ…Ø§ Ù‡Ùˆ)
                               if (recordsType === 'editing') {
                                 return sortedRecords.map((record, index) => (
                                   <View
@@ -9880,12 +8760,12 @@ export default function DentalChartScreen({
                                 ));
                               }
 
-                              // أما planning records، نطبق منطق التجميع:
-                              // 1. كل طبيب مختلف في كرت منفصل
-                              // 2. السجلات المتتالية من نفس الطبيب + نفس النوع (diagnosed أو canceled) تُجمع معًا
-                              // 3. إذا تغير النوع (من diagnosed إلى canceled أو العكس)، كرت جديد
+                              // Ø£Ù…Ø§ planning recordsØŒ Ù†Ø·Ø¨Ù‚ Ù…Ù†Ø·Ù‚ Ø§Ù„ØªØ¬Ù…ÙŠØ¹:
+                              // 1. ÙƒÙ„ Ø·Ø¨ÙŠØ¨ Ù…Ø®ØªÙ„Ù ÙÙŠ ÙƒØ±Øª Ù…Ù†ÙØµÙ„
+                              // 2. Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ù…ØªØªØ§Ù„ÙŠØ© Ù…Ù† Ù†ÙØ³ Ø§Ù„Ø·Ø¨ÙŠØ¨ + Ù†ÙØ³ Ø§Ù„Ù†ÙˆØ¹ (diagnosed Ø£Ùˆ canceled) ØªÙØ¬Ù…Ø¹ Ù…Ø¹Ù‹Ø§
+                              // 3. Ø¥Ø°Ø§ ØªØºÙŠØ± Ø§Ù„Ù†ÙˆØ¹ (Ù…Ù† diagnosed Ø¥Ù„Ù‰ canceled Ø£Ùˆ Ø§Ù„Ø¹ÙƒØ³)ØŒ ÙƒØ±Øª Ø¬Ø¯ÙŠØ¯
 
-                              // التأكد من أننا نعمل فقط على planning records
+                              // Ø§Ù„ØªØ£ÙƒØ¯ Ù…Ù† Ø£Ù†Ù†Ø§ Ù†Ø¹Ù…Ù„ ÙÙ‚Ø· Ø¹Ù„Ù‰ planning records
                               type PlanningRecordType = Extract<ToothRecord, { type: 'planning' }>;
                               const planningRecords = sortedRecords as PlanningRecordType[];
 
@@ -9902,7 +8782,7 @@ export default function DentalChartScreen({
 
                                 const shouldStartNewGroup =
                                   !lastGroup ||
-                                  lastGroup.action !== record.action; // نوع مختلف فقط (diagnosed ≠ canceled)
+                                  lastGroup.action !== record.action; // Ù†ÙˆØ¹ Ù…Ø®ØªÙ„Ù ÙÙ‚Ø· (diagnosed â‰  canceled)
 
                                 if (shouldStartNewGroup) {
                                   groupedRecords.push({
@@ -9916,11 +8796,11 @@ export default function DentalChartScreen({
                               });
 
                               return groupedRecords.map((group, groupIndex) => {
-                                // جمع كل الـ surfaces والـ conditions من السجلات في المجموعة
+                                // Ø¬Ù…Ø¹ ÙƒÙ„ Ø§Ù„Ù€ surfaces ÙˆØ§Ù„Ù€ conditions Ù…Ù† Ø§Ù„Ø³Ø¬Ù„Ø§Øª ÙÙŠ Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹Ø©
                                 const allSurfaces: string[] = [];
                                 const allConditions: string[] = [];
 
-                                // جمع surfaces من السجلات الجديدة (isChange: true) فقط
+                                // Ø¬Ù…Ø¹ surfaces Ù…Ù† Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© (isChange: true) ÙÙ‚Ø·
                                 const changedSurfaces: string[] = [];
 
                                 group.records.forEach(rec => {
@@ -9934,7 +8814,7 @@ export default function DentalChartScreen({
                                       }
                                     });
                                   }
-                                  // إذا كان السجل تغيير، أضف أسطحه للقائمة المنفصلة
+                                  // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ø¬Ù„ ØªØºÙŠÙŠØ±ØŒ Ø£Ø¶Ù Ø£Ø³Ø·Ø­Ù‡ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…Ù†ÙØµÙ„Ø©
                                   if (rec.isChange && rec.surfaces) {
                                     rec.surfaces.forEach(surf => {
                                       if (!changedSurfaces.includes(surf)) {
@@ -9975,7 +8855,7 @@ export default function DentalChartScreen({
                                       </Text>
                                     </View>
 
-                                    {/* عرض رسالة التغيير إذا كان السجل تغييراً */}
+                                    {/* Ø¹Ø±Ø¶ Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªØºÙŠÙŠØ± Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø³Ø¬Ù„ ØªØºÙŠÙŠØ±Ø§Ù‹ */}
                                     {firstRecord.isChange && (
                                       <View style={{
                                         backgroundColor: 'rgba(251, 146, 60, 0.1)',
@@ -9986,7 +8866,7 @@ export default function DentalChartScreen({
                                         marginBottom: 12
                                       }}>
                                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                                          <Text style={{ fontSize: 18, marginRight: 8 }}>🔄</Text>
+                                          <Text style={{ fontSize: 18, marginRight: 8 }}>ðŸ”„</Text>
                                           <Text style={{ fontSize: 15, color: '#EA580C', fontWeight: '700', letterSpacing: 0.3 }}>
                                             Condition Changed
                                           </Text>
@@ -9994,7 +8874,7 @@ export default function DentalChartScreen({
 
                                         <View style={{ gap: 6, marginBottom: 10 }}>
                                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>−</Text>
+                                            <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>âˆ’</Text>
                                             <Text style={{ fontSize: 14, color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
                                               {firstRecord.previousCondition}
                                             </Text>
@@ -10034,17 +8914,17 @@ export default function DentalChartScreen({
                                     {/* Planning Details */}
                                     <View style={{ gap: 8, marginBottom: 12 }}>
                                       {!firstRecord.isChange && allConditions.length > 0 && (() => {
-                                        // حالة خاصة: Root Canal Treated
-                                        // Root Canal Treated يُحفظ كـ condition="Tooth Status", surfaces=['Root Canal Treated']
+                                        // Ø­Ø§Ù„Ø© Ø®Ø§ØµØ©: Root Canal Treated
+                                        // Root Canal Treated ÙŠÙØ­ÙØ¸ ÙƒÙ€ condition="Tooth Status", surfaces=['Root Canal Treated']
                                         const hasRootCanalTreated = allSurfaces.some(s => s === 'Root Canal Treated');
 
                                         if (hasRootCanalTreated) {
-                                          // فصل Root Canal Treated عن باقي الأسطح
+                                          // ÙØµÙ„ Root Canal Treated Ø¹Ù† Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø£Ø³Ø·Ø­
                                           const otherSurfaces = allSurfaces.filter(s => s !== 'Root Canal Treated');
 
                                           return (
                                             <>
-                                              {/* عرض Root Canal Treated كـ Condition رئيسي */}
+                                              {/* Ø¹Ø±Ø¶ Root Canal Treated ÙƒÙ€ Condition Ø±Ø¦ÙŠØ³ÙŠ */}
                                               <View style={{ flexDirection: 'row' }}>
                                                 <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
                                                   Condition:
@@ -10054,7 +8934,7 @@ export default function DentalChartScreen({
                                                 </Text>
                                               </View>
 
-                                              {/* عرض باقي الأسطح تحت Surfaces */}
+                                              {/* Ø¹Ø±Ø¶ Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ø£Ø³Ø·Ø­ ØªØ­Øª Surfaces */}
                                               {otherSurfaces.length > 0 && (
                                                 <View style={{ flexDirection: 'row' }}>
                                                   <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
@@ -10068,7 +8948,7 @@ export default function DentalChartScreen({
                                             </>
                                           );
                                         } else {
-                                          // الحالة العادية: عرض كل الـ conditions بدون معالجة خاصة
+                                          // Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø¹Ø§Ø¯ÙŠØ©: Ø¹Ø±Ø¶ ÙƒÙ„ Ø§Ù„Ù€ conditions Ø¨Ø¯ÙˆÙ† Ù…Ø¹Ø§Ù„Ø¬Ø© Ø®Ø§ØµØ©
                                           return (
                                             <View style={{ flexDirection: 'row' }}>
                                               <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
@@ -10257,7 +9137,7 @@ export default function DentalChartScreen({
                           const treatmentLabel = treatment ? treatmentOptions.find(opt => opt.key === treatment)?.label || treatment : 'N/A';
                           const detailsLabel = details ? detailsOptions.find(opt => opt.key === details)?.label || details : 'N/A';
 
-                          // الحصول على أسماء الأسطح المحددة
+                          // Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ Ø£Ø³Ù…Ø§Ø¡ Ø§Ù„Ø£Ø³Ø·Ø­ Ø§Ù„Ù…Ø­Ø¯Ø¯Ø©
                           const selectedSurfacesForTooth = selectedSurfaces[selectedToothForDetails] || [];
                           const surfaceNames = selectedSurfacesForTooth.map(surfaceKey => {
                             const surfaceOptions = getAllSurfaces(selectedToothForDetails);
@@ -10310,24 +9190,24 @@ export default function DentalChartScreen({
                                 console.log(' Saved editing record to database');
                               }
 
-                              // ═══════════════════════════════════════════════════════════════
+                              // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
                               // IMPORTANT: Also save colors to tooth_surface_conditions
                               // This ensures colors persist after reload
-                              // ═══════════════════════════════════════════════════════════════
+                              // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
                               // Save surface colors for Filling and Pulpectomy (if Details selected)
                               if (selectedSurfacesForTooth.length > 0 && details && (treatment === 'filling' || treatment === 'pulpectomy')) {
                                 // Determine color based on details
                                 let conditionColor: ToothCondition;
                                 if (details === 'temporary_filling') {
-                                  conditionColor = 'filling_replacement';  // رمادي
+                                  conditionColor = 'filling_replacement';  // Ø±Ù…Ø§Ø¯ÙŠ
                                 } else if (details === 'permanent_filling') {
-                                  conditionColor = 'permanent_filling';    // أخضر
+                                  conditionColor = 'permanent_filling';    // Ø£Ø®Ø¶Ø±
                                 } else if (details === 'gi_filling') {
-                                  conditionColor = 'gi';                   // أخضر
+                                  conditionColor = 'gi';                   // Ø£Ø®Ø¶Ø±
                                 } else if (details === 'direct_pulp_capping') {
-                                  conditionColor = 'direct_pulp_capping';  // أخضر
+                                  conditionColor = 'direct_pulp_capping';  // Ø£Ø®Ø¶Ø±
                                 } else if (details === 'indirect_pulp_capping') {
-                                  conditionColor = 'indirect_pulp_capping'; // أخضر
+                                  conditionColor = 'indirect_pulp_capping'; // Ø£Ø®Ø¶Ø±
                                 } else {
                                   conditionColor = 'treated';              // fallback
                                 }
@@ -10347,29 +9227,29 @@ export default function DentalChartScreen({
                             }
                           }
 
-                          // تحويل لون الأسطح المحددة بناءً على نوع الحشوة المختار (UI only)
+                          // ØªØ­ÙˆÙŠÙ„ Ù„ÙˆÙ† Ø§Ù„Ø£Ø³Ø·Ø­ Ø§Ù„Ù…Ø­Ø¯Ø¯Ø© Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ù†ÙˆØ¹ Ø§Ù„Ø­Ø´ÙˆØ© Ø§Ù„Ù…Ø®ØªØ§Ø± (UI only)
                           if (selectedSurfacesForTooth.length > 0) {
-                            // تعطيل Planning Record لأن هذا Editing Record
+                            // ØªØ¹Ø·ÙŠÙ„ Planning Record Ù„Ø£Ù† Ù‡Ø°Ø§ Editing Record
                             skipPlanningRecordRef.current = true;
 
                             setToothConditions(prev => {
                               const existingConditions = prev[selectedToothForDetails] || {};
                               const updatedConditions: ToothSurfaceConditions = { ...existingConditions };
 
-                              // تحديد اللون بناءً على نوع الحشوة
+                              // ØªØ­Ø¯ÙŠØ¯ Ø§Ù„Ù„ÙˆÙ† Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ù†ÙˆØ¹ Ø§Ù„Ø­Ø´ÙˆØ©
                               let conditionColor: ToothCondition;
                               if (details === 'temporary_filling') {
-                                conditionColor = 'filling_replacement';  // رمادي #808080
+                                conditionColor = 'filling_replacement';  // Ø±Ù…Ø§Ø¯ÙŠ #808080
                               } else if (details === 'permanent_filling') {
-                                conditionColor = 'permanent_filling';    // أخضر #10B981
+                                conditionColor = 'permanent_filling';    // Ø£Ø®Ø¶Ø± #10B981
                               } else if (details === 'gi_filling') {
-                                conditionColor = 'gi';                   // أخضر #10B981
+                                conditionColor = 'gi';                   // Ø£Ø®Ø¶Ø± #10B981
                               } else if (details === 'direct_pulp_capping') {
-                                conditionColor = 'direct_pulp_capping';  // أخضر #10B981
+                                conditionColor = 'direct_pulp_capping';  // Ø£Ø®Ø¶Ø± #10B981
                               } else if (details === 'indirect_pulp_capping') {
-                                conditionColor = 'indirect_pulp_capping'; // أخضر #10B981
+                                conditionColor = 'indirect_pulp_capping'; // Ø£Ø®Ø¶Ø± #10B981
                               } else {
-                                conditionColor = 'treated';              // عنابي للحالات الأخرى
+                                conditionColor = 'treated';              // Ø¹Ù†Ø§Ø¨ÙŠ Ù„Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø£Ø®Ø±Ù‰
                               }
 
                               selectedSurfacesForTooth.forEach((surfaceKey) => {
@@ -10384,9 +9264,9 @@ export default function DentalChartScreen({
                             });
                           }
 
-                          // تغيير لون حدود السن إلى عنابي إذا كان العلاج pulpectomy
+                          // ØªØºÙŠÙŠØ± Ù„ÙˆÙ† Ø­Ø¯ÙˆØ¯ Ø§Ù„Ø³Ù† Ø¥Ù„Ù‰ Ø¹Ù†Ø§Ø¨ÙŠ Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø¹Ù„Ø§Ø¬ pulpectomy
                           if (treatment === 'pulpectomy') {
-                            // تعطيل Planning Record لأن هذا Editing Record
+                            // ØªØ¹Ø·ÙŠÙ„ Planning Record Ù„Ø£Ù† Ù‡Ø°Ø§ Editing Record
                             skipPlanningRecordRef.current = true;
 
                             setToothBorderColors(prev => ({
@@ -10399,9 +9279,9 @@ export default function DentalChartScreen({
                             // Do NOT save any surface conditions
                           }
 
-                          // إذا كان العلاج extraction، جعل السن missing (علامة X)
+                          // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø¹Ù„Ø§Ø¬ extractionØŒ Ø¬Ø¹Ù„ Ø§Ù„Ø³Ù† missing (Ø¹Ù„Ø§Ù…Ø© X)
                           if (treatment === 'extraction') {
-                            // تعطيل Planning Record لأن هذا Editing Record
+                            // ØªØ¹Ø·ÙŠÙ„ Planning Record Ù„Ø£Ù† Ù‡Ø°Ø§ Editing Record
                             skipPlanningRecordRef.current = true;
 
                             setToothConditions(prev => ({
@@ -10441,7 +9321,7 @@ export default function DentalChartScreen({
                       setShowNotesSection(false);
                       setShowReferralSection(false);
                       setIsEditMode(false);
-                      setOriginalValues({}); // مسح القيم الأصلية بعد الحفظ
+                      setOriginalValues({}); // Ù…Ø³Ø­ Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø£ØµÙ„ÙŠØ© Ø¨Ø¹Ø¯ Ø§Ù„Ø­ÙØ¸
                     }}
                   >
                     <Ionicons
@@ -10466,7 +9346,7 @@ export default function DentalChartScreen({
           visible={showDepartmentModal}
           animationType="fade"
           onRequestClose={() => {
-            // إذا كنا في وضع New واستعادة الحالة المحفوظة
+            // Ø¥Ø°Ø§ ÙƒÙ†Ø§ ÙÙŠ ÙˆØ¶Ø¹ New ÙˆØ§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ù…Ø­ÙÙˆØ¸Ø©
             if (departmentModalMode === 'new' && savedReferralsState && savedSelectedReferralFor) {
               setReferrals(savedReferralsState);
               setSelectedReferralFor(savedSelectedReferralFor);
@@ -10549,17 +9429,17 @@ export default function DentalChartScreen({
                       borderColor: (departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
                     }}
                     onPress={async () => {
-                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¯ÙˆÙ† Ø­ÙØ¸
                       if (departmentModalMode === 'new') {
                         const currentlySelected = tempReferrals.endodontics;
                         setSelectedReferral('endodontics');
 
                         if (!currentlySelected) {
-                          // غير محدد: تحديده + فتح الأسنان
+                          // ØºÙŠØ± Ù…Ø­Ø¯Ø¯: ØªØ­Ø¯ÙŠØ¯Ù‡ + ÙØªØ­ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                           setTempReferrals(prev => ({ ...prev, endodontics: true }));
                           setExpandedDepartment('endodontics');
                         } else {
-                          // محدد بالفعل: فقط toggle الـ expansion
+                          // Ù…Ø­Ø¯Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„: ÙÙ‚Ø· toggle Ø§Ù„Ù€ expansion
                           if (expandedDepartment === 'endodontics') {
                             setExpandedDepartment(null);
                           } else {
@@ -10569,7 +9449,7 @@ export default function DentalChartScreen({
                         return;
                       }
 
-                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                       const newValue = !referrals.endodontics;
                       setSelectedReferral('endodontics');
 
@@ -10598,9 +9478,9 @@ export default function DentalChartScreen({
                         );
 
                         if (referralError) {
-                          console.error('❌ Error saving general referral Endodontics:', referralError);
+                          console.error('âŒ Error saving general referral Endodontics:', referralError);
                         } else {
-                          console.log('✅ Saved general referral Endodontics to database');
+                          console.log('âœ… Saved general referral Endodontics to database');
                           await loadPatientDentalData();
                         }
                       } else if (!newValue && permanentPatientId) {
@@ -10613,9 +9493,9 @@ export default function DentalChartScreen({
                           .eq('status', 'not_given');
 
                         if (deleteError) {
-                          console.error('❌ Error deleting referrals Endodontics:', deleteError);
+                          console.error('âŒ Error deleting referrals Endodontics:', deleteError);
                         } else {
-                          console.log('✅ Deleted all referrals Endodontics from database');
+                          console.log('âœ… Deleted all referrals Endodontics from database');
                           await loadPatientDentalData();
                         }
 
@@ -10631,7 +9511,7 @@ export default function DentalChartScreen({
                     }}
                   >
                     <View style={[styles.checkbox, (departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) && styles.checkboxChecked]}>
-                      {(departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) && <Text style={styles.checkmark}>✓</Text>}
+                      {(departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) && <Text style={styles.checkmark}>âœ“</Text>}
                     </View>
                     <Text style={styles.referralText}>1- Endodontics</Text>
                     <View style={{ flex: 1 }} />
@@ -10682,7 +9562,7 @@ export default function DentalChartScreen({
                                 onPress={async () => {
                                   if (!toothNum) return;
 
-                                  // في وضع "new": استخدام الحالات المؤقتة فقط
+                                  // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© ÙÙ‚Ø·
                                   if (departmentModalMode === 'new') {
                                     const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('endodontics');
                                     if (!isCurrentlySelected) {
@@ -10699,7 +9579,7 @@ export default function DentalChartScreen({
                                     return;
                                   }
 
-                                  // في وضع "edit": الحفظ الفوري كالمعتاد
+                                  // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                                   if (toothNum && permanentPatientId && user?.name) {
                                     const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('endodontics');
 
@@ -10792,7 +9672,7 @@ export default function DentalChartScreen({
                                 onPress={async () => {
                                   if (!toothNum) return;
 
-                                  // في وضع "new": استخدام الحالات المؤقتة فقط
+                                  // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© ÙÙ‚Ø·
                                   if (departmentModalMode === 'new') {
                                     const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('endodontics');
                                     if (!isCurrentlySelected) {
@@ -10809,7 +9689,7 @@ export default function DentalChartScreen({
                                     return;
                                   }
 
-                                  // في وضع "edit": الحفظ الفوري كالمعتاد
+                                  // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                                   if (toothNum && permanentPatientId && user?.name) {
                                     const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('endodontics');
 
@@ -10995,17 +9875,17 @@ export default function DentalChartScreen({
                       borderColor: referrals.oralSurgery ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
                     }}
                     onPress={async () => {
-                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¯ÙˆÙ† Ø­ÙØ¸
                       if (departmentModalMode === 'new') {
                         const currentlySelected = tempReferrals.oralSurgery;
                         setSelectedReferral('oralSurgery');
 
                         if (!currentlySelected) {
-                          // غير محدد: تحديده + فتح الأسنان
+                          // ØºÙŠØ± Ù…Ø­Ø¯Ø¯: ØªØ­Ø¯ÙŠØ¯Ù‡ + ÙØªØ­ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                           setTempReferrals(prev => ({ ...prev, oralSurgery: true }));
                           setExpandedDepartment('oralSurgery');
                         } else {
-                          // محدد بالفعل: فقط toggle الـ expansion
+                          // Ù…Ø­Ø¯Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„: ÙÙ‚Ø· toggle Ø§Ù„Ù€ expansion
                           if (expandedDepartment === 'oralSurgery') {
                             setExpandedDepartment(null);
                           } else {
@@ -11015,7 +9895,7 @@ export default function DentalChartScreen({
                         return;
                       }
 
-                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                       const newValue = !referrals.oralSurgery;
                       setSelectedReferral('oralSurgery');
 
@@ -11044,9 +9924,9 @@ export default function DentalChartScreen({
                         );
 
                         if (referralError) {
-                          console.error('❌ Error saving general referral Oral Surgery:', referralError);
+                          console.error('âŒ Error saving general referral Oral Surgery:', referralError);
                         } else {
-                          console.log('✅ Saved general referral Oral Surgery to database');
+                          console.log('âœ… Saved general referral Oral Surgery to database');
                           await loadPatientDentalData();
                         }
                       } else if (!newValue && permanentPatientId) {
@@ -11059,9 +9939,9 @@ export default function DentalChartScreen({
                           .eq('status', 'not_given');
 
                         if (deleteError) {
-                          console.error('❌ Error deleting referrals Oral Surgery:', deleteError);
+                          console.error('âŒ Error deleting referrals Oral Surgery:', deleteError);
                         } else {
-                          console.log('✅ Deleted all referrals Oral Surgery from database');
+                          console.log('âœ… Deleted all referrals Oral Surgery from database');
                           await loadPatientDentalData();
                         }
 
@@ -11077,7 +9957,7 @@ export default function DentalChartScreen({
                     }}
                   >
                     <View style={[styles.checkbox, (departmentModalMode === 'new' ? tempReferrals.oralSurgery : referrals.oralSurgery) && styles.checkboxChecked]}>
-                      {(departmentModalMode === 'new' ? tempReferrals.oralSurgery : referrals.oralSurgery) && <Text style={styles.checkmark}>✓</Text>}
+                      {(departmentModalMode === 'new' ? tempReferrals.oralSurgery : referrals.oralSurgery) && <Text style={styles.checkmark}>âœ“</Text>}
                     </View>
                     <Text style={styles.referralText}>2- Oral Surgery</Text>
                     <View style={{ flex: 1 }} />
@@ -11437,17 +10317,17 @@ export default function DentalChartScreen({
                       borderColor: referrals.orthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
                     }}
                     onPress={async () => {
-                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¯ÙˆÙ† Ø­ÙØ¸
                       if (departmentModalMode === 'new') {
                         const currentlySelected = tempReferrals.orthodontics;
                         setSelectedReferral('orthodontics');
 
                         if (!currentlySelected) {
-                          // غير محدد: تحديده + فتح الأسنان
+                          // ØºÙŠØ± Ù…Ø­Ø¯Ø¯: ØªØ­Ø¯ÙŠØ¯Ù‡ + ÙØªØ­ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                           setTempReferrals(prev => ({ ...prev, orthodontics: true }));
                           setExpandedDepartment('orthodontics');
                         } else {
-                          // محدد بالفعل: فقط toggle الـ expansion
+                          // Ù…Ø­Ø¯Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„: ÙÙ‚Ø· toggle Ø§Ù„Ù€ expansion
                           if (expandedDepartment === 'orthodontics') {
                             setExpandedDepartment(null);
                           } else {
@@ -11457,7 +10337,7 @@ export default function DentalChartScreen({
                         return;
                       }
 
-                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                       const newValue = !referrals.orthodontics;
                       setSelectedReferral('orthodontics');
 
@@ -11486,9 +10366,9 @@ export default function DentalChartScreen({
                         );
 
                         if (referralError) {
-                          console.error('❌ Error saving general referral Orthodontics:', referralError);
+                          console.error('âŒ Error saving general referral Orthodontics:', referralError);
                         } else {
-                          console.log('✅ Saved general referral Orthodontics to database');
+                          console.log('âœ… Saved general referral Orthodontics to database');
                           await loadPatientDentalData();
                         }
                       } else if (!newValue && permanentPatientId) {
@@ -11501,9 +10381,9 @@ export default function DentalChartScreen({
                           .eq('status', 'not_given');
 
                         if (deleteError) {
-                          console.error('❌ Error deleting referrals Orthodontics:', deleteError);
+                          console.error('âŒ Error deleting referrals Orthodontics:', deleteError);
                         } else {
-                          console.log('✅ Deleted all referrals Orthodontics from database');
+                          console.log('âœ… Deleted all referrals Orthodontics from database');
                           await loadPatientDentalData();
                         }
 
@@ -11519,7 +10399,7 @@ export default function DentalChartScreen({
                     }}
                   >
                     <View style={[styles.checkbox, (departmentModalMode === 'new' ? tempReferrals.orthodontics : referrals.orthodontics) && styles.checkboxChecked]}>
-                      {(departmentModalMode === 'new' ? tempReferrals.orthodontics : referrals.orthodontics) && <Text style={styles.checkmark}>✓</Text>}
+                      {(departmentModalMode === 'new' ? tempReferrals.orthodontics : referrals.orthodontics) && <Text style={styles.checkmark}>âœ“</Text>}
                     </View>
                     <Text style={styles.referralText}>3- Orthodontics</Text>
                     <View style={{ flex: 1 }} />
@@ -11879,17 +10759,17 @@ export default function DentalChartScreen({
                       borderColor: referrals.periodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
                     }}
                     onPress={async () => {
-                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¯ÙˆÙ† Ø­ÙØ¸
                       if (departmentModalMode === 'new') {
                         const currentlySelected = tempReferrals.periodontics;
                         setSelectedReferral('periodontics');
 
                         if (!currentlySelected) {
-                          // غير محدد: تحديده + فتح الأسنان
+                          // ØºÙŠØ± Ù…Ø­Ø¯Ø¯: ØªØ­Ø¯ÙŠØ¯Ù‡ + ÙØªØ­ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                           setTempReferrals(prev => ({ ...prev, periodontics: true }));
                           setExpandedDepartment('periodontics');
                         } else {
-                          // محدد بالفعل: فقط toggle الـ expansion
+                          // Ù…Ø­Ø¯Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„: ÙÙ‚Ø· toggle Ø§Ù„Ù€ expansion
                           if (expandedDepartment === 'periodontics') {
                             setExpandedDepartment(null);
                           } else {
@@ -11899,7 +10779,7 @@ export default function DentalChartScreen({
                         return;
                       }
 
-                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                       const newValue = !referrals.periodontics;
                       setSelectedReferral('periodontics');
 
@@ -11928,9 +10808,9 @@ export default function DentalChartScreen({
                         );
 
                         if (referralError) {
-                          console.error('❌ Error saving general referral Periodontics:', referralError);
+                          console.error('âŒ Error saving general referral Periodontics:', referralError);
                         } else {
-                          console.log('✅ Saved general referral Periodontics to database');
+                          console.log('âœ… Saved general referral Periodontics to database');
                           await loadPatientDentalData();
                         }
                       } else if (!newValue && permanentPatientId) {
@@ -11943,9 +10823,9 @@ export default function DentalChartScreen({
                           .eq('status', 'not_given');
 
                         if (deleteError) {
-                          console.error('❌ Error deleting referrals Periodontics:', deleteError);
+                          console.error('âŒ Error deleting referrals Periodontics:', deleteError);
                         } else {
-                          console.log('✅ Deleted all referrals Periodontics from database');
+                          console.log('âœ… Deleted all referrals Periodontics from database');
                           await loadPatientDentalData();
                         }
 
@@ -11961,7 +10841,7 @@ export default function DentalChartScreen({
                     }}
                   >
                     <View style={[styles.checkbox, referrals.periodontics && styles.checkboxChecked]}>
-                      {referrals.periodontics && <Text style={styles.checkmark}>✓</Text>}
+                      {referrals.periodontics && <Text style={styles.checkmark}>âœ“</Text>}
                     </View>
                     <Text style={styles.referralText}>4- Periodontics</Text>
                     <View style={{ flex: 1 }} />
@@ -12282,17 +11162,17 @@ export default function DentalChartScreen({
                       borderColor: referrals.prosthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
                     }}
                     onPress={async () => {
-                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¯ÙˆÙ† Ø­ÙØ¸
                       if (departmentModalMode === 'new') {
                         const currentlySelected = tempReferrals.prosthodontics;
                         setSelectedReferral('prosthodontics');
 
                         if (!currentlySelected) {
-                          // غير محدد: تحديده + فتح الأسنان
+                          // ØºÙŠØ± Ù…Ø­Ø¯Ø¯: ØªØ­Ø¯ÙŠØ¯Ù‡ + ÙØªØ­ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                           setTempReferrals(prev => ({ ...prev, prosthodontics: true }));
                           setExpandedDepartment('prosthodontics');
                         } else {
-                          // محدد بالفعل: فقط toggle الـ expansion
+                          // Ù…Ø­Ø¯Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„: ÙÙ‚Ø· toggle Ø§Ù„Ù€ expansion
                           if (expandedDepartment === 'prosthodontics') {
                             setExpandedDepartment(null);
                           } else {
@@ -12302,7 +11182,7 @@ export default function DentalChartScreen({
                         return;
                       }
 
-                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                       const newValue = !referrals.prosthodontics;
                       setSelectedReferral('prosthodontics');
 
@@ -12331,9 +11211,9 @@ export default function DentalChartScreen({
                         );
 
                         if (referralError) {
-                          console.error('❌ Error saving general referral Prosthodontics:', referralError);
+                          console.error('âŒ Error saving general referral Prosthodontics:', referralError);
                         } else {
-                          console.log('✅ Saved general referral Prosthodontics to database');
+                          console.log('âœ… Saved general referral Prosthodontics to database');
                           await loadPatientDentalData();
                         }
                       } else if (!newValue && permanentPatientId) {
@@ -12346,9 +11226,9 @@ export default function DentalChartScreen({
                           .eq('status', 'not_given');
 
                         if (deleteError) {
-                          console.error('❌ Error deleting referrals Prosthodontics:', deleteError);
+                          console.error('âŒ Error deleting referrals Prosthodontics:', deleteError);
                         } else {
-                          console.log('✅ Deleted all referrals Prosthodontics from database');
+                          console.log('âœ… Deleted all referrals Prosthodontics from database');
                           await loadPatientDentalData();
                         }
 
@@ -12364,7 +11244,7 @@ export default function DentalChartScreen({
                     }}
                   >
                     <View style={[styles.checkbox, referrals.prosthodontics && styles.checkboxChecked]}>
-                      {referrals.prosthodontics && <Text style={styles.checkmark}>✓</Text>}
+                      {referrals.prosthodontics && <Text style={styles.checkmark}>âœ“</Text>}
                     </View>
                     <Text style={styles.referralText}>5- Prosthodontics</Text>
                     <View style={{ flex: 1 }} />
@@ -12685,17 +11565,17 @@ export default function DentalChartScreen({
                       borderColor: referrals.oralMedicine ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
                     }}
                     onPress={async () => {
-                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¯ÙˆÙ† Ø­ÙØ¸
                       if (departmentModalMode === 'new') {
                         const currentlySelected = tempReferrals.oralMedicine;
                         setSelectedReferral('oralMedicine');
 
                         if (!currentlySelected) {
-                          // غير محدد: تحديده + فتح الأسنان
+                          // ØºÙŠØ± Ù…Ø­Ø¯Ø¯: ØªØ­Ø¯ÙŠØ¯Ù‡ + ÙØªØ­ Ø§Ù„Ø£Ø³Ù†Ø§Ù†
                           setTempReferrals(prev => ({ ...prev, oralMedicine: true }));
                           setExpandedDepartment('oralMedicine');
                         } else {
-                          // محدد بالفعل: فقط toggle الـ expansion
+                          // Ù…Ø­Ø¯Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„: ÙÙ‚Ø· toggle Ø§Ù„Ù€ expansion
                           if (expandedDepartment === 'oralMedicine') {
                             setExpandedDepartment(null);
                           } else {
@@ -12705,7 +11585,7 @@ export default function DentalChartScreen({
                         return;
                       }
 
-                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      // ÙÙŠ ÙˆØ¶Ø¹ "edit": Ø§Ù„Ø­ÙØ¸ Ø§Ù„ÙÙˆØ±ÙŠ ÙƒØ§Ù„Ù…Ø¹ØªØ§Ø¯
                       const newValue = !referrals.oralMedicine;
                       setSelectedReferral('oralMedicine');
 
@@ -12734,9 +11614,9 @@ export default function DentalChartScreen({
                         );
 
                         if (referralError) {
-                          console.error('❌ Error saving general referral Oral Medicine:', referralError);
+                          console.error('âŒ Error saving general referral Oral Medicine:', referralError);
                         } else {
-                          console.log('✅ Saved general referral Oral Medicine to database');
+                          console.log('âœ… Saved general referral Oral Medicine to database');
                           await loadPatientDentalData();
                         }
                       } else if (!newValue && permanentPatientId) {
@@ -12749,9 +11629,9 @@ export default function DentalChartScreen({
                           .eq('status', 'not_given');
 
                         if (deleteError) {
-                          console.error('❌ Error deleting referrals Oral Medicine:', deleteError);
+                          console.error('âŒ Error deleting referrals Oral Medicine:', deleteError);
                         } else {
-                          console.log('✅ Deleted all referrals Oral Medicine from database');
+                          console.log('âœ… Deleted all referrals Oral Medicine from database');
                           await loadPatientDentalData();
                         }
 
@@ -12767,7 +11647,7 @@ export default function DentalChartScreen({
                     }}
                   >
                     <View style={[styles.checkbox, referrals.oralMedicine && styles.checkboxChecked]}>
-                      {referrals.oralMedicine && <Text style={styles.checkmark}>✓</Text>}
+                      {referrals.oralMedicine && <Text style={styles.checkmark}>âœ“</Text>}
                     </View>
                     <Text style={styles.referralText}>6- Oral Medicine</Text>
                     <View style={{ flex: 1 }} />
@@ -13078,7 +11958,7 @@ export default function DentalChartScreen({
                 {/* Cancel Button */}
                 <TouchableOpacity
                   onPress={() => {
-                    // إذا كنا في وضع New، استعادة الحالة المحفوظة وإعادة تعيين الحالات المؤقتة
+                    // Ø¥Ø°Ø§ ÙƒÙ†Ø§ ÙÙŠ ÙˆØ¶Ø¹ NewØŒ Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ù…Ø­ÙÙˆØ¸Ø© ÙˆØ¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ©
                     if (departmentModalMode === 'new') {
                       if (savedReferralsState && savedSelectedReferralFor) {
                         setReferrals(savedReferralsState);
@@ -13086,7 +11966,7 @@ export default function DentalChartScreen({
                         setSavedReferralsState(null);
                         setSavedSelectedReferralFor(null);
                       }
-                      // إعادة تعيين الحالات المؤقتة
+                      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ©
                       setTempReferrals({
                         endodontics: false,
                         oralSurgery: false,
@@ -13120,7 +12000,7 @@ export default function DentalChartScreen({
                     ? !Object.values(tempReferrals).some(val => val === true)
                     : !Object.values(referrals).some(val => val === true)}
                   onPress={async () => {
-                    // في وضع "new": حفظ جميع التحويلات الجديدة
+                    // ÙÙŠ ÙˆØ¶Ø¹ "new": Ø­ÙØ¸ Ø¬Ù…ÙŠØ¹ Ø§Ù„ØªØ­ÙˆÙŠÙ„Ø§Øª Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø©
                     if (departmentModalMode === 'new' && permanentPatientId && user?.name) {
                       const departmentMap: Record<string, string> = {
                         endodontics: 'Endodontics',
@@ -13131,18 +12011,18 @@ export default function DentalChartScreen({
                         oralMedicine: 'Oral Medicine',
                       };
 
-                      // حفظ جميع الأقسام المختارة
+                      // Ø­ÙØ¸ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£Ù‚Ø³Ø§Ù… Ø§Ù„Ù…Ø®ØªØ§Ø±Ø©
                       for (const [key, isSelected] of Object.entries(tempReferrals)) {
                         if (isSelected) {
                           const departmentName = departmentMap[key] || key;
 
-                          // التحقق من وجود أسنان محددة لهذا القسم
+                          // Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ø£Ø³Ù†Ø§Ù† Ù…Ø­Ø¯Ø¯Ø© Ù„Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù…
                           const teethForDept = Object.entries(tempSelectedReferralFor)
                             .filter(([_, depts]) => depts.includes(key))
                             .map(([toothNum, _]) => parseInt(toothNum));
 
                           if (teethForDept.length > 0) {
-                            // حذف التحويل العام أولاً (إن وجد) قبل حفظ الأسنان المحددة
+                            // Ø­Ø°Ù Ø§Ù„ØªØ­ÙˆÙŠÙ„ Ø§Ù„Ø¹Ø§Ù… Ø£ÙˆÙ„Ø§Ù‹ (Ø¥Ù† ÙˆØ¬Ø¯) Ù‚Ø¨Ù„ Ø­ÙØ¸ Ø§Ù„Ø£Ø³Ù†Ø§Ù† Ø§Ù„Ù…Ø­Ø¯Ø¯Ø©
                             await supabase
                               .from('referrals')
                               .delete()
@@ -13151,27 +12031,27 @@ export default function DentalChartScreen({
                               .is('tooth_number', null)
                               .eq('status', 'not_given');
 
-                            // حفظ كل سن على حدة
+                            // Ø­ÙØ¸ ÙƒÙ„ Ø³Ù† Ø¹Ù„Ù‰ Ø­Ø¯Ø©
                             for (const toothNum of teethForDept) {
                               const palmerNotation = convertNumberToPalmer(toothNum);
                               await createReferral(permanentPatientId, palmerNotation, departmentName, user.name);
                             }
                           } else {
-                            // حفظ تحويل عام (بدون أسنان)
+                            // Ø­ÙØ¸ ØªØ­ÙˆÙŠÙ„ Ø¹Ø§Ù… (Ø¨Ø¯ÙˆÙ† Ø£Ø³Ù†Ø§Ù†)
                             await createReferral(permanentPatientId, null, departmentName, user.name);
                           }
                         }
                       }
 
-                      // نسخ الحالات المؤقتة إلى الحالات الأساسية
+                      // Ù†Ø³Ø® Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø¤Ù‚ØªØ© Ø¥Ù„Ù‰ Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©
                       setReferrals(prev => ({ ...prev, ...tempReferrals }));
                       setSelectedReferralFor(prev => ({ ...prev, ...tempSelectedReferralFor }));
 
-                      // إعادة تحميل البيانات
+                      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª
                       await loadPatientDentalData();
                     }
 
-                    // حذف الحالات المحفوظة
+                    // Ø­Ø°Ù Ø§Ù„Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…Ø­ÙÙˆØ¸Ø©
                     setSavedReferralsState(null);
                     setSavedSelectedReferralFor(null);
                     setShowDepartmentModal(false);
