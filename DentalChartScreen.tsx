@@ -80,6 +80,8 @@ import {
   convertNumberToPalmer,
   convertPalmerToNumber,
   getToothLabel,
+  getConditionFromDetails,
+  formatTimestamp,
 } from './screens/DentalChart/dentalHelpers';
 import {
   ToothWithSections,
@@ -486,13 +488,7 @@ export default function DentalChartScreen({
     }
 
     const now = new Date();
-    const timestamp = now.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const timestamp = formatTimestamp(now);
 
     // حفظ في قاعدة البيانات
     const { data, error } = await createScalingRecord(
@@ -953,13 +949,7 @@ export default function DentalChartScreen({
               treatment: record.treatment,
               details: record.details || '',
               surfaces: parsedSurfaces,
-              timestamp: new Date(record.timestamp).toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              }),
+              timestamp: formatTimestamp(new Date(record.timestamp)),
               timestampNum: record.timestamp_num || Date.now(),
               doctorName: record.doctor_name,
             });
@@ -985,23 +975,13 @@ export default function DentalChartScreen({
               // Use helper function to get correct mapping for lower teeth
               const surfaceNameMap = getSurfaceNameMap(toothNumber);
 
-              // Determine color based on details
-              let conditionColor: ToothCondition | null = null;
-              if (record.details === 'Temporary Filling') {
-                conditionColor = 'filling_replacement';  // رمادي
-              } else if (record.details === 'Permanent Filling') {
-                conditionColor = 'permanent_filling';    // أخضر
-              } else if (record.details === 'GI Filling') {
-                conditionColor = 'gi';                   // أخضر
-              } else if (record.details === 'Direct Pulp Capping') {
-                conditionColor = 'direct_pulp_capping';  // أخضر
-              } else if (record.details === 'Indirect Pulp Capping') {
-                conditionColor = 'indirect_pulp_capping'; // أخضر
-              }
+              // Determine color based on details using helper function
+              const conditionColor = getConditionFromDetails(record.details);
 
               console.log(`   → Mapped to color: ${conditionColor}`);
 
-              if (conditionColor && Array.isArray(parsedSurfaces)) {
+              // Only apply if it's a known filling type (not the default 'treated')
+              if (conditionColor && conditionColor !== 'treated' && Array.isArray(parsedSurfaces)) {
                 if (!conditionsFromEditing[toothNumber]) {
                   conditionsFromEditing[toothNumber] = {
                     top: null,
@@ -1068,13 +1048,7 @@ export default function DentalChartScreen({
               action: record.action,
               condition: record.condition,
               surfaces: typeof record.surfaces === 'string' ? JSON.parse(record.surfaces) : record.surfaces,
-              timestamp: new Date(record.timestamp).toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              }),
+              timestamp: formatTimestamp(new Date(record.timestamp)),
               timestampNum: record.timestamp_num || Date.now(),
               doctorName: record.doctor_name,
               isChange: record.is_change,
@@ -1173,13 +1147,7 @@ export default function DentalChartScreen({
 
             newNotes[toothNumber].push({
               text: note.note,
-              timestamp: new Date(note.timestamp).toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              }),
+              timestamp: formatTimestamp(new Date(note.timestamp)),
               doctorName: note.doctor_name,
             });
           }
@@ -1347,13 +1315,7 @@ export default function DentalChartScreen({
       } else if (scalingData && scalingData.length > 0) {
         const newScalingRecords = scalingData.map((record) => ({
           id: record.id,
-          timestamp: new Date(record.timestamp).toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          }),
+          timestamp: formatTimestamp(new Date(record.timestamp)),
           doctorName: record.doctor_name,
           timestampNum: new Date(record.timestamp).getTime(),
         }));
@@ -3247,13 +3209,7 @@ export default function DentalChartScreen({
 
         // إضافة سجل للقائمة المعلقة (Pending) و toothRecords
         const now = new Date();
-        const timestamp = now.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
+        const timestamp = formatTimestamp(now);
         const timestampNum = now.getTime() + Math.random() * 0.999;
 
         const newRecord = {
@@ -3322,13 +3278,7 @@ export default function DentalChartScreen({
 
         // إضافة سجل للقائمة المعلقة (Pending) و toothRecords
         const now = new Date();
-        const timestamp = now.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
+        const timestamp = formatTimestamp(now);
         const timestampNum = now.getTime() + Math.random() * 0.999;
 
         const newRecord = {
@@ -3393,13 +3343,7 @@ export default function DentalChartScreen({
 
         // حفظ planning record لـ Extraction
         const now = new Date();
-        const timestamp = now.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
+        const timestamp = formatTimestamp(now);
 
         const conditionName = getConditionName(condition);
         const timestampNum = now.getTime() + Math.random() * 0.999;
@@ -3479,13 +3423,7 @@ export default function DentalChartScreen({
 
         // حفظ planning record عند إلغاء الحالة
         const now = new Date();
-        const timestamp = now.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
+        const timestamp = formatTimestamp(now);
 
         const surfaceOptions = getAllSurfaces(selectedTooth);
         const surface = surfaceOptions.find(opt => opt.key === selectedSurface);
@@ -3579,13 +3517,7 @@ export default function DentalChartScreen({
 
           // حفظ planning record عند إلغاء الحالة
           const now = new Date();
-          const timestamp = now.toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
+          const timestamp = formatTimestamp(now);
 
           const surfaceOptions = getAllSurfaces(selectedTooth);
           const surface = surfaceOptions.find(opt => opt.key === selectedSurface);
@@ -3662,13 +3594,7 @@ export default function DentalChartScreen({
 
         // إضافة سجل للقائمة العامة و toothRecords مباشرةً
         const now = new Date();
-        const timestamp = now.toLocaleString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
+        const timestamp = formatTimestamp(now);
 
         const conditionName = getConditionName(condition);
         const surfaceOptions = getAllSurfaces(selectedTooth);
@@ -8685,13 +8611,7 @@ export default function DentalChartScreen({
                       // Save note if there's text
                       if (currentNote.trim()) {
                         const now = new Date();
-                        const timestamp = now.toLocaleString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        });
+                        const timestamp = formatTimestamp(now);
 
                         const existingNotes = toothNotes[selectedToothForDetails] || [];
                         setToothNotes(prev => ({
@@ -8793,13 +8713,7 @@ export default function DentalChartScreen({
 
                         if (treatment || details) {
                           const now = new Date();
-                          const timestamp = now.toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          });
+                          const timestamp = formatTimestamp(now);
 
                           const treatmentLabel = treatment ? treatmentOptions.find(opt => opt.key === treatment)?.label || treatment : 'N/A';
                           const detailsLabel = details ? detailsOptions.find(opt => opt.key === details)?.label || details : 'N/A';
@@ -8863,21 +8777,8 @@ export default function DentalChartScreen({
                               // ═══════════════════════════════════════════════════════════════
                               // Save surface colors for Filling and Pulpectomy (if Details selected)
                               if (selectedSurfacesForTooth.length > 0 && details && (treatment === 'filling' || treatment === 'pulpectomy')) {
-                                // Determine color based on details
-                                let conditionColor: ToothCondition;
-                                if (details === 'temporary_filling') {
-                                  conditionColor = 'filling_replacement';  // رمادي
-                                } else if (details === 'permanent_filling') {
-                                  conditionColor = 'permanent_filling';    // أخضر
-                                } else if (details === 'gi_filling') {
-                                  conditionColor = 'gi';                   // أخضر
-                                } else if (details === 'direct_pulp_capping') {
-                                  conditionColor = 'direct_pulp_capping';  // أخضر
-                                } else if (details === 'indirect_pulp_capping') {
-                                  conditionColor = 'indirect_pulp_capping'; // أخضر
-                                } else {
-                                  conditionColor = 'treated';              // fallback
-                                }
+                                // Determine color based on details using helper function
+                                const conditionColor = getConditionFromDetails(details);
 
                                 // Save to tooth_surface_conditions for each selected surface
                                 try {
@@ -8903,21 +8804,8 @@ export default function DentalChartScreen({
                               const existingConditions = prev[selectedToothForDetails] || {};
                               const updatedConditions: ToothSurfaceConditions = { ...existingConditions };
 
-                              // تحديد اللون بناءً على نوع الحشوة
-                              let conditionColor: ToothCondition;
-                              if (details === 'temporary_filling') {
-                                conditionColor = 'filling_replacement';  // رمادي #808080
-                              } else if (details === 'permanent_filling') {
-                                conditionColor = 'permanent_filling';    // أخضر #10B981
-                              } else if (details === 'gi_filling') {
-                                conditionColor = 'gi';                   // أخضر #10B981
-                              } else if (details === 'direct_pulp_capping') {
-                                conditionColor = 'direct_pulp_capping';  // أخضر #10B981
-                              } else if (details === 'indirect_pulp_capping') {
-                                conditionColor = 'indirect_pulp_capping'; // أخضر #10B981
-                              } else {
-                                conditionColor = 'treated';              // عنابي للحالات الأخرى
-                              }
+                              // تحديد اللون بناءً على نوع الحشوة using helper function
+                              const conditionColor = getConditionFromDetails(details);
 
                               selectedSurfacesForTooth.forEach((surfaceKey) => {
                                 const key = surfaceKey as keyof ToothSurfaceConditions;

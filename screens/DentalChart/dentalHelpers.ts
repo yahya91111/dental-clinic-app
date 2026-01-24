@@ -468,3 +468,55 @@ export const getToothLabel = (toothNumber: number): string => {
   }
   return `السن #${toothNumber}`;
 };
+
+// ---------------------------------------------------------------
+// Condition From Details Helper
+// ---------------------------------------------------------------
+
+/**
+ * Maps filling details (key or label) to ToothCondition
+ * Handles both lowercase keys (temporary_filling) and labels (Temporary Filling)
+ * @param details - The filling details string (key or label format)
+ * @returns ToothCondition for the color mapping
+ */
+export const getConditionFromDetails = (details: string | undefined | null): ToothCondition => {
+  if (!details) return 'treated';
+
+  // Normalize to lowercase with underscores for comparison
+  const detailsNormalized = details.toLowerCase().replace(/ /g, '_');
+
+  switch (detailsNormalized) {
+    case 'temporary_filling':
+      return 'filling_replacement';  // رمادي #808080
+    case 'permanent_filling':
+      return 'permanent_filling';    // أخضر #10B981
+    case 'gi_filling':
+      return 'gi';                   // أخضر #10B981
+    case 'direct_pulp_capping':
+      return 'direct_pulp_capping';  // أخضر #10B981
+    case 'indirect_pulp_capping':
+      return 'indirect_pulp_capping'; // أخضر #10B981
+    default:
+      return 'treated';              // عنابي للحالات الأخرى
+  }
+};
+
+// ---------------------------------------------------------------
+// Timestamp Formatting Helper
+// ---------------------------------------------------------------
+
+/**
+ * Format a date to a consistent timestamp string
+ * Format: "Jan 15, 2026, 10:30 AM"
+ * @param date - The date to format (defaults to current date)
+ * @returns Formatted timestamp string
+ */
+export const formatTimestamp = (date: Date = new Date()): string => {
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
