@@ -3,7 +3,7 @@
 // ===============================================================
 // Utility functions for tooth position, naming, and surface mapping
 
-import type { ToothCondition, ToothSurface } from '../../types';
+import type { ToothCondition, ToothSurface, ToothNumber } from '../../types';
 
 // ---------------------------------------------------------------
 // Tooth Surface Conditions Interface
@@ -390,4 +390,60 @@ export const getSurfaceNameMap = (toothNumber: number): Record<string, keyof Too
     'palatal': 'left',
     'occlusal': 'center',
   };
+};
+
+// ---------------------------------------------------------------
+// Palmer Notation Conversion Functions
+// ---------------------------------------------------------------
+
+/**
+ * Convert tooth number (1-32) to Palmer Notation (UR1-UR8, UL1-UL8, LR1-LR8, LL1-LL8)
+ * @param toothNumber - The tooth number (1-32)
+ * @returns ToothNumber type or null if invalid
+ */
+export const convertNumberToPalmer = (toothNumber: number): ToothNumber | null => {
+  // Upper Left (1-8 → UL1-UL8)
+  if (toothNumber >= 1 && toothNumber <= 8) {
+    return `UL${toothNumber}` as ToothNumber;
+  }
+  // Upper Right (9-16 → UR8-UR1)
+  if (toothNumber >= 9 && toothNumber <= 16) {
+    const position = 17 - toothNumber;
+    return `UR${position}` as ToothNumber;
+  }
+  // Lower Left (17-24 → LL1-LL8)
+  if (toothNumber >= 17 && toothNumber <= 24) {
+    const position = toothNumber - 16;
+    return `LL${position}` as ToothNumber;
+  }
+  // Lower Right (25-32 → LR8-LR1)
+  if (toothNumber >= 25 && toothNumber <= 32) {
+    const position = 33 - toothNumber;
+    return `LR${position}` as ToothNumber;
+  }
+  return null;
+};
+
+/**
+ * Convert Palmer Notation to tooth number (1-32)
+ * @param palmer - The Palmer notation (e.g., 'UR1', 'UL5', 'LR3')
+ * @returns The tooth number (1-32) or null if invalid
+ */
+export const convertPalmerToNumber = (palmer: ToothNumber): number | null => {
+  const quadrant = palmer.substring(0, 2); // UR, UL, LR, LL
+  const position = parseInt(palmer.substring(2)); // 1-8
+
+  if (quadrant === 'UL') {
+    return position; // UL1→1, UL2→2, ..., UL8→8
+  }
+  if (quadrant === 'UR') {
+    return 17 - position; // UR1→16, UR2→15, ..., UR8→9
+  }
+  if (quadrant === 'LL') {
+    return 16 + position; // LL1→17, LL2→18, ..., LL8→24
+  }
+  if (quadrant === 'LR') {
+    return 33 - position; // LR1→32, LR2→31, ..., LR8→25
+  }
+  return null;
 };

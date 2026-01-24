@@ -76,6 +76,8 @@ import {
   getAllSurfaces,
   getSurfaceMap,
   getSurfaceNameMap,
+  convertNumberToPalmer,
+  convertPalmerToNumber,
 } from './screens/DentalChart/dentalHelpers';
 import {
   ToothWithSections,
@@ -883,53 +885,6 @@ export default function DentalChartScreen({
   // Database Integration Functions
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-  /**
-   * Convert tooth number (1-32) to Palmer Notation (UR1-UR8, UL1-UL8, LR1-LR8, LL1-LL8)
-   */
-  const convertNumberToPalmer = (toothNumber: number): ToothNumber | null => {
-    // Upper Left (1-8 â†’ UL1-UL8)
-    if (toothNumber >= 1 && toothNumber <= 8) {
-      return `UL${toothNumber}` as ToothNumber;
-    }
-    // Upper Right (9-16 â†’ UR8-UR1)
-    if (toothNumber >= 9 && toothNumber <= 16) {
-      const position = 17 - toothNumber;
-      return `UR${position}` as ToothNumber;
-    }
-    // Lower Left (17-24 â†’ LL1-LL8)
-    if (toothNumber >= 17 && toothNumber <= 24) {
-      const position = toothNumber - 16;
-      return `LL${position}` as ToothNumber;
-    }
-    // Lower Right (25-32 â†’ LR8-LR1)
-    if (toothNumber >= 25 && toothNumber <= 32) {
-      const position = 33 - toothNumber;
-      return `LR${position}` as ToothNumber;
-    }
-    return null;
-  };
-
-  /**
-   * Convert Palmer Notation to tooth number (1-32)
-   */
-  const convertPalmerToNumber = (palmer: ToothNumber): number | null => {
-    const quadrant = palmer.substring(0, 2); // UR, UL, LR, LL
-    const position = parseInt(palmer.substring(2)); // 1-8
-
-    if (quadrant === 'UL') {
-      return position; // UL1â†’1, UL2â†’2, ..., UL8â†’8
-    }
-    if (quadrant === 'UR') {
-      return 17 - position; // UR1â†’16, UR2â†’15, ..., UR8â†’9
-    }
-    if (quadrant === 'LL') {
-      return 16 + position; // LL1â†’17, LL2â†’18, ..., LL8â†’24
-    }
-    if (quadrant === 'LR') {
-      return 33 - position; // LR1â†’32, LR2â†’31, ..., LR8â†’25
-    }
-    return null;
-  };
 
   /**
    * Load all dental data for the patient from database
