@@ -10,7 +10,6 @@ import {
   StatusBar,
   Animated,
   ScrollView,
-  Modal,
   Dimensions,
   TextInput,
   Alert,
@@ -20,7 +19,6 @@ import {
 import { styles, SCREEN_WIDTH, SCREEN_HEIGHT } from './screens/DentalChart/styles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabase';
 import {
@@ -75,24 +73,9 @@ import {
   getAllSurfaces,
   getSurfaceNameMap,
   convertPalmerToNumber,
-  getToothLabel,
   getConditionFromDetails,
   formatTimestamp,
 } from './screens/DentalChart/dentalHelpers';
-import {
-  ToothWithSections,
-  ToothWithSectionsSquare,
-  ToothWithSectionsSquareTiny,
-  ToothWithSectionsSquareMedium,
-  ToothWithSectionsCanineSmall,
-  ToothWithSectionsIncisorSmall,
-  ToothWithSectionsPremolar,
-  ToothWithSectionsCanine,
-  ToothWithSectionsIncisor,
-  ToothWithSectionsIncisorNoCenter,
-  ToothWithSectionsCanineNoCenter,
-  ToothWithSectionsProps,
-} from './screens/DentalChart/ToothShapes';
 import {
   ToothNumberBadge,
   ConditionMenu,
@@ -119,6 +102,12 @@ import {
 import { AnimatedBackground } from './screens/DentalChart/AnimatedBackground';
 import { TransparentTouchLayer } from './screens/DentalChart/TransparentTouchLayer';
 import { CrossDividerLines } from './screens/DentalChart/CrossDividerLines';
+import { EnlargedToothModal } from './screens/DentalChart/EnlargedToothModal';
+import { HeaderAndPlanningButtons } from './screens/DentalChart/HeaderAndPlanningButtons';
+import {
+  handleToothPress as pressToothHandler,
+  handleCloseTooth as closeToothHandler,
+} from './screens/DentalChart/toothHandlers';
 
 // إخفاء التحذيرات غير المهمة
 LogBox.ignoreLogs([
@@ -552,108 +541,46 @@ export default function DentalChartScreen({
     setSelectedSurface(null);
   };
 
-  // Function للنقر على السن - تكبيره وتدويره
+  // Function للنقر على السن - Extracted to toothHandlers.ts
   const handleToothPress = (toothNumber: number | string) => {
-    // السيناريو الثاني: إذا كان Edit Mode نشط، نعرض modal التفاصيل بدلاً من الانيميشن
-    console.log('handleToothPress - toothNumber:', toothNumber, 'isEditModeActive:', isEditModeActive);
-    if (isEditModeActive) {
-      console.log('Opening tooth details modal for tooth:', toothNumber);
-      setSelectedToothForDetails(toothNumber);
-
-      // حفظ القيم الأصلية قبل فتح المودال
-      setOriginalValues({
-        treatment: selectedTreatments[toothNumber],
-        details: selectedDetails[toothNumber],
-        surfaces: selectedSurfaces[toothNumber] ? [...selectedSurfaces[toothNumber]] : []
-      });
-
-      setShowToothDetailsModal(true);
-      setHasModalChanges(false); // Reset changes flag when opening modal
-      setIsEditMode(false); // تعطيل وضع التعديل عند الفتح
-      setShowNotesSection(false); // Hide notes section by default
-      setShowDetailsSection(true); // Show details section by default
-      setShowRecordsSection(false); // Hide records section by default
-      setRecordsType('editing'); // Reset records type to editing
-      setCurrentNote(''); // Clear current note input
-
-      // إعادة تعيين Treatment و Details و Referral إلى Select عند فتح الموديل
-      setSelectedTreatments(prev => ({ ...prev, [toothNumber]: '' }));
-      setSelectedDetails(prev => ({ ...prev, [toothNumber]: '' }));
-      setSelectedReferralFor(prev => ({ ...prev, [toothNumber]: [] }));  // Empty array for multiple referrals
-      return;
-    }
-
-    // السيناريو الأول: الوضع العادي (انيميشن)
-    // إذا تم النقر على نفس السن المفتوح وليس في حالة إغلاق، نتجاهل (السن مفتوح بالفعل)
-    if (selectedTooth === toothNumber && !isClosing) return;
-
-    // إذا تم النقر على نفس السن أثناء الإغلاق، نوقف الإغلاق ونفتحه مرة أخرى
-    if (selectedTooth === toothNumber && isClosing && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(toothNumber)) {
-      // إيقاف أنيميشن الإغلاق فوراً
-      toothAnims.stopToothAnimations(toothNumber as number);
-      // إلغاء حالة الإغلاق
-      setIsClosing(false);
-      // فتح السن مرة أخرى
-      openTooth(toothNumber);
-      return;
-    }
-
-    // إذا كان هناك سن آخر مفتوح (من 1-32)
-    if (selectedTooth && selectedTooth !== toothNumber && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth)) {
-      // إيقاف جميع الأنيميشنات للسن القديم فوراً
-      toothAnims.stopToothAnimations(selectedTooth as number);
-      // إلغاء حالة الإغلاق
-      setIsClosing(false);
-      // فتح السن الجديد مباشرة
-      openTooth(toothNumber);
-      return;
-    }
-
-    // فتح السن مباشرة
-    openTooth(toothNumber);
-  };
-
-  // Function لفتح السن
-  const openTooth = (toothNumber: number) => {
-    setSelectedTooth(toothNumber);
-    setSelectedSurface(null);
-    setShowConditionMenu(false);
-    setIsClosing(false);
-
-    // إخفاء الأزرار (Edit, View, Oral Hygiene) تدريجياً عند فتح السن
-    Animated.timing(toothAnims.buttonsOpacity, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-
-    // Animation: تكبير السن وتدويره ونقله للمنتصف
-    toothAnims.animateToothToCenter(toothNumber);
-  };
-
-  // Function لإغلاق السن المكبر
-  const handleCloseTooth = () => {
-    if (!selectedTooth) return;
-
-    const toothNum = typeof selectedTooth === 'number' ? selectedTooth : parseInt(String(selectedTooth), 10);
-    if (isNaN(toothNum)) return;
-
-    setIsClosing(true);
-
-    // إظهار الأزرار (Edit, View, Oral Hygiene) مباشرة عند إغلاق السن
-    Animated.timing(toothAnims.buttonsOpacity, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-
-    // العودة إلى الحجم والزاوية والموضع الأصلي
-    toothAnims.animateToothToOriginal(toothNum, () => {
-      setSelectedTooth(null);
-      setSelectedSurface(null);
-      setShowConditionMenu(false);
-      setIsClosing(false);
+    pressToothHandler(toothNumber, {
+      selectedTooth,
+      isClosing,
+      isEditModeActive,
+      selectedTreatments,
+      selectedDetails,
+      selectedSurfaces,
+      toothAnims,
+      setSelectedTooth,
+      setSelectedSurface,
+      setShowConditionMenu,
+      setIsClosing,
+      setSelectedToothForDetails,
+      setOriginalValues,
+      setShowToothDetailsModal,
+      setHasModalChanges,
+      setIsEditMode,
+      setShowNotesSection,
+      setShowDetailsSection,
+      setShowRecordsSection,
+      setRecordsType,
+      setCurrentNote,
+      setSelectedTreatments,
+      setSelectedDetails,
+      setSelectedReferralFor,
     });
+  };
+
+  // Function لإغلاق السن المكبر - Extracted to toothHandlers.ts
+  const handleCloseTooth = () => {
+    closeToothHandler(
+      selectedTooth,
+      toothAnims,
+      setSelectedTooth,
+      setSelectedSurface,
+      setShowConditionMenu,
+      setIsClosing
+    );
   };
 
   // Function للنقر على سطح السن
@@ -732,39 +659,14 @@ export default function DentalChartScreen({
           {/* Animated Blobs - Extracted to AnimatedBackground.tsx */}
           <AnimatedBackground />
 
-          {/* Header with Back Button */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={onBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={28} color="#FFFFFF" />
-            </TouchableOpacity>
-
-            <Text style={styles.headerTitle}>Dental Chart</Text>
-
-            <View style={{ width: 40 }} />
-          </View>
-
-          {/* Planning Submit/Cancel Buttons - Floating */}
-          {!isEditModeActive && pendingPlanningRecords.length > 0 && (
-            <>
-              {/* Cancel Button (Left) */}
-              <TouchableOpacity
-                style={styles.planningCancelButton}
-                onPress={handlePlanningCancel}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.planningCancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-
-              {/* Submit Button (Right) */}
-              <TouchableOpacity
-                style={styles.planningSubmitButton}
-                onPress={handlePlanningSubmit}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.planningSubmitButtonText}>Submit</Text>
-              </TouchableOpacity>
-            </>
-          )}
+          {/* Header with Back Button + Planning Submit/Cancel Buttons */}
+          <HeaderAndPlanningButtons
+            onBack={onBack}
+            isEditModeActive={isEditModeActive}
+            pendingPlanningRecordsCount={pendingPlanningRecords.length}
+            onPlanningCancel={handlePlanningCancel}
+            onPlanningSubmit={handlePlanningSubmit}
+          />
 
           {/* Content */}
           <ScrollView
@@ -1141,55 +1043,13 @@ export default function DentalChartScreen({
           />
         )}
 
-      {/* Enlarged Tooth Overlay - لباقي الأسنان فقط (ليس الأسنان 1-8 و 25-32) */}
-      {selectedTooth && ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && (
-        <Modal
-          transparent
-          visible={!!selectedTooth}
-          animationType="fade"
-          onRequestClose={handleCloseTooth}
-        >
-          <View style={styles.enlargedToothOverlay}>
-            {/* Background dimmer */}
-            <TouchableOpacity
-              style={StyleSheet.absoluteFill}
-              activeOpacity={1}
-              onPress={handleCloseTooth}
-            />
-
-            {/* Close button */}
-            <TouchableOpacity
-              style={styles.enlargedToothCloseButton}
-              onPress={handleCloseTooth}
-            >
-              <Ionicons name="close-circle" size={50} color="#FFFFFF" />
-            </TouchableOpacity>
-
-            {/* Enlarged tooth container */}
-            <View style={styles.enlargedToothContainer}>
-              {/* Render the enlarged tooth based on tooth number */}
-              {[6, 7, 8, 9, 10, 11, 22, 23, 24, 25, 26, 27].includes(selectedTooth) ? (
-                <ToothWithSectionsSquareTiny
-                  colors={toothConditions[selectedTooth]}
-                  onSurfacePress={(surface) => handleSurfacePress(surface)}
-                  swapSides={selectedTooth >= 17 && selectedTooth <= 32}
-                />
-              ) : (
-                <ToothWithSectionsSquareMedium
-                  colors={toothConditions[selectedTooth]}
-                  onSurfacePress={(surface) => handleSurfacePress(surface)}
-                  swapSides={selectedTooth >= 17 && selectedTooth <= 32}
-                />
-              )}
-
-              {/* Tooth number display */}
-              <View style={styles.enlargedToothNumberBadge}>
-                <Text style={styles.enlargedToothNumberText}>{getToothLabel(selectedTooth)}</Text>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
+      {/* Enlarged Tooth Overlay - Extracted to EnlargedToothModal.tsx */}
+      <EnlargedToothModal
+        selectedTooth={selectedTooth}
+        toothConditions={toothConditions}
+        onClose={handleCloseTooth}
+        onSurfacePress={handleSurfacePress}
+      />
 
         {/* Condition Menu */}
         <ConditionMenu
