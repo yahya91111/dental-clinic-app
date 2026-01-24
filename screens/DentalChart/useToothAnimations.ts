@@ -14,7 +14,7 @@ interface ToothPosition {
   baseRotation: string; // Base rotation when not selected
 }
 
-// Position data for all 32 teeth
+// Position data for all 32 teeth (matching original openTooth positions)
 const TOOTH_POSITIONS: Record<number, ToothPosition> = {
   // Upper Right Quadrant (1-8)
   1: { right: 160, top: '7.5%', width: 33, height: 42, baseRotation: '-80deg' },
@@ -22,36 +22,36 @@ const TOOTH_POSITIONS: Record<number, ToothPosition> = {
   3: { right: 90, top: '14%', width: 33, height: 42, baseRotation: '-35deg' },
   4: { right: 67, top: '18.5%', width: 33, height: 42, baseRotation: '-20deg' },
   5: { right: 55, top: '24%', width: 33, height: 42, baseRotation: '-15deg' },
-  6: { right: 45, top: '30%', width: 37, height: 47, baseRotation: '-5deg' },
+  6: { right: 45, top: '30%', width: 37, height: 47, baseRotation: '0deg' },
   7: { right: 45, top: '36%', width: 37, height: 47, baseRotation: '0deg' },
   8: { right: 45, top: '42%', width: 37, height: 47, baseRotation: '0deg' },
 
   // Upper Left Quadrant (9-16)
-  9: { left: 160, top: '7.5%', width: 33, height: 42, baseRotation: '80deg' },
-  10: { left: 120, top: '10%', width: 33, height: 42, baseRotation: '60deg' },
-  11: { left: 90, top: '14%', width: 33, height: 42, baseRotation: '35deg' },
-  12: { left: 67, top: '18.5%', width: 33, height: 42, baseRotation: '20deg' },
-  13: { left: 55, top: '24%', width: 33, height: 42, baseRotation: '15deg' },
-  14: { left: 45, top: '30%', width: 37, height: 47, baseRotation: '5deg' },
-  15: { left: 45, top: '36%', width: 37, height: 47, baseRotation: '0deg' },
-  16: { left: 45, top: '42%', width: 37, height: 47, baseRotation: '0deg' },
+  9: { left: 45, top: '42%', width: 37, height: 47, baseRotation: '0deg' },
+  10: { left: 45, top: '36%', width: 37, height: 47, baseRotation: '0deg' },
+  11: { left: 45, top: '30%', width: 37, height: 47, baseRotation: '0deg' },
+  12: { left: 55, top: '24%', width: 33, height: 42, baseRotation: '15deg' },
+  13: { left: 67, top: '18.5%', width: 33, height: 42, baseRotation: '20deg' },
+  14: { left: 90, top: '14%', width: 33, height: 42, baseRotation: '35deg' },
+  15: { left: 120, top: '10%', width: 33, height: 42, baseRotation: '60deg' },
+  16: { left: 160, top: '7.5%', width: 33, height: 42, baseRotation: '80deg' },
 
   // Lower Right Quadrant (17-24)
-  17: { right: 45, top: '58%', width: 37, height: 47, baseRotation: '0deg' },
-  18: { right: 45, top: '64%', width: 37, height: 47, baseRotation: '0deg' },
-  19: { right: 45, top: '70%', width: 37, height: 47, baseRotation: '5deg' },
-  20: { right: 55, top: '76%', width: 33, height: 42, baseRotation: '20deg' },
-  21: { right: 67, top: '81.5%', width: 33, height: 42, baseRotation: '15deg' },
-  22: { right: 90, top: '86%', width: 33, height: 42, baseRotation: '0deg' },
-  23: { right: 120, top: '90%', width: 33, height: 42, baseRotation: '0deg' },
-  24: { right: 160, top: '92.5%', width: 33, height: 42, baseRotation: '0deg' },
+  17: { right: 160, bottom: '7.5%', width: 33, height: 42, baseRotation: '0deg' },
+  18: { right: 120, bottom: '10%', width: 33, height: 42, baseRotation: '0deg' },
+  19: { right: 90, bottom: '14%', width: 33, height: 42, baseRotation: '0deg' },
+  20: { right: 67, bottom: '18.5%', width: 33, height: 42, baseRotation: '15deg' },
+  21: { right: 55, bottom: '24%', width: 33, height: 42, baseRotation: '20deg' },
+  22: { right: 45, bottom: '30%', width: 37, height: 47, baseRotation: '35deg' },
+  23: { right: 45, bottom: '36%', width: 37, height: 47, baseRotation: '60deg' },
+  24: { right: 45, bottom: '42%', width: 37, height: 47, baseRotation: '80deg' },
 
   // Lower Left Quadrant (25-32)
-  25: { left: 160, bottom: '7.5%', width: 33, height: 42, baseRotation: '80deg' },
-  26: { left: 120, bottom: '10%', width: 33, height: 42, baseRotation: '60deg' },
-  27: { left: 90, bottom: '14%', width: 33, height: 42, baseRotation: '35deg' },
-  28: { left: 67, bottom: '18.5%', width: 33, height: 42, baseRotation: '20deg' },
-  29: { left: 55, bottom: '24%', width: 33, height: 42, baseRotation: '15deg' },
+  25: { left: 45, bottom: '42%', width: 37, height: 47, baseRotation: '80deg' },
+  26: { left: 45, bottom: '36%', width: 37, height: 47, baseRotation: '60deg' },
+  27: { left: 45, bottom: '30%', width: 37, height: 47, baseRotation: '35deg' },
+  28: { left: 55, bottom: '24%', width: 33, height: 42, baseRotation: '20deg' },
+  29: { left: 67, bottom: '18.5%', width: 33, height: 42, baseRotation: '-20deg' },
   30: { left: 90, bottom: '14%', width: 33, height: 42, baseRotation: '-35deg' },
   31: { left: 120, bottom: '10%', width: 33, height: 42, baseRotation: '-60deg' },
   32: { left: 160, bottom: '7.5%', width: 33, height: 42, baseRotation: '-80deg' },
@@ -168,17 +168,22 @@ export function useToothAnimations(): UseToothAnimationsReturn {
     let toothCenterY: number;
 
     if (pos.right !== undefined && pos.top !== undefined) {
-      // Upper right or lower right teeth with top position
+      // Upper right teeth (1-8)
       const topPercent = parseFloat(pos.top) / 100;
       toothCenterX = SCREEN_WIDTH - pos.right - pos.width / 2;
       toothCenterY = SCREEN_HEIGHT * topPercent + pos.height / 2;
     } else if (pos.left !== undefined && pos.top !== undefined) {
-      // Upper left teeth
+      // Upper left teeth (9-16)
       const topPercent = parseFloat(pos.top) / 100;
       toothCenterX = pos.left + pos.width / 2;
       toothCenterY = SCREEN_HEIGHT * topPercent + pos.height / 2;
+    } else if (pos.right !== undefined && pos.bottom !== undefined) {
+      // Lower right teeth (17-24)
+      const bottomPercent = parseFloat(pos.bottom) / 100;
+      toothCenterX = SCREEN_WIDTH - (pos.right + pos.width / 2);
+      toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height / 2);
     } else if (pos.left !== undefined && pos.bottom !== undefined) {
-      // Lower left teeth
+      // Lower left teeth (25-32)
       const bottomPercent = parseFloat(pos.bottom) / 100;
       toothCenterX = pos.left + pos.width / 2;
       toothCenterY = SCREEN_HEIGHT - (SCREEN_HEIGHT * bottomPercent + pos.height / 2);
