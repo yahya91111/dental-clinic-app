@@ -3250,7 +3250,7 @@ function AppContent() {
               }}
               patientReferrals={patient.permanent_patient_id ? patientReferrals[patient.permanent_patient_id] : undefined}
               onLoadReferrals={async () => {
-                if (patient.permanent_patient_id && !patientReferrals[patient.permanent_patient_id]) {
+                if (patient.permanent_patient_id) {
                   const result = await getReferrals(patient.permanent_patient_id);
                   if (result.data) {
                     setPatientReferrals(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
@@ -3259,7 +3259,7 @@ function AppContent() {
               }}
               patientToothNotes={patient.permanent_patient_id ? patientToothNotes[patient.permanent_patient_id] : undefined}
               onLoadToothNotes={async () => {
-                if (patient.permanent_patient_id && !patientToothNotes[patient.permanent_patient_id]) {
+                if (patient.permanent_patient_id) {
                   const result = await getAllToothNotes(patient.permanent_patient_id);
                   if (result.data) {
                     setPatientToothNotes(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));

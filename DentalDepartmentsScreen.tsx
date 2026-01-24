@@ -20,6 +20,21 @@ interface Clinic {
   name: string;
 }
 
+interface DentalDepartment {
+  key: string;
+  label: string;
+  icon: string;
+  color: string[];
+}
+
+interface ReferralWithPatient {
+  id: string;
+  tooth_number: string | null;
+  patient_name: string;
+  patient_file_number: string;
+  permanent_patient_id: string;
+}
+
 export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpenDoctors }: DentalDepartmentsScreenProps) {
   const { user } = useAuth();
   const [clinics, setClinics] = useState<Clinic[]>([]);
@@ -33,18 +48,111 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
   const [newClinicName, setNewClinicName] = useState('');
   const [menuClinicId, setMenuClinicId] = useState<number | null>(null);
 
+  // New states for dental departments and referrals
+  const [selectedDepartment, setSelectedDepartment] = useState<DentalDepartment | null>(null);
+  const [departmentReferrals, setDepartmentReferrals] = useState<ReferralWithPatient[]>([]);
+  const [showDepartmentModal, setShowDepartmentModal] = useState(false);
+  const [loadingReferrals, setLoadingReferrals] = useState(false);
+  const [departmentCounts, setDepartmentCounts] = useState<Record<string, number>>({});
+
   // Animated Blobs
   const blob1Anim = React.useState(new Animated.Value(0))[0];
   const blob2Anim = React.useState(new Animated.Value(0))[0];
   const blob3Anim = React.useState(new Animated.Value(0))[0];
 
   // Cards animation
-  const [cardAnims] = React.useState(() => 
+  const [cardAnims] = React.useState(() =>
     Array.from({ length: 20 }, (_, i) => ({
       fade: new Animated.Value(0),
       slide: new Animated.Value(i % 2 === 0 ? 50 : -50)
     }))
   );
+
+  // Dental Departments List
+  const dentalDepartments: DentalDepartment[] = [
+    { key: 'Endodontics', label: 'Endodontics', icon: 'medical', color: ['#FFE5E5', '#FFCCCC'] },
+    { key: 'Oral Surgery', label: 'Oral Surgery', icon: 'cut', color: ['#E5F0FF', '#CCDEFF'] },
+    { key: 'Orthodontics', label: 'Orthodontics', icon: 'grid', color: ['#E5FFE5', '#CCFFCC'] },
+    { key: 'Periodontics', label: 'Periodontics', icon: 'water', color: ['#FFF0E5', '#FFE5CC'] },
+    { key: 'Prosthodontics', label: 'Prosthodontics', icon: 'construct', color: ['#F0E5FF', '#E5CCFF'] },
+    { key: 'Oral Medicine', label: 'Oral Medicine', icon: 'fitness', color: ['#FFFFE5', '#FFFFCC'] },
+  ];
+
+  // Load referrals for selected department
+  const loadDepartmentReferrals = async (departmentName: string) => {
+    try {
+      setLoadingReferrals(true);
+
+      // Fetch referrals with patient info using join
+      const { data, error } = await supabase
+        .from('referrals')
+        .select(`
+          id,
+          tooth_number,
+          permanent_patient_id,
+          permanent_patients!inner (
+            name_encrypted,
+            file_number_encrypted
+          )
+        `)
+        .eq('referral_type', departmentName)
+        .eq('status', 'not_given')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        // Decrypt patient data and format referrals
+        const { decrypt } = await import('./lib/encryption');
+        const referralsWithPatients: ReferralWithPatient[] = data.map(ref => ({
+          id: ref.id,
+          tooth_number: ref.tooth_number,
+          permanent_patient_id: ref.permanent_patient_id,
+          patient_name: decrypt((ref.permanent_patients as any).name_encrypted),
+          patient_file_number: decrypt((ref.permanent_patients as any).file_number_encrypted),
+        }));
+
+        setDepartmentReferrals(referralsWithPatients);
+      }
+    } catch (error) {
+      console.error('Error loading department referrals:', error);
+      Alert.alert('Error', 'Failed to load referrals');
+    } finally {
+      setLoadingReferrals(false);
+    }
+  };
+
+  // Load all department counts
+  const loadDepartmentCounts = async () => {
+    try {
+      const counts: Record<string, number> = {};
+
+      for (const dept of dentalDepartments) {
+        const { count, error } = await supabase
+          .from('referrals')
+          .select('*', { count: 'exact', head: true })
+          .eq('referral_type', dept.key)
+          .eq('status', 'not_given');
+
+        if (!error && count !== null) {
+          counts[dept.key] = count;
+        } else {
+          counts[dept.key] = 0;
+        }
+      }
+
+      setDepartmentCounts(counts);
+    } catch (error) {
+      console.error('Error loading department counts:', error);
+    }
+  };
+
+  // Handle department selection
+  const handleDepartmentPress = (department: DentalDepartment) => {
+    setSelectedDepartment(department);
+    setShowDepartmentModal(true);
+    loadDepartmentReferrals(department.key);
+  };
 
   // Load clinics from Supabase
   const loadClinics = async () => {
@@ -146,6 +254,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
 
   React.useEffect(() => {
     loadClinics();
+    loadDepartmentCounts();
   }, []);
 
   // Animate blobs continuously
@@ -416,27 +525,62 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
             </View>
 
             {/* Content */}
-            <ScrollView 
+            <ScrollView
               style={styles.content}
               showsVerticalScrollIndicator={false}
             >
-              {/* Clinics List */}
-              <View style={styles.clinicsList}>
-                {filteredClinics.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Ionicons name="search-outline" size={48} color="#9CA3AF" />
-                    <Text style={styles.emptyText}>لا توجد نتائج</Text>
-                  </View>
-                ) : (
-                  filteredClinics.map((clinic, index) => (
-                    <Animated.View
-                      key={clinic.id}
-                      style={{
-                        opacity: cardAnims[index]?.fade || 1,
-                        transform: [{ translateX: cardAnims[index]?.slide || 0 }]
-                      }}
+              {/* Dental Departments Section */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Medical Departments</Text>
+                <View style={styles.departmentsList}>
+                  {dentalDepartments.map((dept, index) => (
+                    <TouchableOpacity
+                      key={dept.key}
+                      style={styles.departmentCard}
+                      onPress={() => handleDepartmentPress(dept)}
+                      activeOpacity={0.7}
                     >
-                    <View style={styles.clinicCard}>
+                      <LinearGradient
+                        colors={dept.color}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.departmentGradient}
+                      >
+                        {/* Count Badge */}
+                        {departmentCounts[dept.key] > 0 && (
+                          <View style={styles.countBadge}>
+                            <Text style={styles.countBadgeText}>{departmentCounts[dept.key]}</Text>
+                          </View>
+                        )}
+                        <View style={styles.departmentIconContainer}>
+                          <Ionicons name={dept.icon as any} size={24} color="#4A5568" />
+                        </View>
+                        <Text style={styles.departmentName}>{dept.label}</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Clinics List */}
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Dental Centers</Text>
+                <View style={styles.clinicsList}>
+                  {filteredClinics.length === 0 ? (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="search-outline" size={48} color="#9CA3AF" />
+                      <Text style={styles.emptyText}>لا توجد نتائج</Text>
+                    </View>
+                  ) : (
+                    filteredClinics.map((clinic, index) => (
+                      <Animated.View
+                        key={clinic.id}
+                        style={{
+                          opacity: cardAnims[index]?.fade || 1,
+                          transform: [{ translateX: cardAnims[index]?.slide || 0 }]
+                        }}
+                      >
+                      <View style={styles.clinicCard}>
                       {/* Menu Button - Far Left (Super Admin only) */}
                       {isSuperAdmin && (
                         <TouchableOpacity
@@ -470,9 +614,10 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                         </View>
                       </TouchableOpacity>
                     </View>
-                    </Animated.View>
-                  ))
-                )}
+                      </Animated.View>
+                    ))
+                  )}
+                </View>
               </View>
             </ScrollView>
         </SafeAreaView>
@@ -556,7 +701,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
         animationType="fade"
         onRequestClose={() => setMenuClinicId(null)}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
           onPress={() => setMenuClinicId(null)}
@@ -577,6 +722,98 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Department Referrals Modal */}
+      <Modal
+        visible={showDepartmentModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowDepartmentModal(false);
+          loadDepartmentCounts(); // Reload counts when modal closes
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.departmentModalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {selectedDepartment?.label} - Referrals
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowDepartmentModal(false);
+                  loadDepartmentCounts(); // Reload counts when modal closes
+                }}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#2D3748" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Referrals List */}
+            <ScrollView style={styles.referralsScrollView}>
+              {loadingReferrals ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>Loading...</Text>
+                </View>
+              ) : departmentReferrals.length === 0 ? (
+                <View style={styles.emptyReferralsContainer}>
+                  <Ionicons name="checkmark-circle-outline" size={48} color="#10B981" />
+                  <Text style={styles.emptyReferralsText}>No pending referrals</Text>
+                </View>
+              ) : (
+                <View style={styles.referralsList}>
+                  {(() => {
+                    // Group referrals by patient
+                    const groupedByPatient: Record<string, {
+                      patient_name: string;
+                      patient_file_number: string;
+                      teeth: (string | null)[];
+                    }> = {};
+
+                    departmentReferrals.forEach(referral => {
+                      const key = referral.permanent_patient_id;
+                      if (!groupedByPatient[key]) {
+                        groupedByPatient[key] = {
+                          patient_name: referral.patient_name,
+                          patient_file_number: referral.patient_file_number,
+                          teeth: []
+                        };
+                      }
+                      groupedByPatient[key].teeth.push(referral.tooth_number);
+                    });
+
+                    return Object.entries(groupedByPatient).map(([patientId, data]) => (
+                      <View key={patientId} style={styles.referralCard}>
+                        <View style={styles.patientHeaderSection}>
+                          <Text style={styles.patientName}>{data.patient_name}</Text>
+                          <Text style={styles.patientFileNumber}>File: {data.patient_file_number}</Text>
+                        </View>
+
+                        {/* Teeth Display */}
+                        <View style={styles.teethContainer}>
+                          {data.teeth.map((tooth, idx) => (
+                            tooth ? (
+                              <View key={idx} style={styles.toothBadge}>
+                                <Text style={styles.toothBadgeText}>{tooth}</Text>
+                              </View>
+                            ) : (
+                              <View key={idx} style={[styles.toothBadge, { backgroundColor: 'rgba(168, 85, 247, 0.2)' }]}>
+                                <Text style={[styles.toothBadgeText, { color: '#7C3AED' }]}>General</Text>
+                              </View>
+                            )
+                          ))}
+                        </View>
+                      </View>
+                    ));
+                  })()}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -878,5 +1115,174 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  // Dental Departments Styles
+  sectionContainer: {
+    marginBottom: 30,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#4A5568',
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  departmentsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  departmentCard: {
+    width: '48%',
+    height: 100,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 12,
+    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
+    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+    shadowRadius: Platform.OS === 'android' ? 0 : 8,
+    elevation: Platform.OS === 'android' ? 0 : 4,
+  },
+  departmentGradient: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  departmentIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  departmentName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4A5568',
+    textAlign: 'center',
+  },
+  countBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  // Department Modal Styles
+  departmentModalContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    padding: 0,
+    maxHeight: '80%',
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  referralsScrollView: {
+    flex: 1,
+    padding: 20,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  emptyReferralsContainer: {
+    padding: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyReferralsText: {
+    fontSize: 16,
+    color: '#10B981',
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  referralsList: {
+    gap: 12,
+  },
+  referralCard: {
+    backgroundColor: 'rgba(147, 197, 253, 0.15)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(147, 197, 253, 0.3)',
+    marginBottom: 8,
+  },
+  referralHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  patientHeaderSection: {
+    marginBottom: 10,
+  },
+  patientInfo: {
+    flex: 1,
+  },
+  patientName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2D3748',
+    marginBottom: 4,
+  },
+  patientFileNumber: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  teethContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  toothBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    marginRight: 4,
+    marginBottom: 4,
+  },
+  toothBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
   },
 });

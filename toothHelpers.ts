@@ -6,18 +6,18 @@
 
 // Convert tooth number string (like "UR1") to FDI number (1-32)
 export function palmerToFDI(palmerNotation: string): number {
-  // UR (Upper Right): UR8→1, UR7→2, ... UR1→8
-  // UL (Upper Left): UL1→9, UL2→10, ... UL8→16
-  // LL (Lower Left): LL1→17, LL2→18, ... LL8→24
-  // LR (Lower Right): LR8→25, LR7→26, ... LR1→32
+  // UR (Upper Right): UR1→16, UR2→15, ... UR8→9 (reversed like LR)
+  // UL (Upper Left): UL1→1, UL2→2, ... UL8→8 (sequential like LL)
+  // LL (Lower Left): LL1→17, LL2→18, ... LL8→24 (sequential)
+  // LR (Lower Right): LR1→32, LR2→31, ... LR8→25 (reversed)
 
   const quadrant = palmerNotation.substring(0, 2);
   const position = parseInt(palmerNotation.substring(2), 10);
 
-  if (quadrant === 'UR') return 9 - position;      // UR1→8, UR8→1
-  if (quadrant === 'UL') return 8 + position;       // UL1→9, UL8→16
-  if (quadrant === 'LL') return 16 + position;      // LL1→17, LL8→24
-  if (quadrant === 'LR') return 33 - position;      // LR1→32, LR8→25
+  if (quadrant === 'UL') return position;          // UL1→1, UL2→2, ..., UL8→8
+  if (quadrant === 'UR') return 17 - position;     // UR1→16, UR2→15, ..., UR8→9
+  if (quadrant === 'LL') return 16 + position;     // LL1→17, LL2→18, ..., LL8→24
+  if (quadrant === 'LR') return 33 - position;     // LR1→32, LR2→31, ..., LR8→25
 
   return 0; // Invalid
 }

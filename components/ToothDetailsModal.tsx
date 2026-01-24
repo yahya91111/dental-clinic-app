@@ -106,24 +106,24 @@ const referralOptions = [
 
 // Convert tooth number (1-32) to Palmer notation (UL1, UR1, etc.)
 const convertNumberToPalmer = (toothNumber: number): ToothNumber | null => {
-  // Upper Left (1-8 → UL1-UL8)
+  // Upper Left (1-8 → UL1-UL8) - Swapped!
   if (toothNumber >= 1 && toothNumber <= 8) {
-    const position = toothNumber;
+    const position = toothNumber; // 1→UL1, 2→UL2, ..., 8→UL8
     return `UL${position}` as ToothNumber;
   }
-  // Upper Right (9-16 → UR8-UR1)
+  // Upper Right (9-16 → UR8-UR1) - Swapped!
   if (toothNumber >= 9 && toothNumber <= 16) {
-    const position = 17 - toothNumber;
+    const position = 17 - toothNumber; // 9→UR8, 10→UR7, ..., 16→UR1
     return `UR${position}` as ToothNumber;
   }
   // Lower Left (17-24 → LL1-LL8)
   if (toothNumber >= 17 && toothNumber <= 24) {
-    const position = toothNumber - 16;
+    const position = toothNumber - 16; // 17→LL1, 18→LL2, ..., 24→LL8
     return `LL${position}` as ToothNumber;
   }
   // Lower Right (25-32 → LR8-LR1)
   if (toothNumber >= 25 && toothNumber <= 32) {
-    const position = 33 - toothNumber;
+    const position = 33 - toothNumber; // 25→LR8, 26→LR7, ..., 32→LR1
     return `LR${position}` as ToothNumber;
   }
   return null;
@@ -134,10 +134,10 @@ const convertPalmerToNumber = (palmerNotation: ToothNumber): number => {
   const quadrant = palmerNotation.substring(0, 2);
   const position = parseInt(palmerNotation.substring(2), 10);
 
-  if (quadrant === 'UL') return position; // UL1→1, UL8→8
-  if (quadrant === 'UR') return 17 - position; // UR1→16, UR8→9
-  if (quadrant === 'LL') return 16 + position; // LL1→17, LL8→24
-  if (quadrant === 'LR') return 33 - position; // LR1→32, LR8→25
+  if (quadrant === 'UL') return position;          // UL1→1, UL2→2, ..., UL8→8 - Swapped!
+  if (quadrant === 'UR') return 17 - position;     // UR1→16, UR2→15, ..., UR8→9 - Swapped!
+  if (quadrant === 'LL') return 16 + position;     // LL1→17, LL2→18, ..., LL8→24
+  if (quadrant === 'LR') return 33 - position;     // LR1→32, LR2→31, ..., LR8→25
 
   return 0; // Invalid
 };

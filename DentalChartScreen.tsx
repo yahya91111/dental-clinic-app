@@ -1377,16 +1377,16 @@ const ToothNumberBadge: React.FC<{ toothNumber: number }> = ({ toothNumber }) =>
     <View style={[
       {
         backgroundColor: 'rgba(37, 99, 235, 0.12)',
-        paddingHorizontal: 12,
-        paddingVertical: 7,
-        borderRadius: 10,
-        minWidth: 44,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        minWidth: 40,
         alignItems: 'center',
         justifyContent: 'center',
       },
       borderStyles[quadrant]
     ]}>
-      <Text style={{ fontSize: 17, fontWeight: '700', color: '#1E40AF', letterSpacing: 0.3 }}>
+      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E40AF', letterSpacing: 0.3 }}>
         {displayNumber}
       </Text>
     </View>
@@ -1879,16 +1879,30 @@ export default function DentalChartScreen({
     oralMedicine: false,
   });
   const [referralStatus, setReferralStatus] = useState({
-    endodontics: 'Not Given', // 'Given' أو 'Not Given'
-    oralSurgery: 'Not Given',
-    orthodontics: 'Not Given',
-    periodontics: 'Not Given',
-    prosthodontics: 'Not Given',
-    oralMedicine: 'Not Given',
+    endodontics: 'not_given', // 'given' أو 'not_given'
+    oralSurgery: 'not_given',
+    orthodontics: 'not_given',
+    periodontics: 'not_given',
+    prosthodontics: 'not_given',
+    oralMedicine: 'not_given',
   });
   const [selectedReferral, setSelectedReferral] = useState<string | null>(null); // للتمييز البصري
   const [isReferralExpanded, setIsReferralExpanded] = useState(false); // لتتبع حالة فتح/إغلاق الأقسام (مغلقة افتراضياً)
   const [showDepartmentModal, setShowDepartmentModal] = useState(false); // للتحكم في فتح/إغلاق Modal الأقسام
+  const [departmentModalMode, setDepartmentModalMode] = useState<'new' | 'edit'>('new'); // وضع الموديل: جديد أو تعديل
+  const [savedReferralsState, setSavedReferralsState] = useState<any>(null); // لحفظ حالة referrals مؤقتاً
+  const [savedSelectedReferralFor, setSavedSelectedReferralFor] = useState<any>(null); // لحفظ حالة selectedReferralFor مؤقتاً
+  const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null); // للتحكم في عرض الأسنان تحت القسم
+  // Temporary states for "new" mode - not saved to database until Save is clicked
+  const [tempReferrals, setTempReferrals] = useState<typeof referrals>({
+    endodontics: false,
+    oralSurgery: false,
+    orthodontics: false,
+    periodontics: false,
+    prosthodontics: false,
+    oralMedicine: false,
+  });
+  const [tempSelectedReferralFor, setTempSelectedReferralFor] = useState<Record<number, string[]>>({});
   const [referralTab, setReferralTab] = useState<'department' | 'records'>('department'); // للتبديل بين Department و Referral Records
   const [referralRecords, setReferralRecords] = useState<Array<{
     departmentKey: string;
@@ -1927,6 +1941,7 @@ export default function DentalChartScreen({
   const [selectedDetails, setSelectedDetails] = useState<Record<number | string, string>>({});
   const [selectedReferralFor, setSelectedReferralFor] = useState<Record<number | string, string[]>>({});  // Changed to array for multiple referrals
   const [selectedSurfaces, setSelectedSurfaces] = useState<Record<number | string, string[]>>({});
+  const [openReferralMenu, setOpenReferralMenu] = useState<string | null>(null); // Track which referral card menu is open
   const [toothNotes, setToothNotes] = useState<Record<number | string, Array<{ text: string; timestamp: string; doctorName: string }>>>({});
   // Types for tooth records
   type EditingRecord = {
@@ -2593,15 +2608,14 @@ export default function DentalChartScreen({
    * Convert tooth number (1-32) to Palmer Notation (UR1-UR8, UL1-UL8, LR1-LR8, LL1-LL8)
    */
   const convertNumberToPalmer = (toothNumber: number): ToothNumber | null => {
-    // Upper Right (1-8 → UR8-UR1)
+    // Upper Left (1-8 → UL1-UL8)
     if (toothNumber >= 1 && toothNumber <= 8) {
-      const position = 9 - toothNumber;
-      return `UR${position}` as ToothNumber;
+      return `UL${toothNumber}` as ToothNumber;
     }
-    // Upper Left (9-16 → UL1-UL8)
+    // Upper Right (9-16 → UR8-UR1)
     if (toothNumber >= 9 && toothNumber <= 16) {
-      const position = toothNumber - 8;
-      return `UL${position}` as ToothNumber;
+      const position = 17 - toothNumber;
+      return `UR${position}` as ToothNumber;
     }
     // Lower Left (17-24 → LL1-LL8)
     if (toothNumber >= 17 && toothNumber <= 24) {
@@ -2623,11 +2637,11 @@ export default function DentalChartScreen({
     const quadrant = palmer.substring(0, 2); // UR, UL, LR, LL
     const position = parseInt(palmer.substring(2)); // 1-8
 
-    if (quadrant === 'UR') {
-      return 9 - position; // UR1→8, UR2→7, ..., UR8→1
-    }
     if (quadrant === 'UL') {
-      return 8 + position; // UL1→9, UL2→10, ..., UL8→16
+      return position; // UL1→1, UL2→2, ..., UL8→8
+    }
+    if (quadrant === 'UR') {
+      return 17 - position; // UR1→16, UR2→15, ..., UR8→9
     }
     if (quadrant === 'LL') {
       return 16 + position; // LL1→17, LL2→18, ..., LL8→24
@@ -2982,13 +2996,16 @@ export default function DentalChartScreen({
         };
 
         // فصل التحويلات حسب الحالة
-        const notGivenReferrals = referralsData.filter(r => r.status === 'Not Given' || !r.status);
-        const givenReferrals = referralsData.filter(r => r.status === 'Given');
+        const notGivenReferrals = referralsData.filter(r => r.status === 'not_given' || !r.status);
+        const givenReferrals = referralsData.filter(r => r.status === 'given');
 
         // Group referrals by tooth (فقط Not Given) - Multiple referrals per tooth
         const referralsByTooth: Record<number, string[]> = {};
 
         notGivenReferrals.forEach((referral) => {
+          // Skip general referrals (tooth_number is null)
+          if (!referral.tooth_number) return;
+
           const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
           if (toothNumber) {
             // Map referral type to key
@@ -3006,15 +3023,15 @@ export default function DentalChartScreen({
 
         // Rebuild referrals state for Department tab (Not Given referrals فقط)
         const departmentsWithReferrals: Record<string, boolean> = {};
-        const departmentStatuses: Record<string, 'Given' | 'Not Given'> = {};
+        const departmentStatuses: Record<string, 'not_given' | 'given'> = {};
 
         notGivenReferrals.forEach((referral) => {
           const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
 
           // Mark department as having referrals (show in Department tab)
           departmentsWithReferrals[referralKey] = true;
-          // Set status to "Not Given" (will show in Department tab)
-          departmentStatuses[referralKey] = 'Not Given';
+          // Set status to "not_given" (will show in Department tab)
+          departmentStatuses[referralKey] = 'not_given';
         });
 
         // Build Referral Records from Given referrals
@@ -3032,14 +3049,39 @@ export default function DentalChartScreen({
 
         givenReferrals.forEach((referral) => {
           const referralKey = referralTypeToKeyMap[referral.referral_type] || referral.referral_type;
+          const givenTime = new Date(referral.given_at || referral.created_at);
+          const roundedTime = new Date(givenTime.getFullYear(), givenTime.getMonth(), givenTime.getDate(), givenTime.getHours(), givenTime.getMinutes());
+          const batchKey = `${referralKey}-${roundedTime.getTime()}`;
+
+          // Handle general referrals (tooth_number is null)
+          if (!referral.tooth_number) {
+            // Create record for general referral with empty teeth array
+            const existingRecord = givenByDept.get(batchKey);
+
+            if (!existingRecord) {
+              givenByDept.set(batchKey, {
+                departmentKey: referralKey,
+                departmentName: referral.referral_type,
+                teeth: [], // Empty array for general referrals
+                timestamp: givenTime.toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                }),
+                timestampNum: givenTime.getTime(),
+                doctorName: referral.doctor_name || 'Dr. Unknown'
+              });
+            }
+            return; // Skip tooth number processing for general referrals
+          }
+
+          // Handle tooth-specific referrals
           const toothNumber = convertPalmerToNumber(referral.tooth_number as ToothNumber);
 
           if (toothNumber) {
-            // Create unique key: referralKey + given_at timestamp (rounded to minute)
-            const givenTime = new Date(referral.given_at || referral.created_at);
-            const roundedTime = new Date(givenTime.getFullYear(), givenTime.getMonth(), givenTime.getDate(), givenTime.getHours(), givenTime.getMinutes());
-            const batchKey = `${referralKey}-${roundedTime.getTime()}`;
-
             const existingRecord = givenByDept.get(batchKey);
 
             if (existingRecord) {
@@ -3128,6 +3170,9 @@ export default function DentalChartScreen({
       realtimeChannelRef.current = null;
     }
 
+    // ❌ Real-time DISABLED for Dental Chart
+    // Reason: Manual refresh is preferred to avoid constant reloads
+    /*
     // Setup Realtime subscription for dental data tables
     // Listen to changes on all tables related to this patient
     const dentalChannel = supabase
@@ -3228,6 +3273,7 @@ export default function DentalChartScreen({
       });
 
     realtimeChannelRef.current = dentalChannel;
+    */
 
     // Cleanup on unmount or when permanentPatientId changes
     return () => {
@@ -7987,7 +8033,9 @@ export default function DentalChartScreen({
                   style={styles.referralContent}
                 >
                   <View style={styles.referralHeader}>
-                    <Text style={styles.referralTitle}>Need Referral For</Text>
+                    <Text style={styles.referralTitle}>
+                      Need Referral For {Object.values(referrals).filter(val => val === true).length > 0 && `(${Object.values(referrals).filter(val => val === true).length})`}
+                    </Text>
                   </View>
 
                   {/* Tab Buttons */}
@@ -8051,7 +8099,7 @@ export default function DentalChartScreen({
                   <View style={{
                     height: (
                       (referralTab === 'department' && Object.entries(referrals).some(([key, checked]) =>
-                        checked && referralStatus[key as keyof typeof referralStatus] === 'Not Given'
+                        checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
                       )) ||
                       (referralTab === 'records' && referralRecords.length > 0)
                     ) ? 320 : 70,
@@ -8063,7 +8111,24 @@ export default function DentalChartScreen({
                       <>
                         {/* Select Department */}
                         <TouchableOpacity
-                          onPress={() => setShowDepartmentModal(true)}
+                          onPress={() => {
+                            // فتح في وضع New - نظيف بدون تحديدات سابقة
+                            setDepartmentModalMode('new');
+                            // حفظ الحالة الحالية (للاحتفاظ بها في حال Cancel)
+                            setSavedReferralsState(referrals);
+                            setSavedSelectedReferralFor(selectedReferralFor);
+                            // تهيئة الحالات المؤقتة - نظيفة تماماً
+                            setTempReferrals({
+                              endodontics: false,
+                              oralSurgery: false,
+                              orthodontics: false,
+                              periodontics: false,
+                              prosthodontics: false,
+                              oralMedicine: false,
+                            });
+                            setTempSelectedReferralFor({});
+                            setShowDepartmentModal(true);
+                          }}
                           style={{
                             marginTop: 4,
                             backgroundColor: 'rgba(255, 255, 255, 0.8)',
@@ -8085,14 +8150,24 @@ export default function DentalChartScreen({
 
                         {/* Selected Departments Display - Below Input with ScrollView */}
                         {Object.entries(referrals).some(([_, checked]) => checked) && (
-                          <ScrollView
-                            style={{ marginTop: 10, maxHeight: 242 }}
-                            showsVerticalScrollIndicator={true}
-                          >
-                            {Object.entries(referrals).map(([key, checked]) => {
+                          <View>
+                              <ScrollView
+                                style={{ marginTop: 10, maxHeight: 242 }}
+                                contentContainerStyle={{ paddingBottom: 100 }}
+                                showsVerticalScrollIndicator={true}
+                                nestedScrollEnabled={true}
+                                scrollEnabled={true}
+                                onScrollBeginDrag={() => {
+                                  // إغلاق القائمة عند بدء السكرول
+                                  if (openReferralMenu !== null) {
+                                    setOpenReferralMenu(null);
+                                  }
+                                }}
+                              >
+                                {Object.entries(referrals).map(([key, checked]) => {
                               if (!checked) return null;
-                              // إخفاء القسم إذا كانت حالته "Given"
-                              if (referralStatus[key as keyof typeof referralStatus] === 'Given') return null;
+                              // إخفاء القسم إذا كانت حالته "given"
+                              if (referralStatus[key as keyof typeof referralStatus] === 'given') return null;
 
                               // العثور على الأسنان المحالة لهذا القسم
                               const referredTeeth = Object.entries(selectedReferralFor)
@@ -8113,20 +8188,36 @@ export default function DentalChartScreen({
                                     shadowOffset: { width: 0, height: 2 },
                                     shadowOpacity: 0.1,
                                     shadowRadius: 4,
-                                    elevation: 3,
+                                    elevation: openReferralMenu === key ? 1000 : 3,
+                                    zIndex: openReferralMenu === key ? 1000 : 1,
                                   }}
                                 >
                                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: referredTeeth.length > 0 ? 8 : 0 }}>
                                     <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
                                       {getReferralName(key)}
                                     </Text>
-                                    <TouchableOpacity
+
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                      {/* Three-dot menu button */}
+                                      <TouchableOpacity
+                                        onPress={() => setOpenReferralMenu(openReferralMenu === key ? null : key)}
+                                        style={{
+                                          padding: 6,
+                                          borderRadius: 6,
+                                          backgroundColor: 'rgba(148, 163, 184, 0.1)',
+                                        }}
+                                      >
+                                        <Ionicons name="ellipsis-horizontal" size={18} color="#64748B" />
+                                      </TouchableOpacity>
+
+                                      {/* Not Given / Given button */}
+                                      <TouchableOpacity
                                       onPress={(e) => {
                                         e.stopPropagation();
                                         const currentStatus = referralStatus[key as keyof typeof referralStatus];
 
-                                        if (currentStatus === 'Not Given') {
-                                          //  تحديث حالة التحويلات في قاعدة البيانات إلى Given
+                                        if (currentStatus === 'not_given') {
+                                          //  تحديث حالة التحويلات في قاعدة البيانات إلى given
                                           if (permanentPatientId) {
                                             const referralTypeMap: Record<string, string> = {
                                               'endodontics': 'Endodontics',
@@ -8139,28 +8230,28 @@ export default function DentalChartScreen({
 
                                             const referralName = referralTypeMap[key] || key;
 
-                                            // تحديث حالة جميع التحويلات من هذا النوع إلى Given
+                                            // تحديث حالة جميع التحويلات من هذا النوع إلى given
                                             supabase
                                               .from('referrals')
                                               .update({
-                                                status: 'Given',
+                                                status: 'given',
                                                 given_at: new Date().toISOString()
                                               })
                                               .eq('permanent_patient_id', permanentPatientId)
                                               .eq('referral_type', referralName)
-                                              .eq('status', 'Not Given')
+                                              .eq('status', 'not_given')
                                               .then(({ error }) => {
                                                 if (error) {
                                                   console.error(' Error updating referral status:', error);
                                                 } else {
-                                                  console.log(' Referrals marked as Given in database:', referralName);
+                                                  console.log(' Referrals marked as given in database:', referralName);
                                                   // إعادة تحميل البيانات لتحديث Referral Records
                                                   loadPatientDentalData();
                                                 }
                                               });
                                           }
 
-                                          // إلغاء تحديد القسم بعد Given (سيختفي من Department tab)
+                                          // إلغاء تحديد القسم بعد given (سيختفي من Department tab)
                                           setReferrals(prev => ({ ...prev, [key]: false }));
                                           // مسح الأسنان المحالة لهذا القسم
                                           setSelectedReferralFor(prev => {
@@ -8183,32 +8274,33 @@ export default function DentalChartScreen({
 
                                         setReferralStatus(prev => ({
                                           ...prev,
-                                          [key]: currentStatus === 'Given' ? 'Not Given' : 'Given'
+                                          [key]: currentStatus === 'given' ? 'not_given' : 'given'
                                         }));
                                       }}
                                       style={{
-                                        backgroundColor: referralStatus[key as keyof typeof referralStatus] === 'Given'
+                                        backgroundColor: referralStatus[key as keyof typeof referralStatus] === 'given'
                                           ? 'rgba(34, 197, 94, 0.15)'
-                                          : 'rgba(239, 68, 68, 0.15)',
+                                          : 'rgba(156, 163, 175, 0.2)',
                                         paddingVertical: 6,
                                         paddingHorizontal: 12,
                                         borderRadius: 8,
                                         borderWidth: 1,
-                                        borderColor: referralStatus[key as keyof typeof referralStatus] === 'Given'
+                                        borderColor: referralStatus[key as keyof typeof referralStatus] === 'given'
                                           ? 'rgba(34, 197, 94, 0.3)'
-                                          : 'rgba(239, 68, 68, 0.3)',
+                                          : 'rgba(156, 163, 175, 0.4)',
                                       }}
                                     >
                                       <Text style={{
                                         fontSize: 13,
                                         fontWeight: '600',
-                                        color: referralStatus[key as keyof typeof referralStatus] === 'Given'
+                                        color: referralStatus[key as keyof typeof referralStatus] === 'given'
                                           ? '#16A34A'
-                                          : '#DC2626',
+                                          : '#6B7280',
                                       }}>
-                                        {referralStatus[key as keyof typeof referralStatus]}
+                                        {referralStatus[key as keyof typeof referralStatus] === 'given' ? 'Given' : 'Not Given'}
                                       </Text>
                                     </TouchableOpacity>
+                                    </View>
                                   </View>
 
                                   {/* عرض الأسنان المحالة - دائماً */}
@@ -8219,10 +8311,139 @@ export default function DentalChartScreen({
                                       ))}
                                     </View>
                                   )}
+
+                                  {/* Three-dot Menu Modal */}
+                                  {openReferralMenu === key && (
+                                    <View style={{
+                                      position: 'absolute',
+                                      top: 40,
+                                      right: 10,
+                                      backgroundColor: 'rgba(224, 242, 254, 0.95)',
+                                      borderRadius: 12,
+                                      padding: 8,
+                                      shadowColor: '#000',
+                                      shadowOffset: { width: 0, height: 4 },
+                                      shadowOpacity: 0.15,
+                                      shadowRadius: 12,
+                                      elevation: 1001,
+                                      borderWidth: 1,
+                                      borderColor: 'rgba(148, 163, 184, 0.2)',
+                                      minWidth: 140,
+                                      zIndex: 1001,
+                                    }}>
+                                      {/* Edit Button */}
+                                      <TouchableOpacity
+                                        onPress={() => {
+                                          setOpenReferralMenu(null);
+                                          // فتح في وضع Edit - مع التحديدات الحالية
+                                          setDepartmentModalMode('edit');
+                                          // فتح القسم المحدد تلقائياً لتعديل الأسنان
+                                          setExpandedDepartment(key);
+                                          setShowDepartmentModal(true);
+                                        }}
+                                        style={{
+                                          flexDirection: 'row',
+                                          alignItems: 'center',
+                                          paddingVertical: 10,
+                                          paddingHorizontal: 12,
+                                          borderRadius: 8,
+                                          backgroundColor: 'transparent',
+                                        }}
+                                      >
+                                        <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#3B82F6', marginLeft: 10 }}>Edit</Text>
+                                      </TouchableOpacity>
+
+                                      {/* Divider */}
+                                      <View style={{ height: 1, backgroundColor: 'rgba(148, 163, 184, 0.15)', marginVertical: 4 }} />
+
+                                      {/* Delete Button */}
+                                      <TouchableOpacity
+                                        onPress={async () => {
+                                          setOpenReferralMenu(null);
+
+                                          // Show confirmation alert
+                                          Alert.alert(
+                                            'Delete Referral',
+                                            'Are you sure you want to delete this referral?',
+                                            [
+                                              {
+                                                text: 'Cancel',
+                                                style: 'cancel'
+                                              },
+                                              {
+                                                text: 'Delete',
+                                                style: 'destructive',
+                                                onPress: async () => {
+                                                  if (permanentPatientId) {
+                                                    const referralTypeMap: Record<string, string> = {
+                                                      'endodontics': 'Endodontics',
+                                                      'oralSurgery': 'Oral Surgery',
+                                                      'orthodontics': 'Orthodontics',
+                                                      'prosthodontics': 'Prosthodontics',
+                                                      'periodontics': 'Periodontics',
+                                                      'oralMedicine': 'Oral Medicine',
+                                                    };
+
+                                                    const referralName = referralTypeMap[key] || key;
+
+                                                    // Delete all referrals of this type for this patient
+                                                    const { error } = await supabase
+                                                      .from('referrals')
+                                                      .delete()
+                                                      .eq('permanent_patient_id', permanentPatientId)
+                                                      .eq('referral_type', referralName)
+                                                      .eq('status', 'not_given');
+
+                                                    if (error) {
+                                                      console.error('Error deleting referral:', error);
+                                                      Alert.alert('Error', 'Failed to delete referral');
+                                                    } else {
+                                                      // Update UI
+                                                      setReferrals(prev => ({ ...prev, [key]: false }));
+                                                      setSelectedReferralFor(prev => {
+                                                        const newReferrals = { ...prev };
+                                                        Object.keys(newReferrals).forEach(toothNumber => {
+                                                          const referralKeys = newReferrals[toothNumber];
+                                                          if (referralKeys?.includes(key)) {
+                                                            const updatedKeys = referralKeys.filter(k => k !== key);
+                                                            if (updatedKeys.length === 0) {
+                                                              delete newReferrals[toothNumber];
+                                                            } else {
+                                                              newReferrals[toothNumber] = updatedKeys;
+                                                            }
+                                                          }
+                                                        });
+                                                        return newReferrals;
+                                                      });
+                                                      // Reload patient data
+                                                      loadPatientDentalData();
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            ]
+                                          );
+                                        }}
+                                        style={{
+                                          flexDirection: 'row',
+                                          alignItems: 'center',
+                                          paddingVertical: 10,
+                                          paddingHorizontal: 12,
+                                          borderRadius: 8,
+                                          backgroundColor: 'transparent',
+                                        }}
+                                      >
+                                        <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                        <Text style={{ fontSize: 14, fontWeight: '600', color: '#EF4444', marginLeft: 10 }}>Delete</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
                                 </View>
                               );
                             })}
                           </ScrollView>
+                          </View>
                         )}
                       </>
                     )}
@@ -8316,7 +8537,7 @@ export default function DentalChartScreen({
                     REFERRAL_HEADER_HEIGHT +
                     ((
                       (referralTab === 'department' && Object.entries(referrals).some(([key, checked]) =>
-                        checked && referralStatus[key as keyof typeof referralStatus] === 'Not Given'
+                        checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
                       )) ||
                       (referralTab === 'records' && referralRecords.length > 0)
                     ) ? REFERRAL_CONTENT_MAX : REFERRAL_CONTENT_MIN) +
@@ -8636,7 +8857,7 @@ export default function DentalChartScreen({
                     REFERRAL_HEADER_HEIGHT +
                     ((
                       (referralTab === 'department' && Object.entries(referrals).some(([key, checked]) =>
-                        checked && referralStatus[key as keyof typeof referralStatus] === 'Not Given'
+                        checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
                       )) ||
                       (referralTab === 'records' && referralRecords.length > 0)
                     ) ? REFERRAL_CONTENT_MAX : REFERRAL_CONTENT_MIN) +
@@ -10355,11 +10576,11 @@ export default function DentalChartScreen({
                       if (selectedReferrals.length > 0) {
                         // Update referrals state to show all referral cards in Department tab
                         const newReferralsState: Record<string, boolean> = {};
-                        const newReferralStatuses: Record<string, 'Given' | 'Not Given'> = {};
+                        const newReferralStatuses: Record<string, 'not_given' | 'given'> = {};
 
                         selectedReferrals.forEach(referralKey => {
                           newReferralsState[referralKey] = true;
-                          newReferralStatuses[referralKey] = 'Not Given';
+                          newReferralStatuses[referralKey] = 'not_given';
                         });
 
                         setReferrals(prev => ({
@@ -10632,7 +10853,16 @@ export default function DentalChartScreen({
           transparent
           visible={showDepartmentModal}
           animationType="fade"
-          onRequestClose={() => setShowDepartmentModal(false)}
+          onRequestClose={() => {
+            // إذا كنا في وضع New واستعادة الحالة المحفوظة
+            if (departmentModalMode === 'new' && savedReferralsState && savedSelectedReferralFor) {
+              setReferrals(savedReferralsState);
+              setSelectedReferralFor(savedSelectedReferralFor);
+              setSavedReferralsState(null);
+              setSavedSelectedReferralFor(null);
+            }
+            setShowDepartmentModal(false);
+          }}
         >
           <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
             <BlurView intensity={100} tint="dark" style={StyleSheet.absoluteFill} />
@@ -10667,199 +10897,2678 @@ export default function DentalChartScreen({
                   color: '#0284C7',
                   textAlign: 'center',
                   letterSpacing: 0.5
-                }}>Select Departments</Text>
+                }}>
+                  {departmentModalMode === 'edit'
+                    ? `Edit ${(() => {
+                        const selectedDept = Object.entries(referrals).find(([_, val]) => val === true);
+                        if (selectedDept) {
+                          const names: Record<string, string> = {
+                            'endodontics': 'Endodontics',
+                            'oralSurgery': 'Oral Surgery',
+                            'orthodontics': 'Orthodontics',
+                            'periodontics': 'Periodontics',
+                            'prosthodontics': 'Prosthodontics',
+                            'oralMedicine': 'Oral Medicine',
+                          };
+                          return names[selectedDept[0]] || 'Referral';
+                        }
+                        return 'Referral';
+                      })()}`
+                    : 'Select Departments'
+                  }
+                </Text>
               </View>
 
               {/* Departments List */}
-              <ScrollView style={{ maxHeight: 400, padding: 20 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ maxHeight: 500, padding: 20 }} showsVerticalScrollIndicator={false}>
                 {/* Endodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.endodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setSelectedReferral('endodontics');
-                    setReferrals(prev => {
-                      const newValue = !prev.endodontics;
-                      // إذا تم تفعيل القسم، أعد تعيينه إلى Not Given
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, endodontics: 'Not Given' }));
+                {(departmentModalMode === 'new' || (departmentModalMode === 'edit' && referrals.endodontics)) && (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    disabled={departmentModalMode === 'edit'}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: (departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={async () => {
+                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      if (departmentModalMode === 'new') {
+                        const currentlySelected = tempReferrals.endodontics;
+                        setSelectedReferral('endodontics');
+
+                        if (!currentlySelected) {
+                          // غير محدد: تحديده + فتح الأسنان
+                          setTempReferrals(prev => ({ ...prev, endodontics: true }));
+                          setExpandedDepartment('endodontics');
+                        } else {
+                          // محدد بالفعل: فقط toggle الـ expansion
+                          if (expandedDepartment === 'endodontics') {
+                            setExpandedDepartment(null);
+                          } else {
+                            setExpandedDepartment('endodontics');
+                          }
+                        }
+                        return;
                       }
-                      return { ...prev, endodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.endodontics && styles.checkboxChecked]}>
-                    {referrals.endodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>1- Endodontics</Text>
-                </TouchableOpacity>
+
+                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      const newValue = !referrals.endodontics;
+                      setSelectedReferral('endodontics');
+
+                      setReferrals(prev => {
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, endodontics: 'not_given' }));
+                        }
+                        return { ...prev, endodontics: newValue };
+                      });
+
+                      // Toggle expansion
+                      if (expandedDepartment === 'endodontics') {
+                        setExpandedDepartment(null);
+                      } else {
+                        setExpandedDepartment('endodontics');
+                      }
+
+                      // Save/Delete based on newValue
+                      if (newValue && permanentPatientId && user?.name) {
+                        // Save as general referral
+                        const { error: referralError } = await createReferral(
+                          permanentPatientId,
+                          null,
+                          'Endodontics',
+                          user.name
+                        );
+
+                        if (referralError) {
+                          console.error('❌ Error saving general referral Endodontics:', referralError);
+                        } else {
+                          console.log('✅ Saved general referral Endodontics to database');
+                          await loadPatientDentalData();
+                        }
+                      } else if (!newValue && permanentPatientId) {
+                        // Delete all referrals for this department
+                        const { error: deleteError } = await supabase
+                          .from('referrals')
+                          .delete()
+                          .eq('permanent_patient_id', permanentPatientId)
+                          .eq('referral_type', 'Endodontics')
+                          .eq('status', 'not_given');
+
+                        if (deleteError) {
+                          console.error('❌ Error deleting referrals Endodontics:', deleteError);
+                        } else {
+                          console.log('✅ Deleted all referrals Endodontics from database');
+                          await loadPatientDentalData();
+                        }
+
+                        // Clear selected teeth
+                        setSelectedReferralFor(prev => {
+                          const newState = { ...prev };
+                          Object.keys(newState).forEach(tooth => {
+                            newState[tooth] = newState[tooth].filter(r => r !== 'endodontics');
+                          });
+                          return newState;
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.checkbox, (departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) && styles.checkboxChecked]}>
+                      {(departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>1- Endodontics</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons
+                      name={expandedDepartment === 'endodontics' ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#0284C7"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection */}
+                  {expandedDepartment === 'endodontics' && (departmentModalMode === 'new' ? tempReferrals.endodontics : referrals.endodontics) && (
+                    <View style={{
+                      backgroundColor: 'rgba(224, 242, 254, 0.5)',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginTop: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(186, 230, 253, 0.4)',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+                        Select specific teeth (optional):
+                      </Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('endodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('endodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  // في وضع "new": استخدام الحالات المؤقتة فقط
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('endodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'endodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  // في وضع "edit": الحفظ الفوري كالمعتاد
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('endodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      // Adding tooth - delete general referral first
+                                      await supabase
+                                        .from('referrals')
+                                        .delete()
+                                        .eq('permanent_patient_id', permanentPatientId)
+                                        .eq('referral_type', 'Endodontics')
+                                        .is('tooth_number', null)
+                                        .eq('status', 'not_given');
+
+                                      // Save tooth-specific referral
+                                      const { error } = await createReferral(
+                                        permanentPatientId,
+                                        toothNumber,
+                                        'Endodontics',
+                                        user.name
+                                      );
+
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({
+                                          ...prev,
+                                          [toothNum]: [...(prev[toothNum] || []), 'endodontics']
+                                        }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      // Removing tooth
+                                      await supabase
+                                        .from('referrals')
+                                        .delete()
+                                        .eq('permanent_patient_id', permanentPatientId)
+                                        .eq('referral_type', 'Endodontics')
+                                        .eq('tooth_number', toothNumber)
+                                        .eq('status', 'not_given');
+
+                                      setSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics')
+                                      }));
+
+                                      // Check if no teeth left, create general referral
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs =>
+                                        refs.includes('endodontics') && refs.length > 0
+                                      );
+
+                                      if (!hasOtherTeeth) {
+                                        await createReferral(permanentPatientId, null, 'Endodontics', user.name);
+                                      }
+
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('endodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('endodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  // في وضع "new": استخدام الحالات المؤقتة فقط
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('endodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'endodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  // في وضع "edit": الحفظ الفوري كالمعتاد
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('endodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Endodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Endodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'endodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Endodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('endodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Endodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('endodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('endodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('endodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'endodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('endodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Endodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Endodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'endodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Endodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('endodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Endodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('endodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('endodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('endodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'endodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('endodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Endodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Endodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'endodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Endodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'endodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('endodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Endodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )}
 
                 {/* Oral Surgery */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.oralSurgery ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setSelectedReferral('oralSurgery');
-                    setReferrals(prev => {
-                      const newValue = !prev.oralSurgery;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, oralSurgery: 'Not Given' }));
+                {(departmentModalMode === 'new' || (departmentModalMode === 'edit' && referrals.oralSurgery)) && (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    disabled={departmentModalMode === 'edit'}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.oralSurgery ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={async () => {
+                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      if (departmentModalMode === 'new') {
+                        const currentlySelected = tempReferrals.oralSurgery;
+                        setSelectedReferral('oralSurgery');
+
+                        if (!currentlySelected) {
+                          // غير محدد: تحديده + فتح الأسنان
+                          setTempReferrals(prev => ({ ...prev, oralSurgery: true }));
+                          setExpandedDepartment('oralSurgery');
+                        } else {
+                          // محدد بالفعل: فقط toggle الـ expansion
+                          if (expandedDepartment === 'oralSurgery') {
+                            setExpandedDepartment(null);
+                          } else {
+                            setExpandedDepartment('oralSurgery');
+                          }
+                        }
+                        return;
                       }
-                      return { ...prev, oralSurgery: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.oralSurgery && styles.checkboxChecked]}>
-                    {referrals.oralSurgery && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>2- Oral Surgery</Text>
-                </TouchableOpacity>
+
+                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      const newValue = !referrals.oralSurgery;
+                      setSelectedReferral('oralSurgery');
+
+                      setReferrals(prev => {
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, oralSurgery: 'not_given' }));
+                        }
+                        return { ...prev, oralSurgery: newValue };
+                      });
+
+                      // Toggle expansion
+                      if (expandedDepartment === 'oralSurgery') {
+                        setExpandedDepartment(null);
+                      } else {
+                        setExpandedDepartment('oralSurgery');
+                      }
+
+                      // Save/Delete based on newValue
+                      if (newValue && permanentPatientId && user?.name) {
+                        // Save as general referral
+                        const { error: referralError } = await createReferral(
+                          permanentPatientId,
+                          null,
+                          'Oral Surgery',
+                          user.name
+                        );
+
+                        if (referralError) {
+                          console.error('❌ Error saving general referral Oral Surgery:', referralError);
+                        } else {
+                          console.log('✅ Saved general referral Oral Surgery to database');
+                          await loadPatientDentalData();
+                        }
+                      } else if (!newValue && permanentPatientId) {
+                        // Delete all referrals for this department
+                        const { error: deleteError } = await supabase
+                          .from('referrals')
+                          .delete()
+                          .eq('permanent_patient_id', permanentPatientId)
+                          .eq('referral_type', 'Oral Surgery')
+                          .eq('status', 'not_given');
+
+                        if (deleteError) {
+                          console.error('❌ Error deleting referrals Oral Surgery:', deleteError);
+                        } else {
+                          console.log('✅ Deleted all referrals Oral Surgery from database');
+                          await loadPatientDentalData();
+                        }
+
+                        // Clear selected teeth
+                        setSelectedReferralFor(prev => {
+                          const newState = { ...prev };
+                          Object.keys(newState).forEach(tooth => {
+                            newState[tooth] = newState[tooth].filter(r => r !== 'oralSurgery');
+                          });
+                          return newState;
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.checkbox, (departmentModalMode === 'new' ? tempReferrals.oralSurgery : referrals.oralSurgery) && styles.checkboxChecked]}>
+                      {(departmentModalMode === 'new' ? tempReferrals.oralSurgery : referrals.oralSurgery) && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>2- Oral Surgery</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons
+                      name={expandedDepartment === 'oralSurgery' ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#0284C7"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection */}
+                  {expandedDepartment === 'oralSurgery' && (departmentModalMode === 'new' ? tempReferrals.oralSurgery : referrals.oralSurgery) && (
+                    <View style={{
+                      backgroundColor: 'rgba(224, 242, 254, 0.5)',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginTop: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(186, 230, 253, 0.4)',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+                        Select specific teeth (optional):
+                      </Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UL (Upper Left)</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('oralSurgery'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('oralSurgery'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralSurgery');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralSurgery']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralSurgery');
+
+                                    if (!isCurrentlySelected) {
+                                      // Adding tooth - delete general referral first
+                                      await supabase
+                                        .from('referrals')
+                                        .delete()
+                                        .eq('permanent_patient_id', permanentPatientId)
+                                        .eq('referral_type', 'Oral Surgery')
+                                        .is('tooth_number', null)
+                                        .eq('status', 'not_given');
+
+                                      // Save tooth-specific referral
+                                      const { error } = await createReferral(
+                                        permanentPatientId,
+                                        toothNumber,
+                                        'Oral Surgery',
+                                        user.name
+                                      );
+
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({
+                                          ...prev,
+                                          [toothNum]: [...(prev[toothNum] || []), 'oralSurgery']
+                                        }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      // Removing tooth
+                                      await supabase
+                                        .from('referrals')
+                                        .delete()
+                                        .eq('permanent_patient_id', permanentPatientId)
+                                        .eq('referral_type', 'Oral Surgery')
+                                        .eq('tooth_number', toothNumber)
+                                        .eq('status', 'not_given');
+
+                                      setSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery')
+                                      }));
+
+                                      // Check if no teeth left, create general referral
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs =>
+                                        refs.includes('oralSurgery') && refs.length > 0
+                                      );
+
+                                      if (!hasOtherTeeth) {
+                                        await createReferral(permanentPatientId, null, 'Oral Surgery', user.name);
+                                      }
+
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('oralSurgery'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('oralSurgery'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralSurgery');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralSurgery']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralSurgery');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Surgery').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Surgery', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralSurgery'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Surgery').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralSurgery') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Surgery', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('oralSurgery'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('oralSurgery'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralSurgery');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralSurgery']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralSurgery');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Surgery').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Surgery', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralSurgery'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Surgery').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralSurgery') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Surgery', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('oralSurgery'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('oralSurgery'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralSurgery');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralSurgery']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralSurgery');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Surgery').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Surgery', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralSurgery'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Surgery').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralSurgery') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralSurgery') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Surgery', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )}
 
                 {/* Orthodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.orthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setSelectedReferral('orthodontics');
-                    setReferrals(prev => {
-                      const newValue = !prev.orthodontics;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, orthodontics: 'Not Given' }));
+                {(departmentModalMode === 'new' || (departmentModalMode === 'edit' && referrals.orthodontics)) && (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    disabled={departmentModalMode === 'edit'}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.orthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={async () => {
+                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      if (departmentModalMode === 'new') {
+                        const currentlySelected = tempReferrals.orthodontics;
+                        setSelectedReferral('orthodontics');
+
+                        if (!currentlySelected) {
+                          // غير محدد: تحديده + فتح الأسنان
+                          setTempReferrals(prev => ({ ...prev, orthodontics: true }));
+                          setExpandedDepartment('orthodontics');
+                        } else {
+                          // محدد بالفعل: فقط toggle الـ expansion
+                          if (expandedDepartment === 'orthodontics') {
+                            setExpandedDepartment(null);
+                          } else {
+                            setExpandedDepartment('orthodontics');
+                          }
+                        }
+                        return;
                       }
-                      return { ...prev, orthodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.orthodontics && styles.checkboxChecked]}>
-                    {referrals.orthodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>3- Orthodontics</Text>
-                </TouchableOpacity>
+
+                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      const newValue = !referrals.orthodontics;
+                      setSelectedReferral('orthodontics');
+
+                      setReferrals(prev => {
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, orthodontics: 'not_given' }));
+                        }
+                        return { ...prev, orthodontics: newValue };
+                      });
+
+                      // Toggle expansion
+                      if (expandedDepartment === 'orthodontics') {
+                        setExpandedDepartment(null);
+                      } else {
+                        setExpandedDepartment('orthodontics');
+                      }
+
+                      // Save/Delete based on newValue
+                      if (newValue && permanentPatientId && user?.name) {
+                        // Save as general referral
+                        const { error: referralError } = await createReferral(
+                          permanentPatientId,
+                          null,
+                          'Orthodontics',
+                          user.name
+                        );
+
+                        if (referralError) {
+                          console.error('❌ Error saving general referral Orthodontics:', referralError);
+                        } else {
+                          console.log('✅ Saved general referral Orthodontics to database');
+                          await loadPatientDentalData();
+                        }
+                      } else if (!newValue && permanentPatientId) {
+                        // Delete all referrals for this department
+                        const { error: deleteError } = await supabase
+                          .from('referrals')
+                          .delete()
+                          .eq('permanent_patient_id', permanentPatientId)
+                          .eq('referral_type', 'Orthodontics')
+                          .eq('status', 'not_given');
+
+                        if (deleteError) {
+                          console.error('❌ Error deleting referrals Orthodontics:', deleteError);
+                        } else {
+                          console.log('✅ Deleted all referrals Orthodontics from database');
+                          await loadPatientDentalData();
+                        }
+
+                        // Clear selected teeth
+                        setSelectedReferralFor(prev => {
+                          const newState = { ...prev };
+                          Object.keys(newState).forEach(tooth => {
+                            newState[tooth] = newState[tooth].filter(r => r !== 'orthodontics');
+                          });
+                          return newState;
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.checkbox, (departmentModalMode === 'new' ? tempReferrals.orthodontics : referrals.orthodontics) && styles.checkboxChecked]}>
+                      {(departmentModalMode === 'new' ? tempReferrals.orthodontics : referrals.orthodontics) && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>3- Orthodontics</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons
+                      name={expandedDepartment === 'orthodontics' ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#0284C7"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection */}
+                  {expandedDepartment === 'orthodontics' && (departmentModalMode === 'new' ? tempReferrals.orthodontics : referrals.orthodontics) && (
+                    <View style={{
+                      backgroundColor: 'rgba(224, 242, 254, 0.5)',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginTop: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(186, 230, 253, 0.4)',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+                        Select specific teeth (optional):
+                      </Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UL (Upper Left)</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('orthodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('orthodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('orthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'orthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('orthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      // Adding tooth - delete general referral first
+                                      await supabase
+                                        .from('referrals')
+                                        .delete()
+                                        .eq('permanent_patient_id', permanentPatientId)
+                                        .eq('referral_type', 'Orthodontics')
+                                        .is('tooth_number', null)
+                                        .eq('status', 'not_given');
+
+                                      // Save tooth-specific referral
+                                      const { error } = await createReferral(
+                                        permanentPatientId,
+                                        toothNumber,
+                                        'Orthodontics',
+                                        user.name
+                                      );
+
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({
+                                          ...prev,
+                                          [toothNum]: [...(prev[toothNum] || []), 'orthodontics']
+                                        }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      // Removing tooth
+                                      await supabase
+                                        .from('referrals')
+                                        .delete()
+                                        .eq('permanent_patient_id', permanentPatientId)
+                                        .eq('referral_type', 'Orthodontics')
+                                        .eq('tooth_number', toothNumber)
+                                        .eq('status', 'not_given');
+
+                                      setSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics')
+                                      }));
+
+                                      // Check if no teeth left, create general referral
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs =>
+                                        refs.includes('orthodontics') && refs.length > 0
+                                      );
+
+                                      if (!hasOtherTeeth) {
+                                        await createReferral(permanentPatientId, null, 'Orthodontics', user.name);
+                                      }
+
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('orthodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('orthodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('orthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'orthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('orthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Orthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Orthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'orthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Orthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('orthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Orthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('orthodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('orthodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('orthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'orthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('orthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Orthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Orthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'orthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Orthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('orthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Orthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = departmentModalMode === 'new'
+                              ? (toothNum && tempSelectedReferralFor[toothNum]?.includes('orthodontics'))
+                              : (toothNum && selectedReferralFor[toothNum]?.includes('orthodontics'));
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('orthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'orthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('orthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Orthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Orthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'orthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Orthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'orthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('orthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Orthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>{num}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )}
 
                 {/* Periodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.periodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setSelectedReferral('periodontics');
-                    setReferrals(prev => {
-                      const newValue = !prev.periodontics;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, periodontics: 'Not Given' }));
+                {(departmentModalMode === 'new' || (departmentModalMode === 'edit' && referrals.periodontics)) && (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    disabled={departmentModalMode === 'edit'}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.periodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={async () => {
+                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      if (departmentModalMode === 'new') {
+                        const currentlySelected = tempReferrals.periodontics;
+                        setSelectedReferral('periodontics');
+
+                        if (!currentlySelected) {
+                          // غير محدد: تحديده + فتح الأسنان
+                          setTempReferrals(prev => ({ ...prev, periodontics: true }));
+                          setExpandedDepartment('periodontics');
+                        } else {
+                          // محدد بالفعل: فقط toggle الـ expansion
+                          if (expandedDepartment === 'periodontics') {
+                            setExpandedDepartment(null);
+                          } else {
+                            setExpandedDepartment('periodontics');
+                          }
+                        }
+                        return;
                       }
-                      return { ...prev, periodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.periodontics && styles.checkboxChecked]}>
-                    {referrals.periodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>4- Periodontics</Text>
-                </TouchableOpacity>
+
+                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      const newValue = !referrals.periodontics;
+                      setSelectedReferral('periodontics');
+
+                      setReferrals(prev => {
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, periodontics: 'not_given' }));
+                        }
+                        return { ...prev, periodontics: newValue };
+                      });
+
+                      // Toggle expansion
+                      if (expandedDepartment === 'periodontics') {
+                        setExpandedDepartment(null);
+                      } else {
+                        setExpandedDepartment('periodontics');
+                      }
+
+                      // Save/Delete based on newValue
+                      if (newValue && permanentPatientId && user?.name) {
+                        // Save as general referral
+                        const { error: referralError } = await createReferral(
+                          permanentPatientId,
+                          null,
+                          'Periodontics',
+                          user.name
+                        );
+
+                        if (referralError) {
+                          console.error('❌ Error saving general referral Periodontics:', referralError);
+                        } else {
+                          console.log('✅ Saved general referral Periodontics to database');
+                          await loadPatientDentalData();
+                        }
+                      } else if (!newValue && permanentPatientId) {
+                        // Delete all referrals for this department
+                        const { error: deleteError } = await supabase
+                          .from('referrals')
+                          .delete()
+                          .eq('permanent_patient_id', permanentPatientId)
+                          .eq('referral_type', 'Periodontics')
+                          .eq('status', 'not_given');
+
+                        if (deleteError) {
+                          console.error('❌ Error deleting referrals Periodontics:', deleteError);
+                        } else {
+                          console.log('✅ Deleted all referrals Periodontics from database');
+                          await loadPatientDentalData();
+                        }
+
+                        // Clear selected teeth
+                        setSelectedReferralFor(prev => {
+                          const newState = { ...prev };
+                          Object.keys(newState).forEach(tooth => {
+                            newState[tooth] = newState[tooth].filter(r => r !== 'periodontics');
+                          });
+                          return newState;
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.periodontics && styles.checkboxChecked]}>
+                      {referrals.periodontics && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>4- Periodontics</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons
+                      name={expandedDepartment === 'periodontics' ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#0284C7"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection */}
+                  {expandedDepartment === 'periodontics' && referrals.periodontics && (
+                    <View style={{
+                      backgroundColor: 'rgba(224, 242, 254, 0.5)',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginTop: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(186, 230, 253, 0.4)',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+                        Select specific teeth (optional):
+                      </Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UL (Upper Left)</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('periodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('periodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'periodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('periodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Periodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'periodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('periodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Periodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('periodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('periodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'periodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('periodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Periodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'periodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('periodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Periodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('periodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('periodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'periodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('periodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Periodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'periodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('periodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Periodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('periodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('periodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'periodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('periodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Periodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'periodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Periodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'periodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('periodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Periodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )}
 
                 {/* Prosthodontics */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.prosthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setSelectedReferral('prosthodontics');
-                    setReferrals(prev => {
-                      const newValue = !prev.prosthodontics;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, prosthodontics: 'Not Given' }));
+                {(departmentModalMode === 'new' || (departmentModalMode === 'edit' && referrals.prosthodontics)) && (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    disabled={departmentModalMode === 'edit'}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.prosthodontics ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={async () => {
+                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      if (departmentModalMode === 'new') {
+                        const currentlySelected = tempReferrals.prosthodontics;
+                        setSelectedReferral('prosthodontics');
+
+                        if (!currentlySelected) {
+                          // غير محدد: تحديده + فتح الأسنان
+                          setTempReferrals(prev => ({ ...prev, prosthodontics: true }));
+                          setExpandedDepartment('prosthodontics');
+                        } else {
+                          // محدد بالفعل: فقط toggle الـ expansion
+                          if (expandedDepartment === 'prosthodontics') {
+                            setExpandedDepartment(null);
+                          } else {
+                            setExpandedDepartment('prosthodontics');
+                          }
+                        }
+                        return;
                       }
-                      return { ...prev, prosthodontics: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.prosthodontics && styles.checkboxChecked]}>
-                    {referrals.prosthodontics && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>5- Prosthodontics</Text>
-                </TouchableOpacity>
+
+                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      const newValue = !referrals.prosthodontics;
+                      setSelectedReferral('prosthodontics');
+
+                      setReferrals(prev => {
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, prosthodontics: 'not_given' }));
+                        }
+                        return { ...prev, prosthodontics: newValue };
+                      });
+
+                      // Toggle expansion
+                      if (expandedDepartment === 'prosthodontics') {
+                        setExpandedDepartment(null);
+                      } else {
+                        setExpandedDepartment('prosthodontics');
+                      }
+
+                      // Save/Delete based on newValue
+                      if (newValue && permanentPatientId && user?.name) {
+                        // Save as general referral
+                        const { error: referralError } = await createReferral(
+                          permanentPatientId,
+                          null,
+                          'Prosthodontics',
+                          user.name
+                        );
+
+                        if (referralError) {
+                          console.error('❌ Error saving general referral Prosthodontics:', referralError);
+                        } else {
+                          console.log('✅ Saved general referral Prosthodontics to database');
+                          await loadPatientDentalData();
+                        }
+                      } else if (!newValue && permanentPatientId) {
+                        // Delete all referrals for this department
+                        const { error: deleteError } = await supabase
+                          .from('referrals')
+                          .delete()
+                          .eq('permanent_patient_id', permanentPatientId)
+                          .eq('referral_type', 'Prosthodontics')
+                          .eq('status', 'not_given');
+
+                        if (deleteError) {
+                          console.error('❌ Error deleting referrals Prosthodontics:', deleteError);
+                        } else {
+                          console.log('✅ Deleted all referrals Prosthodontics from database');
+                          await loadPatientDentalData();
+                        }
+
+                        // Clear selected teeth
+                        setSelectedReferralFor(prev => {
+                          const newState = { ...prev };
+                          Object.keys(newState).forEach(tooth => {
+                            newState[tooth] = newState[tooth].filter(r => r !== 'prosthodontics');
+                          });
+                          return newState;
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.prosthodontics && styles.checkboxChecked]}>
+                      {referrals.prosthodontics && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>5- Prosthodontics</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons
+                      name={expandedDepartment === 'prosthodontics' ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#0284C7"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection */}
+                  {expandedDepartment === 'prosthodontics' && referrals.prosthodontics && (
+                    <View style={{
+                      backgroundColor: 'rgba(224, 242, 254, 0.5)',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginTop: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(186, 230, 253, 0.4)',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+                        Select specific teeth (optional):
+                      </Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UL (Upper Left)</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('prosthodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('prosthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'prosthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('prosthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Prosthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'prosthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('prosthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Prosthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('prosthodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('prosthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'prosthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('prosthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Prosthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'prosthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('prosthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Prosthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('prosthodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('prosthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'prosthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('prosthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Prosthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'prosthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('prosthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Prosthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('prosthodontics');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('prosthodontics');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'prosthodontics']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('prosthodontics');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Prosthodontics', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'prosthodontics'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Prosthodontics').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'prosthodontics') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('prosthodontics') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Prosthodontics', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )}
 
                 {/* Oral Medicine */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    marginBottom: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
-                    borderColor: referrals.oralMedicine ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
-                  }}
-                  onPress={() => {
-                    setSelectedReferral('oralMedicine');
-                    setReferrals(prev => {
-                      const newValue = !prev.oralMedicine;
-                      if (newValue) {
-                        setReferralStatus(prevStatus => ({ ...prevStatus, oralMedicine: 'Not Given' }));
+                {(departmentModalMode === 'new' || (departmentModalMode === 'edit' && referrals.oralMedicine)) && (
+                <View style={{ marginBottom: 12 }}>
+                  <TouchableOpacity
+                    disabled={departmentModalMode === 'edit'}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 18,
+                      borderRadius: 14,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      borderWidth: 1.5,
+                      borderColor: referrals.oralMedicine ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
+                    }}
+                    onPress={async () => {
+                      // في وضع "new": استخدام الحالات المؤقتة دون حفظ
+                      if (departmentModalMode === 'new') {
+                        const currentlySelected = tempReferrals.oralMedicine;
+                        setSelectedReferral('oralMedicine');
+
+                        if (!currentlySelected) {
+                          // غير محدد: تحديده + فتح الأسنان
+                          setTempReferrals(prev => ({ ...prev, oralMedicine: true }));
+                          setExpandedDepartment('oralMedicine');
+                        } else {
+                          // محدد بالفعل: فقط toggle الـ expansion
+                          if (expandedDepartment === 'oralMedicine') {
+                            setExpandedDepartment(null);
+                          } else {
+                            setExpandedDepartment('oralMedicine');
+                          }
+                        }
+                        return;
                       }
-                      return { ...prev, oralMedicine: newValue };
-                    });
-                  }}
-                >
-                  <View style={[styles.checkbox, referrals.oralMedicine && styles.checkboxChecked]}>
-                    {referrals.oralMedicine && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.referralText}>6- Oral Medicine</Text>
-                </TouchableOpacity>
+
+                      // في وضع "edit": الحفظ الفوري كالمعتاد
+                      const newValue = !referrals.oralMedicine;
+                      setSelectedReferral('oralMedicine');
+
+                      setReferrals(prev => {
+                        if (newValue) {
+                          setReferralStatus(prevStatus => ({ ...prevStatus, oralMedicine: 'not_given' }));
+                        }
+                        return { ...prev, oralMedicine: newValue };
+                      });
+
+                      // Toggle expansion
+                      if (expandedDepartment === 'oralMedicine') {
+                        setExpandedDepartment(null);
+                      } else {
+                        setExpandedDepartment('oralMedicine');
+                      }
+
+                      // Save/Delete based on newValue
+                      if (newValue && permanentPatientId && user?.name) {
+                        // Save as general referral
+                        const { error: referralError } = await createReferral(
+                          permanentPatientId,
+                          null,
+                          'Oral Medicine',
+                          user.name
+                        );
+
+                        if (referralError) {
+                          console.error('❌ Error saving general referral Oral Medicine:', referralError);
+                        } else {
+                          console.log('✅ Saved general referral Oral Medicine to database');
+                          await loadPatientDentalData();
+                        }
+                      } else if (!newValue && permanentPatientId) {
+                        // Delete all referrals for this department
+                        const { error: deleteError } = await supabase
+                          .from('referrals')
+                          .delete()
+                          .eq('permanent_patient_id', permanentPatientId)
+                          .eq('referral_type', 'Oral Medicine')
+                          .eq('status', 'not_given');
+
+                        if (deleteError) {
+                          console.error('❌ Error deleting referrals Oral Medicine:', deleteError);
+                        } else {
+                          console.log('✅ Deleted all referrals Oral Medicine from database');
+                          await loadPatientDentalData();
+                        }
+
+                        // Clear selected teeth
+                        setSelectedReferralFor(prev => {
+                          const newState = { ...prev };
+                          Object.keys(newState).forEach(tooth => {
+                            newState[tooth] = newState[tooth].filter(r => r !== 'oralMedicine');
+                          });
+                          return newState;
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.checkbox, referrals.oralMedicine && styles.checkboxChecked]}>
+                      {referrals.oralMedicine && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.referralText}>6- Oral Medicine</Text>
+                    <View style={{ flex: 1 }} />
+                    <Ionicons
+                      name={expandedDepartment === 'oralMedicine' ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#0284C7"
+                    />
+                  </TouchableOpacity>
+
+                  {/* Teeth Selection */}
+                  {expandedDepartment === 'oralMedicine' && referrals.oralMedicine && (
+                    <View style={{
+                      backgroundColor: 'rgba(224, 242, 254, 0.5)',
+                      borderRadius: 12,
+                      padding: 12,
+                      marginTop: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(186, 230, 253, 0.4)',
+                    }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+                        Select specific teeth (optional):
+                      </Text>
+
+                      {/* UL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UL (Upper Left)</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('oralMedicine');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralMedicine');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralMedicine']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralMedicine');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Medicine', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralMedicine'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralMedicine') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Medicine', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* UR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>UR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `UR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('oralMedicine');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralMedicine');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralMedicine']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralMedicine');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Medicine', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralMedicine'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralMedicine') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Medicine', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LR Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LR</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LR${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('oralMedicine');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralMedicine');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralMedicine']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralMedicine');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Medicine', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralMedicine'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralMedicine') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Medicine', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* LL Quadrant */}
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>LL</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
+                            const toothNumber = `LL${num}`;
+                            const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
+                            const isSelected = toothNum && selectedReferralFor[toothNum]?.includes('oralMedicine');
+                            return (
+                              <TouchableOpacity
+                                key={num}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 6,
+                                  backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onPress={async () => {
+                                  if (!toothNum) return;
+
+                                  if (departmentModalMode === 'new') {
+                                    const isCurrentlySelected = tempSelectedReferralFor[toothNum]?.includes('oralMedicine');
+                                    if (!isCurrentlySelected) {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: [...(prev[toothNum] || []), 'oralMedicine']
+                                      }));
+                                    } else {
+                                      setTempSelectedReferralFor(prev => ({
+                                        ...prev,
+                                        [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine')
+                                      }));
+                                    }
+                                    return;
+                                  }
+
+                                  if (toothNum && permanentPatientId && user?.name) {
+                                    const isCurrentlySelected = selectedReferralFor[toothNum]?.includes('oralMedicine');
+
+                                    if (!isCurrentlySelected) {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').is('tooth_number', null).eq('status', 'not_given');
+                                      const { error } = await createReferral(permanentPatientId, toothNumber, 'Oral Medicine', user.name);
+                                      if (!error) {
+                                        setSelectedReferralFor(prev => ({ ...prev, [toothNum]: [...(prev[toothNum] || []), 'oralMedicine'] }));
+                                        await loadPatientDentalData();
+                                      }
+                                    } else {
+                                      await supabase.from('referrals').delete().eq('permanent_patient_id', permanentPatientId).eq('referral_type', 'Oral Medicine').eq('tooth_number', toothNumber).eq('status', 'not_given');
+                                      setSelectedReferralFor(prev => ({ ...prev, [toothNum]: (prev[toothNum] || []).filter(r => r !== 'oralMedicine') }));
+                                      const hasOtherTeeth = Object.values(selectedReferralFor).some(refs => refs.includes('oralMedicine') && refs.length > 0);
+                                      if (!hasOtherTeeth) await createReferral(permanentPatientId, null, 'Oral Medicine', user.name);
+                                      await loadPatientDentalData();
+                                    }
+                                  }
+                                }}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+                                  {num}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                )}
               </ScrollView>
 
-              {/* Done Button */}
-              <View style={{ padding: 20, paddingTop: 12 }}>
+              {/* Save and Cancel Buttons */}
+              <View style={{ padding: 20, paddingTop: 12, flexDirection: 'row', gap: 12 }}>
+                {/* Cancel Button */}
                 <TouchableOpacity
-                  onPress={() => setShowDepartmentModal(false)}
+                  onPress={() => {
+                    // إذا كنا في وضع New، استعادة الحالة المحفوظة وإعادة تعيين الحالات المؤقتة
+                    if (departmentModalMode === 'new') {
+                      if (savedReferralsState && savedSelectedReferralFor) {
+                        setReferrals(savedReferralsState);
+                        setSelectedReferralFor(savedSelectedReferralFor);
+                        setSavedReferralsState(null);
+                        setSavedSelectedReferralFor(null);
+                      }
+                      // إعادة تعيين الحالات المؤقتة
+                      setTempReferrals({
+                        endodontics: false,
+                        oralSurgery: false,
+                        orthodontics: false,
+                        periodontics: false,
+                        prosthodontics: false,
+                        oralMedicine: false,
+                      });
+                      setTempSelectedReferralFor({});
+                    }
+                    setShowDepartmentModal(false);
+                  }}
                   style={{
-                    backgroundColor: '#0284C7',
+                    flex: 1,
+                    backgroundColor: 'rgba(148, 163, 184, 0.2)',
+                    paddingVertical: 16,
+                    borderRadius: 16,
+                    alignItems: 'center',
+                    borderWidth: 1.5,
+                    borderColor: 'rgba(148, 163, 184, 0.4)',
+                  }}
+                >
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#64748B', letterSpacing: 0.5 }}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Save Button */}
+                <TouchableOpacity
+                  disabled={departmentModalMode === 'new'
+                    ? !Object.values(tempReferrals).some(val => val === true)
+                    : !Object.values(referrals).some(val => val === true)}
+                  onPress={async () => {
+                    // في وضع "new": حفظ جميع التحويلات الجديدة
+                    if (departmentModalMode === 'new' && permanentPatientId && user?.name) {
+                      const departmentMap: Record<string, string> = {
+                        endodontics: 'Endodontics',
+                        oralSurgery: 'Oral Surgery',
+                        orthodontics: 'Orthodontics',
+                        periodontics: 'Periodontics',
+                        prosthodontics: 'Prosthodontics',
+                        oralMedicine: 'Oral Medicine',
+                      };
+
+                      // حفظ جميع الأقسام المختارة
+                      for (const [key, isSelected] of Object.entries(tempReferrals)) {
+                        if (isSelected) {
+                          const departmentName = departmentMap[key] || key;
+
+                          // التحقق من وجود أسنان محددة لهذا القسم
+                          const teethForDept = Object.entries(tempSelectedReferralFor)
+                            .filter(([_, depts]) => depts.includes(key))
+                            .map(([toothNum, _]) => parseInt(toothNum));
+
+                          if (teethForDept.length > 0) {
+                            // حذف التحويل العام أولاً (إن وجد) قبل حفظ الأسنان المحددة
+                            await supabase
+                              .from('referrals')
+                              .delete()
+                              .eq('permanent_patient_id', permanentPatientId)
+                              .eq('referral_type', departmentName)
+                              .is('tooth_number', null)
+                              .eq('status', 'not_given');
+
+                            // حفظ كل سن على حدة
+                            for (const toothNum of teethForDept) {
+                              const palmerNotation = convertNumberToPalmer(toothNum);
+                              await createReferral(permanentPatientId, palmerNotation, departmentName, user.name);
+                            }
+                          } else {
+                            // حفظ تحويل عام (بدون أسنان)
+                            await createReferral(permanentPatientId, null, departmentName, user.name);
+                          }
+                        }
+                      }
+
+                      // نسخ الحالات المؤقتة إلى الحالات الأساسية
+                      setReferrals(prev => ({ ...prev, ...tempReferrals }));
+                      setSelectedReferralFor(prev => ({ ...prev, ...tempSelectedReferralFor }));
+
+                      // إعادة تحميل البيانات
+                      await loadPatientDentalData();
+                    }
+
+                    // حذف الحالات المحفوظة
+                    setSavedReferralsState(null);
+                    setSavedSelectedReferralFor(null);
+                    setShowDepartmentModal(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    backgroundColor: (departmentModalMode === 'new'
+                      ? Object.values(tempReferrals).some(val => val === true)
+                      : Object.values(referrals).some(val => val === true)) ? '#0284C7' : 'rgba(148, 163, 184, 0.3)',
                     paddingVertical: 16,
                     borderRadius: 16,
                     alignItems: 'center',
@@ -10873,8 +13582,10 @@ export default function DentalChartScreen({
                     })
                   }}
                 >
-                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 }}>
-                    Done
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: (departmentModalMode === 'new'
+                    ? Object.values(tempReferrals).some(val => val === true)
+                    : Object.values(referrals).some(val => val === true)) ? '#FFFFFF' : '#9CA3AF', letterSpacing: 0.5 }}>
+                    Save
                   </Text>
                 </TouchableOpacity>
               </View>
