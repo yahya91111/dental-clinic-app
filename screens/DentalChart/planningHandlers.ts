@@ -18,7 +18,7 @@ import type { ToothSurface, ToothCondition } from '../../types';
 // ═══════════════════════════════════════════════════════════════
 
 export interface PendingPlanningRecord {
-  toothNumber: number;
+  toothNumber: number | string;
   type: 'planning';
   action: 'diagnosed' | 'canceled';
   condition: string;

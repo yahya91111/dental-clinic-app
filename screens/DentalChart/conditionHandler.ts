@@ -27,21 +27,21 @@ export interface PlanningRecordGlobal {
 
 export interface ConditionSelectParams {
   condition: ToothCondition;
-  selectedTooth: number | null;
+  selectedTooth: number | string | null;
   selectedSurface: string | null;
-  toothConditions: Record<number, ToothSurfaceConditions>;
-  toothRecords: Record<number, ToothRecord[]>;
+  toothConditions: Record<number | string, ToothSurfaceConditions>;
+  toothRecords: Record<number | string, ToothRecord[]>;
   allPlanningRecordsGlobal: PlanningRecordGlobal[];
   pendingPlanningRecords: PendingPlanningRecord[];
   userName: string;
   // State setters
-  setToothBorderColors: (fn: (prev: Record<number, ToothCondition>) => Record<number, ToothCondition>) => void;
-  setToothConditions: (fn: (prev: Record<number, ToothSurfaceConditions>) => Record<number, ToothSurfaceConditions>) => void;
+  setToothBorderColors: (fn: (prev: Record<number | string, ToothCondition>) => Record<number | string, ToothCondition>) => void;
+  setToothConditions: (fn: (prev: Record<number | string, ToothSurfaceConditions>) => Record<number | string, ToothSurfaceConditions>) => void;
   setPendingPlanningRecords: (fn: (prev: PendingPlanningRecord[]) => PendingPlanningRecord[]) => void;
-  setToothRecords: (fn: (prev: Record<number, ToothRecord[]>) => Record<number, ToothRecord[]>) => void;
+  setToothRecords: (fn: (prev: Record<number | string, ToothRecord[]>) => Record<number | string, ToothRecord[]>) => void;
   setHasModalChanges: (value: boolean) => void;
   setShowConditionMenu: (value: boolean) => void;
-  setSelectedTooth: (value: number | null) => void;
+  setSelectedTooth: (value: number | string | null) => void;
   setSelectedSurface: (value: string | null) => void;
 }
 
@@ -294,7 +294,8 @@ export function handleConditionSelect({
       const now = new Date();
       const timestamp = formatTimestamp(now);
 
-      const surfaceOptions = getAllSurfaces(selectedTooth);
+      const toothNum = typeof selectedTooth === 'number' ? selectedTooth : parseInt(String(selectedTooth), 10);
+      const surfaceOptions = getAllSurfaces(toothNum);
       const surface = surfaceOptions.find(opt => opt.key === selectedSurface);
       const surfaceLabel = surface?.label || selectedSurface;
       const timestampNum = now.getTime() + Math.random() * 0.999;
@@ -306,7 +307,7 @@ export function handleConditionSelect({
         surfaces: [surfaceLabel],
         timestamp,
         timestampNum,
-        toothNumber: selectedTooth,
+        toothNumber: toothNum,
         doctorName: userName,
         isChange: undefined,
         previousCondition: undefined
@@ -388,7 +389,8 @@ export function handleConditionSelect({
         const now = new Date();
         const timestamp = formatTimestamp(now);
 
-        const surfaceOptions = getAllSurfaces(selectedTooth);
+        const toothNumForSurface = typeof selectedTooth === 'number' ? selectedTooth : parseInt(String(selectedTooth), 10);
+        const surfaceOptions = getAllSurfaces(toothNumForSurface);
         const surface = surfaceOptions.find(opt => opt.key === selectedSurface);
         const surfaceLabel = surface?.label || selectedSurface;
         const timestampNum = now.getTime() + Math.random() * 0.999;
@@ -466,18 +468,41 @@ export function handleConditionSelect({
       const timestamp = formatTimestamp(now);
 
       const conditionName = getConditionName(condition);
-      const surfaceOptions = getAllSurfaces(selectedTooth);
+      const toothNumForSurface = typeof selectedTooth === 'number' ? selectedTooth : parseInt(String(selectedTooth), 10);
+      const surfaceOptions = getAllSurfaces(toothNumForSurface);
       const surface = surfaceOptions.find(opt => opt.key === selectedSurface);
       const surfaceLabel = surface?.label || selectedSurface;
       const timestampNum = now.getTime() + Math.random() * 0.999;
 
       // كشف التغيير: البحث عن آخر سجل لنفس السطح بحالة مختلفة
       // أولوية البحث:
+      // 0. الحالة المرئية الحالية (toothConditions) - الأهم
       // 1. editing_records (العلاجات المنفذة - الأسطح الخضراء)
       // 2. planning_records (التخطيطات)
 
       let isChange = false;
       let previousCondition = '';
+
+      // ══════════════════════════════════════════════════════════════
+      // STEP 0: فحص مباشر للحالة المرئية - هل السن محدد كـ Extraction؟
+      // ══════════════════════════════════════════════════════════════
+      const currentToothConditions = toothConditions[selectedTooth];
+      if (currentToothConditions) {
+        const allExtraction =
+          currentToothConditions.top === 'extraction' &&
+          currentToothConditions.bottom === 'extraction' &&
+          currentToothConditions.left === 'extraction' &&
+          currentToothConditions.right === 'extraction' &&
+          currentToothConditions.center === 'extraction';
+
+        if (allExtraction) {
+          // نحن هنا في else block، أي condition ليس extraction/missing/treated/null
+          // لذلك هذا تغيير من Extraction إلى حالة أخرى
+          console.log('🔍 DIRECT CHECK: All surfaces are extraction, changing to:', conditionName.english);
+          isChange = true;
+          previousCondition = 'Extraction';
+        }
+      }
 
       // ══════════════════════════════════════════════════════════════
       // STEP 1: البحث في editing_records أولاً (العلاجات المنفذة)
@@ -635,7 +660,7 @@ export function handleConditionSelect({
         };
 
         // Mapping للأسطح (use helper to get correct mapping for lower teeth)
-        const surfaceNameToKey = getSurfaceNameMap(selectedTooth);
+        const surfaceNameToKey = getSurfaceNameMap(toothNumForSurface);
 
         // أضف اللون الجديد للسطح المحدد فقط (إذا كان له لون)
         if (CONDITION_NAME_TO_KEY[conditionName.english]) {
