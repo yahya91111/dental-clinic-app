@@ -447,3 +447,24 @@ export const convertPalmerToNumber = (palmer: ToothNumber): number | null => {
   }
   return null;
 };
+
+// ---------------------------------------------------------------
+// Tooth Label Function
+// ---------------------------------------------------------------
+
+/**
+ * Get a human-readable label for a tooth number
+ * @param toothNumber - The tooth number (1-32)
+ * @returns A descriptive string for the tooth
+ */
+export const getToothLabel = (toothNumber: number): string => {
+  if (toothNumber >= 25 && toothNumber <= 32) {
+    const position = 33 - toothNumber; // 25→8, 26→7, 27→6, etc.
+    return `lower right ${position}`;
+  }
+  if (toothNumber >= 17 && toothNumber <= 24) {
+    const position = toothNumber - 16; // 17→1, 18→2, 19→3, etc.
+    return `lower left ${position}`;
+  }
+  return `السن #${toothNumber}`;
+};
