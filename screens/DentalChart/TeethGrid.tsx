@@ -1005,8 +1005,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 25 ? getToothAnims(25).scale : 1 },
               { rotate: selectedTooth === 25 ? getToothAnims(25).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '-90deg'],
-              }) : '0deg' },
+                outputRange: ['-80deg', '90deg'],
+              }) : '-80deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -1036,8 +1036,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 26 ? getToothAnims(26).scale : 1 },
               { rotate: selectedTooth === 26 ? getToothAnims(26).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '-90deg'],
-              }) : '0deg' },
+                outputRange: ['-60deg', '90deg'],
+              }) : '-60deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -1067,8 +1067,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 27 ? getToothAnims(27).scale : 1 },
               { rotate: selectedTooth === 27 ? getToothAnims(27).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '-90deg'],
-              }) : '0deg' },
+                outputRange: ['-35deg', '90deg'],
+              }) : '-35deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
