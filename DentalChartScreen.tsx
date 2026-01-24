@@ -21,7 +21,6 @@ import { styles, SCREEN_WIDTH, SCREEN_HEIGHT } from './screens/DentalChart/style
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Line, Rect, Defs, ClipPath, G, Polygon } from 'react-native-svg';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabase';
 import {
@@ -118,6 +117,8 @@ import {
   PlanningRecordGlobal,
 } from './screens/DentalChart/conditionHandler';
 import { AnimatedBackground } from './screens/DentalChart/AnimatedBackground';
+import { TransparentTouchLayer } from './screens/DentalChart/TransparentTouchLayer';
+import { CrossDividerLines } from './screens/DentalChart/CrossDividerLines';
 
 // إخفاء التحذيرات غير المهمة
 LogBox.ignoreLogs([
@@ -1031,70 +1032,13 @@ export default function DentalChartScreen({
 
                 {/* Teeth Container */}
                 <View style={styles.crossContainer}>
-                  {/* خطوط فاصلة أصفر في المنتصف */}
-                  {/* الخط العمودي العلوي */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: toothAnims.verticalTopLineSlide }] }]} pointerEvents="none">
-                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط العمودي الأصفر الصغير في الأعلى بين رقم 1 و1 */}
-                      <Line
-                        x1="50"
-                        y1="-30"
-                        x2="50"
-                        y2="-10"
-                        stroke="rgba(251, 191, 36, 0.3)"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </Svg>
-                  </Animated.View>
-
-                  {/* الخط العمودي السفلي */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: toothAnims.verticalBottomLineSlide }] }]} pointerEvents="none">
-                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط العمودي الأصفر الصغير في الأسفل بين رقم 1 و1 للفك السفلي */}
-                      <Line
-                        x1="50"
-                        y1="110"
-                        x2="50"
-                        y2="130"
-                        stroke="rgba(251, 191, 36, 0.3)"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </Svg>
-                  </Animated.View>
-
-                  {/* الخط الأفقي الأيسر */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: toothAnims.horizontalLeftLineSlide }] }]} pointerEvents="none">
-                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليسار */}
-                      <Line
-                        x1="10"
-                        y1="50"
-                        x2="30"
-                        y2="50"
-                        stroke="rgba(251, 191, 36, 0.3)"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </Svg>
-                  </Animated.View>
-
-                  {/* الخط الأفقي الأيمن */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: toothAnims.horizontalRightLineSlide }] }]} pointerEvents="none">
-                    <Svg width="100%" height="100%" viewBox="0 0 100 100">
-                      {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليمين */}
-                      <Line
-                        x1="70"
-                        y1="50"
-                        x2="90"
-                        y2="50"
-                        stroke="rgba(251, 191, 36, 0.3)"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </Svg>
-                  </Animated.View>
+                  {/* Cross Divider Lines - Extracted to CrossDividerLines.tsx */}
+                  <CrossDividerLines
+                    verticalTopLineSlide={toothAnims.verticalTopLineSlide}
+                    verticalBottomLineSlide={toothAnims.verticalBottomLineSlide}
+                    horizontalLeftLineSlide={toothAnims.horizontalLeftLineSlide}
+                    horizontalRightLineSlide={toothAnims.horizontalRightLineSlide}
+                  />
 
                   {/* Oral Hygiene Container */}
                   <OralHygieneContainer
@@ -1189,168 +1133,13 @@ export default function DentalChartScreen({
             />
           </ScrollView>
 
-        {/* طبقة شفافة للنقر عليها لإغلاق الأسنان 1-32 - تغطي كل الشاشة ماعدا منطقة السن */}
-      {selectedTooth && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && !showConditionMenu && !isClosing && (() => {
-        // حساب حدود السن المكبر
-        // Tiny teeth (6,7,8,9,10,11,22,23,24,25,26,27): 37x47، Medium teeth (1-5,12-21,28-32): 33x42
-        const isTinyTooth = [6, 7, 8, 9, 10, 11, 22, 23, 24, 25, 26, 27].includes(selectedTooth);
-        const originalWidth = isTinyTooth ? 37 : 33;
-        const originalHeight = isTinyTooth ? 47 : 42;
-        // للأسنان المدورة ±90 درجة (1-32)، نعكس الأبعاد
-        const isRotatedTooth = selectedTooth >= 1 && selectedTooth <= 32;
-        let toothWidth = (isRotatedTooth ? originalHeight : originalWidth) * 8;
-        let toothHeight = (isRotatedTooth ? originalWidth : originalHeight) * 8;
-
-        let centerX = SCREEN_WIDTH / 2 - 20;
-        let centerY = SCREEN_HEIGHT / 2;
-
-        // حساب يدوي مستقل للأسنان 6, 7, 8, 9, 10, 11 (8, 7, 6 يمين ويسار فوق)
-        if (selectedTooth === 6 || selectedTooth === 7 || selectedTooth === 8 || selectedTooth === 9 || selectedTooth === 10 || selectedTooth === 11) {
-          // قيم يدوية للطبقة الشفافة
-          const originalToothWidth = 37; // tiny tooth
-          const originalToothHeight = 47; // tiny tooth
-
-          centerX = SCREEN_WIDTH / 2 - 20; // مركز الشاشة أفقياً - زيح لليسار
-          centerY = SCREEN_HEIGHT / 2 + 69; // تنزيل للأسفل - رفع نقطة
-          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (بعد الدوران)
-          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (بعد الدوران)
-        }
-
-        // حساب يدوي مستقل للأسنان 25, 26, 27 (8, 7, 6 تحت يسار) - نفس إعدادات 8, 7, 6 فوق
-        if (selectedTooth === 25 || selectedTooth === 26 || selectedTooth === 27) {
-          // قيم يدوية للطبقة الشفافة
-          const originalToothWidth = 37; // tiny tooth
-          const originalToothHeight = 47; // tiny tooth
-
-          centerX = SCREEN_WIDTH / 2 + 30; // إلى اليمين
-          centerY = SCREEN_HEIGHT / 2 + 50; // رفع قليلاً
-          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (بعد الدوران)
-          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (بعد الدوران)
-        }
-
-        // حساب يدوي مستقل للأسنان 22, 23, 24 (3, 2, 1 تحت يمين) - حجم أكبر
-        if (selectedTooth === 22 || selectedTooth === 23 || selectedTooth === 24) {
-          const originalToothWidth = 37; // tiny tooth
-          const originalToothHeight = 47; // tiny tooth
-
-          centerX = SCREEN_WIDTH / 2 + 10; // تحريك إلى اليسار
-          centerY = SCREEN_HEIGHT / 2 + 30; // تنزيل للأسفل 20 بكسل
-          toothWidth = originalToothHeight * 8; // 47 * 8 = 376 (حجم أكبر)
-          toothHeight = originalToothWidth * 8; // 37 * 8 = 296 (حجم أكبر)
-        }
-
-        // حساب يدوي مستقل للأسنان 17-21 (8-4 تحت يمين) - حجم عادي
-        if (selectedTooth >= 17 && selectedTooth <= 21) {
-          const originalToothWidth = 37; // tiny tooth
-          const originalToothHeight = 47; // tiny tooth
-
-          centerX = SCREEN_WIDTH / 2 + 10; // تحريك إلى اليسار
-          centerY = SCREEN_HEIGHT / 2 + 10; // رفع للأعلى 40 بكسل
-          toothWidth = originalToothHeight * 7; // 47 * 7 = 329
-          toothHeight = originalToothWidth * 7; // 37 * 7 = 259
-        }
-
-        // حساب يدوي مستقل للأسنان 4, 5, 12, 13 (5, 4 يمين ويسار فوق)
-        if (selectedTooth === 4 || selectedTooth === 5 || selectedTooth === 12 || selectedTooth === 13) {
-          // قيم يدوية للطبقة الشفافة
-          const originalToothWidth = 37; // tiny tooth
-          const originalToothHeight = 47; // tiny tooth
-
-          centerX = SCREEN_WIDTH / 2; // مركز الشاشة أفقياً
-          centerY = SCREEN_HEIGHT / 2 + 90; // تنزيل للأسفل أكثر
-          toothWidth = originalToothHeight * 7; // 47 * 7 = 329 (بعد الدوران - أصغر)
-          toothHeight = originalToothWidth * 7; // 37 * 7 = 259 (بعد الدوران - أصغر)
-        }
-
-        // حساب يدوي مستقل للأسنان 1, 2, 3, 14, 15, 16 (3, 2, 1 يمين ويسار فوق)
-        if (selectedTooth === 1 || selectedTooth === 2 || selectedTooth === 3 || selectedTooth === 14 || selectedTooth === 15 || selectedTooth === 16) {
-          // قيم يدوية للطبقة الشفافة - نفس حجم الأسنان 4، 5
-          centerX = SCREEN_WIDTH / 2; // مركز الشاشة أفقياً
-          centerY = SCREEN_HEIGHT / 2 + 110; // تنزيل للأسفل أكثر
-          toothWidth = 329; // نفس حجم الأسنان 4، 5
-          toothHeight = 259; // نفس حجم الأسنان 4، 5
-        }
-
-        // حساب يدوي مستقل للأسنان 28-32 (8-4 تحت يسار)
-        if (selectedTooth >= 28 && selectedTooth <= 32) {
-          const originalToothWidth = 33; // medium tooth
-          const originalToothHeight = 42; // medium tooth
-
-          centerX = SCREEN_WIDTH / 2 + 10; // تحريك 30 بكسل إلى اليمين من الافتراضي (-20 + 30 = +10)
-          centerY = SCREEN_HEIGHT / 2;
-          toothWidth = originalToothHeight * 8; // 42 * 8 = 336 (بعد الدوران)
-          toothHeight = originalToothWidth * 8; // 33 * 8 = 264 (بعد الدوران)
-        }
-
-        const toothTop = centerY - toothHeight / 2; // الحد العلوي للسن
-        const toothBottom = centerY + toothHeight / 2; // الحد السفلي للسن
-        const toothLeft = centerX - toothWidth / 2; // الحد الأيسر للسن
-        const toothRight = centerX + toothWidth / 2; // الحد الأيمن للسن
-
-        return (
-          <>
-            {/* المنطقة العلوية - من أعلى الشاشة حتى الحد العلوي للسن */}
-            <TouchableWithoutFeedback onPress={handleCloseTooth}>
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: SCREEN_WIDTH,
-                  height: toothTop,
-                  zIndex: 998,
-                  backgroundColor: 'transparent',
-                }}
-              />
-            </TouchableWithoutFeedback>
-
-            {/* المنطقة السفلية - من الحد السفلي للسن حتى أسفل الشاشة */}
-            <TouchableWithoutFeedback onPress={handleCloseTooth}>
-              <View
-                style={{
-                  position: 'absolute',
-                  top: toothBottom,
-                  left: 0,
-                  width: SCREEN_WIDTH,
-                  height: SCREEN_HEIGHT - toothBottom,
-                  zIndex: 998,
-                  backgroundColor: 'transparent',
-                }}
-              />
-            </TouchableWithoutFeedback>
-
-            {/* المنطقة اليسرى - من يسار الشاشة حتى الحد الأيسر للسن */}
-            <TouchableWithoutFeedback onPress={handleCloseTooth}>
-              <View
-                style={{
-                  position: 'absolute',
-                  top: toothTop,
-                  left: 0,
-                  width: toothLeft,
-                  height: toothHeight,
-                  zIndex: 998,
-                  backgroundColor: 'transparent',
-                }}
-              />
-            </TouchableWithoutFeedback>
-
-            {/* المنطقة اليمنى - من الحد الأيمن للسن حتى يمين الشاشة */}
-            <TouchableWithoutFeedback onPress={handleCloseTooth}>
-              <View
-                style={{
-                  position: 'absolute',
-                  top: toothTop,
-                  left: toothRight,
-                  width: SCREEN_WIDTH - toothRight,
-                  height: toothHeight,
-                  zIndex: 998,
-                  backgroundColor: 'transparent',
-                }}
-              />
-            </TouchableWithoutFeedback>
-          </>
-        );
-      })()}
+        {/* Transparent Touch Layer - Extracted to TransparentTouchLayer.tsx */}
+        {selectedTooth && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && !showConditionMenu && !isClosing && (
+          <TransparentTouchLayer
+            selectedTooth={selectedTooth}
+            onClose={handleCloseTooth}
+          />
+        )}
 
       {/* Enlarged Tooth Overlay - لباقي الأسنان فقط (ليس الأسنان 1-8 و 25-32) */}
       {selectedTooth && ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth) && (
