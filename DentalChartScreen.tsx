@@ -105,6 +105,7 @@ import {
 } from './screens/DentalChart/DentalChartComponents';
 import { DepartmentModal, ReferralsState, ReferralStatusState } from './screens/DentalChart/DepartmentModal';
 import { ToothDetailsModal, ToothRecord, ToothNote, EditingRecord, PlanningRecord } from './screens/DentalChart/ToothDetailsModal';
+import { useToothAnimations } from './screens/DentalChart/useToothAnimations';
 
 // إخفاء التحذيرات غير المهمة
 LogBox.ignoreLogs([
