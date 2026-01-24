@@ -46,6 +46,7 @@ import type { ToothNumber, ToothSurface, ToothCondition } from './types';
 import {
   CONDITION_COLORS,
   CONDITION_NAMES,
+  CONDITION_NAME_TO_KEY,
   REFERRAL_HEADER_HEIGHT,
   REFERRAL_CONTENT_MIN,
   REFERRAL_CONTENT_MAX,
@@ -1667,20 +1668,6 @@ export default function DentalChartScreen({
         return surfaceLabel; // Already just "Mesial"
       };
 
-      const conditionColorMap: Record<string, ToothCondition> = {
-        // Condition options (surface-specific)
-        'Caries': 'caries',                                    // أحمر
-        'Broken/Inappropriate Filling': 'broken',              // وردي
-        'Pulpectomy': 'pulpectomy',                            // عنابي (السطح المختار فقط)
-        'Follow-up': 'follow_up',                              // أزرق
-        'Needs More Diagnosis': 'needs_diagnosis',             // برتقالي
-        'Temporary Filling': 'filling_replacement',            // رمادي (السطح المختار فقط)
-        'Permanent Filling': 'permanent_filling',              // أخضر (السطح المختار فقط)
-        'Fracture': 'fracture',
-        'Restoration to Replace': 'filling_replacement',
-        'Impacted': 'impacted',
-      };
-
       // IMPORTANT: Separate delete and save operations to execute them sequentially
       // Delete operations MUST complete BEFORE save operations to prevent race conditions
       const deleteOperationPromises = [];
@@ -1732,8 +1719,8 @@ export default function DentalChartScreen({
           });
         }
         // Handle surface-specific diagnoses (Caries, Fracture, etc.)
-        else if (record.condition && conditionColorMap[record.condition]) {
-          const color = conditionColorMap[record.condition];
+        else if (record.condition && CONDITION_NAME_TO_KEY[record.condition]) {
+          const color = CONDITION_NAME_TO_KEY[record.condition];
           record.surfaces.forEach(surfaceLabel => {
             const surfaceName = extractSurfaceName(surfaceLabel);
             const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
@@ -3855,26 +3842,12 @@ export default function DentalChartScreen({
           // Mapping للأسطح (use helper to get correct mapping for lower teeth)
           const surfaceNameToKey = getSurfaceNameMap(selectedTooth);
 
-          // Mapping للألوان
-          const conditionColorMap: Record<string, ToothCondition> = {
-            'Caries': 'caries',
-            'Broken/Inappropriate Filling': 'broken',
-            'Pulpectomy': 'pulpectomy',
-            'Follow-up': 'follow_up',
-            'Needs More Diagnosis': 'needs_diagnosis',
-            'Temporary Filling': 'filling_replacement',
-            'Permanent Filling': 'permanent_filling',
-            'Fracture': 'fracture',
-            'Restoration to Replace': 'filling_replacement',
-            'Impacted': 'impacted',
-          };
-
           // أضف اللون الجديد للسطح المحدد فقط (إذا كان له لون)
-          if (conditionColorMap[conditionName.english]) {
+          if (CONDITION_NAME_TO_KEY[conditionName.english]) {
             const surfaceKey = surfaceNameToKey[surfaceLabel.toLowerCase()];
-            console.log(`  → Adding new color: condition="${conditionName.english}", surface="${surfaceLabel}", surfaceKey="${surfaceKey}", color="${conditionColorMap[conditionName.english]}"`);
+            console.log(`  → Adding new color: condition="${conditionName.english}", surface="${surfaceLabel}", surfaceKey="${surfaceKey}", color="${CONDITION_NAME_TO_KEY[conditionName.english]}"`);
             if (surfaceKey) {
-              clearedConditions[surfaceKey] = conditionColorMap[conditionName.english];
+              clearedConditions[surfaceKey] = CONDITION_NAME_TO_KEY[conditionName.english];
               console.log(`   clearedConditions after adding:`, clearedConditions);
             } else {
               console.log(`   surfaceKey is null for "${surfaceLabel}"`);

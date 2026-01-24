@@ -102,3 +102,20 @@ export const toothStatusList: Array<{ key: ToothCondition; name: string; color: 
   { key: 'permanent_filling', name: 'Permanent Filling', color: CONDITION_COLORS.permanent_filling },
   { key: 'treated', name: 'Root Canal Treated', color: 'transparent' },
 ];
+
+// ---------------------------------------------------------------
+// Condition Name to Key Mapping
+// ---------------------------------------------------------------
+// Maps English condition names to ToothCondition keys
+export const CONDITION_NAME_TO_KEY: Record<string, ToothCondition> = {
+  'Caries': 'caries',
+  'Broken/Inappropriate Filling': 'broken',
+  'Pulpectomy': 'pulpectomy',
+  'Follow-up': 'follow_up',
+  'Needs More Diagnosis': 'needs_diagnosis',
+  'Temporary Filling': 'filling_replacement',
+  'Permanent Filling': 'permanent_filling',
+  'Fracture': 'fracture' as ToothCondition,
+  'Restoration to Replace': 'filling_replacement',
+  'Impacted': 'impacted' as ToothCondition,
+};
