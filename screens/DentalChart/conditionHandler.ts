@@ -395,11 +395,14 @@ export function handleConditionSelect({
         const timestampNum = now.getTime() + Math.random() * 0.999;
 
         // Clear Condition: إضافة سجل canceled (استبدال السجل السابق)
+        // إذا كان extraction/missing، نحتاج لحذف كل الأسطح
+        const clearSurfaces = hasExtractionOrMissing ? ['All surfaces'] : [surfaceLabel];
+
         const newRecord = {
           type: 'planning' as const,
           action: 'canceled' as const,
           condition: '',
-          surfaces: [surfaceLabel],
+          surfaces: clearSurfaces,
           timestamp,
           timestampNum,
           doctorName: userName,
@@ -413,7 +416,12 @@ export function handleConditionSelect({
           const filtered = existingRecords.filter(record => {
             if (record.type !== 'planning') return true;
 
-            // Remove old record for this surface
+            // If clearing extraction/missing, remove ALL planning records for this tooth
+            if (hasExtractionOrMissing) {
+              return false; // Remove all planning records
+            }
+
+            // Otherwise, remove only the record for this surface
             const recordSurface = record.surfaces.find(s => s.includes(`(${surfaceLabel})`));
             return !recordSurface;
           });
@@ -432,7 +440,12 @@ export function handleConditionSelect({
           const filtered = prev.filter(record => {
             if (record.toothNumber !== selectedTooth) return true;
 
-            // Remove old record for this surface
+            // If clearing extraction/missing, remove ALL pending records for this tooth
+            if (hasExtractionOrMissing) {
+              return false; // Remove all pending records for this tooth
+            }
+
+            // Otherwise, remove only the record for this surface
             const recordSurface = record.surfaces.find(s => s.includes(`(${surfaceLabel})`));
             return !recordSurface;
           });
@@ -608,6 +621,13 @@ export function handleConditionSelect({
         const filtered = prev.filter(record => {
           if (record.toothNumber !== selectedTooth) return true;
 
+          // If changing from Extraction, remove Extraction record (has 'All surfaces')
+          if (isChange && previousCondition === 'Extraction') {
+            if (record.condition === 'Extraction' && record.surfaces.includes('All surfaces')) {
+              return false; // Remove Extraction record
+            }
+          }
+
           // Check if this record is for the same surface
           const recordSurface = record.surfaces.find(s => s.includes(`(${surfaceLabel})`));
           return !recordSurface; // Keep only if different surface
@@ -630,6 +650,13 @@ export function handleConditionSelect({
         // Remove any existing planning record for this surface
         const filtered = existingRecordsForTooth.filter(record => {
           if (record.type !== 'planning') return true; // Keep non-planning records
+
+          // If changing from Extraction, remove Extraction record
+          if (isChange && previousCondition === 'Extraction') {
+            if (record.condition === 'Extraction' && record.surfaces.includes('All surfaces')) {
+              return false; // Remove Extraction record
+            }
+          }
 
           // Check if this record is for the same surface
           const recordSurface = record.surfaces.find(s => s.includes(`(${surfaceLabel})`));

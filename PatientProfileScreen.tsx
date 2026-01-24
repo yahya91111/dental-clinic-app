@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import DentalChartScreen from './DentalChartScreen';
+import DentalChartScreen from './screens/DentalChart';
 import { BlurView } from 'expo-blur';
 import { useAuth } from './AuthContext';
 import {

@@ -184,16 +184,28 @@ export async function handlePlanningSubmit({
 
       // Handle Clear Condition (canceled)
       if (record.action === 'canceled') {
-        record.surfaces.forEach(surfaceLabel => {
-          const surfaceName = extractSurfaceName(surfaceLabel);
-          const dbSurface = SURFACE_NAME_TO_DB[surfaceName.toLowerCase()];
-          console.log(`  → Clear: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}"`);
-          if (dbSurface) {
+        // إذا كان Clear لـ Extraction/Missing، احذف كل الأسطح
+        if (record.surfaces.includes('All surfaces')) {
+          console.log('  → Clear All: deleting all surfaces (was Extraction/Missing)');
+          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
+            const dbSurface = surfaceMap[surfaceKey];
             deleteOperationPromises.push(
               deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
             );
           }
-        });
+        } else {
+          // الحالة العادية - سطح واحد
+          record.surfaces.forEach(surfaceLabel => {
+            const surfaceName = extractSurfaceName(surfaceLabel);
+            const dbSurface = SURFACE_NAME_TO_DB[surfaceName.toLowerCase()];
+            console.log(`  → Clear: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}"`);
+            if (dbSurface) {
+              deleteOperationPromises.push(
+                deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
+              );
+            }
+          });
+        }
       }
       // Handle surface-specific diagnoses (Caries, Fracture, etc.)
       else if (record.condition && CONDITION_NAME_TO_KEY[record.condition]) {

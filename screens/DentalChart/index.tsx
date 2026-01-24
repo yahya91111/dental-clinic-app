@@ -1,113 +1,53 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  Pressable,
   StatusBar,
   Animated,
   ScrollView,
-  Dimensions,
-  TextInput,
-  Alert,
+  RefreshControl,
   LogBox,
-  Platform,
 } from 'react-native';
-import { styles, SCREEN_WIDTH, SCREEN_HEIGHT } from './screens/DentalChart/styles';
+import { styles } from './styles';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { useAuth } from './AuthContext';
-import { supabase } from './lib/supabase';
-import {
-  getCompleteToothData,
-  deleteToothSurfaceCondition,
-  createEditingRecord,
-  createPlanningBatch,
-  getEditingRecords,
-  getPlanningRecords,
-  createToothNote,
-  createReferral,
-  getAllToothNotes,
-  getReferrals,
-  createScalingRecord,
-  getScalingRecords,
-  deleteScalingRecord,
-} from './lib/database';
-import type { ToothNumber, ToothCondition } from './types';
+import { useAuth } from '../../AuthContext';
+import type { ToothCondition } from '../../types';
 
-// Import constants and helpers from extracted files
-import {
-  CONDITION_COLORS,
-  CONDITION_NAMES,
-  CONDITION_NAME_TO_KEY,
-  REFERRAL_HEADER_HEIGHT,
-  REFERRAL_CONTENT_MIN,
-  REFERRAL_CONTENT_MAX,
-  CONTAINER_SPACING,
-  TREATMENT_PLANNING_SPACING,
-  treatmentOptions,
-  detailsOptions,
-  referralOptions,
-  conditionsList,
-  toothStatusList,
-} from './screens/DentalChart/constants';
-import {
-  ToothSurfaceConditions,
-  getSurfaceName,
-  getArabicSurfaceName,
-  getToothPosition,
-  getQuadrantToothNumber,
-  getToothDisplayName,
-  palmerToNumber,
-  getToothPositionNumber,
-  getToothQuadrant,
-  getToothName,
-  getQuadrant,
-  getConditionName,
-  getReferralName,
-  getToothAngle,
-  getToothSVGCoordinates,
-  getAllSurfaces,
-  getSurfaceNameMap,
-  convertPalmerToNumber,
-  getConditionFromDetails,
-  formatTimestamp,
-} from './screens/DentalChart/dentalHelpers';
-import {
-  ToothNumberBadge,
-  ConditionMenu,
-  ConditionMenuProps,
-} from './screens/DentalChart/DentalChartComponents';
-import { DepartmentModal, ReferralsState, ReferralStatusState } from './screens/DentalChart/DepartmentModal';
-import { ToothDetailsModal, ToothRecord, ToothNote, EditingRecord, PlanningRecord } from './screens/DentalChart/ToothDetailsModal';
-import { useToothAnimations } from './screens/DentalChart/useToothAnimations';
-import { TeethGrid, ToothAnimValues } from './screens/DentalChart/TeethGrid';
-import { ReferralContainer } from './screens/DentalChart/ReferralContainer';
-import { TreatmentRecordContainer } from './screens/DentalChart/TreatmentRecordContainer';
-import { PlanningRecordContainer } from './screens/DentalChart/PlanningRecordContainer';
-import { OralHygieneContainer } from './screens/DentalChart/OralHygieneContainer';
-import { loadPatientDentalData as loadDentalDataFromDB } from './screens/DentalChart/loadDentalData';
+// Import helpers and components from extracted files
+import { ToothSurfaceConditions } from './dentalHelpers';
+import { ConditionMenu } from './DentalChartComponents';
+import { DepartmentModal, ReferralsState, ReferralStatusState } from './DepartmentModal';
+import { ToothDetailsModal, ToothRecord, ToothNote } from './ToothDetailsModal';
+import { useToothAnimations } from './useToothAnimations';
+import { TeethGrid } from './TeethGrid';
+import { ReferralContainer } from './ReferralContainer';
+import { TreatmentRecordContainer } from './TreatmentRecordContainer';
+import { PlanningRecordContainer } from './PlanningRecordContainer';
+import { OralHygieneContainer } from './OralHygieneContainer';
+import { loadPatientDentalData as loadDentalDataFromDB } from './loadDentalData';
 import {
   handlePlanningSubmit as submitPlanning,
   handlePlanningCancel as cancelPlanning,
-  PendingPlanningRecord,
-} from './screens/DentalChart/planningHandlers';
+} from './planningHandlers';
 import {
   handleConditionSelect as selectCondition,
   PlanningRecordGlobal,
-} from './screens/DentalChart/conditionHandler';
-import { AnimatedBackground } from './screens/DentalChart/AnimatedBackground';
-import { TransparentTouchLayer } from './screens/DentalChart/TransparentTouchLayer';
-import { CrossDividerLines } from './screens/DentalChart/CrossDividerLines';
-import { EnlargedToothModal } from './screens/DentalChart/EnlargedToothModal';
-import { HeaderAndPlanningButtons } from './screens/DentalChart/HeaderAndPlanningButtons';
+} from './conditionHandler';
+import { AnimatedBackground } from './AnimatedBackground';
+import { TransparentTouchLayer } from './TransparentTouchLayer';
+import { CrossDividerLines } from './CrossDividerLines';
+import { EnlargedToothModal } from './EnlargedToothModal';
+import { HeaderAndPlanningButtons } from './HeaderAndPlanningButtons';
 import {
   handleToothPress as pressToothHandler,
   handleCloseTooth as closeToothHandler,
-} from './screens/DentalChart/toothHandlers';
+} from './toothHandlers';
+import { EditViewModeButtons } from './EditViewModeButtons';
+import {
+  handleAddScaling as addScalingRecord,
+  handleDeleteScalingRecord as deleteScalingRecordHandler,
+} from './oralHygieneHandlers';
 
 // إخفاء التحذيرات غير المهمة
 LogBox.ignoreLogs([
@@ -250,9 +190,9 @@ export default function DentalChartScreen({
   }>>([]);
 
   // ═══════════════════════════════════════════════════════════════
-  // Realtime Subscription References
+  // Pull-to-Refresh State
   // ═══════════════════════════════════════════════════════════════
-  const realtimeChannelRef = useRef<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // الحاويات في موقع ثابت - لا حاجة لتحريكها
   React.useEffect(() => {
@@ -275,59 +215,17 @@ export default function DentalChartScreen({
     setIsOralHygieneExpanded(!isOralHygieneExpanded);
   };
 
-  // دالة لإضافة سجل Scaling جديد
-  const handleAddScaling = async () => {
-    if (!permanentPatientId) {
-      Alert.alert('Error', 'No patient selected');
-      return;
-    }
+  // دالة لإضافة سجل Scaling جديد - Extracted to oralHygieneHandlers.ts
+  const handleAddScaling = () => addScalingRecord({
+    permanentPatientId,
+    userName: user?.name,
+    setScalingRecords,
+    setIsOralHygieneExpanded,
+  });
 
-    const now = new Date();
-    const timestamp = formatTimestamp(now);
-
-    // حفظ في قاعدة البيانات
-    const { data, error } = await createScalingRecord(
-      permanentPatientId,
-      user?.name || 'Dr. Unknown'
-    );
-
-    if (error) {
-      Alert.alert('Error', 'Failed to save scaling record');
-      console.error('Error saving scaling record:', error);
-      return;
-    }
-
-    // إضافة للـ state
-    if (data) {
-      setScalingRecords(prev => [
-        {
-          id: data.id,
-          timestamp,
-          doctorName: user?.name || 'Dr. Unknown',
-          timestampNum: now.getTime()
-        },
-        ...prev
-      ]);
-    }
-
-    // إغلاق الحاوية بعد الإضافة
-    setIsOralHygieneExpanded(false);
-  };
-
-  // دالة لحذف سجل Scaling
-  const handleDeleteScalingRecord = async (recordId: string, index: number) => {
-    const { error } = await deleteScalingRecord(recordId);
-    if (error) {
-      Alert.alert('Error', 'Failed to delete scaling record');
-      console.error('Error deleting scaling record:', error);
-      return;
-    }
-    setScalingRecords(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // NOTE: Individual tooth animations and stopToothAnimations are now handled by useToothAnimations hook
-  // getToothAnimValues replaced by toothAnims.getToothAnimations
-  // stopToothAnimations replaced by toothAnims.stopToothAnimations
+  // دالة لحذف سجل Scaling - Extracted to oralHygieneHandlers.ts
+  const handleDeleteScalingRecord = (recordId: string, index: number) =>
+    deleteScalingRecordHandler(recordId, index, setScalingRecords);
 
   // ═══════════════════════════════════════════════════════════════
   // Database Integration Functions
@@ -376,132 +274,17 @@ export default function DentalChartScreen({
     }
   };
 
-  // Load data when component mounts or permanentPatientId changes + Setup Realtime
+  // Load data when component mounts or permanentPatientId changes
   useEffect(() => {
     if (!permanentPatientId) return;
-
-    // Initial load
     loadPatientDentalData();
+  }, [permanentPatientId]);
 
-    // Cleanup previous subscription
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current);
-      realtimeChannelRef.current = null;
-    }
-
-    // ❌ Real-time DISABLED for Dental Chart
-    // Reason: Manual refresh is preferred to avoid constant reloads
-    /*
-    // Setup Realtime subscription for dental data tables
-    // Listen to changes on all tables related to this patient
-    const dentalChannel = supabase
-      .channel(`dental-chart-${Date.now()}`)
-      // tooth_surface_conditions table
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tooth_surface_conditions',
-          filter: `permanent_patient_id=eq.${permanentPatientId}`
-        },
-        (payload) => {
-          console.log('🔄 Real-time: tooth_surface_conditions changed:', payload);
-          loadPatientDentalData(); // Silent refresh
-        }
-      )
-      // editing_records table
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'editing_records',
-          filter: `permanent_patient_id=eq.${permanentPatientId}`
-        },
-        (payload) => {
-          console.log('🔄 Real-time: editing_records changed:', payload);
-          loadPatientDentalData();
-        }
-      )
-      // planning_records table
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'planning_records',
-          filter: `permanent_patient_id=eq.${permanentPatientId}`
-        },
-        (payload) => {
-          console.log('🔄 Real-time: planning_records changed:', payload);
-          loadPatientDentalData();
-        }
-      )
-      // tooth_notes table
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tooth_notes',
-          filter: `permanent_patient_id=eq.${permanentPatientId}`
-        },
-        (payload) => {
-          console.log('🔄 Real-time: tooth_notes changed:', payload);
-          loadPatientDentalData();
-        }
-      )
-      // referrals table
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'referrals',
-          filter: `permanent_patient_id=eq.${permanentPatientId}`
-        },
-        (payload) => {
-          console.log('🔄 Real-time: referrals changed:', payload);
-          loadPatientDentalData();
-        }
-      )
-      // scaling_records table
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'scaling_records',
-          filter: `permanent_patient_id=eq.${permanentPatientId}`
-        },
-        (payload) => {
-          console.log('🔄 Real-time: scaling_records changed:', payload);
-          loadPatientDentalData();
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Real-time: Subscribed to dental chart updates');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Real-time: Channel error, retrying...');
-          setTimeout(() => {
-            loadPatientDentalData();
-          }, 3000);
-        }
-      });
-
-    realtimeChannelRef.current = dentalChannel;
-    */
-
-    // Cleanup on unmount or when permanentPatientId changes
-    return () => {
-      if (realtimeChannelRef.current) {
-        console.log('🧹 Cleaning up dental chart real-time subscription');
-        supabase.removeChannel(realtimeChannelRef.current);
-        realtimeChannelRef.current = null;
-      }
-    };
+  // Pull-to-refresh handler
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await loadPatientDentalData();
+    setIsRefreshing(false);
   }, [permanentPatientId]);
 
   /**
@@ -611,13 +394,6 @@ export default function DentalChartScreen({
     });
   };
 
-  // DISABLED: تحديث Tooth Status Record تلقائياً عند تغيير toothConditions أو toothBorderColors
-  // This useEffect has been disabled to prevent automatic saving
-  // All changes now only save when Submit button is pressed
-  // useEffect(() => {
-  //   ... disabled code ...
-  // }, [toothConditions, toothBorderColors]);
-
   // Sync selectedSurfaces with toothConditions when modal opens
   // Exclude surfaces with "follow-up" since they don't need treatment (just monitoring)
   useEffect(() => {
@@ -673,264 +449,32 @@ export default function DentalChartScreen({
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={onRefresh}
+                colors={['#667eea']}
+                tintColor="#667eea"
+              />
+            }
           >
-                {/* Edit Mode Button */}
-                <Animated.View
-                  style={[
-                    styles.editButtonContainer,
-                    {
-                      transform: [{ translateX: toothAnims.editButtonSlide }],
-                      opacity: isOralHygieneExpanded ? 0 : toothAnims.buttonsOpacity,
-                      zIndex: isOralHygieneExpanded ? 700 : (selectedTooth ? 900 : 9999),
-                      elevation: isOralHygieneExpanded ? 700 : (selectedTooth ? 900 : 9999),
-                    }
-                  ]}
-                  pointerEvents={selectedTooth ? "none" : "box-none"}
-                >
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      const newState = !isEditModeActive;
-                      console.log('✓ Edit Button Pressed! New state:', newState);
-                      setIsEditModeActive(newState);
-                    }}
-                    style={[
-                      styles.editModeButton,
-                      isEditModeActive ? styles.editModeButtonActive : styles.editModeButtonInactive,
-                    ]}
-                  >
-                    <Text style={[
-                      styles.editModeButtonText,
-                      isEditModeActive && styles.editModeButtonTextActive
-                    ]}>
-                      Edit
-                    </Text>
-                  </TouchableOpacity>
-                </Animated.View>
-
-                {/* View Mode Button */}
-                <Animated.View style={[styles.viewButtonContainer, {
-                  opacity: isOralHygieneExpanded ? 0 : toothAnims.buttonsOpacity,
-                  zIndex: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
-                  elevation: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
-                  transform: [
-                    { translateX: -50 },
-                    {
-                      translateY: toothAnims.viewButtonPositionAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, -(SCREEN_HEIGHT * 0.41 - 100)] // من 41% إلى 100 بكسل من الأعلى
-                      })
-                    }
-                  ]
-                }]} pointerEvents={selectedTooth ? "none" : "box-none"}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      const newState = !isViewModeActive;
-                      console.log('✓ View Button Pressed! Current state:', isViewModeActive, '→ New state:', newState);
-                      setIsViewModeActive(newState);
-
-                      if (newState) {
-                        console.log('🔵 Showing referral container - hiding teeth');
-                        // إخفاء الأسنان وزر Edit والخطوط وأرقام الأسنان
-                        Animated.parallel([
-                          Animated.timing(toothAnims.rightTeethSlide, {
-                            toValue: 500, // إزاحة لليمين خارج الشاشة
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.leftTeethSlide, {
-                            toValue: -500, // إزاحة لليسار خارج الشاشة
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.editButtonSlide, {
-                            toValue: -300, // إزاحة زر Edit لليسار
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.verticalTopLineSlide, {
-                            toValue: -200, // إزاحة الخط العمودي العلوي للأعلى
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.verticalBottomLineSlide, {
-                            toValue: 200, // إزاحة الخط العمودي السفلي للأسفل
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.horizontalRightLineSlide, {
-                            toValue: 500, // إزاحة الخط الأفقي الأيمن لليمين
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.horizontalLeftLineSlide, {
-                            toValue: -500, // إزاحة الخط الأفقي الأيسر لليسار
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.rightNumbersSlide, {
-                            toValue: 500, // إزاحة أرقام الأسنان اليمنى لليمين
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.leftNumbersSlide, {
-                            toValue: -500, // إزاحة أرقام الأسنان اليسرى لليسار
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.oralHygieneOpacity, {
-                            toValue: 0, // إخفاء حاوية Oral Hygiene
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.viewButtonPositionAnim, {
-                            toValue: 1, // تحريك زر View إلى أعلى يمين
-                            duration: 400,
-                            useNativeDriver: true,
-                          }),
-                        ]).start(() => {
-                          console.log('🟢 Teeth hidden - now showing containers');
-                          // إعادة تعيين الحاوية للحالة المغلقة
-                          setIsReferralExpanded(false);
-                          toothAnims.referralSectionsHeight.setValue(0);
-                          // إعادة تعيين pushDown للحاويات الأخرى
-                          toothAnims.treatmentRecordPushDown.setValue(0);
-                          toothAnims.planningRecordPushDown.setValue(0);
-                          // بعد انتهاء اختفاء الأسنان، إظهار الحاويات بالتسلسل
-                          // 1. Referral من اليمين
-                          Animated.timing(toothAnims.referralContainerSlide, {
-                            toValue: 0,
-                            duration: 150,
-                            useNativeDriver: true,
-                          }).start(() => {
-                            console.log(' Referral container visible');
-                            // 2. Treatment Record من اليسار
-                            Animated.timing(toothAnims.treatmentRecordSlide, {
-                              toValue: 0,
-                              duration: 150,
-                              useNativeDriver: true,
-                            }).start(() => {
-                              console.log(' Treatment Record visible');
-                              // 3. Planning Record من اليمين
-                              Animated.timing(toothAnims.planningRecordSlide, {
-                                toValue: 0,
-                                duration: 150,
-                                useNativeDriver: true,
-                              }).start(() => {
-                                console.log(' All containers visible');
-                                // الحاويات في موقع ثابت - لا حاجة لتحريكها
-                              });
-                            });
-                          });
-                        });
-                      } else {
-                        console.log('🔴 Hiding containers - returning teeth');
-                        // إعادة تعيين الحاوية للحالة المغلقة
-                        setIsReferralExpanded(false);
-                        toothAnims.referralSectionsHeight.setValue(0);
-                        toothAnims.treatmentRecordPushDown.setValue(0);
-                        toothAnims.planningRecordPushDown.setValue(0);
-                        // إخفاء الحاويات بالتسلسل العكسي
-                        // 1. Planning Record (يمين)
-                        Animated.timing(toothAnims.planningRecordSlide, {
-                          toValue: 1000,
-                          duration: 100,
-                          useNativeDriver: true,
-                        }).start(() => {
-                          console.log('🟡 Planning Record hidden');
-                          // 2. Treatment Record (يسار)
-                          Animated.timing(toothAnims.treatmentRecordSlide, {
-                            toValue: -1000,
-                            duration: 100,
-                            useNativeDriver: true,
-                          }).start(() => {
-                            console.log('🟡 Treatment Record hidden');
-                            // 3. Referral (يمين)
-                            Animated.timing(toothAnims.referralContainerSlide, {
-                              toValue: 1000,
-                              duration: 100,
-                              useNativeDriver: true,
-                            }).start(() => {
-                              console.log('🟡 All containers hidden - now returning teeth');
-                          // ثم إرجاع الأسنان وزر Edit والخطوط وأرقام الأسنان لأماكنها
-                          Animated.parallel([
-                          Animated.timing(toothAnims.rightTeethSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.leftTeethSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.editButtonSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.verticalTopLineSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.verticalBottomLineSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.horizontalRightLineSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.horizontalLeftLineSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.rightNumbersSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.leftNumbersSlide, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.oralHygieneOpacity, {
-                            toValue: 1, // إعادة إظهار حاوية Oral Hygiene
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(toothAnims.viewButtonPositionAnim, {
-                            toValue: 0, // إعادة زر View إلى موقعه الأصلي
-                            duration: 300,
-                            useNativeDriver: true,
-                          }),
-                        ]).start(() => {
-                          console.log(' Teeth returned to original position');
-                        });
-                            });
-                          });
-                        });
-                      }
-                    }}
-                    style={[
-                      styles.viewModeButton,
-                      isViewModeActive ? styles.viewModeButtonActive : styles.viewModeButtonInactive,
-                    ]}
-                  >
-                    <Text style={[
-                      styles.viewModeButtonText,
-                      isViewModeActive && styles.viewModeButtonTextActive
-                    ]}>
-                      View
-                    </Text>
-                  </TouchableOpacity>
-                </Animated.View>
+                {/* Edit/View Mode Buttons - Extracted to EditViewModeButtons.tsx */}
+                <EditViewModeButtons
+                  isEditModeActive={isEditModeActive}
+                  setIsEditModeActive={setIsEditModeActive}
+                  editButtonSlide={toothAnims.editButtonSlide}
+                  isViewModeActive={isViewModeActive}
+                  setIsViewModeActive={setIsViewModeActive}
+                  viewButtonPositionAnim={toothAnims.viewButtonPositionAnim}
+                  toothAnims={toothAnims}
+                  setIsReferralExpanded={setIsReferralExpanded}
+                  buttonsOpacity={toothAnims.buttonsOpacity}
+                  isOralHygieneExpanded={isOralHygieneExpanded}
+                  isTreatmentRecordExpanded={isTreatmentRecordExpanded}
+                  isPlanningRecordExpanded={isPlanningRecordExpanded}
+                  isReferralExpanded={isReferralExpanded}
+                  selectedTooth={selectedTooth}
+                />
 
                 {/* Teeth Container */}
                 <View style={styles.crossContainer}>
@@ -1155,4 +699,3 @@ export default function DentalChartScreen({
     </View>
   );
 }
-
