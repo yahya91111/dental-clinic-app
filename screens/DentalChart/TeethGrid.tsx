@@ -717,8 +717,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth17,
           {
-            zIndex: selectedTooth === 17 ? 1001 : 999,
-            elevation: selectedTooth === 17 ? 1001 : 999,
+            zIndex: selectedTooth === 17 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 17 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -727,8 +727,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 17 ? getToothAnims(17).scale : 1 },
               { rotate: selectedTooth === 17 ? getToothAnims(17).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '-90deg'],
-              }) : '0deg' },
+                outputRange: ['80deg', '90deg'],
+              }) : '80deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -748,8 +748,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth18,
           {
-            zIndex: selectedTooth === 18 ? 1001 : 999,
-            elevation: selectedTooth === 18 ? 1001 : 999,
+            zIndex: selectedTooth === 18 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 18 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -758,8 +758,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 18 ? getToothAnims(18).scale : 1 },
               { rotate: selectedTooth === 18 ? getToothAnims(18).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '-90deg'],
-              }) : '0deg' },
+                outputRange: ['60deg', '90deg'],
+              }) : '60deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -779,8 +779,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth19,
           {
-            zIndex: selectedTooth === 19 ? 1001 : 999,
-            elevation: selectedTooth === 19 ? 1001 : 999,
+            zIndex: selectedTooth === 19 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 19 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -789,8 +789,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 19 ? getToothAnims(19).scale : 1 },
               { rotate: selectedTooth === 19 ? getToothAnims(19).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['0deg', '-90deg'],
-              }) : '0deg' },
+                outputRange: ['35deg', '90deg'],
+              }) : '35deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -810,8 +810,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth20,
           {
-            zIndex: selectedTooth === 20 ? 1001 : (selectedTooth && [17,18,19].includes(selectedTooth as number) ? 998 : 1000),
-            elevation: selectedTooth === 20 ? 1001 : (selectedTooth && [17,18,19].includes(selectedTooth as number) ? 998 : 1000),
+            zIndex: selectedTooth === 20 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 20 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -820,8 +820,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 20 ? getToothAnims(20).scale : 1 },
               { rotate: selectedTooth === 20 ? getToothAnims(20).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['15deg', '-90deg'],
-              }) : '15deg' },
+                outputRange: ['20deg', '90deg'],
+              }) : '20deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -841,8 +841,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth21,
           {
-            zIndex: selectedTooth === 21 ? 1001 : (selectedTooth && [17,18,19].includes(selectedTooth as number) ? 998 : 1000),
-            elevation: selectedTooth === 21 ? 1001 : (selectedTooth && [17,18,19].includes(selectedTooth as number) ? 998 : 1000),
+            zIndex: selectedTooth === 21 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 21 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -851,8 +851,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 21 ? getToothAnims(21).scale : 1 },
               { rotate: selectedTooth === 21 ? getToothAnims(21).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['20deg', '-90deg'],
-              }) : '20deg' },
+                outputRange: ['15deg', '90deg'],
+              }) : '15deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -872,8 +872,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth22,
           {
-            zIndex: selectedTooth === 22 ? 1001 : (selectedTooth && [17,18,19].includes(selectedTooth as number) ? 998 : 1000),
-            elevation: selectedTooth === 22 ? 1001 : (selectedTooth && [17,18,19].includes(selectedTooth as number) ? 998 : 1000),
+            zIndex: selectedTooth === 22 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 22 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -882,8 +882,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 22 ? getToothAnims(22).scale : 1 },
               { rotate: selectedTooth === 22 ? getToothAnims(22).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['35deg', '-90deg'],
-              }) : '35deg' },
+                outputRange: ['0deg', '90deg'],
+              }) : '0deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -903,8 +903,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth23,
           {
-            zIndex: selectedTooth === 23 ? 1001 : (selectedTooth && [17,18,19,20].includes(selectedTooth as number) ? 998 : 1000),
-            elevation: selectedTooth === 23 ? 1001 : (selectedTooth && [17,18,19,20].includes(selectedTooth as number) ? 998 : 1000),
+            zIndex: selectedTooth === 23 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 23 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -913,8 +913,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 23 ? getToothAnims(23).scale : 1 },
               { rotate: selectedTooth === 23 ? getToothAnims(23).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['60deg', '-90deg'],
-              }) : '60deg' },
+                outputRange: ['0deg', '90deg'],
+              }) : '0deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -934,8 +934,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth24,
           {
-            zIndex: selectedTooth === 24 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
-            elevation: selectedTooth === 24 ? 1001 : (selectedTooth && [17,18,19,20,21].includes(selectedTooth as number) ? 998 : 1000),
+            zIndex: selectedTooth === 24 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 24 ? 1001 : (selectedTooth && [22,23,24].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -944,8 +944,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 24 ? getToothAnims(24).scale : 1 },
               { rotate: selectedTooth === 24 ? getToothAnims(24).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['80deg', '-90deg'],
-              }) : '80deg' },
+                outputRange: ['0deg', '90deg'],
+              }) : '0deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -962,28 +962,28 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
 
       {/* Tooth Numbers for Lower Right Quadrant (17-24) */}
       <Animated.View style={[styles.toothNumber17, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>8</Text>
+        <Text style={styles.toothNumberText}>1</Text>
       </Animated.View>
       <Animated.View style={[styles.toothNumber18, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>7</Text>
-      </Animated.View>
-      <Animated.View style={[styles.toothNumber19, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>6</Text>
-      </Animated.View>
-      <Animated.View style={[styles.toothNumber20, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>5</Text>
-      </Animated.View>
-      <Animated.View style={[styles.toothNumber21, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>4</Text>
-      </Animated.View>
-      <Animated.View style={[styles.toothNumber22, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>3</Text>
-      </Animated.View>
-      <Animated.View style={[styles.toothNumber23, { transform: [{ translateX: rightNumbersSlide }] }]}>
         <Text style={styles.toothNumberText}>2</Text>
       </Animated.View>
+      <Animated.View style={[styles.toothNumber19, { transform: [{ translateX: rightNumbersSlide }] }]}>
+        <Text style={styles.toothNumberText}>3</Text>
+      </Animated.View>
+      <Animated.View style={[styles.toothNumber20, { transform: [{ translateX: rightNumbersSlide }] }]}>
+        <Text style={styles.toothNumberText}>4</Text>
+      </Animated.View>
+      <Animated.View style={[styles.toothNumber21, { transform: [{ translateX: rightNumbersSlide }] }]}>
+        <Text style={styles.toothNumberText}>5</Text>
+      </Animated.View>
+      <Animated.View style={[styles.toothNumber22, { transform: [{ translateX: rightNumbersSlide }] }]}>
+        <Text style={styles.toothNumberText}>6</Text>
+      </Animated.View>
+      <Animated.View style={[styles.toothNumber23, { transform: [{ translateX: rightNumbersSlide }] }]}>
+        <Text style={styles.toothNumberText}>7</Text>
+      </Animated.View>
       <Animated.View style={[styles.toothNumber24, { transform: [{ translateX: rightNumbersSlide }] }]}>
-        <Text style={styles.toothNumberText}>1</Text>
+        <Text style={styles.toothNumberText}>8</Text>
       </Animated.View>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
