@@ -995,8 +995,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth25,
           {
-            zIndex: selectedTooth === 25 ? 1001 : 999,
-            elevation: selectedTooth === 25 ? 1001 : 999,
+            zIndex: selectedTooth === 25 ? 1001 : 1000,
+            elevation: selectedTooth === 25 ? 1001 : 1000,
           },
           {
             transform: [
@@ -1005,8 +1005,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 25 ? getToothAnims(25).scale : 1 },
               { rotate: selectedTooth === 25 ? getToothAnims(25).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['80deg', '90deg'],
-              }) : '80deg' },
+                outputRange: ['0deg', '-90deg'],
+              }) : '0deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -1016,7 +1016,6 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
           colors={toothConditions[25]}
           onToothPress={() => onToothPress(25)}
           onSurfacePress={getSurfacePressHandler(25)}
-          rotation={90}
           borderColor={getBorderColor(25)}
         />
         {selectedTooth === 25 && !isClosing && <LowerLeftLabels />}
@@ -1027,8 +1026,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth26,
           {
-            zIndex: selectedTooth === 26 ? 1001 : 999,
-            elevation: selectedTooth === 26 ? 1001 : 999,
+            zIndex: selectedTooth === 26 ? 1001 : (selectedTooth && [25].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 26 ? 1001 : (selectedTooth && [25].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -1037,8 +1036,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 26 ? getToothAnims(26).scale : 1 },
               { rotate: selectedTooth === 26 ? getToothAnims(26).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['60deg', '90deg'],
-              }) : '60deg' },
+                outputRange: ['0deg', '-90deg'],
+              }) : '0deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -1048,7 +1047,6 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
           colors={toothConditions[26]}
           onToothPress={() => onToothPress(26)}
           onSurfacePress={getSurfacePressHandler(26)}
-          rotation={90}
           borderColor={getBorderColor(26)}
         />
         {selectedTooth === 26 && !isClosing && <LowerLeftLabels />}
@@ -1059,8 +1057,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
         style={[
           styles.tooth27,
           {
-            zIndex: selectedTooth === 27 ? 1001 : 999,
-            elevation: selectedTooth === 27 ? 1001 : 999,
+            zIndex: selectedTooth === 27 ? 1001 : (selectedTooth && [25,26].includes(selectedTooth as number) ? 998 : 1000),
+            elevation: selectedTooth === 27 ? 1001 : (selectedTooth && [25,26].includes(selectedTooth as number) ? 998 : 1000),
           },
           {
             transform: [
@@ -1069,8 +1067,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 27 ? getToothAnims(27).scale : 1 },
               { rotate: selectedTooth === 27 ? getToothAnims(27).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['35deg', '90deg'],
-              }) : '35deg' },
+                outputRange: ['0deg', '-90deg'],
+              }) : '0deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -1080,7 +1078,6 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
           colors={toothConditions[27]}
           onToothPress={() => onToothPress(27)}
           onSurfacePress={getSurfacePressHandler(27)}
-          rotation={90}
           borderColor={getBorderColor(27)}
         />
         {selectedTooth === 27 && !isClosing && <LowerLeftLabels />}
@@ -1101,8 +1098,8 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
               { scale: selectedTooth === 28 ? getToothAnims(28).scale : 1 },
               { rotate: selectedTooth === 28 ? getToothAnims(28).rotation.interpolate({
                 inputRange: [0, 1],
-                outputRange: ['20deg', '90deg'],
-              }) : '20deg' },
+                outputRange: ['-15deg', '-90deg'],
+              }) : '-15deg' },
             ],
           },
           isEditModeActive && styles.toothGlowEffect,
@@ -1112,7 +1109,6 @@ export const TeethGrid: React.FC<TeethGridProps> = ({
           colors={toothConditions[28]}
           onToothPress={() => onToothPress(28)}
           onSurfacePress={getSurfacePressHandler(28)}
-          rotation={90}
           borderColor={getBorderColor(28)}
         />
         {selectedTooth === 28 && !isClosing && <LowerLeftLabels />}
