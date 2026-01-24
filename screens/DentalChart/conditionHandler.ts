@@ -1,9 +1,7 @@
-import { CONDITION_NAME_TO_KEY } from './constants';
 import {
   ToothSurfaceConditions,
   getConditionName,
   getAllSurfaces,
-  getSurfaceNameMap,
   formatTimestamp,
 } from './dentalHelpers';
 import type { ToothCondition } from '../../types';
@@ -347,17 +345,18 @@ export function handleConditionSelect({
         return newBorderColors;
       });
 
-      // تحقق إذا كانت جميع الأسطح extraction أو missing
+      // تحقق إذا كان أي سطح extraction أو missing - إذا نعم، امسح الكل
       if (currentConditions) {
-        const allSame =
-          currentConditions.top === currentConditions.bottom &&
-          currentConditions.bottom === currentConditions.left &&
-          currentConditions.left === currentConditions.right &&
-          currentConditions.right === currentConditions.center &&
-          (currentConditions.top === 'extraction' || currentConditions.top === 'missing');
+        const hasExtractionOrMissing =
+          currentConditions.top === 'extraction' || currentConditions.top === 'missing' ||
+          currentConditions.bottom === 'extraction' || currentConditions.bottom === 'missing' ||
+          currentConditions.left === 'extraction' || currentConditions.left === 'missing' ||
+          currentConditions.right === 'extraction' || currentConditions.right === 'missing' ||
+          currentConditions.center === 'extraction' || currentConditions.center === 'missing';
 
-        if (allSame) {
-          // إزالة اللون من جميع الأسطح
+        if (hasExtractionOrMissing) {
+          // إزالة اللون من جميع الأسطح (لأن extraction/missing يؤثر على كل السن)
+          console.log('🧹 Clear: Found extraction/missing, clearing ALL surfaces');
           setToothConditions(prev => ({
             ...prev,
             [selectedTooth]: {
@@ -649,6 +648,7 @@ export function handleConditionSelect({
       // إذا كان تغيير من Extraction، احذف اللون الأسود من كل الأسطح فوراً
       if (isChange && previousCondition === 'Extraction') {
         console.log('🔄 Clearing extraction color from all surfaces immediately');
+        console.log(`  → selectedSurface="${selectedSurface}", condition="${condition}", conditionName="${conditionName.english}"`);
 
         // احذف كل الألوان أولاً
         const clearedConditions: ToothSurfaceConditions = {
@@ -659,21 +659,15 @@ export function handleConditionSelect({
           center: null,
         };
 
-        // Mapping للأسطح (use helper to get correct mapping for lower teeth)
-        const surfaceNameToKey = getSurfaceNameMap(toothNumForSurface);
-
-        // أضف اللون الجديد للسطح المحدد فقط (إذا كان له لون)
-        if (CONDITION_NAME_TO_KEY[conditionName.english]) {
-          const surfaceKey = surfaceNameToKey[surfaceLabel.toLowerCase()];
-          console.log(`  → Adding new color: condition="${conditionName.english}", surface="${surfaceLabel}", surfaceKey="${surfaceKey}", color="${CONDITION_NAME_TO_KEY[conditionName.english]}"`);
-          if (surfaceKey) {
-            clearedConditions[surfaceKey as keyof ToothSurfaceConditions] = CONDITION_NAME_TO_KEY[conditionName.english] as ToothCondition;
-            console.log(`   clearedConditions after adding:`, clearedConditions);
-          } else {
-            console.log(`   surfaceKey is null for "${surfaceLabel}"`);
-          }
+        // استخدم selectedSurface مباشرة (وهو بالفعل key مثل 'top', 'bottom', 'left', 'right', 'center')
+        // لا حاجة للتحويل من label إلى key
+        if (selectedSurface && (selectedSurface === 'top' || selectedSurface === 'bottom' ||
+            selectedSurface === 'left' || selectedSurface === 'right' || selectedSurface === 'center')) {
+          clearedConditions[selectedSurface] = condition;
+          console.log(`  → Setting ${selectedSurface} to ${condition}`);
+          console.log(`  → clearedConditions:`, clearedConditions);
         } else {
-          console.log(`   No color mapping for condition "${conditionName.english}"`);
+          console.log(`  → WARNING: selectedSurface "${selectedSurface}" is not a valid key`);
         }
 
         console.log(`  🎨 Final clearedConditions:`, clearedConditions);
