@@ -112,6 +112,11 @@ import { TreatmentRecordContainer } from './screens/DentalChart/TreatmentRecordC
 import { PlanningRecordContainer } from './screens/DentalChart/PlanningRecordContainer';
 import { OralHygieneContainer } from './screens/DentalChart/OralHygieneContainer';
 import { loadPatientDentalData as loadDentalDataFromDB } from './screens/DentalChart/loadDentalData';
+import {
+  handlePlanningSubmit as submitPlanning,
+  handlePlanningCancel as cancelPlanning,
+  PendingPlanningRecord,
+} from './screens/DentalChart/planningHandlers';
 
 // إخفاء التحذيرات غير المهمة
 LogBox.ignoreLogs([
@@ -614,295 +619,30 @@ export default function DentalChartScreen({
   };
 
   /**
-   * ═══════════════════════════════════════════════════════════════
-   * Handle Planning Submit - Save all pending planning records as batch
-   * ═══════════════════════════════════════════════════════════════
+   * Handle Planning Submit - Save all pending planning records
    */
   const handlePlanningSubmit = async () => {
-    if (!permanentPatientId || !user?.name || pendingPlanningRecords.length === 0) {
-      console.log('Cannot submit planning: missing data or no pending records');
-      return;
-    }
-
-    try {
-      console.log('🔵 Submitting planning batch with', pendingPlanningRecords.length, 'records');
-
-      // Step 1: Create a new planning batch
-      const { data: batchData, error: batchError } = await createPlanningBatch(
-        permanentPatientId,
-        user.name
-      );
-
-      if (batchError || !batchData) {
-        console.error(' Error creating planning batch:', batchError);
-        Alert.alert('خطأ', 'فشل حفظ التخطيط. حاول مرة أخرى.');
-        return;
-      }
-
-      const batchId = batchData.id;
-      console.log(' Created planning batch:', batchId);
-
-      // Step 2: Save all pending planning records with batch_id
-      const savePromises = pendingPlanningRecords.map(async (record) => {
-        const palmerNotation = convertNumberToPalmer(record.toothNumber);
-        if (!palmerNotation) {
-          console.error('Invalid tooth number:', record.toothNumber);
-          return null;
-        }
-
-        // Don't lowercase special tooth status values (Root Canal Treated, Missing Tooth)
-        // Only lowercase actual surface names (Mesial, Distal, etc.)
-        const surfaceArray = record.surfaces.map(s => {
-          if (s === 'Root Canal Treated' || s === 'Missing Tooth') {
-            return s; // Keep as-is
-          }
-          return s.toLowerCase(); // Convert surface names to lowercase
-        }) as ToothSurface[];
-
-        console.log(`💾 Saving planning record - Tooth ${record.toothNumber}: condition="${record.condition}", surfaces=`, surfaceArray);
-
-        return createPlanningRecord(
-          permanentPatientId,
-          palmerNotation,
-          record.action,
-          record.condition,
-          surfaceArray,
-          user.name,
-          record.isChange,
-          record.previousCondition,
-          batchId  // ← Include batch_id
-        );
-      });
-
-      const results = await Promise.all(savePromises);
-      const errors = results.filter(r => r?.error);
-
-      if (errors.length > 0) {
-        console.error(' Some planning records failed to save:', errors);
-        Alert.alert('تحذير', 'تم حفظ بعض السجلات فقط. تحقق من البيانات.');
-      } else {
-        console.log(' All planning records saved successfully with batch_id:', batchId);
-      }
-
-      // Step 2.5: Save/Delete tooth surface conditions from pendingPlanningRecords
-      console.log('🔵 Saving tooth surface conditions from pending records...');
-
-      // Helper function to extract surface name from strings like "Caries (Mesial)" or "Mesial"
-      const extractSurfaceName = (surfaceLabel: string): string => {
-        if (surfaceLabel.includes('(')) {
-          // Extract from "Caries (Mesial)" → "Mesial"
-          const match = surfaceLabel.match(/\(([^)]+)\)/);
-          return match ? match[1].trim() : surfaceLabel;
-        }
-        return surfaceLabel; // Already just "Mesial"
-      };
-
-      // IMPORTANT: Separate delete and save operations to execute them sequentially
-      // Delete operations MUST complete BEFORE save operations to prevent race conditions
-      const deleteOperationPromises = [];
-      const saveOperationPromises = [];
-
-      // Process each pending planning record
-      for (const record of pendingPlanningRecords) {
-        const palmerNotation = convertNumberToPalmer(record.toothNumber);
-        if (!palmerNotation) continue;
-
-        console.log(`🔍 Processing record: ${record.condition}, surfaces:`, record.surfaces);
-
-        // Get correct surface mapping for this tooth
-        const surfaceMap = getSurfaceMap(record.toothNumber);
-
-        // Map surface names directly to database surface names (no UI key conversion needed)
-        const surfaceNameToDbSurface: Record<string, ToothSurface> = {
-          'mesial': 'mesial',
-          'distal': 'distal',
-          'buccal': 'buccal',
-          'lingual': 'lingual',
-          'palatal': 'lingual',
-          'occlusal': 'occlusal',
-        };
-
-        // إذا كان تغيير من Extraction إلى شيء آخر، احذف "extraction" من كل الأسطح أولاً
-        if (record.isChange && record.previousCondition === 'Extraction') {
-          console.log(`   Changing from Extraction → clearing all surfaces first`);
-          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
-            const dbSurface = surfaceMap[surfaceKey];
-            deleteOperationPromises.push(
-              deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
-            );
-          }
-        }
-
-        // Handle Clear Condition (canceled)
-        if (record.action === 'canceled') {
-          // Delete colors for specified surfaces
-          record.surfaces.forEach(surfaceLabel => {
-            const surfaceName = extractSurfaceName(surfaceLabel);
-            const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
-            console.log(`  → Clear: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}"`);
-            if (dbSurface) {
-              deleteOperationPromises.push(
-                deleteToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface)
-              );
-            }
-          });
-        }
-        // Handle surface-specific diagnoses (Caries, Fracture, etc.)
-        else if (record.condition && CONDITION_NAME_TO_KEY[record.condition]) {
-          const color = CONDITION_NAME_TO_KEY[record.condition];
-          record.surfaces.forEach(surfaceLabel => {
-            const surfaceName = extractSurfaceName(surfaceLabel);
-            const dbSurface = surfaceNameToDbSurface[surfaceName.toLowerCase()];
-            console.log(`  → ${record.condition}: "${surfaceLabel}" → surface:"${surfaceName}" → dbSurface:"${dbSurface}" → color:"${color}"`);
-            if (dbSurface) {
-              saveOperationPromises.push(
-                saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, color)
-              );
-            }
-          });
-        }
-        // Handle Extraction (Condition)
-        else if (record.condition === 'Extraction') {
-          console.log('  → Extraction: saving "extraction" to all surfaces');
-          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
-            const dbSurface = surfaceMap[surfaceKey];
-            saveOperationPromises.push(
-              saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, 'extraction')
-            );
-          }
-        }
-        // Handle Missing Tooth (Tooth Status)
-        else if (record.surfaces.includes('Missing Tooth')) {
-          console.log('  → Missing Tooth: saving "missing" to all surfaces');
-          for (const surfaceKey of Object.keys(surfaceMap) as Array<keyof ToothSurfaceConditions>) {
-            const dbSurface = surfaceMap[surfaceKey];
-            saveOperationPromises.push(
-              saveToothSurfaceCondition(permanentPatientId, palmerNotation, dbSurface, 'missing')
-            );
-          }
-        }
-        // Root Canal Treated: border color only, NO surface colors saved
-        else if (record.surfaces.includes('Root Canal Treated')) {
-          console.log('  → Root Canal Treated: border color only (no surface colors saved)');
-          // Do NOT save any surface conditions
-          // Border color will be detected from planning_records on reload
-        }
-      }
-
-      // STEP 1: Execute DELETE operations FIRST and wait for completion
-      if (deleteOperationPromises.length > 0) {
-        console.log(`🗑️ Executing ${deleteOperationPromises.length} delete operations...`);
-        const deleteResults = await Promise.all(deleteOperationPromises);
-
-        const deleteErrors = deleteResults.filter(r => r?.error);
-        if (deleteErrors.length > 0) {
-          console.error(' Some delete operations failed:', deleteErrors);
-        } else {
-          console.log(` All ${deleteOperationPromises.length} delete operations completed successfully`);
-        }
-      }
-
-      // STEP 2: Execute SAVE operations AFTER deletes are complete
-      if (saveOperationPromises.length > 0) {
-        console.log(`💾 Executing ${saveOperationPromises.length} save operations...`);
-        const saveResults = await Promise.all(saveOperationPromises);
-
-        const saveErrors = saveResults.filter(r => r?.error);
-        if (saveErrors.length > 0) {
-          console.error(' Some save operations failed:', saveErrors);
-        } else {
-          console.log(` All ${saveOperationPromises.length} save operations completed successfully`);
-        }
-      }
-
-      if (deleteOperationPromises.length === 0 && saveOperationPromises.length === 0) {
-        console.log(' No surface conditions to save/delete');
-      }
-
-      // Step 3: Move pending records to allPlanningRecordsGlobal
-      setAllPlanningRecordsGlobal(prev => [...prev, ...pendingPlanningRecords]);
-
-      // Step 4: Clear pending records
-      setPendingPlanningRecords([]);
-
-      // Step 5: Show success message
-      Alert.alert(' نجح', 'تم حفظ التخطيط بنجاح!');
-
-      // Step 6: Reload data to show updated Planning Records
-      await loadPatientDentalData();
-
-    } catch (error) {
-      console.error(' Exception in handlePlanningSubmit:', error);
-      Alert.alert('خطأ', 'حدث خطأ أثناء حفظ التخطيط.');
-    }
+    await submitPlanning({
+      permanentPatientId: permanentPatientId!,
+      userName: user?.name || 'Dr. Unknown',
+      pendingPlanningRecords,
+      setAllPlanningRecordsGlobal,
+      setPendingPlanningRecords,
+      loadPatientDentalData,
+    });
   };
 
   /**
-   * ═══════════════════════════════════════════════════════════════
    * Handle Planning Cancel - Discard all pending planning records
-   * ═══════════════════════════════════════════════════════════════
    */
   const handlePlanningCancel = () => {
-    if (pendingPlanningRecords.length === 0) {
-      return;
-    }
-
-    Alert.alert(
-      'إلغاء التخطيط',
-      'هل تريد إلغاء كل التخطيطات المعلقة؟',
-      [
-        { text: 'لا', style: 'cancel' },
-        {
-          text: 'نعم',
-          style: 'destructive',
-          onPress: async () => {
-            console.log('🔴 Canceling planning session - clearing', pendingPlanningRecords.length, 'pending records');
-
-            // Step 1: Remove pending planning records from toothRecords
-            // (they were added locally but not saved to database)
-            setToothRecords(prev => {
-              const updated = { ...prev };
-
-              // For each pending record, remove it from toothRecords
-              pendingPlanningRecords.forEach(pendingRecord => {
-                const toothNum = pendingRecord.toothNumber;
-                if (updated[toothNum]) {
-                  // Filter out records that match this pending record
-                  updated[toothNum] = updated[toothNum].filter(record => {
-                    if (record.type !== 'planning') return true;
-
-                    // Remove if it matches the pending record
-                    return !(
-                      record.condition === pendingRecord.condition &&
-                      record.timestampNum === pendingRecord.timestampNum
-                    );
-                  });
-
-                  // If no records left for this tooth, remove the key
-                  if (updated[toothNum].length === 0) {
-                    delete updated[toothNum];
-                  }
-                }
-              });
-
-              return updated;
-            });
-
-            // Step 2: Clear pending records (this hides buttons)
-            setPendingPlanningRecords([]);
-
-            // Step 3: Clear selected surfaces
-            setSelectedSurfaces({});
-
-            // Step 4: Reload from database to restore saved state
-            // This will replace toothConditions with saved data only
-            await loadPatientDentalData();
-
-            console.log(' Planning canceled - restored to saved state');
-          }
-        }
-      ]
-    );
+    cancelPlanning({
+      pendingPlanningRecords,
+      setToothRecords,
+      setPendingPlanningRecords,
+      setSelectedSurfaces,
+      loadPatientDentalData,
+    });
   };
 
   /**
