@@ -271,182 +271,11 @@ export default function DentalChartScreen({
   // ═══════════════════════════════════════════════════════════════
   const realtimeChannelRef = useRef<any>(null);
 
-  // Animated Values للأنيميشن - قيم منفصلة لكل سن
-  // السن 6
-  const tooth6Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth6Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth6TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth6TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 7
-  const tooth7Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth7Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth7TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth7TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 8
-  const tooth8Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth8Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth8TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth8TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 5
-  const tooth5Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth5Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth5TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth5TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 4
-  const tooth4Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth4Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth4TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth4TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 3
-  const tooth3Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth3Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth3TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth3TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 2
-  const tooth2Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth2Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth2TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth2TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 1
-  const tooth1Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth1Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth1TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth1TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 32 (السفلية يسار #8)
-  const tooth32Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth32Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth32TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth32TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 31 (السفلية يسار #7)
-  const tooth31Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth31Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth31TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth31TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 30 (السفلية يسار #6)
-  const tooth30Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth30Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth30TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth30TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 29 (السفلية يسار #5)
-  const tooth29Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth29Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth29TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth29TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 28 (السفلية يسار #4)
-  const tooth28Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth28Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth28TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth28TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 27 (السفلية يسار #3)
-  const tooth27Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth27Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth27TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth27TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 26 (السفلية يسار #2)
-  const tooth26Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth26Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth26TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth26TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 25 (السفلية يسار #1)
-  const tooth25Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth25Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth25TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth25TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 9 (العلوية يسار #1)
-  const tooth9Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth9Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth9TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth9TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 10 (العلوية يسار #2)
-  const tooth10Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth10Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth10TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth10TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 11 (العلوية يسار #3)
-  const tooth11Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth11Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth11TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth11TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 12 (العلوية يسار #4)
-  const tooth12Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth12Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth12TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth12TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 13 (العلوية يسار #5)
-  const tooth13Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth13Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth13TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth13TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 14 (العلوية يسار #6)
-  const tooth14Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth14Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth14TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth14TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 15 (العلوية يسار #7)
-  const tooth15Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth15Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth15TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth15TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 16 (العلوية يسار #8)
-  const tooth16Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth16Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth16TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth16TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 17 (السفلية يمين #8)
-  const tooth17Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth17Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth17TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth17TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // Animated Values للـ View Mode - إزاحة الأسنان وزر Edit
-  const rightTeethSlide = React.useRef(new Animated.Value(0)).current; // أسنان اليمين (1-8 و 17-24)
-  const leftTeethSlide = React.useRef(new Animated.Value(0)).current; // أسنان اليسار (9-16 و 25-32)
-  const editButtonSlide = React.useRef(new Animated.Value(0)).current; // زر Edit
-  const verticalTopLineSlide = React.useRef(new Animated.Value(0)).current; // الخط العمودي العلوي (للأعلى)
-  const verticalBottomLineSlide = React.useRef(new Animated.Value(0)).current; // الخط العمودي السفلي (للأسفل)
-  const horizontalRightLineSlide = React.useRef(new Animated.Value(0)).current; // الخط الأفقي الأيمن (لليمين)
-  const horizontalLeftLineSlide = React.useRef(new Animated.Value(0)).current; // الخط الأفقي الأيسر (لليسار)
-  const rightNumbersSlide = React.useRef(new Animated.Value(0)).current; // أرقام الأسنان اليمنى
-  const leftNumbersSlide = React.useRef(new Animated.Value(0)).current; // أرقام الأسنان اليسرى
-  const oralHygieneOpacity = React.useRef(new Animated.Value(1)).current; // شفافية حاوية Oral Hygiene
-  const viewButtonPositionAnim = React.useRef(new Animated.Value(0)).current; // أنيميشن موقع زر View (0 = موقع أصلي, 1 = أعلى يمين)
-  const buttonsOpacity = React.useRef(new Animated.Value(1)).current; // شفافية الأزرار (Edit, View, Oral Hygiene) - تختفي عند فتح السن
-  const referralContainerSlide = React.useRef(new Animated.Value(1000)).current; // حاوية Referral (تبدأ خارج الشاشة من اليمين)
-  const referralSectionsHeight = React.useRef(new Animated.Value(0)).current; // لفتح/إغلاق أقسام Referral (0 = مغلق, 1 = مفتوح) - تبدأ مغلقة
-  const treatmentRecordSlide = React.useRef(new Animated.Value(-1000)).current; // حاوية Treatment Record (تبدأ خارج الشاشة من اليسار)
-  const planningRecordSlide = React.useRef(new Animated.Value(1000)).current; // حاوية Planning Record (تبدأ خارج الشاشة من اليمين)
-  const treatmentRecordPushDown = React.useRef(new Animated.Value(0)).current; // تحريك Treatment Record للأسفل عند فتح Referral (0 = عادي, 400 = مدفوع للأسفل)
-  const planningRecordPushDown = React.useRef(new Animated.Value(0)).current; // تحريك Planning Record للأسفل عند فتح Referral (0 = عادي, 400 = مدفوع للأسفل)
-
   // الحاويات في موقع ثابت - لا حاجة لتحريكها
   React.useEffect(() => {
     // قيمة 0 تعني أن الحاويات في موقعها الطبيعي الثابت
-    treatmentRecordPushDown.setValue(0);
-    planningRecordPushDown.setValue(0);
+    toothAnims.treatmentRecordPushDown.setValue(0);
+    toothAnims.planningRecordPushDown.setValue(0);
   }, []);
 
   // أنيميشن توسع حاوية Oral Hygiene
@@ -502,383 +331,9 @@ export default function DentalChartScreen({
     setIsOralHygieneExpanded(false);
   };
 
-  // السن 18 (السفلية يمين #7)
-  const tooth18Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth18Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth18TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth18TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 19 (السفلية يمين #6)
-  const tooth19Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth19Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth19TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth19TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 20 (السفلية يمين #5)
-  const tooth20Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth20Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth20TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth20TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 21 (السفلية يمين #4)
-  const tooth21Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth21Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth21TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth21TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 22 (السفلية يمين #3)
-  const tooth22Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth22Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth22TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth22TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 23 (السفلية يمين #2)
-  const tooth23Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth23Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth23TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth23TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // السن 24 (السفلية يمين #1)
-  const tooth24Scale = React.useRef(new Animated.Value(1)).current;
-  const tooth24Rotation = React.useRef(new Animated.Value(0)).current;
-  const tooth24TranslateX = React.useRef(new Animated.Value(0)).current;
-  const tooth24TranslateY = React.useRef(new Animated.Value(0)).current;
-
-  // ═══════════════════════════════════════════════════════════════
-  // getToothAnimValues - دالة للحصول على Animated Values لكل سن
-  // تُستخدم مع TeethGrid component
-  // ═══════════════════════════════════════════════════════════════
-  const getToothAnimValues = (toothNumber: number): ToothAnimValues => {
-    const animsMap: Record<number, ToothAnimValues> = {
-      1: { scale: tooth1Scale, rotation: tooth1Rotation, translateX: tooth1TranslateX, translateY: tooth1TranslateY },
-      2: { scale: tooth2Scale, rotation: tooth2Rotation, translateX: tooth2TranslateX, translateY: tooth2TranslateY },
-      3: { scale: tooth3Scale, rotation: tooth3Rotation, translateX: tooth3TranslateX, translateY: tooth3TranslateY },
-      4: { scale: tooth4Scale, rotation: tooth4Rotation, translateX: tooth4TranslateX, translateY: tooth4TranslateY },
-      5: { scale: tooth5Scale, rotation: tooth5Rotation, translateX: tooth5TranslateX, translateY: tooth5TranslateY },
-      6: { scale: tooth6Scale, rotation: tooth6Rotation, translateX: tooth6TranslateX, translateY: tooth6TranslateY },
-      7: { scale: tooth7Scale, rotation: tooth7Rotation, translateX: tooth7TranslateX, translateY: tooth7TranslateY },
-      8: { scale: tooth8Scale, rotation: tooth8Rotation, translateX: tooth8TranslateX, translateY: tooth8TranslateY },
-      9: { scale: tooth9Scale, rotation: tooth9Rotation, translateX: tooth9TranslateX, translateY: tooth9TranslateY },
-      10: { scale: tooth10Scale, rotation: tooth10Rotation, translateX: tooth10TranslateX, translateY: tooth10TranslateY },
-      11: { scale: tooth11Scale, rotation: tooth11Rotation, translateX: tooth11TranslateX, translateY: tooth11TranslateY },
-      12: { scale: tooth12Scale, rotation: tooth12Rotation, translateX: tooth12TranslateX, translateY: tooth12TranslateY },
-      13: { scale: tooth13Scale, rotation: tooth13Rotation, translateX: tooth13TranslateX, translateY: tooth13TranslateY },
-      14: { scale: tooth14Scale, rotation: tooth14Rotation, translateX: tooth14TranslateX, translateY: tooth14TranslateY },
-      15: { scale: tooth15Scale, rotation: tooth15Rotation, translateX: tooth15TranslateX, translateY: tooth15TranslateY },
-      16: { scale: tooth16Scale, rotation: tooth16Rotation, translateX: tooth16TranslateX, translateY: tooth16TranslateY },
-      17: { scale: tooth17Scale, rotation: tooth17Rotation, translateX: tooth17TranslateX, translateY: tooth17TranslateY },
-      18: { scale: tooth18Scale, rotation: tooth18Rotation, translateX: tooth18TranslateX, translateY: tooth18TranslateY },
-      19: { scale: tooth19Scale, rotation: tooth19Rotation, translateX: tooth19TranslateX, translateY: tooth19TranslateY },
-      20: { scale: tooth20Scale, rotation: tooth20Rotation, translateX: tooth20TranslateX, translateY: tooth20TranslateY },
-      21: { scale: tooth21Scale, rotation: tooth21Rotation, translateX: tooth21TranslateX, translateY: tooth21TranslateY },
-      22: { scale: tooth22Scale, rotation: tooth22Rotation, translateX: tooth22TranslateX, translateY: tooth22TranslateY },
-      23: { scale: tooth23Scale, rotation: tooth23Rotation, translateX: tooth23TranslateX, translateY: tooth23TranslateY },
-      24: { scale: tooth24Scale, rotation: tooth24Rotation, translateX: tooth24TranslateX, translateY: tooth24TranslateY },
-      25: { scale: tooth25Scale, rotation: tooth25Rotation, translateX: tooth25TranslateX, translateY: tooth25TranslateY },
-      26: { scale: tooth26Scale, rotation: tooth26Rotation, translateX: tooth26TranslateX, translateY: tooth26TranslateY },
-      27: { scale: tooth27Scale, rotation: tooth27Rotation, translateX: tooth27TranslateX, translateY: tooth27TranslateY },
-      28: { scale: tooth28Scale, rotation: tooth28Rotation, translateX: tooth28TranslateX, translateY: tooth28TranslateY },
-      29: { scale: tooth29Scale, rotation: tooth29Rotation, translateX: tooth29TranslateX, translateY: tooth29TranslateY },
-      30: { scale: tooth30Scale, rotation: tooth30Rotation, translateX: tooth30TranslateX, translateY: tooth30TranslateY },
-      31: { scale: tooth31Scale, rotation: tooth31Rotation, translateX: tooth31TranslateX, translateY: tooth31TranslateY },
-      32: { scale: tooth32Scale, rotation: tooth32Rotation, translateX: tooth32TranslateX, translateY: tooth32TranslateY },
-    };
-    return animsMap[toothNumber] || animsMap[1]; // fallback to tooth 1
-  };
-
-  // Function لإيقاف جميع الأنيميشنات لسن معين
-  const stopToothAnimations = (toothNumber: number) => {
-    if (toothNumber === 6) {
-      tooth6Scale.stopAnimation();
-      tooth6Rotation.stopAnimation();
-      tooth6TranslateX.stopAnimation();
-      tooth6TranslateY.stopAnimation();
-      // إعادة القيم للوضع الطبيعي
-      tooth6Scale.setValue(1);
-      tooth6Rotation.setValue(0);
-      tooth6TranslateX.setValue(0);
-      tooth6TranslateY.setValue(0);
-    } else if (toothNumber === 7) {
-      tooth7Scale.stopAnimation();
-      tooth7Rotation.stopAnimation();
-      tooth7TranslateX.stopAnimation();
-      tooth7TranslateY.stopAnimation();
-      tooth7Scale.setValue(1);
-      tooth7Rotation.setValue(0);
-      tooth7TranslateX.setValue(0);
-      tooth7TranslateY.setValue(0);
-    } else if (toothNumber === 8) {
-      tooth8Scale.stopAnimation();
-      tooth8Rotation.stopAnimation();
-      tooth8TranslateX.stopAnimation();
-      tooth8TranslateY.stopAnimation();
-      tooth8Scale.setValue(1);
-      tooth8Rotation.setValue(0);
-      tooth8TranslateX.setValue(0);
-      tooth8TranslateY.setValue(0);
-    } else if (toothNumber === 5) {
-      tooth5Scale.stopAnimation();
-      tooth5Rotation.stopAnimation();
-      tooth5TranslateX.stopAnimation();
-      tooth5TranslateY.stopAnimation();
-      tooth5Scale.setValue(1);
-      tooth5Rotation.setValue(0);
-      tooth5TranslateX.setValue(0);
-      tooth5TranslateY.setValue(0);
-    } else if (toothNumber === 4) {
-      tooth4Scale.stopAnimation();
-      tooth4Rotation.stopAnimation();
-      tooth4TranslateX.stopAnimation();
-      tooth4TranslateY.stopAnimation();
-      tooth4Scale.setValue(1);
-      tooth4Rotation.setValue(0);
-      tooth4TranslateX.setValue(0);
-      tooth4TranslateY.setValue(0);
-    } else if (toothNumber === 3) {
-      tooth3Scale.stopAnimation();
-      tooth3Rotation.stopAnimation();
-      tooth3TranslateX.stopAnimation();
-      tooth3TranslateY.stopAnimation();
-      tooth3Scale.setValue(1);
-      tooth3Rotation.setValue(0);
-      tooth3TranslateX.setValue(0);
-      tooth3TranslateY.setValue(0);
-    } else if (toothNumber === 2) {
-      tooth2Scale.stopAnimation();
-      tooth2Rotation.stopAnimation();
-      tooth2TranslateX.stopAnimation();
-      tooth2TranslateY.stopAnimation();
-      tooth2Scale.setValue(1);
-      tooth2Rotation.setValue(0);
-      tooth2TranslateX.setValue(0);
-      tooth2TranslateY.setValue(0);
-    } else if (toothNumber === 1) {
-      tooth1Scale.stopAnimation();
-      tooth1Rotation.stopAnimation();
-      tooth1TranslateX.stopAnimation();
-      tooth1TranslateY.stopAnimation();
-      tooth1Scale.setValue(1);
-      tooth1Rotation.setValue(0);
-      tooth1TranslateX.setValue(0);
-      tooth1TranslateY.setValue(0);
-    } else if (toothNumber === 32) {
-      tooth32Scale.stopAnimation();
-      tooth32Rotation.stopAnimation();
-      tooth32TranslateX.stopAnimation();
-      tooth32TranslateY.stopAnimation();
-      tooth32Scale.setValue(1);
-      tooth32Rotation.setValue(0);
-      tooth32TranslateX.setValue(0);
-      tooth32TranslateY.setValue(0);
-    } else if (toothNumber === 31) {
-      tooth31Scale.stopAnimation();
-      tooth31Rotation.stopAnimation();
-      tooth31TranslateX.stopAnimation();
-      tooth31TranslateY.stopAnimation();
-      tooth31Scale.setValue(1);
-      tooth31Rotation.setValue(0);
-      tooth31TranslateX.setValue(0);
-      tooth31TranslateY.setValue(0);
-    } else if (toothNumber === 30) {
-      tooth30Scale.stopAnimation();
-      tooth30Rotation.stopAnimation();
-      tooth30TranslateX.stopAnimation();
-      tooth30TranslateY.stopAnimation();
-      tooth30Scale.setValue(1);
-      tooth30Rotation.setValue(0);
-      tooth30TranslateX.setValue(0);
-      tooth30TranslateY.setValue(0);
-    } else if (toothNumber === 29) {
-      tooth29Scale.stopAnimation();
-      tooth29Rotation.stopAnimation();
-      tooth29TranslateX.stopAnimation();
-      tooth29TranslateY.stopAnimation();
-      tooth29Scale.setValue(1);
-      tooth29Rotation.setValue(0);
-      tooth29TranslateX.setValue(0);
-      tooth29TranslateY.setValue(0);
-    } else if (toothNumber === 28) {
-      tooth28Scale.stopAnimation();
-      tooth28Rotation.stopAnimation();
-      tooth28TranslateX.stopAnimation();
-      tooth28TranslateY.stopAnimation();
-      tooth28Scale.setValue(1);
-      tooth28Rotation.setValue(0);
-      tooth28TranslateX.setValue(0);
-      tooth28TranslateY.setValue(0);
-    } else if (toothNumber === 27) {
-      tooth27Scale.stopAnimation();
-      tooth27Rotation.stopAnimation();
-      tooth27TranslateX.stopAnimation();
-      tooth27TranslateY.stopAnimation();
-      tooth27Scale.setValue(1);
-      tooth27Rotation.setValue(0);
-      tooth27TranslateX.setValue(0);
-      tooth27TranslateY.setValue(0);
-    } else if (toothNumber === 26) {
-      tooth26Scale.stopAnimation();
-      tooth26Rotation.stopAnimation();
-      tooth26TranslateX.stopAnimation();
-      tooth26TranslateY.stopAnimation();
-      tooth26Scale.setValue(1);
-      tooth26Rotation.setValue(0);
-      tooth26TranslateX.setValue(0);
-      tooth26TranslateY.setValue(0);
-    } else if (toothNumber === 25) {
-      tooth25Scale.stopAnimation();
-      tooth25Rotation.stopAnimation();
-      tooth25TranslateX.stopAnimation();
-      tooth25TranslateY.stopAnimation();
-      tooth25Scale.setValue(1);
-      tooth25Rotation.setValue(0);
-      tooth25TranslateX.setValue(0);
-      tooth25TranslateY.setValue(0);
-    } else if (toothNumber === 9) {
-      tooth9Scale.stopAnimation();
-      tooth9Rotation.stopAnimation();
-      tooth9TranslateX.stopAnimation();
-      tooth9TranslateY.stopAnimation();
-      tooth9Scale.setValue(1);
-      tooth9Rotation.setValue(0);
-      tooth9TranslateX.setValue(0);
-      tooth9TranslateY.setValue(0);
-    } else if (toothNumber === 10) {
-      tooth10Scale.stopAnimation();
-      tooth10Rotation.stopAnimation();
-      tooth10TranslateX.stopAnimation();
-      tooth10TranslateY.stopAnimation();
-      tooth10Scale.setValue(1);
-      tooth10Rotation.setValue(0);
-      tooth10TranslateX.setValue(0);
-      tooth10TranslateY.setValue(0);
-    } else if (toothNumber === 11) {
-      tooth11Scale.stopAnimation();
-      tooth11Rotation.stopAnimation();
-      tooth11TranslateX.stopAnimation();
-      tooth11TranslateY.stopAnimation();
-      tooth11Scale.setValue(1);
-      tooth11Rotation.setValue(0);
-      tooth11TranslateX.setValue(0);
-      tooth11TranslateY.setValue(0);
-    } else if (toothNumber === 12) {
-      tooth12Scale.stopAnimation();
-      tooth12Rotation.stopAnimation();
-      tooth12TranslateX.stopAnimation();
-      tooth12TranslateY.stopAnimation();
-      tooth12Scale.setValue(1);
-      tooth12Rotation.setValue(0);
-      tooth12TranslateX.setValue(0);
-      tooth12TranslateY.setValue(0);
-    } else if (toothNumber === 13) {
-      tooth13Scale.stopAnimation();
-      tooth13Rotation.stopAnimation();
-      tooth13TranslateX.stopAnimation();
-      tooth13TranslateY.stopAnimation();
-      tooth13Scale.setValue(1);
-      tooth13Rotation.setValue(0);
-      tooth13TranslateX.setValue(0);
-      tooth13TranslateY.setValue(0);
-    } else if (toothNumber === 14) {
-      tooth14Scale.stopAnimation();
-      tooth14Rotation.stopAnimation();
-      tooth14TranslateX.stopAnimation();
-      tooth14TranslateY.stopAnimation();
-      tooth14Scale.setValue(1);
-      tooth14Rotation.setValue(0);
-      tooth14TranslateX.setValue(0);
-      tooth14TranslateY.setValue(0);
-    } else if (toothNumber === 15) {
-      tooth15Scale.stopAnimation();
-      tooth15Rotation.stopAnimation();
-      tooth15TranslateX.stopAnimation();
-      tooth15TranslateY.stopAnimation();
-      tooth15Scale.setValue(1);
-      tooth15Rotation.setValue(0);
-      tooth15TranslateX.setValue(0);
-      tooth15TranslateY.setValue(0);
-    } else if (toothNumber === 16) {
-      tooth16Scale.stopAnimation();
-      tooth16Rotation.stopAnimation();
-      tooth16TranslateX.stopAnimation();
-      tooth16TranslateY.stopAnimation();
-      tooth16Scale.setValue(1);
-      tooth16Rotation.setValue(0);
-      tooth16TranslateX.setValue(0);
-      tooth16TranslateY.setValue(0);
-    } else if (toothNumber === 17) {
-      tooth17Scale.stopAnimation();
-      tooth17Rotation.stopAnimation();
-      tooth17TranslateX.stopAnimation();
-      tooth17TranslateY.stopAnimation();
-      tooth17Scale.setValue(1);
-      tooth17Rotation.setValue(0);
-      tooth17TranslateX.setValue(0);
-      tooth17TranslateY.setValue(0);
-    } else if (toothNumber === 18) {
-      tooth18Scale.stopAnimation();
-      tooth18Rotation.stopAnimation();
-      tooth18TranslateX.stopAnimation();
-      tooth18TranslateY.stopAnimation();
-      tooth18Scale.setValue(1);
-      tooth18Rotation.setValue(0);
-      tooth18TranslateX.setValue(0);
-      tooth18TranslateY.setValue(0);
-    } else if (toothNumber === 19) {
-      tooth19Scale.stopAnimation();
-      tooth19Rotation.stopAnimation();
-      tooth19TranslateX.stopAnimation();
-      tooth19TranslateY.stopAnimation();
-      tooth19Scale.setValue(1);
-      tooth19Rotation.setValue(0);
-      tooth19TranslateX.setValue(0);
-      tooth19TranslateY.setValue(0);
-    } else if (toothNumber === 20) {
-      tooth20Scale.stopAnimation();
-      tooth20Rotation.stopAnimation();
-      tooth20TranslateX.stopAnimation();
-      tooth20TranslateY.stopAnimation();
-      tooth20Scale.setValue(1);
-      tooth20Rotation.setValue(0);
-      tooth20TranslateX.setValue(0);
-      tooth20TranslateY.setValue(0);
-    } else if (toothNumber === 21) {
-      tooth21Scale.stopAnimation();
-      tooth21Rotation.stopAnimation();
-      tooth21TranslateX.stopAnimation();
-      tooth21TranslateY.stopAnimation();
-      tooth21Scale.setValue(1);
-      tooth21Rotation.setValue(0);
-      tooth21TranslateX.setValue(0);
-      tooth21TranslateY.setValue(0);
-    } else if (toothNumber === 22) {
-      tooth22Scale.stopAnimation();
-      tooth22Rotation.stopAnimation();
-      tooth22TranslateX.stopAnimation();
-      tooth22TranslateY.stopAnimation();
-      tooth22Scale.setValue(1);
-      tooth22Rotation.setValue(0);
-      tooth22TranslateX.setValue(0);
-      tooth22TranslateY.setValue(0);
-    } else if (toothNumber === 23) {
-      tooth23Scale.stopAnimation();
-      tooth23Rotation.stopAnimation();
-      tooth23TranslateX.stopAnimation();
-      tooth23TranslateY.stopAnimation();
-      tooth23Scale.setValue(1);
-      tooth23Rotation.setValue(0);
-      tooth23TranslateX.setValue(0);
-      tooth23TranslateY.setValue(0);
-    } else if (toothNumber === 24) {
-      tooth24Scale.stopAnimation();
-      tooth24Rotation.stopAnimation();
-      tooth24TranslateX.stopAnimation();
-      tooth24TranslateY.stopAnimation();
-      tooth24Scale.setValue(1);
-      tooth24Rotation.setValue(0);
-      tooth24TranslateX.setValue(0);
-      tooth24TranslateY.setValue(0);
-    }
-  };
+  // NOTE: Individual tooth animations and stopToothAnimations are now handled by useToothAnimations hook
+  // getToothAnimValues replaced by toothAnims.getToothAnimations
+  // stopToothAnimations replaced by toothAnims.stopToothAnimations
 
   // ═══════════════════════════════════════════════════════════════
   // Database Integration Functions
@@ -1911,7 +1366,7 @@ export default function DentalChartScreen({
     // إذا تم النقر على نفس السن أثناء الإغلاق، نوقف الإغلاق ونفتحه مرة أخرى
     if (selectedTooth === toothNumber && isClosing && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(toothNumber)) {
       // إيقاف أنيميشن الإغلاق فوراً
-      stopToothAnimations(toothNumber);
+      toothAnims.stopToothAnimations(toothNumber as number);
       // إلغاء حالة الإغلاق
       setIsClosing(false);
       // فتح السن مرة أخرى
@@ -1922,7 +1377,7 @@ export default function DentalChartScreen({
     // إذا كان هناك سن آخر مفتوح (من 1-32)
     if (selectedTooth && selectedTooth !== toothNumber && [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(selectedTooth)) {
       // إيقاف جميع الأنيميشنات للسن القديم فوراً
-      stopToothAnimations(selectedTooth);
+      toothAnims.stopToothAnimations(selectedTooth as number);
       // إلغاء حالة الإغلاق
       setIsClosing(false);
       // فتح السن الجديد مباشرة
@@ -1942,7 +1397,7 @@ export default function DentalChartScreen({
     setIsClosing(false);
 
     // إخفاء الأزرار (Edit, View, Oral Hygiene) تدريجياً عند فتح السن
-    Animated.timing(buttonsOpacity, {
+    Animated.timing(toothAnims.buttonsOpacity, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
@@ -2815,7 +2270,7 @@ export default function DentalChartScreen({
     setIsClosing(true);
 
     // إظهار الأزرار (Edit, View, Oral Hygiene) مباشرة عند إغلاق السن
-    Animated.timing(buttonsOpacity, {
+    Animated.timing(toothAnims.buttonsOpacity, {
       toValue: 1,
       duration: 200,
       useNativeDriver: true,
@@ -4096,8 +3551,8 @@ export default function DentalChartScreen({
                   style={[
                     styles.editButtonContainer,
                     {
-                      transform: [{ translateX: editButtonSlide }],
-                      opacity: isOralHygieneExpanded ? 0 : buttonsOpacity,
+                      transform: [{ translateX: toothAnims.editButtonSlide }],
+                      opacity: isOralHygieneExpanded ? 0 : toothAnims.buttonsOpacity,
                       zIndex: isOralHygieneExpanded ? 700 : (selectedTooth ? 900 : 9999),
                       elevation: isOralHygieneExpanded ? 700 : (selectedTooth ? 900 : 9999),
                     }
@@ -4127,13 +3582,13 @@ export default function DentalChartScreen({
 
                 {/* View Mode Button */}
                 <Animated.View style={[styles.viewButtonContainer, {
-                  opacity: isOralHygieneExpanded ? 0 : buttonsOpacity,
+                  opacity: isOralHygieneExpanded ? 0 : toothAnims.buttonsOpacity,
                   zIndex: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
                   elevation: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
                   transform: [
                     { translateX: -50 },
                     {
-                      translateY: viewButtonPositionAnim.interpolate({
+                      translateY: toothAnims.viewButtonPositionAnim.interpolate({
                         inputRange: [0, 1],
                         outputRange: [0, -(SCREEN_HEIGHT * 0.41 - 100)] // من 41% إلى 100 بكسل من الأعلى
                       })
@@ -4151,57 +3606,57 @@ export default function DentalChartScreen({
                         console.log('🔵 Showing referral container - hiding teeth');
                         // إخفاء الأسنان وزر Edit والخطوط وأرقام الأسنان
                         Animated.parallel([
-                          Animated.timing(rightTeethSlide, {
+                          Animated.timing(toothAnims.rightTeethSlide, {
                             toValue: 500, // إزاحة لليمين خارج الشاشة
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(leftTeethSlide, {
+                          Animated.timing(toothAnims.leftTeethSlide, {
                             toValue: -500, // إزاحة لليسار خارج الشاشة
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(editButtonSlide, {
+                          Animated.timing(toothAnims.editButtonSlide, {
                             toValue: -300, // إزاحة زر Edit لليسار
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(verticalTopLineSlide, {
+                          Animated.timing(toothAnims.verticalTopLineSlide, {
                             toValue: -200, // إزاحة الخط العمودي العلوي للأعلى
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(verticalBottomLineSlide, {
+                          Animated.timing(toothAnims.verticalBottomLineSlide, {
                             toValue: 200, // إزاحة الخط العمودي السفلي للأسفل
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(horizontalRightLineSlide, {
+                          Animated.timing(toothAnims.horizontalRightLineSlide, {
                             toValue: 500, // إزاحة الخط الأفقي الأيمن لليمين
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(horizontalLeftLineSlide, {
+                          Animated.timing(toothAnims.horizontalLeftLineSlide, {
                             toValue: -500, // إزاحة الخط الأفقي الأيسر لليسار
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(rightNumbersSlide, {
+                          Animated.timing(toothAnims.rightNumbersSlide, {
                             toValue: 500, // إزاحة أرقام الأسنان اليمنى لليمين
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(leftNumbersSlide, {
+                          Animated.timing(toothAnims.leftNumbersSlide, {
                             toValue: -500, // إزاحة أرقام الأسنان اليسرى لليسار
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(oralHygieneOpacity, {
+                          Animated.timing(toothAnims.oralHygieneOpacity, {
                             toValue: 0, // إخفاء حاوية Oral Hygiene
                             duration: 400,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(viewButtonPositionAnim, {
+                          Animated.timing(toothAnims.viewButtonPositionAnim, {
                             toValue: 1, // تحريك زر View إلى أعلى يمين
                             duration: 400,
                             useNativeDriver: true,
@@ -4210,27 +3665,27 @@ export default function DentalChartScreen({
                           console.log('🟢 Teeth hidden - now showing containers');
                           // إعادة تعيين الحاوية للحالة المغلقة
                           setIsReferralExpanded(false);
-                          referralSectionsHeight.setValue(0);
+                          toothAnims.referralSectionsHeight.setValue(0);
                           // إعادة تعيين pushDown للحاويات الأخرى
-                          treatmentRecordPushDown.setValue(0);
-                          planningRecordPushDown.setValue(0);
+                          toothAnims.treatmentRecordPushDown.setValue(0);
+                          toothAnims.planningRecordPushDown.setValue(0);
                           // بعد انتهاء اختفاء الأسنان، إظهار الحاويات بالتسلسل
                           // 1. Referral من اليمين
-                          Animated.timing(referralContainerSlide, {
+                          Animated.timing(toothAnims.referralContainerSlide, {
                             toValue: 0,
                             duration: 150,
                             useNativeDriver: true,
                           }).start(() => {
                             console.log(' Referral container visible');
                             // 2. Treatment Record من اليسار
-                            Animated.timing(treatmentRecordSlide, {
+                            Animated.timing(toothAnims.treatmentRecordSlide, {
                               toValue: 0,
                               duration: 150,
                               useNativeDriver: true,
                             }).start(() => {
                               console.log(' Treatment Record visible');
                               // 3. Planning Record من اليمين
-                              Animated.timing(planningRecordSlide, {
+                              Animated.timing(toothAnims.planningRecordSlide, {
                                 toValue: 0,
                                 duration: 150,
                                 useNativeDriver: true,
@@ -4245,26 +3700,26 @@ export default function DentalChartScreen({
                         console.log('🔴 Hiding containers - returning teeth');
                         // إعادة تعيين الحاوية للحالة المغلقة
                         setIsReferralExpanded(false);
-                        referralSectionsHeight.setValue(0);
-                        treatmentRecordPushDown.setValue(0);
-                        planningRecordPushDown.setValue(0);
+                        toothAnims.referralSectionsHeight.setValue(0);
+                        toothAnims.treatmentRecordPushDown.setValue(0);
+                        toothAnims.planningRecordPushDown.setValue(0);
                         // إخفاء الحاويات بالتسلسل العكسي
                         // 1. Planning Record (يمين)
-                        Animated.timing(planningRecordSlide, {
+                        Animated.timing(toothAnims.planningRecordSlide, {
                           toValue: 1000,
                           duration: 100,
                           useNativeDriver: true,
                         }).start(() => {
                           console.log('🟡 Planning Record hidden');
                           // 2. Treatment Record (يسار)
-                          Animated.timing(treatmentRecordSlide, {
+                          Animated.timing(toothAnims.treatmentRecordSlide, {
                             toValue: -1000,
                             duration: 100,
                             useNativeDriver: true,
                           }).start(() => {
                             console.log('🟡 Treatment Record hidden');
                             // 3. Referral (يمين)
-                            Animated.timing(referralContainerSlide, {
+                            Animated.timing(toothAnims.referralContainerSlide, {
                               toValue: 1000,
                               duration: 100,
                               useNativeDriver: true,
@@ -4272,57 +3727,57 @@ export default function DentalChartScreen({
                               console.log('🟡 All containers hidden - now returning teeth');
                           // ثم إرجاع الأسنان وزر Edit والخطوط وأرقام الأسنان لأماكنها
                           Animated.parallel([
-                          Animated.timing(rightTeethSlide, {
+                          Animated.timing(toothAnims.rightTeethSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(leftTeethSlide, {
+                          Animated.timing(toothAnims.leftTeethSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(editButtonSlide, {
+                          Animated.timing(toothAnims.editButtonSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(verticalTopLineSlide, {
+                          Animated.timing(toothAnims.verticalTopLineSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(verticalBottomLineSlide, {
+                          Animated.timing(toothAnims.verticalBottomLineSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(horizontalRightLineSlide, {
+                          Animated.timing(toothAnims.horizontalRightLineSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(horizontalLeftLineSlide, {
+                          Animated.timing(toothAnims.horizontalLeftLineSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(rightNumbersSlide, {
+                          Animated.timing(toothAnims.rightNumbersSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(leftNumbersSlide, {
+                          Animated.timing(toothAnims.leftNumbersSlide, {
                             toValue: 0,
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(oralHygieneOpacity, {
+                          Animated.timing(toothAnims.oralHygieneOpacity, {
                             toValue: 1, // إعادة إظهار حاوية Oral Hygiene
                             duration: 300,
                             useNativeDriver: true,
                           }),
-                          Animated.timing(viewButtonPositionAnim, {
+                          Animated.timing(toothAnims.viewButtonPositionAnim, {
                             toValue: 0, // إعادة زر View إلى موقعه الأصلي
                             duration: 300,
                             useNativeDriver: true,
@@ -4353,7 +3808,7 @@ export default function DentalChartScreen({
                 <View style={styles.crossContainer}>
                   {/* خطوط فاصلة أصفر في المنتصف */}
                   {/* الخط العمودي العلوي */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: verticalTopLineSlide }] }]} pointerEvents="none">
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: toothAnims.verticalTopLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
                       {/* الخط العمودي الأصفر الصغير في الأعلى بين رقم 1 و1 */}
                       <Line
@@ -4369,7 +3824,7 @@ export default function DentalChartScreen({
                   </Animated.View>
 
                   {/* الخط العمودي السفلي */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: verticalBottomLineSlide }] }]} pointerEvents="none">
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateY: toothAnims.verticalBottomLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
                       {/* الخط العمودي الأصفر الصغير في الأسفل بين رقم 1 و1 للفك السفلي */}
                       <Line
@@ -4385,7 +3840,7 @@ export default function DentalChartScreen({
                   </Animated.View>
 
                   {/* الخط الأفقي الأيسر */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: horizontalLeftLineSlide }] }]} pointerEvents="none">
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: toothAnims.horizontalLeftLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
                       {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليسار */}
                       <Line
@@ -4401,7 +3856,7 @@ export default function DentalChartScreen({
                   </Animated.View>
 
                   {/* الخط الأفقي الأيمن */}
-                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: horizontalRightLineSlide }] }]} pointerEvents="none">
+                  <Animated.View style={[styles.centerDivider, { transform: [{ translateX: toothAnims.horizontalRightLineSlide }] }]} pointerEvents="none">
                     <Svg width="100%" height="100%" viewBox="0 0 100 100">
                       {/* الخط الأفقي الأصفر الصغير بين 8 و 8 على اليمين */}
                       <Line
@@ -4424,7 +3879,7 @@ export default function DentalChartScreen({
                       left: '50%',
                       zIndex: isOralHygieneExpanded ? 10001 : 800,
                       elevation: isOralHygieneExpanded ? 10001 : 800,
-                      opacity: Animated.multiply(buttonsOpacity, oralHygieneOpacity),
+                      opacity: Animated.multiply(toothAnims.buttonsOpacity, toothAnims.oralHygieneOpacity),
                     }
                   ]} pointerEvents={selectedTooth ? "none" : "auto"}>
                     <Animated.View
@@ -4647,11 +4102,11 @@ export default function DentalChartScreen({
                     isEditModeActive={isEditModeActive}
                     toothConditions={toothConditions}
                     toothBorderColors={toothBorderColors}
-                    rightTeethSlide={rightTeethSlide}
-                    leftTeethSlide={leftTeethSlide}
-                    rightNumbersSlide={rightNumbersSlide}
-                    leftNumbersSlide={leftNumbersSlide}
-                    getToothAnims={getToothAnimValues}
+                    rightTeethSlide={toothAnims.rightTeethSlide}
+                    leftTeethSlide={toothAnims.leftTeethSlide}
+                    rightNumbersSlide={toothAnims.rightNumbersSlide}
+                    leftNumbersSlide={toothAnims.leftNumbersSlide}
+                    getToothAnims={toothAnims.getToothAnimations}
                     onToothPress={handleToothPress}
                     onSurfacePress={handleSurfacePress}
                   />
@@ -4662,7 +4117,7 @@ export default function DentalChartScreen({
               style={[
                 styles.referralContainer,
                 {
-                  transform: [{ translateX: referralContainerSlide }],
+                  transform: [{ translateX: toothAnims.referralContainerSlide }],
                   opacity: (isTreatmentRecordExpanded || isPlanningRecordExpanded) ? 0 : 1,
                   zIndex: isReferralExpanded ? 10010 : 10003,
                   elevation: isReferralExpanded ? 10010 : 10003,
@@ -5177,8 +4632,8 @@ export default function DentalChartScreen({
                 styles.treatmentRecordContainer,
                 {
                   transform: [
-                    { translateX: treatmentRecordSlide },
-                    { translateY: treatmentRecordPushDown }
+                    { translateX: toothAnims.treatmentRecordSlide },
+                    { translateY: toothAnims.treatmentRecordPushDown }
                   ],
                   paddingTop: isTreatmentRecordExpanded ? 20 : (
                     REFERRAL_HEADER_HEIGHT +
@@ -5497,8 +4952,8 @@ export default function DentalChartScreen({
                 styles.planningRecordContainer,
                 {
                   transform: [
-                    { translateX: planningRecordSlide },
-                    { translateY: planningRecordPushDown }
+                    { translateX: toothAnims.planningRecordSlide },
+                    { translateY: toothAnims.planningRecordPushDown }
                   ],
                   paddingTop: isPlanningRecordExpanded ? 20 : (
                     REFERRAL_HEADER_HEIGHT +
