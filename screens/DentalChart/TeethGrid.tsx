@@ -6,21 +6,15 @@ import {
   ToothWithSectionsSquareMedium,
 } from './ToothShapes';
 import { CONDITION_COLORS } from './constants';
+import { ToothSurfaceConditions } from './dentalHelpers';
 import type { ToothCondition } from '../../types';
 
 // ═══════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════
 
-export interface ToothSurfaceConditions {
-  mesial?: string;
-  distal?: string;
-  buccal?: string;
-  lingual?: string;
-  occlusal?: string;
-  palatal?: string;
-  incisal?: string;
-}
+// Re-export ToothSurfaceConditions for external use
+export type { ToothSurfaceConditions };
 
 // Interface لـ Animated Values لكل سن
 export interface ToothAnimValues {
@@ -50,7 +44,7 @@ export interface TeethGridProps {
 
   // Callbacks
   onToothPress: (toothNumber: number) => void;
-  onSurfacePress: (surface: string) => void;
+  onSurfacePress: (surface: keyof ToothSurfaceConditions) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -61,14 +55,14 @@ const SurfaceLabel: React.FC<{
   position: 'top' | 'bottom' | 'left' | 'right';
   label: string;
 }> = ({ position, label }) => {
-  const baseStyle = {
-    position: 'absolute' as const,
+  const baseStyle: any = {
+    position: 'absolute',
     fontSize: 4,
-    fontWeight: 'bold' as const,
+    fontWeight: 'bold',
     color: 'rgba(135, 206, 250, 0.95)',
   };
 
-  const positionStyles = {
+  const positionStyles: Record<string, any> = {
     top: { top: -4, left: '50%', transform: [{ translateX: -2 }] },
     bottom: { bottom: -4, left: '50%', transform: [{ translateX: -2 }] },
     left: { left: -4, top: '50%', transform: [{ translateY: -0.5 }] },
