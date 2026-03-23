@@ -227,8 +227,8 @@ export function ExpandedPatientHeader({
               backgroundColor: 'rgba(239, 68, 68, 0.45)',
               borderRadius: 16,
               padding: 16,
-              borderWidth: 2,
-              borderColor: 'rgba(239, 68, 68, 0.7)',
+              borderWidth: 3,
+              borderColor: '#FFFFFF',
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -268,8 +268,8 @@ export function ExpandedPatientHeader({
               backgroundColor: 'rgba(249, 115, 22, 0.45)',
               borderRadius: 16,
               padding: 16,
-              borderWidth: 2,
-              borderColor: 'rgba(249, 115, 22, 0.7)',
+              borderWidth: 3,
+              borderColor: '#FFFFFF',
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -309,8 +309,8 @@ export function ExpandedPatientHeader({
               backgroundColor: 'rgba(139, 92, 246, 0.45)',
               borderRadius: 16,
               padding: 16,
-              borderWidth: 2,
-              borderColor: 'rgba(139, 92, 246, 0.7)',
+              borderWidth: 3,
+              borderColor: '#FFFFFF',
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
