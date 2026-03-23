@@ -214,8 +214,8 @@ export function ExpandedPatientHeader({
             {item.badge > 0 && (
               <View style={{
                 position: 'absolute',
-                top: 4,
-                right: 4,
+                top: -10,
+                left: -10,
                 backgroundColor: '#EF4444',
                 borderRadius: 12,
                 minWidth: 24,
