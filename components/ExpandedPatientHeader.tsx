@@ -217,17 +217,17 @@ export function ExpandedPatientHeader({
                 top: -10,
                 left: -10,
                 backgroundColor: '#EF4444',
-                borderRadius: 12,
-                minWidth: 24,
-                height: 24,
+                borderRadius: 14,
+                minWidth: 28,
+                height: 28,
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingHorizontal: 6,
-                borderWidth: 2,
+                paddingHorizontal: 7,
+                borderWidth: 2.5,
                 borderColor: '#FFFFFF',
                 zIndex: 10,
               }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
                   {item.badge}
                 </Text>
               </View>
