@@ -1586,4 +1586,28 @@ export const styles = StyleSheet.create({
     color: '#64748B',
     fontWeight: '500',
   },
+  // Convert to Permanent Modal styles
+  input: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#2D3748',
+    marginBottom: 8,
+  },
+  button: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 });

@@ -72,7 +72,7 @@ export const CircularBadge = ({
 };
 
 // Animated wrapper for PatientCard
-export function AnimatedPatientCard({ index, animKey, ...props }: { index: number; animKey: number; patient: Patient; showTimeline: boolean; onMenuPress: () => void; onNotePress: () => void; onCardPress: () => void; onEditField: (patientId: string, field: 'clinic' | 'condition' | 'treatment') => void; expandedCardId: string | null; onViewDetails: (patientId: string) => void; cardTimelines: { [key: string]: TimelineEvent[] }; showTimelineTab: { [key: string]: boolean }; onToggleTab: (patientId: string) => void; onPatientNamePress?: (patientId: string, fileNumber: string) => void; expandedPermanentCardId: string | null; onTogglePermanentExpansion: (patient: Patient) => void; activeDentalTab: 'treatment' | 'referrals' | 'notes'; onDentalTabChange: (tab: 'treatment' | 'referrals' | 'notes') => void; dentalSummary?: DentalSummary; loadingDentalData?: boolean; onToothEditPress: (permanentPatientId: string, tooth: string) => void; patientReferrals?: Referral[]; onLoadReferrals?: () => void; onUpdateReferralStatus?: (referralId: string, newStatus: 'not_given' | 'given') => void; patientToothNotes?: ToothNote[]; onLoadToothNotes?: () => void; lastScalingDates?: { [key: string]: string | null }; }) {
+export function AnimatedPatientCard({ index, animKey, ...props }: { index: number; animKey: number; patient: Patient; showTimeline: boolean; onMenuPress: () => void; onNotePress: () => void; onCardPress: () => void; onEditField: (patientId: string, field: 'clinic' | 'condition' | 'treatment') => void; expandedCardId: string | null; onViewDetails: (patientId: string) => void; cardTimelines: { [key: string]: TimelineEvent[] }; showTimelineTab: { [key: string]: boolean }; onToggleTab: (patientId: string) => void; onPatientNamePress?: (patientId: string, fileNumber: string) => void; expandedPermanentCardId: string | null; onTogglePermanentExpansion: (patient: Patient) => void; activeDentalTab: 'treatment' | 'referrals' | 'notes'; onDentalTabChange: (tab: 'treatment' | 'referrals' | 'notes') => void; dentalSummary?: DentalSummary; loadingDentalData?: boolean; onToothEditPress: (permanentPatientId: string, tooth: string) => void; patientReferrals?: Referral[]; onLoadReferrals?: () => void; onUpdateReferralStatus?: (referralId: string, newStatus: 'not_given' | 'given') => void; patientToothNotes?: ToothNote[]; onLoadToothNotes?: () => void; lastScalingDates?: { [key: string]: string | null }; currentDoctorName?: string; onUpdateScalingDate?: (patientId: string, timestamp: string) => void; patientConsents?: { [key: string]: boolean }; onToggleConsent?: (patient: Patient) => void; onOpenDentalChartScreen?: (permanentPatientId: string) => void; }) {
   const slideAnim = React.useRef(new Animated.Value(0)).current;
   const expandAnim = React.useRef(new Animated.Value(0)).current;
 
@@ -134,7 +134,7 @@ export function AnimatedPatientCard({ index, animKey, ...props }: { index: numbe
   );
 }
 
-export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates, currentDoctorName, onUpdateScalingDate, patientConsents, onToggleConsent }: {
+export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates, currentDoctorName, onUpdateScalingDate, patientConsents, onToggleConsent, onOpenDentalChartScreen }: {
   patient: Patient;
   showTimeline: boolean;
   onMenuPress: () => void;
@@ -165,6 +165,7 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
   onUpdateScalingDate?: (patientId: string, timestamp: string) => void;
   patientConsents?: { [key: string]: boolean };
   onToggleConsent?: (patient: Patient) => void;
+  onOpenDentalChartScreen?: (permanentPatientId: string) => void;
 }) {
   // تأثير زجاجي: نفس الألوان لكن شفافة (0.75 = واضح جداً)
   // إذا كان DONE: نفس تدرج الكرت الصلب (بدون شفافية)
@@ -291,15 +292,15 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
             // iPhone Style Expanded Header - New Design
             <ExpandedPatientHeader
               patient={patient}
-              dentalSummary={dentalSummary || null}
+              dentalSummary={(dentalSummary || null) as any}
               loadingDentalData={loadingDentalData || false}
-              patientReferrals={patientReferrals || []}
+              patientReferrals={(patientReferrals || []) as any}
               loadingReferrals={false}
               onLoadReferrals={onLoadReferrals || (() => {})}
-              toothNotes={patientToothNotes || []}
+              toothNotes={(patientToothNotes || []) as any}
               loadingToothNotes={false}
               onLoadToothNotes={onLoadToothNotes || (() => {})}
-              lastScalingDate={lastScalingDates?.[patient.id] ? new Date(lastScalingDates[patient.id]) : undefined}
+              lastScalingDate={lastScalingDates?.[patient.id] ? new Date(lastScalingDates[patient.id]!) : undefined}
               onFluoridePress={() => {}}
               onScalingPress={async () => {
                 if (!patient.permanent_patient_id) {
@@ -321,12 +322,11 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
               onConsentPress={() => onToggleConsent?.(patient)}
               onOpenDentalChart={() => {
                 if (patient.permanent_patient_id) {
-                  setDentalChartPatientId(patient.permanent_patient_id);
-                  setShowDentalChart(true);
+                  onOpenDentalChartScreen?.(patient.permanent_patient_id);
                 }
               }}
-              onTogglePermanentExpansion={onTogglePermanentExpansion}
-              onToothEditPress={(patientId, tooth) => onToothEditPress?.(patientId, String(tooth))}
+              onTogglePermanentExpansion={onTogglePermanentExpansion as any}
+              onToothEditPress={(patientId: string, tooth: any) => onToothEditPress?.(patientId, String(tooth))}
               onPatientNamePress={onPatientNamePress}
             />
           )}
@@ -1288,15 +1288,15 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
             // iPhone Style Expanded Header - New Design
             <ExpandedPatientHeader
               patient={patient}
-              dentalSummary={dentalSummary || null}
+              dentalSummary={(dentalSummary || null) as any}
               loadingDentalData={loadingDentalData || false}
-              patientReferrals={patientReferrals || []}
+              patientReferrals={(patientReferrals || []) as any}
               loadingReferrals={false}
               onLoadReferrals={onLoadReferrals || (() => {})}
-              toothNotes={patientToothNotes || []}
+              toothNotes={(patientToothNotes || []) as any}
               loadingToothNotes={false}
               onLoadToothNotes={onLoadToothNotes || (() => {})}
-              lastScalingDate={lastScalingDates?.[patient.id] ? new Date(lastScalingDates[patient.id]) : undefined}
+              lastScalingDate={lastScalingDates?.[patient.id] ? new Date(lastScalingDates[patient.id]!) : undefined}
               onFluoridePress={() => {}}
               onScalingPress={async () => {
                 if (!patient.permanent_patient_id) {
@@ -1318,12 +1318,11 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
               onConsentPress={() => onToggleConsent?.(patient)}
               onOpenDentalChart={() => {
                 if (patient.permanent_patient_id) {
-                  setDentalChartPatientId(patient.permanent_patient_id);
-                  setShowDentalChart(true);
+                  onOpenDentalChartScreen?.(patient.permanent_patient_id);
                 }
               }}
-              onTogglePermanentExpansion={onTogglePermanentExpansion}
-              onToothEditPress={(patientId, tooth) => onToothEditPress?.(patientId, String(tooth))}
+              onTogglePermanentExpansion={onTogglePermanentExpansion as any}
+              onToothEditPress={(patientId: string, tooth: any) => onToothEditPress?.(patientId, String(tooth))}
               onPatientNamePress={onPatientNamePress}
             />
             )}
