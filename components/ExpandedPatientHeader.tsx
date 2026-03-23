@@ -213,28 +213,49 @@ export function ExpandedPatientHeader({
   // Render Treatment Content
   const renderTreatmentContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 16 }}>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginBottom: 18, letterSpacing: 0.3 }}>
         Dental Treatment Summary
       </Text>
 
       {loadingDentalData ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : dentalSummary ? (
-        <View style={{ gap: 12 }}>
+        <View style={{ gap: 14 }}>
           {/* Caries */}
           {dentalSummary.caries_count > 0 && (
-            <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: 12, padding: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#FCA5A5', marginBottom: 8 }}>
-                Caries ({dentalSummary.caries_count})
-              </Text>
+            <View style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.45)',
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 2,
+              borderColor: 'rgba(239, 68, 68, 0.7)',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="alert-circle" size={20} color="#FFFFFF" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                    Caries
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.3)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.caries_count}</Text>
+                </View>
+              </View>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.caries_teeth.map((tooth) => (
                   <TouchableOpacity
                     key={tooth}
-                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.35)',
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    }}
                     onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
                   >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '500' }}>#{tooth}</Text>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>#{tooth}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -243,18 +264,39 @@ export function ExpandedPatientHeader({
 
           {/* RCT Needed */}
           {dentalSummary.rct_needed_count > 0 && (
-            <View style={{ backgroundColor: 'rgba(249, 115, 22, 0.2)', borderRadius: 12, padding: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#FDBA74', marginBottom: 8 }}>
-                RCT Needed ({dentalSummary.rct_needed_count})
-              </Text>
+            <View style={{
+              backgroundColor: 'rgba(249, 115, 22, 0.45)',
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 2,
+              borderColor: 'rgba(249, 115, 22, 0.7)',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="medical" size={20} color="#FFFFFF" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                    RCT Needed
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.3)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.rct_needed_count}</Text>
+                </View>
+              </View>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.rct_needed_teeth.map((tooth) => (
                   <TouchableOpacity
                     key={tooth}
-                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.35)',
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    }}
                     onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
                   >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '500' }}>#{tooth}</Text>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>#{tooth}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -263,18 +305,39 @@ export function ExpandedPatientHeader({
 
           {/* Extraction Needed */}
           {dentalSummary.extraction_needed_count > 0 && (
-            <View style={{ backgroundColor: 'rgba(139, 92, 246, 0.2)', borderRadius: 12, padding: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#C4B5FD', marginBottom: 8 }}>
-                Extraction Needed ({dentalSummary.extraction_needed_count})
-              </Text>
+            <View style={{
+              backgroundColor: 'rgba(139, 92, 246, 0.45)',
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 2,
+              borderColor: 'rgba(139, 92, 246, 0.7)',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="remove-circle" size={20} color="#FFFFFF" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                    Extraction Needed
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.3)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.extraction_needed_count}</Text>
+                </View>
+              </View>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.extraction_needed_teeth.map((tooth) => (
                   <TouchableOpacity
                     key={tooth}
-                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.35)',
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    }}
                     onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
                   >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '500' }}>#{tooth}</Text>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>#{tooth}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -284,7 +347,7 @@ export function ExpandedPatientHeader({
           {dentalSummary.caries_count === 0 && dentalSummary.rct_needed_count === 0 && dentalSummary.extraction_needed_count === 0 && (
             <View style={{ alignItems: 'center', padding: 24 }}>
               <Ionicons name="checkmark-circle" size={48} color="#10B981" />
-              <Text style={{ color: '#FFFFFF', marginTop: 12, fontSize: 16 }}>No treatment needed</Text>
+              <Text style={{ color: '#FFFFFF', marginTop: 12, fontSize: 16, fontWeight: '600' }}>No treatment needed</Text>
             </View>
           )}
         </View>
