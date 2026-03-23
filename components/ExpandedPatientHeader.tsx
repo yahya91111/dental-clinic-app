@@ -218,9 +218,20 @@ export function ExpandedPatientHeader({
   // Render Treatment Content
   const renderTreatmentContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginBottom: 18, letterSpacing: 0.3 }}>
-        Dental Treatment Summary
-      </Text>
+      <View style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        borderRadius: 14,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginBottom: 18,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
+        alignItems: 'center',
+      }}>
+        <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
+          Treatment
+        </Text>
+      </View>
 
       {loadingDentalData ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
@@ -447,9 +458,20 @@ export function ExpandedPatientHeader({
   // Render Referrals Content
   const renderReferralsContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 16 }}>
-        Referrals
-      </Text>
+      <View style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        borderRadius: 14,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginBottom: 18,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
+        alignItems: 'center',
+      }}>
+        <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
+          Referrals
+        </Text>
+      </View>
 
       {loadingReferrals ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
@@ -491,9 +513,20 @@ export function ExpandedPatientHeader({
 
     return (
       <View style={{ flex: 1, padding: 16 }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 24 }}>
-          Oral Hygiene
-        </Text>
+        <View style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.25)',
+          borderRadius: 14,
+          paddingVertical: 12,
+          paddingHorizontal: 16,
+          marginBottom: 18,
+          borderWidth: 2,
+          borderColor: 'rgba(255, 255, 255, 0.4)',
+          alignItems: 'center',
+        }}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
+            Oral Hygiene
+          </Text>
+        </View>
 
         <View style={{ gap: 16 }}>
           {/* Fluoride Button */}
@@ -549,9 +582,20 @@ export function ExpandedPatientHeader({
   // Render Notes Content
   const renderNotesContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 16 }}>
-        Tooth Notes
-      </Text>
+      <View style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        borderRadius: 14,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        marginBottom: 18,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
+        alignItems: 'center',
+      }}>
+        <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
+          Tooth Notes
+        </Text>
+      </View>
 
       {loadingToothNotes ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
