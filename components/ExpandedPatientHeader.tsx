@@ -14,6 +14,11 @@ interface DentalSummary {
   rct_needed_teeth: number[];
   extraction_needed_count: number;
   extraction_needed_teeth: number[];
+  broken_teeth_count: number;
+  broken_teeth: number[];
+  filling_done_count: number;
+  filling_done_teeth: number[];
+  total_issues: number;
 }
 
 interface PatientReferral {
@@ -344,7 +349,89 @@ export function ExpandedPatientHeader({
             </View>
           )}
 
-          {dentalSummary.caries_count === 0 && dentalSummary.rct_needed_count === 0 && dentalSummary.extraction_needed_count === 0 && (
+          {/* Broken Tooth */}
+          {dentalSummary.broken_teeth_count > 0 && (
+            <View style={{
+              backgroundColor: 'rgba(234, 179, 8, 0.45)',
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 3,
+              borderColor: '#FFFFFF',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="flash" size={20} color="#FFFFFF" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                    Broken Tooth
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.3)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.broken_teeth_count}</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {dentalSummary.broken_teeth.map((tooth) => (
+                  <TouchableOpacity
+                    key={tooth}
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.35)',
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    }}
+                    onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>#{tooth}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Temporary Filling (Need Permanent) */}
+          {dentalSummary.filling_done_count > 0 && (
+            <View style={{
+              backgroundColor: 'rgba(59, 130, 246, 0.45)',
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 3,
+              borderColor: '#FFFFFF',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="build" size={20} color="#FFFFFF" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                    Need Permanent Filling
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.3)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.filling_done_count}</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {dentalSummary.filling_done_teeth.map((tooth) => (
+                  <TouchableOpacity
+                    key={tooth}
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.35)',
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                    }}
+                    onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>#{tooth}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {dentalSummary.caries_count === 0 && dentalSummary.rct_needed_count === 0 && dentalSummary.extraction_needed_count === 0 && dentalSummary.broken_teeth_count === 0 && dentalSummary.filling_done_count === 0 && (
             <View style={{ alignItems: 'center', padding: 24 }}>
               <Ionicons name="checkmark-circle" size={48} color="#10B981" />
               <Text style={{ color: '#FFFFFF', marginTop: 12, fontSize: 16, fontWeight: '600' }}>No treatment needed</Text>
