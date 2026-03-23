@@ -63,6 +63,7 @@ import { styles } from './screens/MainQueue/styles';
 import { CircularBadge, AnimatedPatientCard, PatientCard } from './screens/MainQueue/PatientCard';
 import { generateDentalSummary, calculateDentalChartTreatments, calculateGivenReferrals, checkScalingDoneToday, getTreatmentFromBadge } from './screens/MainQueue/dentalHelpers';
 import { AppModals } from './screens/MainQueue/AppModals';
+import { usePatientData } from './screens/MainQueue/usePatientData';
 
 
 export default function App() {
@@ -78,11 +79,6 @@ export default function App() {
 function AppContent() {
   const { user, isLoading, logout } = useAuth();
   
-  // User's clinic ID for filtering
-  const [userClinicId, setUserClinicId] = useState<number | null>(null);
-  
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [displayedPatients, setDisplayedPatients] = useState<Patient[]>([]);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTreatmentStats, setShowTreatmentStats] = useState(false);
@@ -102,8 +98,6 @@ function AppContent() {
   const [viewingDoctorData, setViewingDoctorData] = useState<{id: string, name: string, clinic_id: string | null, role: string} | null>(null);
   const [currentDoctorsScreen, setCurrentDoctorsScreen] = useState<'list' | 'viewStats'>('list');
   
-  // My Statistics data
-  const [myTotalTreatments, setMyTotalTreatments] = useState(0);
   const [showDentalDepartments, setShowDentalDepartments] = useState(false);
   const [showClinicDetails, setShowClinicDetails] = useState(false);
   const [showDoctorsScreen, setShowDoctorsScreen] = useState(false);
@@ -160,17 +154,31 @@ function AppContent() {
   const [selectedTooth, setSelectedTooth] = useState<string>('');
   const [toothModalPatientId, setToothModalPatientId] = useState<string>('');
 
+  // Load timeline
+  const loadTimeline = async (patientId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('timeline_events')
+        .select('id, patient_id, event_type, event_details, timestamp, doctor_name, assigned_by_doctor_name')
+        .eq('patient_id', patientId)
+        .order('timestamp', { ascending: false });
 
-  // Dragon Design: Animated Blobs for Timeline
-  const timelineBlob1Anim = React.useState(new Animated.Value(0))[0];
-  const timelineBlob2Anim = React.useState(new Animated.Value(0))[0];
-  const timelineBlob3Anim = React.useState(new Animated.Value(0))[0];
-  const timelineBlob4Anim = React.useState(new Animated.Value(0))[0];
-  const timelineBlob5Anim = React.useState(new Animated.Value(0))[0];
-  const timelineBlob6Anim = React.useState(new Animated.Value(0))[0];
-  
+      if (error) throw error;
+      setTimeline(data || []);
+    } catch (error: any) {
+      // Error handled silently
+    }
+  };
 
-  
+  // Patient data hook (patients, realtime, animations, etc.)
+  const {
+    patients, setPatients, displayedPatients, userClinicId,
+    myTotalTreatments, setMyTotalTreatments, loadPatients,
+    animKey, setAnimKey,
+    timelineBlob1Anim, timelineBlob2Anim, timelineBlob3Anim,
+    timelineBlob4Anim, timelineBlob5Anim, timelineBlob6Anim
+  } = usePatientData({ user, selectedClinicId, selectedPatient, loadTimeline });
+
   // Header collapse via tap
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const headerTranslateY = React.useState(new Animated.Value(0))[0];
@@ -223,9 +231,6 @@ function AppContent() {
     ]).start();
   }, [expandedPermanentCardId]);
 
-  // Animation states for cards
-  const [animKey, setAnimKey] = useState(0);
-
   // Menu states
   const [showMenuForPatient, setShowMenuForPatient] = useState<string | null>(null);
   const [showNoteModal, setShowNoteModal] = useState(false);
@@ -265,471 +270,6 @@ function AppContent() {
   // Patient edit mode state (for modal)
   const [isPatientEditMode, setIsPatientEditMode] = useState(false);
   const [modalEditingPatientId, setModalEditingPatientId] = useState<string | null>(null);
-
-  // Ref to prevent multiple Realtime subscriptions
-  const realtimeChannelRef = useRef<any>(null);
-  const timelineChannelRef = useRef<any>(null);
-  const myTreatmentsChannelRef = useRef<any>(null);
-  const reconnectTimeoutRef = useRef<any>(null);
-
-  // Load patients from Supabase with useCallback
-  const loadPatients = useCallback(async (silent = false) => {
-    try {
-      // Ø§Ø³ØªØ®Ø¯Ø§Ù… selectedClinicId Ø£ÙˆÙ„Ø§Ù‹ (Ù„Ù„Ù€ Coordinator/General Manager)ØŒ Ø«Ù… userClinicId (Ù„Ù„Ù€ Doctor/Team Leader)
-      const clinicId = selectedClinicId || userClinicId;
-      
-      //  Ø¥Ø°Ø§ Ù„Ù… ÙŠÙƒÙ† Ù‡Ù†Ø§Ùƒ clinic_id Ù…Ø­Ø¯Ø¯ØŒ Ù„Ø§ ØªØ¬Ù„Ø¨ Ø£ÙŠ Ø´ÙŠØ¡
-      if (clinicId === null) {
-        setPatients([]);
-        return;
-      }
-      
-      let query = supabase
-        .from('patients')
-        .select('*')
-        .eq('clinic_id', clinicId) // ØªØµÙÙŠØ© Ø­Ø³Ø¨ clinic_id
-        .is('archive_date', null) // ÙÙ‚Ø· Ø§Ù„Ù…Ø±Ø¶Ù‰ ØºÙŠØ± Ø§Ù„Ù…Ø¤Ø±Ø´ÙÙŠÙ†
-        .order('queue_number', { ascending: true });
-      
-      const { data, error} = await query;
-
-      if (error) throw error;
-
-      // Format all patients (including statistics records with queue_number = -1)
-      const formattedPatients: Patient[] = (data || [])
-        .map((p: any) => ({
-          id: p.id,
-          queue_number: p.queue_number,
-          name: p.name,
-          age: p.age || 0,
-          clinic_id: p.clinic_id,
-          clinic: p.clinic || 'Clinic',
-          condition: p.condition || 'Condition',
-          treatment: p.treatment || 'Treatment',
-          timestamp: new Date(p.created_at),
-          note: p.note || undefined,
-          status: p.status === 'complete' || p.status === 'completed' ? 'complete' : (p.status === 'na' ? 'na' : (p.is_elderly ? 'elderly' : 'normal')),
-          isElderly: p.is_elderly || false,
-          isSpecialNeeds: p.is_special_needs || false,
-          // Permanent patient fields
-          permanent_patient_id: p.permanent_patient_id || undefined,
-          file_number: p.file_number || undefined,
-          patient_type: p.patient_type || 'walk-in',
-          // Timeline fields
-          registered_at: p.registered_at ? new Date(p.registered_at) : undefined,
-          clinic_entry_at: p.clinic_entry_at ? new Date(p.clinic_entry_at) : undefined,
-          completed_at: p.completed_at ? new Date(p.completed_at) : undefined,
-          doctor_name: p.doctor_name || undefined,
-          assigned_by_doctor_name: p.assigned_by_doctor_name || undefined,
-        }));
-
-      setPatients(formattedPatients);
-    } catch (error: any) {
-      if (!silent) Alert.alert('Error loading patients', error.message);
-    }
-  }, [selectedClinicId, userClinicId]);
-
-  // Setup auto archive on app start
-  useEffect(() => {
-    // Start auto archive service (checks every minute for 23:59)
-    startAutoArchive();
-    
-    // Ø§Ù„Ø§Ø³ØªÙ…Ø§Ø¹ Ù„Ø­Ø¯Ø« Ø§Ù„Ø£Ø±Ø´ÙØ© Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠØ©
-    const handleArchiveCompleted = (date: string) => {
-      // Ø¥Ø¹Ø§Ø¯Ø© ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ø±Ø¶Ù‰ Ù„ØªÙ†Ø¸ÙŠÙ Timeline
-      loadPatients();
-    };
-    
-    archiveEventEmitter.on('archive-completed', handleArchiveCompleted);
-    
-    // Cleanup on unmount
-    return () => {
-      stopAutoArchive();
-      archiveEventEmitter.off('archive-completed', handleArchiveCompleted);
-    };
-  }, [selectedClinicId]);
-
-  // Show all patients (no filtering by clinic)
-  // Exclude statistics records (queue_number = -1) from display
-  useEffect(() => {
-    setDisplayedPatients(patients.filter(p => p.queue_number !== -1));
-  }, [patients]);
-
-  // Fetch user's clinic_id from profile
-  useEffect(() => {
-    const fetchUserClinic = async () => {
-      if (user) {
-        try {
-          // Try to fetch from doctors table first (approved doctors)
-          const { data, error } = await supabase
-            .from('doctors')
-            .select('clinic_id')
-            .eq('id', user.id)
-            .single();
-          
-          if (error) {
-            // If not found in doctors, this might be a pending doctor
-            // Pending doctors don't have clinic_id, so we just skip
-            return;
-          }
-          
-          if (data?.clinic_id) {
-            setUserClinicId(data.clinic_id);
-          }
-        } catch (error) {
-          // Error handled silently
-        }
-      }
-    };
-    
-    fetchUserClinic();
-  }, [user]);
-  
-  // Fetch My Total Treatments automatically on app start
-  useEffect(() => {
-    const fetchMyTotalTreatments = async () => {
-      if (user) {
-        try {
-          // Get today's date range (same as MyStatisticsScreen default)
-          const dateFrom = new Date();
-          dateFrom.setHours(0, 0, 0, 0);
-          const dateTo = new Date();
-          dateTo.setHours(23, 59, 59, 999);
-          
-          const fromTime = dateFrom.getTime();
-          const toTime = dateTo.getTime();
-          
-          // Get all patients for this doctor
-          const { data: patients, error } = await supabase
-            .from('patients')
-            .select('id, treatment, completed_at, updated_at, queue_number, permanent_patient_id')
-            .eq('doctor_id', user.id);
-
-          if (error) {
-            return;
-          }
-
-          // Filter by today's date range
-          const filteredPatients = patients?.filter((patient: any) => {
-            const completedDate = patient.completed_at ? new Date(patient.completed_at) : new Date(patient.updated_at);
-            const patientTime = completedDate.getTime();
-            return patientTime >= fromTime && patientTime <= toTime;
-          }) || [];
-
-          // Count only valid treatments (excluding "Treatment" and duplicate permanent patient records)
-          const validPatients = filteredPatients.filter((p: any) => {
-            // Exclude "Treatment"
-            if (p.treatment === 'Treatment') return false;
-
-            // For permanent patients: only count statistics records (queue_number = -1)
-            const isPermanentPatient = p.permanent_patient_id != null;
-            const isStatisticsRecord = p.queue_number === -1;
-
-            if (isPermanentPatient && !isStatisticsRecord) {
-              return false; // Skip original timeline card
-            }
-
-            return true;
-          });
-          setMyTotalTreatments(validPatients.length);
-        } catch (error) {
-          // Error handled silently
-        }
-      }
-    };
-    
-    fetchMyTotalTreatments();
-  }, [user, patients]); // Re-fetch when user or patients change
-  
-  // Realtime: Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† myTotalTreatments
-  React.useEffect(() => {
-    if (!user) return;
-
-    const fetchMyTotalTreatmentsPoll = async () => {
-      try {
-        const now = new Date();
-        const fromTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime();
-        const toTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).getTime();
-
-        const { data: patients, error } = await supabase
-          .from('patients')
-          .select('id, treatment, completed_at, updated_at')
-          .eq('doctor_id', user.id);
-
-        if (error) return;
-
-        const filteredPatients = patients?.filter((patient: any) => {
-          const completedDate = patient.completed_at ? new Date(patient.completed_at) : new Date(patient.updated_at);
-          const patientTime = completedDate.getTime();
-          return patientTime >= fromTime && patientTime <= toTime;
-        }) || [];
-
-        // Ø§Ø³ØªØ«Ù†Ø§Ø¡ ÙƒÙ„Ù…Ø© "Treatment" Ù…Ù† Ø§Ù„Ø¹Ø¯Ø¯
-        const validPatients = filteredPatients.filter((p: any) => p.treatment !== 'Treatment');
-        setMyTotalTreatments(validPatients.length);
-      } catch (error) {
-        // Error handled silently
-      }
-    };
-
-    // Initial fetch
-    fetchMyTotalTreatmentsPoll();
-
-    // Cleanup previous subscription
-    if (myTreatmentsChannelRef.current) {
-      supabase.removeChannel(myTreatmentsChannelRef.current);
-      myTreatmentsChannelRef.current = null;
-    }
-
-    // Setup Realtime for my treatments
-    const myTreatmentsChannel = supabase
-      .channel(`app-my-treatments-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'patients',
-          filter: `doctor_id=eq.${user.id}`
-        },
-        () => {
-          fetchMyTotalTreatmentsPoll();
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            fetchMyTotalTreatmentsPoll();
-          }, 3000);
-        }
-      });
-
-    myTreatmentsChannelRef.current = myTreatmentsChannel;
-
-    return () => {
-      if (myTreatmentsChannelRef.current) {
-        supabase.removeChannel(myTreatmentsChannelRef.current);
-        myTreatmentsChannelRef.current = null;
-      }
-    };
-  }, [user]);
-
-  // Dragon Design: Animate blobs continuously for Timeline
-  React.useEffect(() => {
-    if (selectedClinicId !== null) {
-      // Blob 1 - Circular motion
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(timelineBlob1Anim, {
-            toValue: 1,
-            duration: 8000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(timelineBlob1Anim, {
-            toValue: 0,
-            duration: 8000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      // Blob 2 - Slower circular motion
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(timelineBlob2Anim, {
-            toValue: 1,
-            duration: 12000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(timelineBlob2Anim, {
-            toValue: 0,
-            duration: 12000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      // Blob 3 - Fastest circular motion
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(timelineBlob3Anim, {
-            toValue: 1,
-            duration: 10000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(timelineBlob3Anim, {
-            toValue: 0,
-            duration: 10000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      // Blob 4 - Medium speed
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(timelineBlob4Anim, {
-            toValue: 1,
-            duration: 9500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(timelineBlob4Anim, {
-            toValue: 0,
-            duration: 9500,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      // Blob 5 - Slow motion
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(timelineBlob5Anim, {
-            toValue: 1,
-            duration: 14000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(timelineBlob5Anim, {
-            toValue: 0,
-            duration: 14000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      // Blob 6 - Fast motion
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(timelineBlob6Anim, {
-            toValue: 1,
-            duration: 7000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(timelineBlob6Anim, {
-            toValue: 0,
-            duration: 7000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    }
-  }, [selectedClinicId]);
-
-  // Animation for patient cards on mount
-  React.useEffect(() => {
-    if (selectedClinicId !== null) {
-      // Increment animKey to trigger patient cards animation
-      setAnimKey(prev => prev + 1);
-    }
-  }, [selectedClinicId]);
-
-  // Load patients when user clinic is set OR when selected clinic changes + Realtime
-  useEffect(() => {
-    if (!user) return;
-
-    // Initial load
-    loadPatients();
-
-    // Cleanup previous subscriptions
-    if (realtimeChannelRef.current) {
-      supabase.removeChannel(realtimeChannelRef.current);
-      realtimeChannelRef.current = null;
-    }
-    if (timelineChannelRef.current) {
-      supabase.removeChannel(timelineChannelRef.current);
-      timelineChannelRef.current = null;
-    }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    const clinicId = selectedClinicId || userClinicId;
-    if (clinicId === null) return;
-
-    // Setup Realtime subscription for patients table
-    const patientsChannel = supabase
-      .channel(`app-patients-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'patients',
-          filter: `clinic_id=eq.${clinicId}` // Filter by clinic
-        },
-        (payload) => {
-          // Silent refresh on any change
-          loadPatients(true);
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          // Successfully subscribed
-        } else if (status === 'CHANNEL_ERROR') {
-          // Retry connection after 3 seconds
-          reconnectTimeoutRef.current = setTimeout(() => {
-            loadPatients(true);
-          }, 3000);
-        }
-      });
-
-    realtimeChannelRef.current = patientsChannel;
-
-    // Setup Realtime subscription for timeline_events table
-    const timelineChannel = supabase
-      .channel(`app-timeline-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'timeline_events'
-        },
-        (payload) => {
-          // Reload timeline for the affected patient
-          const newRecord = payload.new as any;
-          const oldRecord = payload.old as any;
-
-          if (newRecord?.patient_id && selectedPatient?.id === newRecord.patient_id) {
-            loadTimeline(newRecord.patient_id);
-          }
-          if (oldRecord?.patient_id && selectedPatient?.id === oldRecord.patient_id) {
-            loadTimeline(oldRecord.patient_id);
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          // Successfully subscribed
-        } else if (status === 'CHANNEL_ERROR') {
-          // Retry connection
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (selectedPatient) {
-              loadTimeline(selectedPatient.id);
-            }
-          }, 3000);
-        }
-      });
-
-    timelineChannelRef.current = timelineChannel;
-
-    // Cleanup on unmount
-    return () => {
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current);
-        realtimeChannelRef.current = null;
-      }
-      if (timelineChannelRef.current) {
-        supabase.removeChannel(timelineChannelRef.current);
-        timelineChannelRef.current = null;
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-    };
-  }, [user, userClinicId, selectedClinicId]) // Removed loadPatients from dependencies
 
   // Auto-calculate next queue number when modal opens
   useEffect(() => {
@@ -1805,22 +1345,6 @@ function AppContent() {
     setCurrentNote('');
     setViewNoteContent('');
     setNotePatientId(null);
-  };
-
-  // Load timeline
-  const loadTimeline = async (patientId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('timeline_events')
-        .select('id, patient_id, event_type, event_details, timestamp, doctor_name, assigned_by_doctor_name')
-        .eq('patient_id', patientId)
-        .order('timestamp', { ascending: false });
-
-      if (error) throw error;
-      setTimeline(data || []);
-    } catch (error: any) {
-      // Error handled silently
-    }
   };
 
   // Load timeline for expandable card

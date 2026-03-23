@@ -5,7 +5,7 @@ import { startAutoArchive, stopAutoArchive, archiveEventEmitter } from '../../au
 
 interface UsePatientDataParams {
   user: any;
-  selectedClinicId: number | null;
+  selectedClinicId: string | null;
   selectedPatient: Patient | null;
   loadTimeline: (patientId: string) => void;
 }
