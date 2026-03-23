@@ -63,6 +63,7 @@ import { styles } from './screens/MainQueue/styles';
 import { CircularBadge, AnimatedPatientCard, PatientCard } from './screens/MainQueue/PatientCard';
 import { generateDentalSummary, calculateDentalChartTreatments, calculateGivenReferrals, checkScalingDoneToday, getTreatmentFromBadge } from './screens/MainQueue/dentalHelpers';
 import { AppModals } from './screens/MainQueue/AppModals';
+import { MainQueueScreen } from './screens/MainQueue/MainQueueScreen';
 import { usePatientData } from './screens/MainQueue/usePatientData';
 
 
@@ -2002,639 +2003,170 @@ function AppContent() {
 
   // Main Timeline Screen - Only shown when clinic is selected
   return (
-    <View style={{ flex: 1 }}>
-      <StatusBar translucent={true} backgroundColor="transparent" barStyle="dark-content" />
-      {/* Gradient Mesh Background */}
-      <LinearGradient
-        colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        
-        {/* Animated Blobs */}
-        <Animated.View 
-          style={[
-            styles.timelineBlob,
-            {
-              top: '3%',
-              left: '5%',
-              width: 180,
-              height: 180,
-              backgroundColor: 'rgba(91, 159, 237, 0.15)',
-              transform: [
-                {
-                  translateX: timelineBlob1Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 30],
-                  }),
-                },
-                {
-                  translateY: timelineBlob1Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 40],
-                  }),
-                },
-              ],
-            },
-          ]} 
-        />
-        <Animated.View 
-          style={[
-            styles.timelineBlob,
-            {
-              top: '65%',
-              right: '3%',
-              width: 220,
-              height: 220,
-              backgroundColor: 'rgba(168, 85, 247, 0.12)',
-              transform: [
-                {
-                  translateX: timelineBlob2Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -25],
-                  }),
-                },
-                {
-                  translateY: timelineBlob2Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 35],
-                  }),
-                },
-              ],
-            },
-          ]} 
-        />
-        <Animated.View 
-          style={[
-            styles.timelineBlob,
-            {
-              bottom: '5%',
-              left: '55%',
-              marginLeft: -100,
-              width: 200,
-              height: 200,
-              backgroundColor: 'rgba(236, 72, 153, 0.1)',
-              transform: [
-                {
-                  translateX: timelineBlob3Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 20],
-                  }),
-                },
-                {
-                  translateY: timelineBlob3Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -30],
-                  }),
-                },
-              ],
-            },
-          ]} 
-        />
-        <Animated.View 
-          style={[
-            styles.timelineBlob,
-            {
-              top: '35%',
-              left: '75%',
-              width: 160,
-              height: 160,
-              backgroundColor: 'rgba(251, 191, 36, 0.12)',
-              transform: [
-                {
-                  translateX: timelineBlob4Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -20],
-                  }),
-                },
-                {
-                  translateY: timelineBlob4Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 25],
-                  }),
-                },
-              ],
-            },
-          ]} 
-        />
-        <Animated.View 
-          style={[
-            styles.timelineBlob,
-            {
-              top: '20%',
-              right: '25%',
-              width: 170,
-              height: 170,
-              backgroundColor: 'rgba(34, 197, 94, 0.11)',
-              transform: [
-                {
-                  translateX: timelineBlob5Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 28],
-                  }),
-                },
-                {
-                  translateY: timelineBlob5Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -32],
-                  }),
-                },
-              ],
-            },
-          ]} 
-        />
-        <Animated.View 
-          style={[
-            styles.timelineBlob,
-            {
-              bottom: '30%',
-              left: '15%',
-              width: 150,
-              height: 150,
-              backgroundColor: 'rgba(239, 68, 68, 0.10)',
-              transform: [
-                {
-                  translateX: timelineBlob6Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -18],
-                  }),
-                },
-                {
-                  translateY: timelineBlob6Anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 22],
-                  }),
-                },
-              ],
-            },
-          ]} 
-        />
-        
-        {/* Header */}
-        <Animated.View
-          style={[
-            styles.header,
-            {
-              transform: [
-                { translateY: headerTranslateY },
-                { translateY: headerElementsTranslate },
-              ],
-              opacity: headerElementsOpacity,
-              zIndex: expandedPermanentCardId ? 1 : 10,
-            }
-          ]}
-          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
-        >
-          {/* Ø²Ø± Ø±Ø¬ÙˆØ¹ Ù„Ù„Ù…Ø¯ÙŠØ± Ø§Ù„Ø¹Ø§Ù… ÙˆØ§Ù„Ù…Ù†Ø³Ù‚ØŒ Ø²Ø± Ù…Ù„Ù Ø´Ø®ØµÙŠ Ù„Ù„Ø·Ø¨ÙŠØ¨ */}
-          {(user?.role === 'super_admin' || user?.role === 'coordinator') ? (
-            <TouchableOpacity 
-              style={styles.profileButton}
-              onPress={() => {
-                // Navigation Stack: Timeline â†’ Clinic Details â†’ Departments â†’ Profile
-
-                // Timeline â†’ Clinic Details
-                if (selectedClinicId !== null) {
-                  // Ø­ÙØ¸ clinicId Ù‚Ø¨Ù„ Ø§Ù„Ø±Ø¬ÙˆØ¹
-                  setSavedClinicId(selectedClinicId);
-                  setSavedClinicName(selectedClinicName);
-                  setSelectedClinicId(null);
-                  setSelectedClinicName('');
-                  setShowClinicDetails(true);  // Ø¥Ø¸Ù‡Ø§Ø± ClinicDetails
-                  setShowDentalDepartments(false);
-                  setNavigationStack(['profile', 'departments', 'clinicDetails']);
-                }
-                // Clinic Details â†’ Departments
-                else if (showClinicDetails) {
-                  setShowClinicDetails(false);
-                  setShowDentalDepartments(true);
-                  // Ù…Ø³Ø­ savedClinicId Ø¹Ù†Ø¯ Ø§Ù„Ø±Ø¬ÙˆØ¹ Ø¥Ù„Ù‰ Departments
-                  setSavedClinicId(null);
-                  setSavedClinicName('');
-                  setNavigationStack(['profile', 'departments']);
-                }
-                // Departments â†’ Profile
-                else if (showDentalDepartments) {
-                  // Ù…Ø³Ø­ selectedClinicId Ø£ÙˆÙ„Ø§Ù‹ Ù„Ù…Ù†Ø¹ ÙØªØ­ Timeline
-                  setSelectedClinicId(null);
-                  setSelectedClinicName('');
-                  setSavedClinicId(null);
-                  setSavedClinicName('');
-                  // Ø«Ù… Ø¥ØºÙ„Ø§Ù‚ Departments ÙˆÙØªØ­ Profile
-                  setShowDentalDepartments(false);
-                  setShowDoctorProfile(true);
-                  setNavigationStack(['profile']);
-                }
-              }}
-            >
-              <View style={styles.profileButtonGlass}>
-                <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="arrow-back" size={24} color="#7DD3C0" style={{ zIndex: 10 }} />
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.profileButton}
-              onPress={() => {
-                // Ø²Ø± Ø±Ø¬ÙˆØ¹ Ù„Ù„Ø·Ø¨ÙŠØ¨/Team Leader
-                setSelectedClinicId(null);
-                setSelectedClinicName('');
-              }}
-            >
-              <View style={styles.profileButtonGlass}>
-                <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="arrow-back" size={24} color="#7DD3C0" style={{ zIndex: 10 }} />
-              </View>
-            </TouchableOpacity>
-          )}
-          
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Dental Clinic</Text>
-            {selectedClinicName && (
-              <Text style={styles.headerSubtitle}>{selectedClinicName}</Text>
-            )}
-          </View>
-          
-          <View style={{ width: 44 }} />
-        </Animated.View>
-
-        {/* Statistics */}
-        <Animated.View
-          style={[
-            styles.statsContainer,
-            {
-              transform: [
-                { translateY: headerTranslateY },
-                { translateY: headerElementsTranslate },
-              ],
-              opacity: headerElementsOpacity,
-              zIndex: expandedPermanentCardId ? 1 : 10,
-            }
-          ]}
-          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
-        >
-          {showTreatmentStats ? (
-            <TouchableOpacity 
-              style={[styles.statCardExpanded, shadows.neumorphic]}
-              onPress={() => setShowTreatmentStats(false)}
-            >
-              <View style={styles.expandedHeader}>
-                <MaterialCommunityIcons name="chart-bar" size={32} color="#9CA3AF" />
-                <Text style={styles.expandedTitle}>Statistics</Text>
-              </View>
-              <View style={styles.treatmentStatsList}>
-                {Object.entries(treatmentStats)
-                  .filter(([_, count]) => count > 0)
-                  .sort(([_, a], [__, b]) => b - a)
-                  .map(([treatment, count]) => (
-                    <View key={treatment} style={styles.treatmentStatRow}>
-                      <Text style={styles.treatmentStatCount}>{count}</Text>
-                      <Text style={styles.treatmentStatName}>{treatment}</Text>
-                    </View>
-                  ))}
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity 
-                style={[styles.statCard, shadows.neumorphic]}
-                onPress={() => setShowTreatmentStats(true)}
-              >
-                <MaterialCommunityIcons name="tooth-outline" size={48} color="#9CA3AF" style={{ marginBottom: 8 }} />
-                <Text style={styles.statLabel}>Total Patients</Text>
-                <Text style={styles.statValue}>{totalPatients}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.statCard, shadows.neumorphic, filterWaitingOnly && styles.statCardActive]}
-                onPress={() => setFilterWaitingOnly(!filterWaitingOnly)}
-              >
-                <Ionicons name="person-outline" size={48} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: 8 }} />
-                <Text style={[styles.statLabel, filterWaitingOnly && styles.statLabelActive]}>Waiting</Text>
-                <Text style={[styles.statValue, filterWaitingOnly && styles.statValueActive]}>{waitingPatients}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </Animated.View>
-
-        {/* Queue Header */}
-        <Animated.View
-          style={[
-            styles.queueHeader,
-            {
-              transform: [
-                { translateY: headerTranslateY },
-                { translateY: headerElementsTranslate },
-              ],
-              marginTop: queueMarginTop,
-              opacity: headerElementsOpacity,
-              zIndex: expandedPermanentCardId ? 1 : 10,
-            }
-          ]}
-          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
-        >
-          <View style={styles.queueTitleContainer}>
-            <Text style={styles.queueTitle}>Queue</Text>
-            {/* Minimize/Maximize Button */}
-            <TouchableOpacity
-              style={styles.minimizeButton}
-              onPress={toggleHeaderCollapse}
-              activeOpacity={0.7}
-            >
-              <View style={styles.minimizeButtonInnerGlow} />
-              <Ionicons
-                name={isHeaderCollapsed ? 'chevron-down' : 'chevron-up'}
-                size={24}
-                color="#7DD3C0"
-                style={{
-                  zIndex: 10
-                }}
-              />
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity
-            style={[styles.viewDetailsHeaderButton, shadows.card]}
-            onPress={() => setExpandedCardId(expandedCardId ? null : 'header')}
-          >
-            <Text style={styles.viewDetailsHeaderText}>
-              {expandedCardId === 'header' ? 'â–² Hide Details' : 'â–¼ View Details'}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Expandable Options */}
-        {!expandedPermanentCardId && expandedCardId === 'header' && (
-          <Animated.View 
-            style={[
-              styles.headerExpandableSection,
-              {
-                transform: [{ translateY: headerTranslateY }],
-              }
-            ]}
-          >
-            <TouchableOpacity
-              style={[styles.headerOptionButton, showTimeline && styles.headerOptionButtonActive]}
-              onPress={() => {
-                setShowTimeline(!showTimeline);
-                setExpandedCardId(null);
-              }}
-            >
-              <Ionicons name="time-outline" size={20} color={showTimeline ? '#7DD3C0' : '#6B7280'} />
-              <Text style={[styles.headerOptionText, showTimeline && styles.headerOptionTextActive]}>
-                {showTimeline ? 'Hide Timeline' : 'Show Timeline'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.headerOptionButton, showNAPatients && styles.headerOptionButtonActive]}
-              onPress={() => {
-                setShowNAPatients(!showNAPatients);
-                setExpandedCardId(null);
-              }}
-            >
-              <Ionicons name="eye-outline" size={20} color={showNAPatients ? '#7DD3C0' : '#6B7280'} />
-              <Text style={[styles.headerOptionText, showNAPatients && styles.headerOptionTextActive]}>
-                {showNAPatients ? 'Hide NA Patient' : 'Show NA Patient'}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {/* Content Wrapper - Animated with marginTop */}
-        <Animated.View 
-          style={{
-            flex: 1,
-            marginTop: headerTranslateY,
-          }}
-        >
-          {/* Patient List */}
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {filteredPatients
-            .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
-            .map((patient, index) => (
-            <AnimatedPatientCard
-              key={`${patient.id}-${animKey}`}
-              index={index}
-              patient={patient}
-              showTimeline={showTimeline}
-              onMenuPress={() => setShowMenuForPatient(patient.id)}
-              onNotePress={() => handleViewNote(patient.id)}
-              onCardPress={() => openTimeline(patient)}
-              onEditField={(patientId, field) => {
-                setEditingPatientId(patientId);
-                setEditingField(field);
-                if (field === 'clinic') setShowClinicDropdown(true);
-                else if (field === 'condition') setShowConditionDropdown(true);
-                else if (field === 'treatment') setShowTreatmentDropdown(true);
-              }}
-              expandedCardId={expandedCardId}
-              onViewDetails={handleViewDetails}
-              cardTimelines={cardTimelines}
-              showTimelineTab={showTimelineTab}
-              onToggleTab={handleToggleTab}
-              onPatientNamePress={(patientId, fileNumber) => {
-                setSelectedPatientForProfile({
-                  id: patientId,
-                  fileNumber: fileNumber
-                });
-                setShowPatientFile(true);
-              }}
-              expandedPermanentCardId={expandedPermanentCardId}
-              onTogglePermanentExpansion={togglePermanentCardExpansion}
-              activeDentalTab={activeDentalTab[patient.id] || 'treatment'}
-              onDentalTabChange={(tab) => setActiveDentalTab(prev => ({ ...prev, [patient.id]: tab }))}
-              dentalSummary={dentalSummaries[patient.id]}
-              loadingDentalData={loadingDentalData[patient.id]}
-              animKey={animKey}
-              onToothEditPress={(permanentPatientId, tooth) => {
-                setToothModalPatientId(permanentPatientId);
-                setSelectedTooth(tooth);
-                setShowToothModal(true);
-              }}
-              patientReferrals={patient.permanent_patient_id ? patientReferrals[patient.permanent_patient_id] : undefined}
-              onLoadReferrals={async () => {
-                if (patient.permanent_patient_id) {
-                  const result = await getReferrals(patient.permanent_patient_id);
-                  if (result.data) {
-                    setPatientReferrals(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
-                  }
-                }
-              }}
-              patientToothNotes={patient.permanent_patient_id ? patientToothNotes[patient.permanent_patient_id] : undefined}
-              onLoadToothNotes={async () => {
-                if (patient.permanent_patient_id) {
-                  const result = await getAllToothNotes(patient.permanent_patient_id);
-                  if (result.data) {
-                    setPatientToothNotes(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
-                  }
-                }
-              }}
-              onUpdateReferralStatus={(referralId, newStatus) => {
-                if (patient.permanent_patient_id) {
-                  setPatientReferrals(prev => ({
-                    ...prev,
-                    [patient.permanent_patient_id!]: prev[patient.permanent_patient_id!]?.map(r =>
-                      r.id === referralId ? { ...r, status: newStatus } : r
-                    ) || []
-                  }));
-                }
-              }}
-              lastScalingDates={lastScalingDates}
-              currentDoctorName={user?.name || user?.email || 'Doctor'}
-              onUpdateScalingDate={(patientId, timestamp) => {
-                setLastScalingDates(prev => ({
-                  ...prev,
-                  [patientId]: timestamp
-                }));
-              }}
-              patientConsents={patientConsents}
-              onToggleConsent={togglePatientConsent}
-              onOpenDentalChartScreen={(permanentPatientId) => {
-                // Navigate to dental chart for this patient
-                const patient = patients.find(p => p.permanent_patient_id === permanentPatientId);
-                if (patient) {
-                  setSelectedPatientForProfile({ id: permanentPatientId, fileNumber: patient.file_number || '' });
-                  setShowPatientFile(true);
-                }
-              }}
-            />
-          ))}
-        </ScrollView>
-
-        {/* FAB */}
-        <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
-          <View style={styles.fabGlass}>
-            <View style={styles.fabInnerGlow} />
-            <Text style={styles.fabIcon}>+</Text>
-          </View>
-        </TouchableOpacity>
-        </Animated.View>
-        
-        {/* Bottom Navigation - Glass Effect Updated v2.0 - Fixed outside animation */}
-        <View style={[styles.bottomNav, shadows.medium]}>
-          <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="home-sharp" size={26} color="#7DD3C0" />
-            <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => setShowPatientFile(true)}
-          >
-            <Ionicons name="person-circle" size={28} color="#9CA3AF" />
-            <Text style={styles.navLabel}>Patient File</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => setShowAppointments(true)}
-          >
-            <Ionicons name="calendar-sharp" size={26} color="#9CA3AF" />
-            <Text style={styles.navLabel}>Appointments</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.navItem}
-            onPress={() => setShowArchiveScreen(true)}
-          >
-            <Ionicons name="archive-sharp" size={26} color="#9CA3AF" />
-            <Text style={styles.navLabel}>Archive</Text>
-          </TouchableOpacity>
-        </View>
-
-        <AppModals
-          showAddModal={showAddModal}
-          setShowAddModal={setShowAddModal}
-          isPatientEditMode={isPatientEditMode}
-          setIsPatientEditMode={setIsPatientEditMode}
-          isModalExpanded={isModalExpanded}
-          setIsModalExpanded={setIsModalExpanded}
-          patientMode={patientMode}
-          setPatientMode={setPatientMode}
-          newPatientName={newPatientName}
-          setNewPatientName={setNewPatientName}
-          newPatientFileNumber={newPatientFileNumber}
-          setNewPatientFileNumber={setNewPatientFileNumber}
-          newPatientQueueNumber={newPatientQueueNumber}
-          setNewPatientQueueNumber={setNewPatientQueueNumber}
-          newPatientCondition={newPatientCondition}
-          setNewPatientCondition={setNewPatientCondition}
-          newPatientTreatment={newPatientTreatment}
-          setNewPatientTreatment={setNewPatientTreatment}
-          isElderly={isElderly}
-          setIsElderly={setIsElderly}
-          newPatientNote={newPatientNote}
-          setNewPatientNote={setNewPatientNote}
-          permanentPatientSearchResults={permanentPatientSearchResults}
-          setPermanentPatientSearchResults={setPermanentPatientSearchResults}
-          selectedPermanentPatientId={selectedPermanentPatientId}
-          setSelectedPermanentPatientId={setSelectedPermanentPatientId}
-          showPatientSuggestions={showPatientSuggestions}
-          setShowPatientSuggestions={setShowPatientSuggestions}
-          showFileNumberSuggestions={showFileNumberSuggestions}
-          setShowFileNumberSuggestions={setShowFileNumberSuggestions}
-          fileNumberSearchResults={fileNumberSearchResults}
-          setFileNumberSearchResults={setFileNumberSearchResults}
-          modalEditingPatientId={modalEditingPatientId}
-          handleAddPatient={handleAddPatient}
-          handleFileNumberSearch={handleFileNumberSearch}
-          handlePatientNameSearch={handlePatientNameSearch}
-          patients={patients}
-          showMenuForPatient={showMenuForPatient}
-          setShowMenuForPatient={setShowMenuForPatient}
-          handleMenuAction={handleMenuAction}
-          showNoteModal={showNoteModal}
-          setShowNoteModal={setShowNoteModal}
-          currentNote={currentNote}
-          setCurrentNote={setCurrentNote}
-          handleSaveNote={handleSaveNote}
-          showViewNoteModal={showViewNoteModal}
-          setShowViewNoteModal={setShowViewNoteModal}
-          viewNoteContent={viewNoteContent}
-          notePatientId={notePatientId}
-          handleDeleteNote={handleDeleteNote}
-          showConvertModal={showConvertModal}
-          setShowConvertModal={setShowConvertModal}
-          convertFileNumber={convertFileNumber}
-          setConvertFileNumber={setConvertFileNumber}
-          convertToPermanentPatient={convertToPermanentPatient}
-          showTreatmentDoneModal={showTreatmentDoneModal}
-          setShowTreatmentDoneModal={setShowTreatmentDoneModal}
-          clinicDoctors={clinicDoctors}
-          doctorSearchQuery={doctorSearchQuery}
-          setDoctorSearchQuery={setDoctorSearchQuery}
-          handleTreatmentDoneByDoctor={handleTreatmentDoneByDoctor}
-          showClinicDropdown={showClinicDropdown}
-          setShowClinicDropdown={setShowClinicDropdown}
-          showConditionDropdown={showConditionDropdown}
-          setShowConditionDropdown={setShowConditionDropdown}
-          showTreatmentDropdown={showTreatmentDropdown}
-          setShowTreatmentDropdown={setShowTreatmentDropdown}
-          editingPatientId={editingPatientId}
-          handleUpdateField={handleUpdateField}
-          showTimelineModal={showTimelineModal}
-          setShowTimelineModal={setShowTimelineModal}
-          selectedPatient={selectedPatient}
-          timeline={timeline}
-          treatmentNote={treatmentNote}
-          setTreatmentNote={setTreatmentNote}
-          markTreatmentDone={markTreatmentDone}
-          showToothModal={showToothModal}
-          setShowToothModal={setShowToothModal}
-          toothModalPatientId={toothModalPatientId}
-          selectedTooth={selectedTooth}
-          currentDoctorName={user?.name || user?.email || 'Unknown'}
-          setDentalSummaries={setDentalSummaries}
-          setPatientReferrals={setPatientReferrals}
-          setPatientToothNotes={setPatientToothNotes}
-          setModalEditingPatientId={setModalEditingPatientId}
-          setViewNoteContent={setViewNoteContent}
-        />
-
-      </View>
-    </SafeAreaView>
-    </View>
+    <MainQueueScreen
+      timelineBlob1Anim={timelineBlob1Anim}
+      timelineBlob2Anim={timelineBlob2Anim}
+      timelineBlob3Anim={timelineBlob3Anim}
+      timelineBlob4Anim={timelineBlob4Anim}
+      timelineBlob5Anim={timelineBlob5Anim}
+      timelineBlob6Anim={timelineBlob6Anim}
+      headerTranslateY={headerTranslateY}
+      queueMarginTop={queueMarginTop}
+      headerElementsOpacity={headerElementsOpacity}
+      headerElementsTranslate={headerElementsTranslate}
+      isHeaderCollapsed={isHeaderCollapsed}
+      toggleHeaderCollapse={toggleHeaderCollapse}
+      selectedClinicName={selectedClinicName}
+      selectedClinicId={selectedClinicId}
+      user={user}
+      totalPatients={totalPatients}
+      waitingPatients={waitingPatients}
+      treatmentStats={treatmentStats}
+      showTreatmentStats={showTreatmentStats}
+      setShowTreatmentStats={setShowTreatmentStats}
+      showTimeline={showTimeline}
+      setShowTimeline={setShowTimeline}
+      showNAPatients={showNAPatients}
+      setShowNAPatients={setShowNAPatients}
+      filterWaitingOnly={filterWaitingOnly}
+      setFilterWaitingOnly={setFilterWaitingOnly}
+      expandedCardId={expandedCardId}
+      setExpandedCardId={setExpandedCardId}
+      expandedPermanentCardId={expandedPermanentCardId}
+      filteredPatients={filteredPatients}
+      patients={patients}
+      animKey={animKey}
+      setSavedClinicId={setSavedClinicId}
+      setSavedClinicName={setSavedClinicName}
+      setSelectedClinicId={setSelectedClinicId}
+      setSelectedClinicName={setSelectedClinicName}
+      showClinicDetails={showClinicDetails}
+      setShowClinicDetails={setShowClinicDetails}
+      showDentalDepartments={showDentalDepartments}
+      setShowDentalDepartments={setShowDentalDepartments}
+      setShowDoctorProfile={setShowDoctorProfile}
+      setNavigationStack={setNavigationStack}
+      setShowMenuForPatient={setShowMenuForPatient}
+      handleViewNote={handleViewNote}
+      openTimeline={openTimeline}
+      setEditingPatientId={setEditingPatientId}
+      setEditingField={setEditingField}
+      setShowClinicDropdown={setShowClinicDropdown}
+      setShowConditionDropdown={setShowConditionDropdown}
+      setShowTreatmentDropdown={setShowTreatmentDropdown}
+      handleViewDetails={handleViewDetails}
+      cardTimelines={cardTimelines}
+      showTimelineTab={showTimelineTab}
+      handleToggleTab={handleToggleTab}
+      setSelectedPatientForProfile={setSelectedPatientForProfile}
+      setShowPatientFile={setShowPatientFile}
+      togglePermanentCardExpansion={togglePermanentCardExpansion}
+      activeDentalTab={activeDentalTab}
+      setActiveDentalTab={setActiveDentalTab}
+      dentalSummaries={dentalSummaries}
+      loadingDentalData={loadingDentalData}
+      patientReferrals={patientReferrals}
+      setPatientReferrals={setPatientReferrals}
+      patientToothNotes={patientToothNotes}
+      setPatientToothNotes={setPatientToothNotes}
+      lastScalingDates={lastScalingDates}
+      setLastScalingDates={setLastScalingDates}
+      patientConsents={patientConsents}
+      togglePatientConsent={togglePatientConsent}
+      setToothModalPatientId={setToothModalPatientId}
+      setSelectedTooth={setSelectedTooth}
+      setShowToothModal={setShowToothModal}
+      getReferrals={getReferrals}
+      getAllToothNotes={getAllToothNotes}
+      onUpdateReferralStatus={(patientPermanentId, referralId, newStatus) => {
+        setPatientReferrals(prev => ({
+          ...prev,
+          [patientPermanentId]: prev[patientPermanentId]?.map(r =>
+            r.id === referralId ? { ...r, status: newStatus } : r
+          ) || []
+        }));
+      }}
+      showAddModal={showAddModal}
+      setShowAddModal={setShowAddModal}
+      setShowAppointments={setShowAppointments}
+      setShowArchiveScreen={setShowArchiveScreen}
+      isPatientEditMode={isPatientEditMode}
+      setIsPatientEditMode={setIsPatientEditMode}
+      isModalExpanded={isModalExpanded}
+      setIsModalExpanded={setIsModalExpanded}
+      patientMode={patientMode}
+      setPatientMode={setPatientMode}
+      newPatientName={newPatientName}
+      setNewPatientName={setNewPatientName}
+      newPatientFileNumber={newPatientFileNumber}
+      setNewPatientFileNumber={setNewPatientFileNumber}
+      newPatientQueueNumber={newPatientQueueNumber}
+      setNewPatientQueueNumber={setNewPatientQueueNumber}
+      newPatientCondition={newPatientCondition}
+      setNewPatientCondition={setNewPatientCondition}
+      newPatientTreatment={newPatientTreatment}
+      setNewPatientTreatment={setNewPatientTreatment}
+      isElderly={isElderly}
+      setIsElderly={setIsElderly}
+      newPatientNote={newPatientNote}
+      setNewPatientNote={setNewPatientNote}
+      permanentPatientSearchResults={permanentPatientSearchResults}
+      setPermanentPatientSearchResults={setPermanentPatientSearchResults}
+      selectedPermanentPatientId={selectedPermanentPatientId}
+      setSelectedPermanentPatientId={setSelectedPermanentPatientId}
+      showPatientSuggestions={showPatientSuggestions}
+      setShowPatientSuggestions={setShowPatientSuggestions}
+      showFileNumberSuggestions={showFileNumberSuggestions}
+      setShowFileNumberSuggestions={setShowFileNumberSuggestions}
+      fileNumberSearchResults={fileNumberSearchResults}
+      setFileNumberSearchResults={setFileNumberSearchResults}
+      modalEditingPatientId={modalEditingPatientId}
+      setModalEditingPatientId={setModalEditingPatientId}
+      handleAddPatient={handleAddPatient}
+      handleFileNumberSearch={handleFileNumberSearch}
+      handlePatientNameSearch={handlePatientNameSearch}
+      showMenuForPatient={showMenuForPatient}
+      handleMenuAction={handleMenuAction}
+      showNoteModal={showNoteModal}
+      setShowNoteModal={setShowNoteModal}
+      currentNote={currentNote}
+      setCurrentNote={setCurrentNote}
+      handleSaveNote={handleSaveNote}
+      showViewNoteModal={showViewNoteModal}
+      setShowViewNoteModal={setShowViewNoteModal}
+      viewNoteContent={viewNoteContent}
+      setViewNoteContent={setViewNoteContent}
+      notePatientId={notePatientId}
+      handleDeleteNote={handleDeleteNote}
+      showConvertModal={showConvertModal}
+      setShowConvertModal={setShowConvertModal}
+      convertFileNumber={convertFileNumber}
+      setConvertFileNumber={setConvertFileNumber}
+      convertToPermanentPatient={convertToPermanentPatient}
+      showTreatmentDoneModal={showTreatmentDoneModal}
+      setShowTreatmentDoneModal={setShowTreatmentDoneModal}
+      clinicDoctors={clinicDoctors}
+      doctorSearchQuery={doctorSearchQuery}
+      setDoctorSearchQuery={setDoctorSearchQuery}
+      handleTreatmentDoneByDoctor={handleTreatmentDoneByDoctor}
+      showClinicDropdown={showClinicDropdown}
+      showConditionDropdown={showConditionDropdown}
+      showTreatmentDropdown={showTreatmentDropdown}
+      editingPatientId={editingPatientId}
+      handleUpdateField={handleUpdateField}
+      showTimelineModal={showTimelineModal}
+      setShowTimelineModal={setShowTimelineModal}
+      selectedPatient={selectedPatient}
+      timeline={timeline}
+      treatmentNote={treatmentNote}
+      setTreatmentNote={setTreatmentNote}
+      markTreatmentDone={markTreatmentDone}
+      showToothModal={showToothModal}
+      toothModalPatientId={toothModalPatientId}
+      selectedTooth={selectedTooth}
+      currentDoctorName={user?.name || user?.email || 'Unknown'}
+      setDentalSummaries={setDentalSummaries}
+    />
   );
 }
 

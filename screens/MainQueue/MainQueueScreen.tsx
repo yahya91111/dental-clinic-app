@@ -12,11 +12,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { shadows } from '../../theme';
-import { Patient, TimelineEvent, Referral } from './constants';
+import { Patient, TimelineEvent } from './constants';
+import { Referral, ToothNote, DentalSummary } from '../../types';
 import { styles } from './styles';
 import { AnimatedPatientCard } from './PatientCard';
 import { AppModals } from './AppModals';
-import { DentalSummary, ToothNote } from '../../types';
 
 export interface MainQueueScreenProps {
   // Animated blob values
@@ -116,8 +116,8 @@ export interface MainQueueScreenProps {
   setShowToothModal: (val: boolean) => void;
 
   // Referral/note loading
-  getReferrals: (permanentPatientId: string) => Promise<{ data?: Referral[] }>;
-  getAllToothNotes: (permanentPatientId: string) => Promise<{ data?: ToothNote[] }>;
+  getReferrals: (permanentPatientId: string) => Promise<any>;
+  getAllToothNotes: (permanentPatientId: string) => Promise<any>;
   onUpdateReferralStatus: (patientPermanentId: string, referralId: string, newStatus: string) => void;
 
   // FAB
@@ -133,8 +133,8 @@ export interface MainQueueScreenProps {
   setIsPatientEditMode: (val: boolean) => void;
   isModalExpanded: boolean;
   setIsModalExpanded: (val: boolean) => void;
-  patientMode: string;
-  setPatientMode: (val: string) => void;
+  patientMode: 'search' | 'walk-in' | 'new-profile';
+  setPatientMode: (val: 'search' | 'walk-in' | 'new-profile') => void;
   newPatientName: string;
   setNewPatientName: (val: string) => void;
   newPatientFileNumber: string;
@@ -192,7 +192,7 @@ export interface MainQueueScreenProps {
   showConditionDropdown: boolean;
   showTreatmentDropdown: boolean;
   editingPatientId: string | null;
-  handleUpdateField: (patientId: string, field: string, value: string) => void;
+  handleUpdateField: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
   showTimelineModal: boolean;
   setShowTimelineModal: (val: boolean) => void;
   selectedPatient: Patient | null;
