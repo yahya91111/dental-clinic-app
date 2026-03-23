@@ -218,21 +218,6 @@ export function ExpandedPatientHeader({
   // Render Treatment Content
   const renderTreatmentContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <View style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.25)',
-        borderRadius: 14,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        marginBottom: 18,
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.4)',
-        alignItems: 'center',
-      }}>
-        <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
-          Treatment
-        </Text>
-      </View>
-
       {loadingDentalData ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : dentalSummary ? (
@@ -458,21 +443,6 @@ export function ExpandedPatientHeader({
   // Render Referrals Content
   const renderReferralsContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <View style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.25)',
-        borderRadius: 14,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        marginBottom: 18,
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.4)',
-        alignItems: 'center',
-      }}>
-        <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
-          Referrals
-        </Text>
-      </View>
-
       {loadingReferrals ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : patientReferrals.length > 0 ? (
@@ -513,21 +483,6 @@ export function ExpandedPatientHeader({
 
     return (
       <View style={{ flex: 1, padding: 16 }}>
-        <View style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.25)',
-          borderRadius: 14,
-          paddingVertical: 12,
-          paddingHorizontal: 16,
-          marginBottom: 18,
-          borderWidth: 2,
-          borderColor: 'rgba(255, 255, 255, 0.4)',
-          alignItems: 'center',
-        }}>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
-            Oral Hygiene
-          </Text>
-        </View>
-
         <View style={{ gap: 16 }}>
           {/* Fluoride Button */}
           <TouchableOpacity
@@ -582,21 +537,6 @@ export function ExpandedPatientHeader({
   // Render Notes Content
   const renderNotesContent = () => (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <View style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.25)',
-        borderRadius: 14,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        marginBottom: 18,
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.4)',
-        alignItems: 'center',
-      }}>
-        <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
-          Tooth Notes
-        </Text>
-      </View>
-
       {loadingToothNotes ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : toothNotes.length > 0 ? (
@@ -648,23 +588,41 @@ export function ExpandedPatientHeader({
 
     return (
       <View style={{ flex: 1 }}>
-        {/* Back Button */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.1)' }}>
+        {/* Header Bar */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 14,
+          marginHorizontal: 16,
+          marginTop: 12,
+          marginBottom: 4,
+          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+          borderRadius: 14,
+          borderWidth: 2,
+          borderColor: 'rgba(255, 255, 255, 0.35)',
+        }}>
+          {/* Back Button - Left */}
           <TouchableOpacity
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              padding: 8,
+              position: 'absolute',
+              left: 10,
+              padding: 6,
+              backgroundColor: 'rgba(255, 255, 255, 0.25)',
+              borderRadius: 10,
             }}
             onPress={(e) => {
               e.stopPropagation();
               setExpandedSection(null);
             }}
           >
-            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
-            <Text style={{ fontSize: 16, color: '#FFFFFF', marginLeft: 8 }}>Back</Text>
+            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF', marginLeft: 16 }}>{sectionTitle}</Text>
+
+          {/* Title - Center */}
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
+            {sectionTitle}
+          </Text>
         </View>
 
         {/* Content */}
