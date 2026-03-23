@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Alert,
   Animated,
   Platform,
 } from 'react-native';
@@ -13,7 +14,8 @@ import { DentalSummary, Referral, ToothNote } from '../../types';
 import { shadows } from '../../theme';
 import { CardHeader } from './CardHeader';
 import { TimelineInfo } from './TimelineInfo';
-import { ExpandedDentalSection } from './ExpandedDentalSection';
+import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
+import { getScalingRecords, createScalingRecord } from '../../lib/database';
 
 export const CircularBadge = ({
   letter,
@@ -236,32 +238,45 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
             onPatientNamePress={onPatientNamePress}
           />
 
-          {/* Expanded Dental Section - handles isPermanentCardExpanded internally (returns null when not expanded) */}
-          {/* This includes both ExpandedPatientHeader and the dental tabs */}
-          <ExpandedDentalSection
-            patient={patient}
-            expandAnim={expandAnim}
-            isPermanentPatient={isPermanentPatient}
-            isPermanentCardExpanded={isPermanentCardExpanded}
-            activeDentalTab={activeDentalTab}
-            onDentalTabChange={onDentalTabChange}
-            dentalSummary={dentalSummary}
-            loadingDentalData={loadingDentalData}
-            onToothEditPress={onToothEditPress}
-            patientReferrals={patientReferrals}
-            onLoadReferrals={onLoadReferrals}
-            onUpdateReferralStatus={onUpdateReferralStatus}
-            patientToothNotes={patientToothNotes}
-            onLoadToothNotes={onLoadToothNotes}
-            lastScalingDates={lastScalingDates}
-            currentDoctorName={currentDoctorName}
-            onUpdateScalingDate={onUpdateScalingDate}
-            patientConsents={patientConsents}
-            onToggleConsent={onToggleConsent}
-            onOpenDentalChartScreen={onOpenDentalChartScreen}
-            onPatientNamePress={onPatientNamePress}
-            onTogglePermanentExpansion={onTogglePermanentExpansion}
-          />
+          {/* Expanded Patient Header - iPhone style icon grid */}
+          {isPermanentPatient && isPermanentCardExpanded && (
+            <ExpandedPatientHeader
+              patient={patient}
+              dentalSummary={(dentalSummary || null) as any}
+              loadingDentalData={loadingDentalData || false}
+              patientReferrals={(patientReferrals || []) as any}
+              loadingReferrals={false}
+              onLoadReferrals={onLoadReferrals || (() => {})}
+              toothNotes={(patientToothNotes || []) as any}
+              loadingToothNotes={false}
+              onLoadToothNotes={onLoadToothNotes || (() => {})}
+              lastScalingDate={lastScalingDates?.[patient.id] ? new Date(lastScalingDates[patient.id]!) : undefined}
+              onFluoridePress={() => {}}
+              onScalingPress={async () => {
+                if (!patient.permanent_patient_id) return;
+                try {
+                  const { error } = await createScalingRecord(patient.permanent_patient_id, currentDoctorName || 'Doctor');
+                  if (error) { Alert.alert('Error', 'Failed to save'); return; }
+                  const { data: recs } = await getScalingRecords(patient.permanent_patient_id);
+                  if (recs && recs.length > 0) {
+                    const mostRecent = recs.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+                    onUpdateScalingDate?.(patient.id, mostRecent.timestamp);
+                  }
+                  Alert.alert('Success', 'Scaling record saved');
+                } catch (err) { Alert.alert('Error', 'Unexpected error'); }
+              }}
+              patientConsents={[]}
+              onConsentPress={() => onToggleConsent?.(patient)}
+              onOpenDentalChart={() => {
+                if (patient.permanent_patient_id) {
+                  onOpenDentalChartScreen?.(patient.permanent_patient_id);
+                }
+              }}
+              onTogglePermanentExpansion={onTogglePermanentExpansion as any}
+              onToothEditPress={(patientId: string, tooth: any) => onToothEditPress?.(patientId, String(tooth))}
+              onPatientNamePress={onPatientNamePress}
+            />
+          )}
 
           {/* Divider - Only show when NOT expanded */}
           {!isPermanentCardExpanded && (
