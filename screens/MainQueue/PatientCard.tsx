@@ -168,10 +168,10 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
   const gradientColors: [string, string] = isPermanentPatient
     ? (patient.status === 'complete'
         ? ['#BFDBFE', '#DBEAFE']  // أزرق فاتح للمريض الدائم المكتمل
-        : ['rgba(191, 219, 254, 0.75)', 'rgba(219, 234, 254, 0.75)'])  // أزرق شفاف للمريض الدائم العادي
+        : ['rgba(191, 219, 254, 0.25)', 'rgba(219, 234, 254, 0.25)'])  // أزرق شفاف للمريض الدائم العادي
     : (patient.status === 'complete'
         ? ['#B8D4F1', '#D4B8E8']  // أزرق/بنفسجي للمريض العادي المكتمل
-        : ['rgba(184, 212, 241, 0.75)', 'rgba(212, 184, 232, 0.75)']);  // أزرق/بنفسجي شفاف للمريض العادي
+        : ['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']);  // أزرق/بنفسجي شفاف للمريض العادي
 
   // Queue Number colors - ألوان أكثر حيوية ووضوحاً
   const queueNumberColors: [string, string] = isPermanentPatient
