@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { updateReferralStatus } from '../lib/database';
 
 // ═══════════════════════════════════════════════════════════════
@@ -111,11 +112,19 @@ export function ExpandedPatientHeader({
   onPatientNamePress,
 }: ExpandedPatientHeaderProps) {
   const [expandedSection, setExpandedSection] = useState<SectionType>(null);
-  const [seenNotesCount, setSeenNotesCount] = useState(0);
+  const [seenNotesCount, setSeenNotesCount] = useState<number | null>(null);
+
+  // Load seen notes count from AsyncStorage
+  const storageKey = `notes_seen_${patient.permanent_patient_id || patient.id}`;
+  useEffect(() => {
+    AsyncStorage.getItem(storageKey).then((val) => {
+      setSeenNotesCount(val ? parseInt(val, 10) : 0);
+    });
+  }, [storageKey]);
 
   // Notes badge logic: red if new unread notes, transparent if all read
   const notesCount = toothNotes?.length || 0;
-  const hasUnreadNotes = notesCount > seenNotesCount;
+  const hasUnreadNotes = seenNotesCount === null ? false : notesCount > seenNotesCount;
 
   // Consent state
   const consentSigned = patientConsents?.length > 0 && patientConsents.every(c => c.signed);
@@ -152,8 +161,9 @@ export function ExpandedPatientHeader({
     }
     if (iconId === 'notes') {
       onLoadToothNotes();
-      // Mark notes as seen
+      // Mark notes as seen - persist to AsyncStorage
       setSeenNotesCount(notesCount);
+      AsyncStorage.setItem(storageKey, notesCount.toString());
     }
     setExpandedSection(iconId as SectionType);
   };
