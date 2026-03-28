@@ -253,10 +253,12 @@ export function ExpandedPatientHeader({
               e.stopPropagation();
               handleIconPress(item.id);
             }}
-            onLongPress={item.id === 'consent' && consentSigned ? (e) => {
+            onLongPress={(e) => {
               e.stopPropagation();
-              onConsentPress();
-            } : undefined}
+              if (item.id === 'consent' && consentSigned) {
+                onConsentPress();
+              }
+            }}
             delayLongPress={2000}
           >
             {/* Badge */}
