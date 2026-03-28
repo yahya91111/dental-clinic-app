@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { updateReferralStatus } from '../lib/database';
 
 // ═══════════════════════════════════════════════════════════════
 // Expanded Patient Header Component - iPhone Style Grid
@@ -519,22 +520,42 @@ export function ExpandedPatientHeader({
                 borderWidth: 2,
                 borderColor: 'rgba(255, 255, 255, 0.7)',
               }}>
-                {/* Department + Status */}
+                {/* Department + Status Toggle */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                     <Ionicons name="arrow-redo" size={18} color="#EA580C" />
                     <Text style={{ fontSize: 16, fontWeight: '700', color: '#EA580C' }}>{department}</Text>
                   </View>
-                  <View style={{
-                    backgroundColor: isGiven ? '#059669' : '#DC2626',
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    borderRadius: 10,
-                  }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      const newStatus = isGiven ? 'not_given' : 'given';
+                      try {
+                        const { error } = await updateReferralStatus(referral.id, newStatus);
+                        if (error) {
+                          Alert.alert('Error', 'Failed to update status');
+                          return;
+                        }
+                        // Reload referrals to reflect change
+                        onLoadReferrals();
+                      } catch (err) {
+                        Alert.alert('Error', 'Unexpected error');
+                      }
+                    }}
+                    style={{
+                      backgroundColor: isGiven ? '#059669' : '#DC2626',
+                      paddingHorizontal: 14,
+                      paddingVertical: 6,
+                      borderRadius: 12,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <Ionicons name={isGiven ? 'checkmark-circle' : 'close-circle'} size={16} color="#FFFFFF" />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>
                       {isGiven ? 'Given' : 'Not Given'}
                     </Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
 
                 {/* Divider */}
