@@ -36,8 +36,10 @@ interface PatientReferral {
 }
 
 interface ToothNote {
-  tooth_number: number;
+  tooth_number: number | string;
   note: string;
+  doctor_name?: string;
+  timestamp?: string;
   created_at: string;
 }
 
@@ -675,12 +677,42 @@ export function ExpandedPatientHeader({
       ) : toothNotes.length > 0 ? (
         <View style={{ gap: 12 }}>
           {toothNotes.map((note, index) => (
-            <View key={index} style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 12, padding: 12 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#A78BFA' }}>Tooth #{note.tooth_number}</Text>
-              <Text style={{ fontSize: 14, color: '#FFFFFF', marginTop: 8 }}>{note.note}</Text>
-              <Text style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 8 }}>
-                {new Date(note.created_at).toLocaleDateString()}
-              </Text>
+            <View key={index} style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.6)',
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 2,
+              borderColor: 'rgba(255, 255, 255, 0.7)',
+            }}>
+              {/* Tooth Number */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="document-text" size={18} color="#7C3AED" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#7C3AED' }}>Tooth #{note.tooth_number}</Text>
+                </View>
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1, backgroundColor: 'rgba(124, 58, 237, 0.2)', marginBottom: 10 }} />
+
+              {/* Note Text */}
+              <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8, lineHeight: 20 }}>{note.note}</Text>
+
+              {/* Doctor + Date */}
+              <View style={{ gap: 4 }}>
+                {note.doctor_name && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="person" size={14} color="#6B7280" />
+                    <Text style={{ fontSize: 13, fontWeight: '500', color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
+                  </View>
+                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="time" size={14} color="#9CA3AF" />
+                  <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                    {new Date(note.timestamp || note.created_at).toLocaleDateString()}
+                  </Text>
+                </View>
+              </View>
             </View>
           ))}
         </View>
