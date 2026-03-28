@@ -293,6 +293,7 @@ export function ExpandedPatientHeader({
                   <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.caries_count}</Text>
                 </View>
               </View>
+              <View style={{ height: 1, backgroundColor: 'rgba(220, 38, 38, 0.25)', marginBottom: 12 }} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.caries_teeth.map((tooth) => (
                   <TouchableOpacity
@@ -334,6 +335,7 @@ export function ExpandedPatientHeader({
                   <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.rct_needed_count}</Text>
                 </View>
               </View>
+              <View style={{ height: 1, backgroundColor: 'rgba(234, 88, 12, 0.25)', marginBottom: 12 }} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.rct_needed_teeth.map((tooth) => (
                   <TouchableOpacity
@@ -375,6 +377,7 @@ export function ExpandedPatientHeader({
                   <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.extraction_needed_count}</Text>
                 </View>
               </View>
+              <View style={{ height: 1, backgroundColor: 'rgba(124, 58, 237, 0.25)', marginBottom: 12 }} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.extraction_needed_teeth.map((tooth) => (
                   <TouchableOpacity
@@ -416,6 +419,7 @@ export function ExpandedPatientHeader({
                   <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.broken_teeth_count}</Text>
                 </View>
               </View>
+              <View style={{ height: 1, backgroundColor: 'rgba(217, 119, 6, 0.25)', marginBottom: 12 }} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.broken_teeth.map((tooth) => (
                   <TouchableOpacity
@@ -457,6 +461,7 @@ export function ExpandedPatientHeader({
                   <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{dentalSummary.filling_done_count}</Text>
                 </View>
               </View>
+              <View style={{ height: 1, backgroundColor: 'rgba(37, 99, 235, 0.25)', marginBottom: 12 }} />
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {dentalSummary.filling_done_teeth.map((tooth) => (
                   <TouchableOpacity
