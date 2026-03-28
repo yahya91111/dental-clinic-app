@@ -186,9 +186,9 @@ export function ExpandedPatientHeader({
             }
           }}
         >
-          <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{patient.name}</Text>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A' }}>{patient.name}</Text>
           {patient.file_number && (
-            <Text style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.8)', marginTop: 2, fontWeight: '600' }}>
+            <Text style={{ fontSize: 13, color: '#3B5998', marginTop: 2, fontWeight: '600' }}>
               File: {patient.file_number}
             </Text>
           )}
