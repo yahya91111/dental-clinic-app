@@ -179,7 +179,7 @@ export function ExpandedPatientHeader({
 
         {/* Name + File Number */}
         <TouchableOpacity
-          style={{ flex: 1, marginLeft: 12 }}
+          style={{ flex: 1, alignItems: 'center' }}
           onPress={(e) => {
             e.stopPropagation();
             if (patient.permanent_patient_id && patient.file_number && onPatientNamePress) {
