@@ -109,14 +109,15 @@ export function ExpandedPatientHeader({
     ? dentalSummary.caries_count + dentalSummary.rct_needed_count + dentalSummary.extraction_needed_count + dentalSummary.broken_teeth_count + dentalSummary.filling_done_count
     : 0;
 
-  // Icon configurations
+  // Icon configurations - unified white bg with distinct icon colors
+  const iconBg = 'rgba(255, 255, 255, 0.45)';
   const icons = [
-    { id: 'dental', label: 'Treatment', icon: 'tooth-outline', iconType: 'material', color: '#8B5CF6', bgColor: 'rgba(139, 92, 246, 0.35)', badge: totalTreatmentCount },
-    { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#F97316', bgColor: 'rgba(249, 115, 22, 0.35)', badge: patientReferrals?.length || 0 },
-    { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: '#10B981', bgColor: 'rgba(16, 185, 129, 0.35)', badge: 0 },
-    { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#A78BFA', bgColor: 'rgba(167, 139, 250, 0.35)', badge: toothNotes?.length || 0 },
-    { id: 'consent', label: 'Consent', icon: patientConsents?.some(c => !c.signed) ? 'alert-circle' : 'checkmark-circle', iconType: 'ionicon', color: patientConsents?.some(c => !c.signed) ? '#EF4444' : '#10B981', bgColor: patientConsents?.some(c => !c.signed) ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)', badge: 0 },
-    { id: 'chart', label: 'Chart', icon: 'open-outline', iconType: 'ionicon', color: '#3B82F6', bgColor: 'rgba(59, 130, 246, 0.35)', badge: 0 },
+    { id: 'dental', label: 'Treatment', icon: 'tooth-outline', iconType: 'material', color: '#7C3AED', bgColor: iconBg, badge: totalTreatmentCount },
+    { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#EA580C', bgColor: iconBg, badge: patientReferrals?.length || 0 },
+    { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: '#059669', bgColor: iconBg, badge: 0 },
+    { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#7C3AED', bgColor: iconBg, badge: toothNotes?.length || 0 },
+    { id: 'consent', label: 'Consent', icon: patientConsents?.some(c => !c.signed) ? 'alert-circle' : 'checkmark-circle', iconType: 'ionicon', color: patientConsents?.some(c => !c.signed) ? '#DC2626' : '#059669', bgColor: iconBg, badge: 0 },
+    { id: 'chart', label: 'Chart', icon: 'open-outline', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: 0 },
   ];
 
   const handleIconPress = (iconId: string) => {
@@ -225,8 +226,8 @@ export function ExpandedPatientHeader({
               borderRadius: 20,
               alignItems: 'center',
               justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: 'rgba(255, 255, 255, 0.2)',
+              borderWidth: 2,
+              borderColor: 'rgba(255, 255, 255, 0.6)',
             }}
             onPress={(e) => {
               e.stopPropagation();
@@ -256,7 +257,7 @@ export function ExpandedPatientHeader({
               </View>
             )}
             {renderIcon(item)}
-            <Text style={{ fontSize: 12, color: '#FFFFFF', marginTop: 8, fontWeight: '500' }}>
+            <Text style={{ fontSize: 12, color: '#1E3A8A', marginTop: 8, fontWeight: '700' }}>
               {item.label}
             </Text>
           </TouchableOpacity>
