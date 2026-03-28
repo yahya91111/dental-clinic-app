@@ -147,48 +147,71 @@ export function ExpandedPatientHeader({
   // Render Icons Grid
   const renderIconsGrid = () => (
     <View style={{ padding: 16 }}>
-      {/* Close Button */}
-      <View style={{ position: 'absolute', top: 8, left: 8, zIndex: 10 }}>
+      {/* Header Bar: Close + Name + File Number */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 16,
+        padding: 12,
+        marginBottom: 20,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.35)',
+      }}>
+        {/* Close Button */}
         <TouchableOpacity
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
             width: 36,
             height: 36,
-            borderRadius: 18,
+            borderRadius: 12,
             alignItems: 'center',
             justifyContent: 'center',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.15,
-            shadowRadius: 4,
-            elevation: 4,
           }}
           onPress={(e) => {
             e.stopPropagation();
             onTogglePermanentExpansion(patient);
           }}
         >
-          <Ionicons name="chevron-up" size={20} color="#1E3A8A" />
+          <Ionicons name="chevron-up" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        {/* Name + File Number */}
+        <TouchableOpacity
+          style={{ flex: 1, marginLeft: 12 }}
+          onPress={(e) => {
+            e.stopPropagation();
+            if (patient.permanent_patient_id && patient.file_number && onPatientNamePress) {
+              onPatientNamePress(patient.permanent_patient_id, patient.file_number);
+            }
+          }}
+        >
+          <Text style={{ fontSize: 20, fontWeight: '800', color: '#FFFFFF' }}>{patient.name}</Text>
+          {patient.file_number && (
+            <Text style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.8)', marginTop: 2, fontWeight: '600' }}>
+              File: {patient.file_number}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Open Chart Arrow */}
+        <TouchableOpacity
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            width: 36,
+            height: 36,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onPress={(e) => {
+            e.stopPropagation();
+            onOpenDentalChart();
+          }}
+        >
+          <Ionicons name="open-outline" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
-
-      {/* Patient Name */}
-      <TouchableOpacity
-        style={{ alignItems: 'center', marginTop: 32, marginBottom: 24 }}
-        onPress={(e) => {
-          e.stopPropagation();
-          if (patient.permanent_patient_id && patient.file_number && onPatientNamePress) {
-            onPatientNamePress(patient.permanent_patient_id, patient.file_number);
-          }
-        }}
-      >
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#FFFFFF' }}>{patient.name}</Text>
-        {patient.file_number && (
-          <Text style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', marginTop: 4 }}>
-            File: {patient.file_number}
-          </Text>
-        )}
-      </TouchableOpacity>
 
       {/* Icons Grid - 3 columns */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 16 }}>
