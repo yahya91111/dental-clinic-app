@@ -23,9 +23,14 @@ interface DentalSummary {
 
 interface PatientReferral {
   id: string;
-  department: string;
+  department?: string;
+  referral_type?: string;
+  tooth_number?: string | null;
   reason?: string;
+  notes?: string;
+  doctor_name?: string;
   created_at: string;
+  timestamp?: string;
   status: string;
 }
 
@@ -503,17 +508,68 @@ export function ExpandedPatientHeader({
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : patientReferrals.length > 0 ? (
         <View style={{ gap: 12 }}>
-          {patientReferrals.map((referral) => (
-            <View key={referral.id} style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 12, padding: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF' }}>{referral.department}</Text>
-              {referral.reason && (
-                <Text style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', marginTop: 4 }}>{referral.reason}</Text>
-              )}
-              <Text style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 8 }}>
-                {new Date(referral.created_at).toLocaleDateString()}
-              </Text>
-            </View>
-          ))}
+          {patientReferrals.map((referral) => {
+            const isGiven = referral.status === 'given';
+            const department = referral.department || referral.referral_type || 'Unknown';
+            return (
+              <View key={referral.id} style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.6)',
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 2,
+                borderColor: 'rgba(255, 255, 255, 0.7)',
+              }}>
+                {/* Department + Status */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <Ionicons name="arrow-redo" size={18} color="#EA580C" />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#EA580C' }}>{department}</Text>
+                  </View>
+                  <View style={{
+                    backgroundColor: isGiven ? '#059669' : '#DC2626',
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    borderRadius: 10,
+                  }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+                      {isGiven ? 'Given' : 'Not Given'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Divider */}
+                <View style={{ height: 1, backgroundColor: 'rgba(234, 88, 12, 0.2)', marginBottom: 10 }} />
+
+                {/* Tooth + Doctor + Notes */}
+                <View style={{ gap: 6 }}>
+                  {referral.tooth_number && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="medical" size={14} color="#6B7280" />
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1E3A8A' }}>Tooth: #{referral.tooth_number}</Text>
+                    </View>
+                  )}
+                  {referral.doctor_name && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="person" size={14} color="#6B7280" />
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151' }}>Dr. {referral.doctor_name}</Text>
+                    </View>
+                  )}
+                  {(referral.notes || referral.reason) && (
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                      <Ionicons name="document-text" size={14} color="#6B7280" style={{ marginTop: 2 }} />
+                      <Text style={{ fontSize: 13, color: '#6B7280', flex: 1 }}>{referral.notes || referral.reason}</Text>
+                    </View>
+                  )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="time" size={14} color="#9CA3AF" />
+                    <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                      {new Date(referral.timestamp || referral.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
         </View>
       ) : (
         <View style={{ alignItems: 'center', padding: 24 }}>
