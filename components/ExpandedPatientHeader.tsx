@@ -826,8 +826,6 @@ export function ExpandedPatientHeader({
                         Alert.alert('Error', 'Failed to save scaling record');
                         return;
                       }
-                      // Trigger parent reload
-                      onScalingPress(patient.permanent_patient_id);
                       Alert.alert('Success', `Scaling recorded for ${scalingDate.toLocaleDateString()}`);
                     } catch (err) {
                       Alert.alert('Error', 'Unexpected error');
