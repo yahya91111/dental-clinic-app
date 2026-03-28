@@ -135,12 +135,21 @@ export function ExpandedPatientHeader({
     ? dentalSummary.caries_count + dentalSummary.rct_needed_count + dentalSummary.extraction_needed_count + dentalSummary.broken_teeth_count + dentalSummary.filling_done_count
     : 0;
 
+  // Scaling status for icon color
+  const monthsSinceScalingForIcon = lastScalingDate
+    ? Math.floor((new Date().getTime() - lastScalingDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
+    : null;
+  const hygieneIconColor = monthsSinceScalingForIcon === null ? '#9CA3AF'
+    : monthsSinceScalingForIcon > 6 ? '#DC2626'
+    : monthsSinceScalingForIcon >= 4 ? '#D97706'
+    : '#059669';
+
   // Icon configurations - unified white bg with distinct icon colors
   const iconBg = 'rgba(255, 255, 255, 0.6)';
   const icons = [
     { id: 'dental', label: 'Treatment', icon: 'tooth-outline', iconType: 'material', color: '#7C3AED', bgColor: iconBg, badge: totalTreatmentCount },
     { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#EA580C', bgColor: iconBg, badge: patientReferrals?.filter(r => r.status !== 'given').length || 0 },
-    { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: '#059669', bgColor: iconBg, badge: 0 },
+    { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: hygieneIconColor, bgColor: iconBg, badge: 0 },
     { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#7C3AED', bgColor: iconBg, badge: notesCount, badgeColor: hasUnreadNotes ? '#EF4444' : 'rgba(107, 114, 128, 0.6)' },
     { id: 'consent', label: 'Consent', icon: consentSigned ? 'checkmark-circle' : 'close-circle', iconType: 'ionicon', color: consentSigned ? '#059669' : '#9CA3AF', bgColor: iconBg, badge: 0 },
     { id: 'chart', label: 'Chart', icon: 'open-outline', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: 0 },
@@ -753,36 +762,27 @@ export function ExpandedPatientHeader({
               Confirm Scaling Date
             </Text>
 
-            {/* Date Display / Picker */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                borderRadius: 12,
-                padding: 14,
-                alignItems: 'center',
-                borderWidth: 1.5,
-                borderColor: 'rgba(5, 150, 105, 0.3)',
-                marginBottom: 14,
-              }}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '500' }}>Tap to change date</Text>
-              <Text style={{ fontSize: 22, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
-                {scalingDate.toLocaleDateString()}
-              </Text>
-            </TouchableOpacity>
-
-            {showDatePicker && (
+            {/* Date Picker - always visible */}
+            <View style={{
+              backgroundColor: 'rgba(0, 0, 0, 0.05)',
+              borderRadius: 12,
+              padding: 10,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: 'rgba(5, 150, 105, 0.3)',
+              marginBottom: 14,
+            }}>
               <DateTimePicker
                 value={scalingDate}
                 mode="date"
+                display="spinner"
                 maximumDate={new Date()}
                 onChange={(event: any, date?: Date) => {
-                  setShowDatePicker(false);
                   if (date) setScalingDate(date);
                 }}
+                style={{ height: 120 }}
               />
-            )}
+            </View>
 
             {/* Confirm + Cancel */}
             <View style={{ flexDirection: 'row', gap: 10 }}>
