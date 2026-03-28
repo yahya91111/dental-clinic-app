@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } fr
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { updateReferralStatus } from '../lib/database';
+import { updateReferralStatus, createScalingRecord, getScalingRecords } from '../lib/database';
 
 // ═══════════════════════════════════════════════════════════════
 // Expanded Patient Header Component - iPhone Style Grid
@@ -818,9 +818,20 @@ export function ExpandedPatientHeader({
                   paddingVertical: 12,
                   alignItems: 'center',
                 }}
-                onPress={() => {
+                onPress={async () => {
                   if (patient.permanent_patient_id) {
-                    onScalingPress(patient.permanent_patient_id);
+                    try {
+                      const { error } = await createScalingRecord(patient.permanent_patient_id, 'Doctor', scalingDate);
+                      if (error) {
+                        Alert.alert('Error', 'Failed to save scaling record');
+                        return;
+                      }
+                      // Trigger parent reload
+                      onScalingPress(patient.permanent_patient_id);
+                      Alert.alert('Success', `Scaling recorded for ${scalingDate.toLocaleDateString()}`);
+                    } catch (err) {
+                      Alert.alert('Error', 'Unexpected error');
+                    }
                   }
                   setShowScalingConfirm(false);
                 }}

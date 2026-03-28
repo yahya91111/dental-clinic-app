@@ -1141,10 +1141,11 @@ export async function getCompleteDentalChart(
  */
 export async function createScalingRecord(
   permanentPatientId: string,
-  doctorName: string
+  doctorName: string,
+  customDate?: Date
 ): Promise<DatabaseResponse<ScalingRecord>> {
   try {
-    const timestamp = new Date().toISOString();
+    const timestamp = customDate ? customDate.toISOString() : new Date().toISOString();
 
     const { data, error } = await supabase
       .from('scaling_records')
