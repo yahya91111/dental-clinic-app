@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { updateReferralStatus } from '../lib/database';
 
 // ═══════════════════════════════════════════════════════════════
@@ -633,68 +634,191 @@ export function ExpandedPatientHeader({
   );
 
   // Render Hygiene Content
-  const renderHygieneContent = () => {
-    const today = new Date();
-    const isFluorideDoneToday = lastFluorideDate &&
-      lastFluorideDate.getDate() === today.getDate() &&
-      lastFluorideDate.getMonth() === today.getMonth() &&
-      lastFluorideDate.getFullYear() === today.getFullYear();
+  const [showScalingConfirm, setShowScalingConfirm] = useState(false);
+  const [scalingDate, setScalingDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-    const isScalingDoneToday = lastScalingDate &&
-      lastScalingDate.getDate() === today.getDate() &&
-      lastScalingDate.getMonth() === today.getMonth() &&
-      lastScalingDate.getFullYear() === today.getFullYear();
+  const renderHygieneContent = () => {
+    // Calculate months since last scaling
+    const monthsSinceScaling = lastScalingDate
+      ? Math.floor((new Date().getTime() - lastScalingDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
+      : null;
+
+    // Status: green (<4), yellow (4-6), red (>6), gray (never)
+    const getStatus = () => {
+      if (monthsSinceScaling === null) return { color: '#9CA3AF', label: 'Not recorded', icon: 'help-circle' as const };
+      if (monthsSinceScaling < 4) return { color: '#059669', label: 'Good', icon: 'checkmark-circle' as const };
+      if (monthsSinceScaling <= 6) return { color: '#D97706', label: 'Due soon', icon: 'warning' as const };
+      return { color: '#DC2626', label: 'Overdue', icon: 'alert-circle' as const };
+    };
+    const status = getStatus();
+    const progressPercent = monthsSinceScaling !== null ? Math.min(monthsSinceScaling / 6, 1) : 0;
 
     return (
-      <View style={{ flex: 1, padding: 16 }}>
-        <View style={{ gap: 16 }}>
-          {/* Fluoride Button */}
-          <TouchableOpacity
-            style={{
-              backgroundColor: isFluorideDoneToday ? 'rgba(16, 185, 129, 0.3)' : 'rgba(59, 130, 246, 0.3)',
-              borderRadius: 16,
-              padding: 20,
-              flexDirection: 'row',
-              alignItems: 'center',
-              borderWidth: 2,
-              borderColor: isFluorideDoneToday ? '#10B981' : '#3B82F6',
-            }}
-            onPress={() => patient.permanent_patient_id && onFluoridePress(patient.permanent_patient_id)}
-          >
-            <MaterialCommunityIcons name="water" size={32} color={isFluorideDoneToday ? '#10B981' : '#3B82F6'} />
-            <View style={{ marginLeft: 16, flex: 1 }}>
-              <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Fluoride</Text>
-              <Text style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', marginTop: 4 }}>
-                {isFluorideDoneToday ? 'Done today' : lastFluorideDate ? `Last: ${lastFluorideDate.toLocaleDateString()}` : 'Not recorded'}
-              </Text>
+      <ScrollView style={{ flex: 1, padding: 16 }}>
+        {/* Scaling Card */}
+        <View style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.6)',
+          borderRadius: 16,
+          padding: 16,
+          borderWidth: 2,
+          borderColor: 'rgba(255, 255, 255, 0.7)',
+        }}>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <MaterialCommunityIcons name="tooth" size={20} color="#059669" />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#059669' }}>Scaling</Text>
             </View>
-            {isFluorideDoneToday && <Ionicons name="checkmark-circle" size={28} color="#10B981" />}
-          </TouchableOpacity>
+            <View style={{ backgroundColor: status.color, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name={status.icon} size={14} color="#FFFFFF" />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{status.label}</Text>
+            </View>
+          </View>
 
-          {/* Scaling Button */}
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: 'rgba(5, 150, 105, 0.2)', marginBottom: 14 }} />
+
+          {/* Last Scaling Date */}
+          <View style={{ alignItems: 'center', marginBottom: 14 }}>
+            <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>Last scaling</Text>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
+              {lastScalingDate ? lastScalingDate.toLocaleDateString() : '—'}
+            </Text>
+            {monthsSinceScaling !== null && (
+              <Text style={{ fontSize: 13, color: status.color, fontWeight: '600', marginTop: 2 }}>
+                {monthsSinceScaling === 0 ? 'This month' : `${monthsSinceScaling} month${monthsSinceScaling !== 1 ? 's' : ''} ago`}
+              </Text>
+            )}
+          </View>
+
+          {/* Progress Bar */}
+          <View style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+              <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '500' }}>0 months</Text>
+              <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '500' }}>6 months</Text>
+            </View>
+            <View style={{ height: 10, backgroundColor: 'rgba(0, 0, 0, 0.08)', borderRadius: 5 }}>
+              <View style={{
+                height: 10,
+                width: `${progressPercent * 100}%`,
+                backgroundColor: status.color,
+                borderRadius: 5,
+              }} />
+            </View>
+            {monthsSinceScaling !== null && monthsSinceScaling <= 6 && (
+              <Text style={{ fontSize: 12, color: status.color, fontWeight: '600', textAlign: 'center', marginTop: 6 }}>
+                {6 - monthsSinceScaling} month{6 - monthsSinceScaling !== 1 ? 's' : ''} remaining
+              </Text>
+            )}
+            {monthsSinceScaling !== null && monthsSinceScaling > 6 && (
+              <Text style={{ fontSize: 12, color: '#DC2626', fontWeight: '700', textAlign: 'center', marginTop: 6 }}>
+                Overdue by {monthsSinceScaling - 6} month{monthsSinceScaling - 6 !== 1 ? 's' : ''}!
+              </Text>
+            )}
+          </View>
+
+          {/* Scaling Done Button */}
           <TouchableOpacity
             style={{
-              backgroundColor: isScalingDoneToday ? 'rgba(16, 185, 129, 0.3)' : 'rgba(139, 92, 246, 0.3)',
-              borderRadius: 16,
-              padding: 20,
-              flexDirection: 'row',
+              backgroundColor: '#059669',
+              borderRadius: 14,
+              paddingVertical: 14,
               alignItems: 'center',
-              borderWidth: 2,
-              borderColor: isScalingDoneToday ? '#10B981' : '#8B5CF6',
+              justifyContent: 'center',
+              flexDirection: 'row',
+              gap: 8,
             }}
-            onPress={() => patient.permanent_patient_id && onScalingPress(patient.permanent_patient_id)}
+            onPress={() => {
+              setScalingDate(new Date());
+              setShowScalingConfirm(true);
+            }}
           >
-            <MaterialCommunityIcons name="tooth" size={32} color={isScalingDoneToday ? '#10B981' : '#8B5CF6'} />
-            <View style={{ marginLeft: 16, flex: 1 }}>
-              <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Scaling</Text>
-              <Text style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', marginTop: 4 }}>
-                {isScalingDoneToday ? 'Done today' : lastScalingDate ? `Last: ${lastScalingDate.toLocaleDateString()}` : 'Not recorded'}
-              </Text>
-            </View>
-            {isScalingDoneToday && <Ionicons name="checkmark-circle" size={28} color="#10B981" />}
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Scaling Done</Text>
           </TouchableOpacity>
         </View>
-      </View>
+
+        {/* Scaling Confirm Modal */}
+        {showScalingConfirm && (
+          <View style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.6)',
+            borderRadius: 16,
+            padding: 16,
+            marginTop: 14,
+            borderWidth: 2,
+            borderColor: 'rgba(255, 255, 255, 0.7)',
+          }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E3A8A', textAlign: 'center', marginBottom: 14 }}>
+              Confirm Scaling Date
+            </Text>
+
+            {/* Date Display / Picker */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                borderRadius: 12,
+                padding: 14,
+                alignItems: 'center',
+                borderWidth: 1.5,
+                borderColor: 'rgba(5, 150, 105, 0.3)',
+                marginBottom: 14,
+              }}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '500' }}>Tap to change date</Text>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
+                {scalingDate.toLocaleDateString()}
+              </Text>
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={scalingDate}
+                mode="date"
+                maximumDate={new Date()}
+                onChange={(event: any, date?: Date) => {
+                  setShowDatePicker(false);
+                  if (date) setScalingDate(date);
+                }}
+              />
+            )}
+
+            {/* Confirm + Cancel */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(0, 0, 0, 0.06)',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                }}
+                onPress={() => setShowScalingConfirm(false)}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor: '#059669',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                }}
+                onPress={() => {
+                  if (patient.permanent_patient_id) {
+                    onScalingPress(patient.permanent_patient_id);
+                  }
+                  setShowScalingConfirm(false);
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </ScrollView>
     );
   };
 
