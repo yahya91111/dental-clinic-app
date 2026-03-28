@@ -173,7 +173,7 @@ export function ExpandedPatientHeader({
             onTogglePermanentExpansion(patient);
           }}
         >
-          <Ionicons name="chevron-up" size={22} color="#FFFFFF" />
+          <Ionicons name="chevron-up" size={22} color="#1E3A8A" />
         </TouchableOpacity>
 
         {/* Name + File Number */}
@@ -209,7 +209,7 @@ export function ExpandedPatientHeader({
             onOpenDentalChart();
           }}
         >
-          <Ionicons name="open-outline" size={20} color="#FFFFFF" />
+          <Ionicons name="open-outline" size={20} color="#1E3A8A" />
         </TouchableOpacity>
       </View>
 
