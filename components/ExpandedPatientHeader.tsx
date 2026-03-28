@@ -110,7 +110,7 @@ export function ExpandedPatientHeader({
     : 0;
 
   // Icon configurations - unified white bg with distinct icon colors
-  const iconBg = 'rgba(255, 255, 255, 0.45)';
+  const iconBg = 'rgba(255, 255, 255, 0.6)';
   const icons = [
     { id: 'dental', label: 'Treatment', icon: 'tooth-outline', iconType: 'material', color: '#7C3AED', bgColor: iconBg, badge: totalTreatmentCount },
     { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#EA580C', bgColor: iconBg, badge: patientReferrals?.length || 0 },
