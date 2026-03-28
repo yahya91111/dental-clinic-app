@@ -639,41 +639,46 @@ export function ExpandedPatientHeader({
 
     return (
       <View style={{ flex: 1 }}>
-        {/* Header Bar */}
+        {/* Header Bar - same style as expanded card header */}
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: 14,
+          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+          borderRadius: 16,
+          padding: 12,
           marginHorizontal: 16,
           marginTop: 12,
           marginBottom: 4,
-          backgroundColor: 'rgba(255, 255, 255, 0.2)',
-          borderRadius: 14,
           borderWidth: 2,
           borderColor: 'rgba(255, 255, 255, 0.35)',
         }}>
           {/* Back Button - Left */}
           <TouchableOpacity
             style={{
-              position: 'absolute',
-              left: 10,
-              padding: 6,
-              backgroundColor: 'rgba(255, 255, 255, 0.25)',
-              borderRadius: 10,
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              width: 36,
+              height: 36,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
             onPress={(e) => {
               e.stopPropagation();
               setExpandedSection(null);
             }}
           >
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+            <Ionicons name="chevron-back" size={22} color="#1E3A8A" />
           </TouchableOpacity>
 
           {/* Title - Center */}
-          <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 }}>
-            {sectionTitle}
-          </Text>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1E3A8A', letterSpacing: 0.5 }}>
+              {sectionTitle}
+            </Text>
+          </View>
+
+          {/* Spacer to balance the back button */}
+          <View style={{ width: 36 }} />
         </View>
 
         {/* Content */}
