@@ -117,6 +117,9 @@ export function ExpandedPatientHeader({
   const notesCount = toothNotes?.length || 0;
   const hasUnreadNotes = notesCount > seenNotesCount;
 
+  // Consent state
+  const consentSigned = patientConsents?.length > 0 && patientConsents.every(c => c.signed);
+
   // Total treatment issues count
   const totalTreatmentCount = dentalSummary
     ? dentalSummary.caries_count + dentalSummary.rct_needed_count + dentalSummary.extraction_needed_count + dentalSummary.broken_teeth_count + dentalSummary.filling_done_count
@@ -129,7 +132,7 @@ export function ExpandedPatientHeader({
     { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#EA580C', bgColor: iconBg, badge: patientReferrals?.filter(r => r.status !== 'given').length || 0 },
     { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: '#059669', bgColor: iconBg, badge: 0 },
     { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#7C3AED', bgColor: iconBg, badge: notesCount, badgeColor: hasUnreadNotes ? '#EF4444' : 'rgba(107, 114, 128, 0.6)' },
-    { id: 'consent', label: 'Consent', icon: patientConsents?.some(c => !c.signed) ? 'alert-circle' : 'checkmark-circle', iconType: 'ionicon', color: patientConsents?.some(c => !c.signed) ? '#DC2626' : '#059669', bgColor: iconBg, badge: 0 },
+    { id: 'consent', label: 'Consent', icon: consentSigned ? 'checkmark-circle' : 'close-circle', iconType: 'ionicon', color: consentSigned ? '#059669' : '#9CA3AF', bgColor: iconBg, badge: 0 },
     { id: 'chart', label: 'Chart', icon: 'open-outline', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: 0 },
   ];
 
@@ -139,7 +142,9 @@ export function ExpandedPatientHeader({
       return;
     }
     if (iconId === 'consent') {
-      onConsentPress();
+      if (!consentSigned) {
+        onConsentPress();
+      }
       return;
     }
     if (iconId === 'referrals') {
@@ -248,6 +253,11 @@ export function ExpandedPatientHeader({
               e.stopPropagation();
               handleIconPress(item.id);
             }}
+            onLongPress={item.id === 'consent' && consentSigned ? (e) => {
+              e.stopPropagation();
+              onConsentPress();
+            } : undefined}
+            delayLongPress={2000}
           >
             {/* Badge */}
             {item.badge > 0 && (

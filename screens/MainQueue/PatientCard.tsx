@@ -265,7 +265,7 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
                   Alert.alert('Success', 'Scaling record saved');
                 } catch (err) { Alert.alert('Error', 'Unexpected error'); }
               }}
-              patientConsents={[]}
+              patientConsents={patientConsents?.[patient.id] ? [{ consent_type: 'general', signed: true }] : []}
               onConsentPress={() => onToggleConsent?.(patient)}
               onOpenDentalChart={() => {
                 if (patient.permanent_patient_id) {
