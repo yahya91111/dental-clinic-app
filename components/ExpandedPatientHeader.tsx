@@ -111,6 +111,11 @@ export function ExpandedPatientHeader({
   onPatientNamePress,
 }: ExpandedPatientHeaderProps) {
   const [expandedSection, setExpandedSection] = useState<SectionType>(null);
+  const [seenNotesCount, setSeenNotesCount] = useState(0);
+
+  // Notes badge logic: red if new unread notes, transparent if all read
+  const notesCount = toothNotes?.length || 0;
+  const hasUnreadNotes = notesCount > seenNotesCount;
 
   // Total treatment issues count
   const totalTreatmentCount = dentalSummary
@@ -123,7 +128,7 @@ export function ExpandedPatientHeader({
     { id: 'dental', label: 'Treatment', icon: 'tooth-outline', iconType: 'material', color: '#7C3AED', bgColor: iconBg, badge: totalTreatmentCount },
     { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#EA580C', bgColor: iconBg, badge: patientReferrals?.filter(r => r.status !== 'given').length || 0 },
     { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: '#059669', bgColor: iconBg, badge: 0 },
-    { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#7C3AED', bgColor: iconBg, badge: toothNotes?.length || 0 },
+    { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#7C3AED', bgColor: iconBg, badge: notesCount, badgeColor: hasUnreadNotes ? '#EF4444' : 'rgba(107, 114, 128, 0.6)' },
     { id: 'consent', label: 'Consent', icon: patientConsents?.some(c => !c.signed) ? 'alert-circle' : 'checkmark-circle', iconType: 'ionicon', color: patientConsents?.some(c => !c.signed) ? '#DC2626' : '#059669', bgColor: iconBg, badge: 0 },
     { id: 'chart', label: 'Chart', icon: 'open-outline', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: 0 },
   ];
@@ -142,6 +147,8 @@ export function ExpandedPatientHeader({
     }
     if (iconId === 'notes') {
       onLoadToothNotes();
+      // Mark notes as seen
+      setSeenNotesCount(notesCount);
     }
     setExpandedSection(iconId as SectionType);
   };
@@ -248,7 +255,7 @@ export function ExpandedPatientHeader({
                 position: 'absolute',
                 top: -10,
                 left: -10,
-                backgroundColor: '#EF4444',
+                backgroundColor: (item as any).badgeColor || '#EF4444',
                 borderRadius: 14,
                 minWidth: 28,
                 height: 28,
