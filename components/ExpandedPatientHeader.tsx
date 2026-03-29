@@ -767,7 +767,7 @@ export function ExpandedPatientHeader({
               Confirm Scaling Date
             </Text>
 
-            {/* Date Display + Picker */}
+            {/* Date Display - tap opens native picker directly */}
             <TouchableOpacity
               style={{
                 backgroundColor: 'rgba(0, 0, 0, 0.05)',
@@ -780,7 +780,7 @@ export function ExpandedPatientHeader({
               }}
               onPress={() => setShowDatePicker(true)}
             >
-              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '500' }}>Tap to change date</Text>
+              <Text style={{ fontSize: 12, color: '#059669', fontWeight: '500' }}>📅 Tap to change date</Text>
               <Text style={{ fontSize: 22, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
                 {scalingDate.toLocaleDateString()}
               </Text>
@@ -790,7 +790,7 @@ export function ExpandedPatientHeader({
               <DateTimePicker
                 value={scalingDate}
                 mode="date"
-                display="default"
+                display="calendar"
                 maximumDate={new Date()}
                 onChange={(event: any, date?: Date) => {
                   setShowDatePicker(false);
