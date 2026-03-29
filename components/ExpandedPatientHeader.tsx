@@ -767,39 +767,26 @@ export function ExpandedPatientHeader({
               Confirm Scaling Date
             </Text>
 
-            {/* Date Display - tap opens native picker directly */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                borderRadius: 12,
-                padding: 14,
-                alignItems: 'center',
-                borderWidth: 1.5,
-                borderColor: 'rgba(5, 150, 105, 0.3)',
-                marginBottom: 14,
-              }}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text style={{ fontSize: 12, color: '#059669', fontWeight: '500' }}>📅 Tap to change date</Text>
-              <Text style={{ fontSize: 22, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
-                {scalingDate.toLocaleDateString()}
-              </Text>
-            </TouchableOpacity>
-
-            {showDatePicker && (
+            {/* Date Picker - always visible as spinner */}
+            <View style={{
+              backgroundColor: 'rgba(0, 0, 0, 0.05)',
+              borderRadius: 12,
+              borderWidth: 1.5,
+              borderColor: 'rgba(5, 150, 105, 0.3)',
+              marginBottom: 14,
+              overflow: 'hidden',
+              alignItems: 'center',
+            }}>
               <DateTimePicker
                 value={scalingDate}
                 mode="date"
-                display="calendar"
+                display="spinner"
                 maximumDate={new Date()}
                 onChange={(event: any, date?: Date) => {
-                  setShowDatePicker(false);
-                  if (event.type !== 'dismissed' && date) {
-                    setScalingDate(date);
-                  }
+                  if (date) setScalingDate(date);
                 }}
               />
-            )}
+            </View>
 
             {/* Confirm + Cancel */}
             <View style={{ flexDirection: 'row', gap: 10 }}>
