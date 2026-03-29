@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { ToothCondition } from '../../types';
 import { styles } from './styles';
 import {
@@ -178,67 +178,105 @@ export const ConditionMenu: React.FC<ConditionMenuProps> = ({
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView style={styles.conditionMenuScroll}>
+                {/* Icon Grid */}
+                <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
                   {activeTab === 'condition' ? (
-                    <>
-                      {conditionsList.map((condition) => (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                      {[
+                        { key: 'caries', name: 'Caries', color: '#DC2626' },
+                        { key: 'broken', name: 'Broken', color: '#EC4899' },
+                        { key: 'pulpectomy', name: 'Pulpectomy', color: '#800000' },
+                        { key: 'extraction', name: 'Extraction', color: '#1F2937' },
+                        { key: 'follow_up', name: 'Follow-up', color: '#2563EB' },
+                        { key: 'needs_diagnosis', name: 'Diagnosis', color: '#D97706' },
+                      ].map((item) => (
                         <TouchableOpacity
-                          key={condition.key}
-                          style={styles.conditionMenuItem}
-                          onPress={() => onSelect(condition.key)}
+                          key={item.key}
+                          style={{
+                            width: 90,
+                            height: 90,
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                            borderRadius: 18,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 2,
+                            borderColor: 'rgba(255, 255, 255, 0.6)',
+                          }}
+                          onPress={() => onSelect(item.key as ToothCondition)}
                         >
-                          <View
-                            style={[
-                              styles.conditionColorBox,
-                              { backgroundColor: condition.color }
-                            ]}
-                          />
-                          <Text style={styles.conditionMenuItemText}>{condition.name}</Text>
+                          <MaterialCommunityIcons name="tooth" size={30} color={item.color} />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A', marginTop: 6, textAlign: 'center' }}>{item.name}</Text>
                         </TouchableOpacity>
                       ))}
 
-                      {/* Clear Condition Option */}
+                      {/* Clear */}
                       <TouchableOpacity
-                        style={styles.conditionMenuItem}
+                        style={{
+                          width: 90,
+                          height: 90,
+                          backgroundColor: 'rgba(255, 220, 220, 0.9)',
+                          borderRadius: 18,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 2,
+                          borderColor: 'rgba(239, 68, 68, 0.3)',
+                        }}
                         onPress={() => onSelect(null)}
                       >
-                        <Ionicons name="close-circle" size={24} color="#FF5252" />
-                        <Text style={[styles.conditionMenuItemText, { color: '#FF5252', marginLeft: 12 }]}>Clear Condition</Text>
+                        <Ionicons name="close-circle" size={30} color="#EF4444" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginTop: 6 }}>Clear</Text>
                       </TouchableOpacity>
-                    </>
+                    </View>
                   ) : (
-                    <>
-                      {toothStatusList.map((status) => (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                      {[
+                        { key: 'missing', name: 'Missing', color: '#6B7280', useX: true },
+                        { key: 'filling_replacement', name: 'Temp Fill', color: '#808080' },
+                        { key: 'permanent_filling', name: 'Perm Fill', color: '#059669' },
+                        { key: 'treated', name: 'RCT Done', color: '#800000' },
+                      ].map((item) => (
                         <TouchableOpacity
-                          key={status.key}
-                          style={styles.conditionMenuItem}
-                          onPress={() => onSelect(status.key)}
+                          key={item.key}
+                          style={{
+                            width: 90,
+                            height: 90,
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                            borderRadius: 18,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 2,
+                            borderColor: 'rgba(255, 255, 255, 0.6)',
+                          }}
+                          onPress={() => onSelect(item.key as ToothCondition)}
                         >
-                          <View
-                            style={[
-                              styles.conditionColorBox,
-                              {
-                                backgroundColor: status.color,
-                                borderWidth: status.key === 'treated' ? 2 : 0,
-                                borderColor: status.key === 'treated' ? '#800000' : 'transparent'
-                              }
-                            ]}
-                          />
-                          <Text style={styles.conditionMenuItemText}>{status.name}</Text>
+                          {(item as any).useX
+                            ? <Ionicons name="close" size={30} color={item.color} />
+                            : <MaterialCommunityIcons name="tooth" size={30} color={item.color} />
+                          }
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A', marginTop: 6, textAlign: 'center' }}>{item.name}</Text>
                         </TouchableOpacity>
                       ))}
 
-                      {/* Clear Tooth Status Option */}
+                      {/* Clear */}
                       <TouchableOpacity
-                        style={styles.conditionMenuItem}
+                        style={{
+                          width: 90,
+                          height: 90,
+                          backgroundColor: 'rgba(255, 220, 220, 0.9)',
+                          borderRadius: 18,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 2,
+                          borderColor: 'rgba(239, 68, 68, 0.3)',
+                        }}
                         onPress={() => onSelect('CLEAR_TOOTH_STATUS' as any)}
                       >
-                        <Ionicons name="close-circle" size={24} color="#FF5252" />
-                        <Text style={[styles.conditionMenuItemText, { color: '#FF5252', marginLeft: 12 }]}>Clear Condition</Text>
+                        <Ionicons name="close-circle" size={30} color="#EF4444" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginTop: 6 }}>Clear</Text>
                       </TouchableOpacity>
-                    </>
+                    </View>
                   )}
-                </ScrollView>
+                </View>
               </View>
             </BlurView>
           </View>
