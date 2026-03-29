@@ -130,14 +130,18 @@ export function ExpandedPatientHeader({
   // Consent state
   const consentSigned = patientConsents?.length > 0 && patientConsents.every(c => c.signed);
 
+  // Local scaling date (updates immediately after saving)
+  const [localScalingDate, setLocalScalingDate] = useState<Date | undefined>(undefined);
+  const effectiveScalingDate = localScalingDate || lastScalingDate;
+
   // Total treatment issues count
   const totalTreatmentCount = dentalSummary
     ? dentalSummary.caries_count + dentalSummary.rct_needed_count + dentalSummary.extraction_needed_count + dentalSummary.broken_teeth_count + dentalSummary.filling_done_count
     : 0;
 
   // Scaling status for icon color
-  const monthsSinceScalingForIcon = lastScalingDate
-    ? Math.floor((new Date().getTime() - lastScalingDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
+  const monthsSinceScalingForIcon = effectiveScalingDate
+    ? Math.floor((new Date().getTime() - effectiveScalingDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
     : null;
   const hygieneIconColor = monthsSinceScalingForIcon === null ? '#9CA3AF'
     : monthsSinceScalingForIcon > 6 ? '#DC2626'
@@ -649,8 +653,8 @@ export function ExpandedPatientHeader({
 
   const renderHygieneContent = () => {
     // Calculate months since last scaling
-    const monthsSinceScaling = lastScalingDate
-      ? Math.floor((new Date().getTime() - lastScalingDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
+    const monthsSinceScaling = effectiveScalingDate
+      ? Math.floor((new Date().getTime() - effectiveScalingDate.getTime()) / (1000 * 60 * 60 * 24 * 30))
       : null;
 
     // Status: green (<4), yellow (4-6), red (>6), gray (never)
@@ -692,7 +696,7 @@ export function ExpandedPatientHeader({
           <View style={{ alignItems: 'center', marginBottom: 14 }}>
             <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>Last scaling</Text>
             <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
-              {lastScalingDate ? lastScalingDate.toLocaleDateString() : '—'}
+              {effectiveScalingDate ? effectiveScalingDate.toLocaleDateString() : '—'}
             </Text>
             {monthsSinceScaling !== null && (
               <Text style={{ fontSize: 13, color: status.color, fontWeight: '600', marginTop: 2 }}>
@@ -741,6 +745,7 @@ export function ExpandedPatientHeader({
             onPress={() => {
               setScalingDate(new Date());
               setShowScalingConfirm(true);
+              setShowDatePicker(false);
             }}
           >
             <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
@@ -826,6 +831,8 @@ export function ExpandedPatientHeader({
                         Alert.alert('Error', 'Failed to save scaling record');
                         return;
                       }
+                      // Update local state immediately
+                      setLocalScalingDate(scalingDate);
                       Alert.alert('Success', `Scaling recorded for ${scalingDate.toLocaleDateString()}`);
                     } catch (err) {
                       Alert.alert('Error', 'Unexpected error');
