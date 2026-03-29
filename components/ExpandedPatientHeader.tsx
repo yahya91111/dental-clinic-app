@@ -152,7 +152,7 @@ export function ExpandedPatientHeader({
   const iconBg = 'rgba(255, 255, 255, 0.6)';
   const icons = [
     { id: 'dental', label: 'Treatment', icon: 'tooth', iconType: 'material', color: '#2563EB', bgColor: iconBg, badge: totalTreatmentCount },
-    { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#EA580C', bgColor: iconBg, badge: patientReferrals?.filter(r => r.status !== 'given').length || 0 },
+    { id: 'referrals', label: 'Referrals', icon: 'arrow-redo', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: patientReferrals?.filter(r => r.status !== 'given').length || 0 },
     { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: hygieneIconColor, bgColor: iconBg, badge: 0 },
     { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: notesCount, badgeColor: hasUnreadNotes ? '#EF4444' : 'rgba(107, 114, 128, 0.6)' },
     { id: 'consent', label: 'Consent', icon: consentSigned ? 'checkmark-circle' : 'close-circle', iconType: 'ionicon', color: consentSigned ? '#059669' : '#9CA3AF', bgColor: iconBg, badge: 0 },
