@@ -488,26 +488,6 @@ export default function PatientProfileScreen({
 
               {/* Header Content */}
               <View style={styles.glassHeaderContent}>
-                {/* Menu Button - Left (same design as add button) */}
-                {selectedPatient ? (
-                  <TouchableOpacity
-                    style={styles.addPatientIconButton}
-                    activeOpacity={0.7}
-                    onPress={() => setShowMenu(true)}
-                  >
-                    <View style={styles.addPatientIconContainer}>
-                      <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
-                    </View>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={{ width: 40 }} />
-                )}
-
-                {/* Info */}
-                <View style={[styles.glassHeaderInfo, { flex: 1 }]}>
-                  <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
-                </View>
-
                 {/* Add Patient Icon Button */}
                 <TouchableOpacity
                   style={styles.addPatientIconButton}
@@ -518,6 +498,29 @@ export default function PatientProfileScreen({
                     <Ionicons name="person-add" size={24} color="#FFFFFF" />
                   </View>
                 </TouchableOpacity>
+
+                {/* Info */}
+                <View style={[styles.glassHeaderInfo, { flex: 1 }]}>
+                  <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
+                </View>
+
+                {/* Menu Button - Left side (same design as add button) */}
+                {selectedPatient && (
+                  <TouchableOpacity
+                    style={{
+                      position: 'absolute',
+                      left: 20,
+                      top: '50%',
+                      marginTop: -35,
+                    }}
+                    activeOpacity={0.7}
+                    onPress={() => setShowMenu(true)}
+                  >
+                    <View style={styles.addPatientIconContainer}>
+                      <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+                    </View>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
