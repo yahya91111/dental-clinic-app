@@ -240,11 +240,12 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
 
   // Search permanent patient by file number
   const handleFileNumberSearch = async (fileNumber: string) => {
-    if (fileNumber.length === 4 && user?.clinicId) {
+    const clinicId = selectedClinicId || userClinicId;
+    if (fileNumber.length === 4 && clinicId) {
       try {
         const { data, error } = await searchPermanentPatientsByFileNumber(
           fileNumber,
-          user.clinicId.toString()
+          clinicId.toString()
         );
 
         if (error) {
@@ -284,11 +285,12 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
 
   const handlePatientNameSearch = async (name: string) => {
     // Only search if name has at least 3 characters
-    if (name.length >= 3 && user?.clinicId) {
+    const clinicId = selectedClinicId || userClinicId;
+    if (name.length >= 3 && clinicId) {
       try {
         const { data, error } = await searchPermanentPatients(
           name,
-          user.clinicId.toString()
+          clinicId.toString()
         );
 
         if (error) {
