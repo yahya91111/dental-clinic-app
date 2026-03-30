@@ -20,7 +20,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 50,
+    paddingTop: 65,
     paddingBottom: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderBottomWidth: 1,

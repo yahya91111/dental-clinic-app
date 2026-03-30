@@ -3,22 +3,32 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
+  Text,
+  TextInput,
+  TouchableOpacity,
   StatusBar,
   Animated,
   ScrollView,
   RefreshControl,
+  Modal,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
   LogBox,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../AuthContext';
 import type { ToothCondition } from '../../types';
+import { getGeneralNotes, createGeneralNote, deleteGeneralNote } from '../../lib/database';
 
 // Import helpers and components from extracted files
 import { ToothSurfaceConditions } from './dentalHelpers';
 import { ConditionMenu } from './DentalChartComponents';
 import { DepartmentModal, ReferralsState, ReferralStatusState } from './DepartmentModal';
-import { ToothDetailsModal, ToothRecord, ToothNote } from './ToothDetailsModal';
+// Shared ToothDetailsModal (used by both DentalChart and Timeline)
+import ToothDetailsModal from '../../components/ToothDetailsModal';
 import { useToothAnimations } from './useToothAnimations';
 import { TeethGrid } from './TeethGrid';
 import { ReferralContainer } from './ReferralContainer';
@@ -26,6 +36,7 @@ import { TreatmentRecordContainer } from './TreatmentRecordContainer';
 import { PlanningRecordContainer } from './PlanningRecordContainer';
 import { OralHygieneContainer } from './OralHygieneContainer';
 import { loadPatientDentalData as loadDentalDataFromDB } from './loadDentalData';
+import { ToothRecord } from './planningHandlers';
 import {
   handlePlanningSubmit as submitPlanning,
   handlePlanningCancel as cancelPlanning,
@@ -81,19 +92,6 @@ export default function DentalChartScreen({
   const [showToothDetailsModal, setShowToothDetailsModal] = useState(false); // لعرض تفاصيل السن في Edit Mode
   const [isViewModeActive, setIsViewModeActive] = useState(false); // لتتبع حالة View Mode
   const [selectedToothForDetails, setSelectedToothForDetails] = useState<number | null>(null); // السن المحدد للتفاصيل
-  const [showSurfaceOptions, setShowSurfaceOptions] = useState(false); // لعرض خيارات الأسطح
-  const [showTreatmentOptions, setShowTreatmentOptions] = useState(false); // لعرض خيارات العلاج
-  const [showDetailsOptions, setShowDetailsOptions] = useState(false); // لعرض خيارات التفاصيل
-  const [showReferralOptions, setShowReferralOptions] = useState(false); // لعرض خيارات التحويل
-  const [hasModalChanges, setHasModalChanges] = useState(false); // لتتبع التغييرات في المودال
-  const [isEditMode, setIsEditMode] = useState(false); // وضع التعديل
-  const [showNotesSection, setShowNotesSection] = useState(false); // لعرض قسم الملاحظات
-  const [showDetailsSection, setShowDetailsSection] = useState(true); // لعرض قسم البنود (Surfaces, Treatment, Details)
-  const [showRecordsSection, setShowRecordsSection] = useState(false); // لعرض قسم السجلات
-  const [showReferralSection, setShowReferralSection] = useState(false); // لعرض قسم التحويلات
-  const [recordsType, setRecordsType] = useState<'editing' | 'planning'>('editing'); // نوع السجلات المعروضة
-  const [currentNote, setCurrentNote] = useState(''); // للملاحظة الحالية
-  const [unreadNotes, setUnreadNotes] = useState<Record<number | string, number>>({}); // عدد الملاحظات غير المقروءة لكل سن
 
   // Referral state
   const [referrals, setReferrals] = useState<ReferralsState>({
@@ -144,6 +142,11 @@ export default function DentalChartScreen({
   const oralHygieneExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
   const [scalingRecords, setScalingRecords] = useState<Array<{ id: string; timestamp: string; doctorName: string; timestampNum: number }>>([]);
 
+  // General Notes state
+  const [showGeneralNotesModal, setShowGeneralNotesModal] = useState(false);
+  const [generalNotes, setGeneralNotes] = useState<any[]>([]);
+  const [newGeneralNote, setNewGeneralNote] = useState('');
+
   // Total Treatment Record state
   const [isTreatmentRecordExpanded, setIsTreatmentRecordExpanded] = useState(false); // لتتبع حالة توسع Total Treatment Record
   const treatmentRecordExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
@@ -152,23 +155,10 @@ export default function DentalChartScreen({
   const [isPlanningRecordExpanded, setIsPlanningRecordExpanded] = useState(false); // لتتبع حالة توسع Total Planning Record
   const planningRecordExpandAnim = useRef(new Animated.Value(0)).current; // أنيميشن التوسع
 
-  // حفظ القيم الأصلية قبل التعديل
-  const [originalValues, setOriginalValues] = useState<{
-    treatment?: string;
-    details?: string;
-    surfaces?: string[];
-  }>({});
-
-  // Ref لتعطيل Planning Record عند العمل من Tooth Details Modal
-  const skipPlanningRecordRef = useRef(false);
-
   // بيانات الأسنان المحفوظة
-  const [selectedTreatments, setSelectedTreatments] = useState<Record<number | string, string>>({});
-  const [selectedDetails, setSelectedDetails] = useState<Record<number | string, string>>({});
   const [selectedReferralFor, setSelectedReferralFor] = useState<Record<number | string, string[]>>({});  // Changed to array for multiple referrals
   const [selectedSurfaces, setSelectedSurfaces] = useState<Record<number | string, string[]>>({});
   const [openReferralMenu, setOpenReferralMenu] = useState<string | null>(null); // Track which referral card menu is open
-  const [toothNotes, setToothNotes] = useState<Record<number | string, ToothNote[]>>({});
   const [toothRecords, setToothRecords] = useState<Record<number | string, ToothRecord[]>>({});
 
   // قائمة عامة لكل planning records بترتيب الإضافة الفعلي
@@ -209,6 +199,38 @@ export default function DentalChartScreen({
       useNativeDriver: false,
     }).start();
   }, [isOralHygieneExpanded]);
+
+  // Load general notes
+  const loadGeneralNotes = useCallback(async () => {
+    if (!permanentPatientId) return;
+    const { data } = await getGeneralNotes(permanentPatientId);
+    if (data) setGeneralNotes(data);
+  }, [permanentPatientId]);
+
+  useEffect(() => {
+    loadGeneralNotes();
+  }, [loadGeneralNotes]);
+
+  const handleAddGeneralNote = async () => {
+    if (!newGeneralNote.trim() || !permanentPatientId) return;
+    const doctorName = user?.name || user?.email || 'Doctor';
+    const { error } = await createGeneralNote(permanentPatientId, newGeneralNote.trim(), doctorName);
+    if (error) {
+      Alert.alert('Error', 'Failed to save note');
+      return;
+    }
+    setNewGeneralNote('');
+    loadGeneralNotes();
+  };
+
+  const handleDeleteGeneralNote = async (noteId: string) => {
+    const { error } = await deleteGeneralNote(noteId);
+    if (error) {
+      Alert.alert('Error', 'Failed to delete note');
+      return;
+    }
+    loadGeneralNotes();
+  };
 
   // دالة للنقر على حاوية Oral Hygiene
   const handleOralHygienePress = () => {
@@ -264,7 +286,6 @@ export default function DentalChartScreen({
         });
         return updated;
       });
-      setToothNotes(data.toothNotes);
       setAllPlanningRecordsGlobal(data.allPlanningRecordsGlobal);
       setSelectedReferralFor(prev => ({ ...prev, ...data.selectedReferralFor }));
       setReferrals(prev => ({ ...prev, ...data.referrals }));
@@ -330,27 +351,13 @@ export default function DentalChartScreen({
       selectedTooth,
       isClosing,
       isEditModeActive,
-      selectedTreatments,
-      selectedDetails,
-      selectedSurfaces,
       toothAnims,
       setSelectedTooth,
       setSelectedSurface,
       setShowConditionMenu,
       setIsClosing,
       setSelectedToothForDetails,
-      setOriginalValues,
       setShowToothDetailsModal,
-      setHasModalChanges,
-      setIsEditMode,
-      setShowNotesSection,
-      setShowDetailsSection,
-      setShowRecordsSection,
-      setRecordsType,
-      setCurrentNote,
-      setSelectedTreatments,
-      setSelectedDetails,
-      setSelectedReferralFor,
     });
   };
 
@@ -387,7 +394,6 @@ export default function DentalChartScreen({
       setToothConditions,
       setPendingPlanningRecords,
       setToothRecords,
-      setHasModalChanges,
       setShowConditionMenu,
       setSelectedTooth,
       setSelectedSurface,
@@ -442,6 +448,8 @@ export default function DentalChartScreen({
             pendingPlanningRecordsCount={pendingPlanningRecords.length}
             onPlanningCancel={handlePlanningCancel}
             onPlanningSubmit={handlePlanningSubmit}
+            onGeneralNotesPress={() => setShowGeneralNotesModal(true)}
+            generalNotesCount={generalNotes.length}
           />
 
           {/* Content */}
@@ -604,69 +612,14 @@ export default function DentalChartScreen({
           selectedTooth={selectedTooth}
         />
 
-        {/* Tooth Details Modal - Edit Mode */}
+        {/* Tooth Details Modal - Shared Component (Edit Mode) */}
         <ToothDetailsModal
           visible={showToothDetailsModal}
-          selectedToothForDetails={selectedToothForDetails}
-          toothConditions={toothConditions}
-          selectedTreatments={selectedTreatments}
-          selectedDetails={selectedDetails}
-          selectedSurfaces={selectedSurfaces}
-          originalValues={originalValues}
-          hasModalChanges={hasModalChanges}
-          showNotesSection={showNotesSection}
-          showReferralSection={showReferralSection}
-          showDetailsSection={showDetailsSection}
-          showRecordsSection={showRecordsSection}
-          isEditMode={isEditMode}
-          currentNote={currentNote}
-          showSurfaceOptions={showSurfaceOptions}
-          showTreatmentOptions={showTreatmentOptions}
-          showDetailsOptions={showDetailsOptions}
-          showReferralOptions={showReferralOptions}
-          recordsType={recordsType}
-          unreadNotes={unreadNotes}
-          toothNotes={toothNotes}
-          toothRecords={toothRecords}
-          selectedReferralFor={selectedReferralFor}
-          referrals={referrals}
-          toothBorderColors={toothBorderColors}
-          permanentPatientId={permanentPatientId}
-          userName={user?.name}
-          skipPlanningRecordRef={skipPlanningRecordRef}
-          setSelectedTreatments={setSelectedTreatments}
-          setSelectedDetails={setSelectedDetails}
-          setSelectedSurfaces={setSelectedSurfaces}
-          setOriginalValues={setOriginalValues}
-          setHasModalChanges={setHasModalChanges}
-          setShowNotesSection={setShowNotesSection}
-          setShowReferralSection={setShowReferralSection}
-          setShowDetailsSection={setShowDetailsSection}
-          setShowRecordsSection={setShowRecordsSection}
-          setIsEditMode={setIsEditMode}
-          setCurrentNote={setCurrentNote}
-          setShowSurfaceOptions={setShowSurfaceOptions}
-          setShowTreatmentOptions={setShowTreatmentOptions}
-          setShowDetailsOptions={setShowDetailsOptions}
-          setShowReferralOptions={setShowReferralOptions}
-          setRecordsType={setRecordsType}
-          setUnreadNotes={setUnreadNotes}
-          setToothNotes={setToothNotes}
-          setToothRecords={setToothRecords}
-          setSelectedReferralFor={setSelectedReferralFor}
-          setReferrals={setReferrals}
-          setReferralStatus={setReferralStatus}
-          setToothBorderColors={setToothBorderColors}
-          setToothConditions={setToothConditions}
-          onClose={() => {
-            setShowToothDetailsModal(false);
-            setHasModalChanges(false);
-            setShowNotesSection(false);
-            setShowReferralSection(false);
-            setIsEditMode(false);
-            setCurrentNote('');
-            setOriginalValues({});
-          }}
+          onClose={() => setShowToothDetailsModal(false)}
+          permanentPatientId={permanentPatientId || ''}
+          toothNumber={selectedToothForDetails || 1}
+          currentDoctorName={user?.name || 'Dr. Unknown'}
+          onToothDataUpdated={loadPatientDentalData}
         />
 
         {/* Department Selection Modal */}
@@ -695,6 +648,119 @@ export default function DentalChartScreen({
           loadPatientDentalData={loadPatientDentalData}
         />
       </View>
+
+      {/* General Notes Modal */}
+      <Modal
+        visible={showGeneralNotesModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowGeneralNotesModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={{
+            backgroundColor: '#F0F4F8',
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            maxHeight: '80%',
+            padding: 20,
+          }}>
+            {/* Header */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 16,
+            }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A' }}>General Notes</Text>
+              <TouchableOpacity onPress={() => setShowGeneralNotesModal(false)}>
+                <Ionicons name="close" size={24} color="#1E3A8A" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Input */}
+            <View style={{
+              flexDirection: 'row',
+              gap: 10,
+              marginBottom: 16,
+            }}>
+              <TextInput
+                style={{
+                  flex: 1,
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  padding: 12,
+                  fontSize: 15,
+                  color: '#1E3A8A',
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(37, 99, 235, 0.3)',
+                  minHeight: 45,
+                }}
+                placeholder="Write a note..."
+                placeholderTextColor="#9CA3AF"
+                value={newGeneralNote}
+                onChangeText={setNewGeneralNote}
+                multiline
+              />
+              <TouchableOpacity
+                style={{
+                  backgroundColor: newGeneralNote.trim() ? '#2563EB' : '#D1D5DB',
+                  borderRadius: 12,
+                  width: 45,
+                  height: 45,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={handleAddGeneralNote}
+                disabled={!newGeneralNote.trim()}
+              >
+                <Ionicons name="send" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Notes List */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {generalNotes.length > 0 ? (
+                <View style={{ gap: 10 }}>
+                  {generalNotes.map((note) => (
+                    <View key={note.id} style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 14,
+                      padding: 14,
+                      borderWidth: 1.5,
+                      borderColor: 'rgba(37, 99, 235, 0.15)',
+                    }}>
+                      <Text style={{ fontSize: 14, color: '#1E3A8A', lineHeight: 20 }}>{note.note}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Ionicons name="person" size={13} color="#6B7280" />
+                          <Text style={{ fontSize: 12, color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
+                          <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                            {new Date(note.created_at).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteGeneralNote(note.id)}
+                          style={{ padding: 4 }}
+                        >
+                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={{ alignItems: 'center', padding: 30 }}>
+                  <Ionicons name="document-text-outline" size={48} color="#D1D5DB" />
+                  <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 15 }}>No general notes yet</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
     </View>
   );

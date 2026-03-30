@@ -14,6 +14,8 @@ interface HeaderAndPlanningButtonsProps {
   pendingPlanningRecordsCount: number;
   onPlanningCancel: () => void;
   onPlanningSubmit: () => void;
+  onGeneralNotesPress?: () => void;
+  generalNotesCount?: number;
 }
 
 export function HeaderAndPlanningButtons({
@@ -22,6 +24,8 @@ export function HeaderAndPlanningButtons({
   pendingPlanningRecordsCount,
   onPlanningCancel,
   onPlanningSubmit,
+  onGeneralNotesPress,
+  generalNotesCount = 0,
 }: HeaderAndPlanningButtonsProps) {
   return (
     <>
@@ -33,7 +37,39 @@ export function HeaderAndPlanningButtons({
 
         <Text style={styles.headerTitle}>Dental Chart</Text>
 
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          onPress={onGeneralNotesPress}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 12,
+            backgroundColor: 'transparent',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 2,
+            borderColor: 'rgba(255, 255, 255, 0.6)',
+          }}
+        >
+          <Ionicons name="document-text" size={26} color="#93C5FD" />
+          {generalNotesCount > 0 && (
+            <View style={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              backgroundColor: '#FACC15',
+              borderRadius: 10,
+              minWidth: 20,
+              height: 20,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingHorizontal: 4,
+              borderWidth: 2,
+              borderColor: '#FFFFFF',
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#1E3A8A' }}>{generalNotesCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Planning Submit/Cancel Buttons - Floating */}

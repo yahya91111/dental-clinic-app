@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { updateReferralStatus, createScalingRecord, getScalingRecords } from '../lib/database';
+import { updateReferralStatus, createScalingRecord, getScalingRecords, getGeneralNotes, createGeneralNote, deleteGeneralNote } from '../lib/database';
 
 // ═══════════════════════════════════════════════════════════════
 // Expanded Patient Header Component - iPhone Style Grid
@@ -87,9 +87,14 @@ interface ExpandedPatientHeaderProps {
   onToothEditPress: (patientId: string, toothNumber: number) => void;
   // Patient Name Press
   onPatientNamePress?: (patientId: string, fileNumber: string) => void;
+  // General Notes
+  generalNotes?: any[];
+  onLoadGeneralNotes?: () => void;
+  onAddGeneralNote?: (note: string) => void;
+  onDeleteGeneralNote?: (noteId: string) => void;
 }
 
-type SectionType = 'dental' | 'referrals' | 'hygiene' | 'notes' | 'consent' | 'chart' | null;
+type SectionType = 'dental' | 'referrals' | 'hygiene' | 'notes' | 'consent' | 'general_notes' | null;
 
 export function ExpandedPatientHeader({
   patient,
@@ -111,9 +116,31 @@ export function ExpandedPatientHeader({
   onTogglePermanentExpansion,
   onToothEditPress,
   onPatientNamePress,
+  generalNotes = [],
+  onLoadGeneralNotes,
+  onAddGeneralNote,
+  onDeleteGeneralNote,
 }: ExpandedPatientHeaderProps) {
   const [expandedSection, setExpandedSection] = useState<SectionType>(null);
   const [seenNotesCount, setSeenNotesCount] = useState<number | null>(null);
+  const [seenGeneralNotesCount, setSeenGeneralNotesCount] = useState<number | null>(null);
+  const [newGeneralNoteText, setNewGeneralNoteText] = useState('');
+  const [localGeneralNotes, setLocalGeneralNotes] = useState<any[]>([]);
+
+  // Load general notes internally if not provided via props
+  const loadLocalGeneralNotes = useCallback(async () => {
+    if (!patient.permanent_patient_id) return;
+    const { data } = await getGeneralNotes(patient.permanent_patient_id);
+    if (data) setLocalGeneralNotes(data);
+  }, [patient.permanent_patient_id]);
+
+  useEffect(() => {
+    if (!generalNotes || generalNotes.length === 0) {
+      loadLocalGeneralNotes();
+    }
+  }, [loadLocalGeneralNotes]);
+
+  const effectiveGeneralNotes = (generalNotes && generalNotes.length > 0) ? generalNotes : localGeneralNotes;
 
   // Load seen notes count from AsyncStorage
   const storageKey = `notes_seen_${patient.permanent_patient_id || patient.id}`;
@@ -126,6 +153,16 @@ export function ExpandedPatientHeader({
   // Notes badge logic: red if new unread notes, transparent if all read
   const notesCount = toothNotes?.length || 0;
   const hasUnreadNotes = seenNotesCount === null ? false : notesCount > seenNotesCount;
+
+  // General Notes badge logic
+  const generalNotesStorageKey = `gnotes_seen_${patient.permanent_patient_id || patient.id}`;
+  useEffect(() => {
+    AsyncStorage.getItem(generalNotesStorageKey).then((val) => {
+      setSeenGeneralNotesCount(val ? parseInt(val, 10) : 0);
+    });
+  }, [generalNotesStorageKey]);
+  const generalNotesCount = effectiveGeneralNotes?.length || 0;
+  const hasUnreadGeneralNotes = seenGeneralNotesCount === null ? false : generalNotesCount > seenGeneralNotesCount;
 
   // Consent state
   const consentSigned = patientConsents?.length > 0 && patientConsents.every(c => c.signed);
@@ -156,13 +193,14 @@ export function ExpandedPatientHeader({
     { id: 'hygiene', label: 'Hygiene', icon: 'sparkles', iconType: 'ionicon', color: hygieneIconColor, bgColor: iconBg, badge: 0 },
     { id: 'notes', label: 'Notes', icon: 'document-text', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: notesCount, badgeColor: hasUnreadNotes ? '#EF4444' : 'rgba(107, 114, 128, 0.6)' },
     { id: 'consent', label: 'Consent', icon: consentSigned ? 'checkmark-circle' : 'close-circle', iconType: 'ionicon', color: consentSigned ? '#059669' : '#9CA3AF', bgColor: iconBg, badge: 0 },
-    { id: 'general_notes', label: 'G. Notes', icon: 'document-text', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: 0 },
+    { id: 'general_notes', label: 'G. Notes', icon: 'document-text', iconType: 'ionicon', color: '#2563EB', bgColor: iconBg, badge: generalNotesCount, badgeColor: hasUnreadGeneralNotes ? '#EF4444' : 'rgba(107, 114, 128, 0.6)' },
   ];
 
   const handleIconPress = (iconId: string) => {
     if (iconId === 'general_notes') {
-      // TODO: implement general notes
-      return;
+      onLoadGeneralNotes?.();
+      setSeenGeneralNotesCount(generalNotesCount);
+      AsyncStorage.setItem(generalNotesStorageKey, generalNotesCount.toString());
     }
     if (iconId === 'consent') {
       if (!consentSigned) {
@@ -736,6 +774,106 @@ export function ExpandedPatientHeader({
     </ScrollView>
   );
 
+  // Render General Notes Content
+  const renderGeneralNotesContent = () => (
+    <View style={{ flex: 1, padding: 16 }}>
+      {/* Input */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+        <TextInput
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(255, 255, 255, 0.6)',
+            borderRadius: 12,
+            padding: 12,
+            fontSize: 14,
+            color: '#1E3A8A',
+            borderWidth: 1.5,
+            borderColor: 'rgba(255, 255, 255, 0.7)',
+            minHeight: 44,
+          }}
+          placeholder="Write a general note..."
+          placeholderTextColor="#9CA3AF"
+          value={newGeneralNoteText}
+          onChangeText={setNewGeneralNoteText}
+          multiline
+        />
+        <TouchableOpacity
+          style={{
+            backgroundColor: newGeneralNoteText.trim() ? '#2563EB' : 'rgba(255, 255, 255, 0.3)',
+            borderRadius: 12,
+            width: 44,
+            height: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onPress={async () => {
+            if (newGeneralNoteText.trim() && patient.permanent_patient_id) {
+              if (onAddGeneralNote) {
+                onAddGeneralNote(newGeneralNoteText.trim());
+              } else {
+                await createGeneralNote(patient.permanent_patient_id, newGeneralNoteText.trim(), 'Doctor');
+                loadLocalGeneralNotes();
+              }
+              setNewGeneralNoteText('');
+              setSeenGeneralNotesCount(generalNotesCount + 1);
+              AsyncStorage.setItem(generalNotesStorageKey, (generalNotesCount + 1).toString());
+            }
+          }}
+          disabled={!newGeneralNoteText.trim()}
+        >
+          <Ionicons name="send" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Notes List */}
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {effectiveGeneralNotes.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            {effectiveGeneralNotes.map((note: any) => (
+              <View key={note.id} style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.6)',
+                borderRadius: 14,
+                padding: 14,
+                borderWidth: 2,
+                borderColor: 'rgba(255, 255, 255, 0.7)',
+              }}>
+                <Text style={{ fontSize: 14, color: '#1E3A8A', lineHeight: 20 }}>{note.note}</Text>
+                <View style={{ height: 1, backgroundColor: 'rgba(37, 99, 235, 0.15)', marginVertical: 10 }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="person" size={13} color="#6B7280" />
+                    <Text style={{ fontSize: 12, color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
+                    <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                      {new Date(note.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      if (onDeleteGeneralNote) {
+                        onDeleteGeneralNote(note.id);
+                      } else {
+                        await deleteGeneralNote(note.id);
+                        loadLocalGeneralNotes();
+                      }
+                    }}
+                    style={{ padding: 4 }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={{ alignItems: 'center', padding: 30 }}>
+            <Ionicons name="document-text-outline" size={48} color="rgba(255, 255, 255, 0.5)" />
+            <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: 10, fontSize: 15 }}>No general notes yet</Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+
   // Render Section Content with Back Button
   const renderSectionContent = () => {
     let content = null;
@@ -757,6 +895,10 @@ export function ExpandedPatientHeader({
       case 'notes':
         content = renderNotesContent();
         sectionTitle = 'Notes';
+        break;
+      case 'general_notes':
+        content = renderGeneralNotesContent();
+        sectionTitle = 'General Notes';
         break;
       default:
         return null;

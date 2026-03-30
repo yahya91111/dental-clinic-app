@@ -1240,3 +1240,66 @@ export async function getNextQueueNumber(
     return { data: null, error: error as Error };
   }
 }
+
+// ---------------------------------------------------------------
+// General Notes
+// ---------------------------------------------------------------
+
+export async function getGeneralNotes(
+  permanentPatientId: string
+): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('general_notes')
+      .select('*')
+      .eq('permanent_patient_id', permanentPatientId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error getting general notes:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function createGeneralNote(
+  permanentPatientId: string,
+  note: string,
+  doctorName: string
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('general_notes')
+      .insert({
+        permanent_patient_id: permanentPatientId,
+        note,
+        doctor_name: doctorName,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error creating general note:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function deleteGeneralNote(
+  noteId: string
+): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('general_notes')
+      .delete()
+      .eq('id', noteId);
+
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error deleting general note:', error);
+    return { data: null, error: error as Error };
+  }
+}
