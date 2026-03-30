@@ -488,14 +488,22 @@ export default function PatientProfileScreen({
 
               {/* Header Content */}
               <View style={styles.glassHeaderContent}>
-                {/* Add Patient Icon Button */}
+                {/* Add Patient / Clear Patient Button */}
                 <TouchableOpacity
                   style={styles.addPatientIconButton}
                   activeOpacity={0.7}
-                  onPress={() => setIsAddPatientModalVisible(true)}
+                  onPress={() => {
+                    if (selectedPatient) {
+                      setSelectedPatient(null);
+                      setSearchResults([]);
+                      setSearchQuery('');
+                    } else {
+                      setIsAddPatientModalVisible(true);
+                    }
+                  }}
                 >
                   <View style={styles.addPatientIconContainer}>
-                    <Ionicons name="person-add" size={24} color="#FFFFFF" />
+                    <Ionicons name={selectedPatient ? "close" : "person-add"} size={selectedPatient ? 22 : 24} color="#FFFFFF" />
                   </View>
                 </TouchableOpacity>
 
@@ -511,7 +519,7 @@ export default function PatientProfileScreen({
                       position: 'absolute',
                       left: 20,
                       top: '50%',
-                      marginTop: -35,
+                      marginTop: -20,
                     }}
                     activeOpacity={0.7}
                     onPress={() => setShowMenu(true)}
@@ -991,7 +999,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 20,
     top: '50%',
-    marginTop: -35,
+    marginTop: -20,
   },
   addPatientIconContainer: {
     width: 48,
