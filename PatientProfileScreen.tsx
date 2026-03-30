@@ -41,6 +41,7 @@ interface PatientProfileScreenProps {
   initialPatientId?: string;
   initialFileNumber?: string;
   initialOpenDentalChart?: boolean;
+  clinicId?: string | number | null;
 }
 
 export default function PatientProfileScreen({
@@ -50,9 +51,11 @@ export default function PatientProfileScreen({
   onNavigateArchive,
   initialPatientId,
   initialFileNumber,
-  initialOpenDentalChart = false
+  initialOpenDentalChart = false,
+  clinicId: propClinicId,
 }: PatientProfileScreenProps) {
   const { user } = useAuth();
+  const effectiveClinicId = propClinicId || user?.clinicId;
   const [currentScreen, setCurrentScreen] = useState<'profile' | 'dentalChart'>(initialOpenDentalChart ? 'dentalChart' : 'profile');
 
   // Patients State
@@ -141,7 +144,7 @@ export default function PatientProfileScreen({
   // Search patients by file number OR name (intelligent search)
   useEffect(() => {
     const searchPatients = async () => {
-      if (!searchQuery.trim() || !user?.clinicId) {
+      if (!searchQuery.trim() || !effectiveClinicId) {
         setSearchResults([]);
         return;
       }
@@ -150,7 +153,7 @@ export default function PatientProfileScreen({
       try {
         const { data, error } = await searchPermanentPatients(
           searchQuery.trim(),
-          user.clinicId
+          effectiveClinicId.toString()
         );
 
         if (error) {
@@ -172,7 +175,7 @@ export default function PatientProfileScreen({
     // Debounce search
     const timeoutId = setTimeout(searchPatients, 300);
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, user?.clinicId]);
+  }, [searchQuery, effectiveClinicId]);
 
   // Load initial patient if provided
   useEffect(() => {
@@ -201,7 +204,7 @@ export default function PatientProfileScreen({
 
   // Add new patient to database
   const handleAddPatient = async () => {
-    if (!patientName.trim() || !fileNumber.trim() || !user?.clinicId) {
+    if (!patientName.trim() || !fileNumber.trim() || !effectiveClinicId) {
       Alert.alert('خطأ', 'الرجاء إدخال الاسم ورقم الملف');
       return;
     }
@@ -212,7 +215,7 @@ export default function PatientProfileScreen({
       const searchResult = await searchPermanentPatientByFileNumberAndName(
         fileNumber.trim(),
         patientName.trim(),
-        user.clinicId
+        effectiveClinicId.toString()
       );
 
       if (searchResult.data) {
@@ -232,7 +235,7 @@ export default function PatientProfileScreen({
         const { data, error } = await createPermanentPatient(
           fileNumber.trim(),
           patientName.trim(),
-          user.clinicId
+          effectiveClinicId.toString()
         );
 
         if (error) {

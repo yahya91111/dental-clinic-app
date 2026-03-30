@@ -599,6 +599,7 @@ export function AppContent() {
         initialPatientId={selectedPatientForProfile?.id}
         initialFileNumber={selectedPatientForProfile?.fileNumber}
         initialOpenDentalChart={selectedPatientForProfile !== null}
+        clinicId={selectedClinicId || userClinicId}
       />
     );
   }
