@@ -24,8 +24,13 @@ import {
   searchPermanentPatients,
   searchPermanentPatientByFileNumberAndName,
   createPermanentPatient,
-  getPermanentPatientById
+  getPermanentPatientById,
 } from './lib/database';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseKey);
 import { PermanentPatientDecrypted } from './types';
 
 interface PatientProfileScreenProps {
@@ -63,6 +68,67 @@ export default function PatientProfileScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+
+  // Menu & Edit State
+  const [showMenu, setShowMenu] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editFileNumber, setEditFileNumber] = useState('');
+
+  const handleEditPatient = async () => {
+    if (!selectedPatient || !editName.trim() || !editFileNumber.trim()) {
+      Alert.alert('Error', 'Please fill all fields');
+      return;
+    }
+    try {
+      const { encryptFileNumber, encryptPatientName } = require('./lib/encryption');
+      const { error } = await supabase
+        .from('permanent_patients')
+        .update({
+          name_encrypted: encryptPatientName(editName.trim()),
+          file_number_encrypted: encryptFileNumber(editFileNumber.trim()),
+        })
+        .eq('id', selectedPatient.id);
+      if (error) throw error;
+      // Refresh
+      const result = await getPermanentPatientById(selectedPatient.id);
+      if (result.data) setSelectedPatient(result.data);
+      setShowEditModal(false);
+      Alert.alert('Success', 'Patient updated');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update patient');
+    }
+  };
+
+  const handleDeletePatient = () => {
+    if (!selectedPatient) return;
+    Alert.alert(
+      'Delete Patient',
+      `Are you sure you want to permanently delete "${selectedPatient.name}"?\n\nThis will delete all dental records, notes, referrals, and scaling records.\n\nThis action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('permanent_patients')
+                .delete()
+                .eq('id', selectedPatient.id);
+              if (error) throw error;
+              setSelectedPatient(null);
+              setSearchResults([]);
+              setSearchQuery('');
+              Alert.alert('Deleted', 'Patient has been permanently deleted');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete patient');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Animated Blobs - Same as App.tsx
   const blob1Anim = useState(new Animated.Value(0))[0];
@@ -412,8 +478,26 @@ export default function PatientProfileScreen({
 
               {/* Header Content */}
               <View style={styles.glassHeaderContent}>
+                {/* Menu Button - Left */}
+                {selectedPatient && (
+                  <TouchableOpacity
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginRight: 10,
+                    }}
+                    onPress={() => setShowMenu(true)}
+                  >
+                    <Ionicons name="menu" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+
                 {/* Info */}
-                <View style={styles.glassHeaderInfo}>
+                <View style={[styles.glassHeaderInfo, { flex: 1 }]}>
                   <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
                   {selectedPatient && (
                     <>
@@ -650,6 +734,142 @@ export default function PatientProfileScreen({
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Patient Menu Modal */}
+      <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}
+          activeOpacity={1}
+          onPress={() => setShowMenu(false)}
+        >
+          <View style={{
+            backgroundColor: '#F0F4F8',
+            borderRadius: 20,
+            width: '75%',
+            padding: 8,
+          }}>
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                padding: 16,
+                borderRadius: 14,
+              }}
+              onPress={() => {
+                setShowMenu(false);
+                if (selectedPatient) {
+                  setEditName(selectedPatient.name);
+                  setEditFileNumber(selectedPatient.file_number);
+                  setShowEditModal(true);
+                }
+              }}
+            >
+              <Ionicons name="create-outline" size={22} color="#2563EB" />
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E3A8A' }}>Edit Patient</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginHorizontal: 12 }} />
+
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                padding: 16,
+                borderRadius: 14,
+              }}
+              onPress={() => {
+                setShowMenu(false);
+                handleDeletePatient();
+              }}
+            >
+              <Ionicons name="trash-outline" size={22} color="#EF4444" />
+              <Text style={{ fontSize: 16, fontWeight: '600', color: '#EF4444' }}>Delete Patient</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Edit Patient Modal */}
+      <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={{
+              backgroundColor: '#F0F4F8',
+              borderRadius: 20,
+              width: 320,
+              padding: 24,
+            }}>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A', marginBottom: 20, textAlign: 'center' }}>
+                Edit Patient
+              </Text>
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 6 }}>Patient Name</Text>
+              <TextInput
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  padding: 14,
+                  fontSize: 16,
+                  color: '#1E3A8A',
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(37, 99, 235, 0.2)',
+                  marginBottom: 16,
+                }}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Name"
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 6 }}>File Number</Text>
+              <TextInput
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  padding: 14,
+                  fontSize: 16,
+                  color: '#1E3A8A',
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(37, 99, 235, 0.2)',
+                  marginBottom: 24,
+                }}
+                value={editFileNumber}
+                onChangeText={setEditFileNumber}
+                placeholder="File Number"
+                keyboardType="number-pad"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    backgroundColor: 'rgba(0,0,0,0.06)',
+                    borderRadius: 12,
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => setShowEditModal(false)}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    backgroundColor: '#2563EB',
+                    borderRadius: 12,
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                  }}
+                  onPress={handleEditPatient}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     </View>
   );
