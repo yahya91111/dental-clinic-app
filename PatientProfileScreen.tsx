@@ -115,6 +115,13 @@ export default function PatientProfileScreen({
           style: 'destructive',
           onPress: async () => {
             try {
+              // Delete from timeline (patients table) first
+              await supabase
+                .from('patients')
+                .delete()
+                .eq('permanent_patient_id', selectedPatient.id);
+
+              // Delete permanent patient (cascades to dental records)
               const { error } = await supabase
                 .from('permanent_patients')
                 .delete()
@@ -481,45 +488,54 @@ export default function PatientProfileScreen({
 
               {/* Header Content */}
               <View style={styles.glassHeaderContent}>
-                {/* Menu Button - Left */}
-                {selectedPatient && (
+                {/* Title Row: Menu + Title + Add Button */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  {/* Menu Button - Left (circular) */}
+                  {selectedPatient ? (
+                    <TouchableOpacity
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      onPress={() => setShowMenu(true)}
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ width: 40 }} />
+                  )}
+
+                  {/* Title - Center */}
+                  <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
+
+                  {/* Add Patient Icon Button - Right */}
                   <TouchableOpacity
                     style={{
                       width: 40,
                       height: 40,
-                      borderRadius: 12,
+                      borderRadius: 20,
                       backgroundColor: 'rgba(255, 255, 255, 0.15)',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      marginRight: 10,
                     }}
-                    onPress={() => setShowMenu(true)}
+                    activeOpacity={0.7}
+                    onPress={() => setIsAddPatientModalVisible(true)}
                   >
-                    <Ionicons name="menu" size={22} color="#FFFFFF" />
+                    <Ionicons name="person-add" size={20} color="#FFFFFF" />
                   </TouchableOpacity>
-                )}
-
-                {/* Info */}
-                <View style={[styles.glassHeaderInfo, { flex: 1 }]}>
-                  <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
-                  {selectedPatient && (
-                    <>
-                      <Text style={styles.patientName} numberOfLines={1}>{selectedPatient.name}</Text>
-                      <Text style={styles.patientFileNumber}>File: {selectedPatient.file_number}</Text>
-                    </>
-                  )}
                 </View>
 
-                {/* Add Patient Icon Button */}
-                <TouchableOpacity
-                  style={styles.addPatientIconButton}
-                  activeOpacity={0.7}
-                  onPress={() => setIsAddPatientModalVisible(true)}
-                >
-                  <View style={styles.addPatientIconContainer}>
-                    <Ionicons name="person-add" size={24} color="#FFFFFF" />
+                {/* Patient Info Row - Below title */}
+                {selectedPatient && (
+                  <View style={{ alignItems: 'center', marginTop: 8 }}>
+                    <Text style={[styles.patientName, { textAlign: 'center' }]} numberOfLines={1}>{selectedPatient.name}</Text>
+                    <Text style={[styles.patientFileNumber, { textAlign: 'center' }]}>File: {selectedPatient.file_number}</Text>
                   </View>
-                </TouchableOpacity>
+                )}
               </View>
             </View>
 
