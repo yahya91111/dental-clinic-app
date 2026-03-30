@@ -488,20 +488,16 @@ export default function PatientProfileScreen({
 
               {/* Header Content */}
               <View style={styles.glassHeaderContent}>
-                {/* Menu Button - Left (circular) */}
+                {/* Menu Button - Left (same design as add button) */}
                 {selectedPatient ? (
                   <TouchableOpacity
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
+                    style={styles.addPatientIconButton}
+                    activeOpacity={0.7}
                     onPress={() => setShowMenu(true)}
                   >
-                    <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+                    <View style={styles.addPatientIconContainer}>
+                      <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+                    </View>
                   </TouchableOpacity>
                 ) : (
                   <View style={{ width: 40 }} />
@@ -608,10 +604,10 @@ export default function PatientProfileScreen({
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   alignItems: 'center',
                 }}>
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#FFFFFF' }} numberOfLines={1}>
+                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#8B5CF6' }} numberOfLines={1}>
                     {selectedPatient.name}
                   </Text>
-                  <Text style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', marginTop: 4, fontWeight: '600' }}>
+                  <Text style={{ fontSize: 14, color: '#A78BFA', marginTop: 4, fontWeight: '600' }}>
                     File: {selectedPatient.file_number}
                   </Text>
                 </View>
