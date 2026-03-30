@@ -488,31 +488,8 @@ export default function PatientProfileScreen({
 
               {/* Header Content */}
               <View style={styles.glassHeaderContent}>
-                {/* Title Row: Menu + Title + Add Button */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  {/* Menu Button - Left (circular) */}
-                  {selectedPatient ? (
-                    <TouchableOpacity
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 20,
-                        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      onPress={() => setShowMenu(true)}
-                    >
-                      <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={{ width: 40 }} />
-                  )}
-
-                  {/* Title - Center */}
-                  <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
-
-                  {/* Add Patient Icon Button - Right */}
+                {/* Menu Button - Left (circular) */}
+                {selectedPatient ? (
                   <TouchableOpacity
                     style={{
                       width: 40,
@@ -522,20 +499,29 @@ export default function PatientProfileScreen({
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
-                    activeOpacity={0.7}
-                    onPress={() => setIsAddPatientModalVisible(true)}
+                    onPress={() => setShowMenu(true)}
                   >
-                    <Ionicons name="person-add" size={20} color="#FFFFFF" />
+                    <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
                   </TouchableOpacity>
+                ) : (
+                  <View style={{ width: 40 }} />
+                )}
+
+                {/* Info */}
+                <View style={[styles.glassHeaderInfo, { flex: 1 }]}>
+                  <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>Patient Profile</Text>
                 </View>
 
-                {/* Patient Info Row - Below title */}
-                {selectedPatient && (
-                  <View style={{ alignItems: 'center', marginTop: 8 }}>
-                    <Text style={[styles.patientName, { textAlign: 'center' }]} numberOfLines={1}>{selectedPatient.name}</Text>
-                    <Text style={[styles.patientFileNumber, { textAlign: 'center' }]}>File: {selectedPatient.file_number}</Text>
+                {/* Add Patient Icon Button */}
+                <TouchableOpacity
+                  style={styles.addPatientIconButton}
+                  activeOpacity={0.7}
+                  onPress={() => setIsAddPatientModalVisible(true)}
+                >
+                  <View style={styles.addPatientIconContainer}>
+                    <Ionicons name="person-add" size={24} color="#FFFFFF" />
                   </View>
-                )}
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -609,6 +595,27 @@ export default function PatientProfileScreen({
               <View style={styles.glassDividerContainer}>
                 <View style={styles.glassDivider} />
               </View>
+
+              {/* Patient Info Card */}
+              {selectedPatient && (
+                <View style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                  borderRadius: 16,
+                  padding: 16,
+                  marginHorizontal: 4,
+                  marginBottom: 16,
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(255, 255, 255, 0.2)',
+                  alignItems: 'center',
+                }}>
+                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#FFFFFF' }} numberOfLines={1}>
+                    {selectedPatient.name}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.7)', marginTop: 4, fontWeight: '600' }}>
+                    File: {selectedPatient.file_number}
+                  </Text>
+                </View>
+              )}
 
               {/* 3D Floating Menu Buttons - Overwatch Style */}
               <View style={styles.menuButtonsContainer}>
