@@ -824,9 +824,12 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
               onPress: async () => {
                 try {
                   const pid = undoPatient.permanent_patient_id!;
+                  // وقت بداية الزيارة = registered_at أو created_at (timestamp) للكرت
                   const visitStart = undoPatient.registered_at
                     ? new Date(undoPatient.registered_at).toISOString()
-                    : new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+                    : undoPatient.timestamp
+                    ? new Date(undoPatient.timestamp).toISOString()
+                    : new Date().toISOString(); // fallback: الآن (لن يجد شيء)
 
                   // ══════════════════════════════════════════════
                   // 1. إرجاع العلاجات (editing_records + tooth_surface_conditions)
@@ -868,14 +871,20 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
                     if (planningData && planningData.length > 0) {
                       const CONDITION_MAP: Record<string, string> = {
                         'Caries': 'caries',
+                        'Broken/Inappropriate Filling': 'broken',
                         'Broken\\Inappropriate Filling': 'broken',
                         'Pulpectomy': 'pulpectomy',
                         'Follow-up': 'follow_up',
                         'Needs More Diagnosis': 'needs_diagnosis',
                         'Temporary Filling': 'filling_replacement',
+                        'Permanent Filling': 'permanent_filling',
                         'Fracture': 'fracture',
                         'Restoration to Replace': 'filling_replacement',
                         'Impacted': 'impacted',
+                        'Root Canal Treated': 'treated',
+                        'Direct Pulp Capping': 'direct_pulp_capping',
+                        'Indirect Pulp Capping': 'indirect_pulp_capping',
+                        'GI': 'gi',
                       };
                       const SURFACE_NAME_MAP: Record<string, string> = {
                         mesial: 'mesial', distal: 'distal',
@@ -907,6 +916,8 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
                               surface: s, condition: 'extraction',
                             }, { onConflict: 'permanent_patient_id,tooth_number,surface' });
                           }
+                        } else if (surfaces.some(s => s === 'Root Canal Treated')) {
+                          // RCT Done - border فقط، لا يحفظ ألوان أسطح (يتجاهل)
                         } else if (surfaces.some(s => s === 'Missing Tooth' || s === 'missing tooth')) {
                           for (const s of ALL_SURFACES) {
                             await supabase.from('tooth_surface_conditions').upsert({
@@ -939,13 +950,14 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
                   }
 
                   // ══════════════════════════════════════════════
-                  // 2. إرجاع التحويلات المعطاة إلى not_given
+                  // 2. إرجاع التحويلات التي تم تغييرها خلال هذه الزيارة فقط
                   // ══════════════════════════════════════════════
                   const { data: givenReferrals } = await supabase
                     .from('referrals')
                     .select('id')
                     .eq('permanent_patient_id', pid)
-                    .eq('status', 'given');
+                    .eq('status', 'given')
+                    .gte('timestamp', visitStart);
 
                   if (givenReferrals && givenReferrals.length > 0) {
                     await supabase
@@ -955,14 +967,13 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
                   }
 
                   // ══════════════════════════════════════════════
-                  // 3. حذف سجلات التنظيف من اليوم
+                  // 3. حذف سجلات التنظيف من هذه الزيارة فقط
                   // ══════════════════════════════════════════════
-                  const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
                   await supabase
                     .from('scaling_records')
                     .delete()
                     .eq('permanent_patient_id', pid)
-                    .gte('timestamp', todayStart);
+                    .gte('timestamp', visitStart);
 
                   // ══════════════════════════════════════════════
                   // 4. حذف السجلات الإحصائية
