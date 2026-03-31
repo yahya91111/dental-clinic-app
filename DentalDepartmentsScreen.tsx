@@ -529,39 +529,6 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
               style={styles.content}
               showsVerticalScrollIndicator={false}
             >
-              {/* Dental Departments Section */}
-              <View style={styles.sectionContainer}>
-                <Text style={styles.sectionTitle}>Medical Departments</Text>
-                <View style={styles.departmentsList}>
-                  {dentalDepartments.map((dept, index) => (
-                    <TouchableOpacity
-                      key={dept.key}
-                      style={styles.departmentCard}
-                      onPress={() => handleDepartmentPress(dept)}
-                      activeOpacity={0.7}
-                    >
-                      <LinearGradient
-                        colors={dept.color}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.departmentGradient}
-                      >
-                        {/* Count Badge */}
-                        {departmentCounts[dept.key] > 0 && (
-                          <View style={styles.countBadge}>
-                            <Text style={styles.countBadgeText}>{departmentCounts[dept.key]}</Text>
-                          </View>
-                        )}
-                        <View style={styles.departmentIconContainer}>
-                          <Ionicons name={dept.icon as any} size={24} color="#4A5568" />
-                        </View>
-                        <Text style={styles.departmentName}>{dept.label}</Text>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
               {/* Clinics List */}
               <View style={styles.sectionContainer}>
                 <Text style={styles.sectionTitle}>Dental Centers</Text>
