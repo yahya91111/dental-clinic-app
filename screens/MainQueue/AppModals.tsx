@@ -601,8 +601,7 @@ export function AppModals(props: AppModalsProps) {
                     { action: 'special_needs', icon: 'accessibility', color: '#8B5CF6', label: 'Special' },
                     ...(!props.patients.find(p => p.id === props.showMenuForPatient)?.permanent_patient_id
                       ? [{ action: 'new_profile', icon: 'person-add', color: '#3B82F6', label: 'Profile' }]
-                      : []),
-                    { action: 'undo', icon: 'arrow-undo', color: '#D97706', label: 'Undo' },
+                      : [{ action: 'undo', icon: 'arrow-undo', color: '#D97706', label: 'Undo' }]),
                   ].map((item) => (
                     <TouchableOpacity
                       key={item.action}
@@ -804,10 +803,15 @@ export function AppModals(props: AppModalsProps) {
 
                 <TextInput
                   style={styles.input}
-                  placeholder="File Number"
+                  placeholder="File Number (max 4 digits)"
                   value={props.convertFileNumber}
-                  onChangeText={props.setConvertFileNumber}
-                  keyboardType="default"
+                  onChangeText={(text) => {
+                    // الحد الأقصى 4 أرقام فقط
+                    const numbersOnly = text.replace(/[^0-9]/g, '').slice(0, 4);
+                    props.setConvertFileNumber(numbersOnly);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={4}
                   autoFocus
                 />
 

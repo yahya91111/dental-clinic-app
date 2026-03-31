@@ -768,22 +768,14 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
         }
         break;
       case 'complete':
-        // Check if patient is already completed
         const targetPatient = patients.find(p => p.id === patientId);
 
-        if (targetPatient?.status === 'complete') {
-          // Undo treatment done - revert to normal status
+        if (targetPatient?.status === 'complete' && targetPatient?.permanent_patient_id) {
+          // المريض الدائم المكتمل - استخدم زر Undo
+          Alert.alert('Already Done', 'Use the Undo button to revert changes');
+        } else if (targetPatient?.status === 'complete' && !targetPatient?.permanent_patient_id) {
+          // المريض المؤقت المكتمل - السماح بالتراجع مباشرة
           try {
-            // حذف السجلات الإحصائية للمريض الدائم
-            if (targetPatient.permanent_patient_id) {
-              await supabase
-                .from('patients')
-                .delete()
-                .eq('permanent_patient_id', targetPatient.permanent_patient_id)
-                .eq('queue_number', -1)
-                .is('archive_date', null);
-            }
-
             await supabase
               .from('patients')
               .update({
@@ -793,14 +785,16 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
                 assigned_by_doctor_name: null
               })
               .eq('id', patientId);
-
             await loadPatients();
-            Alert.alert('Done', 'Treatment unmarked as complete');
           } catch (error: any) {
             Alert.alert('Error', error.message);
           }
+        } else if (targetPatient?.permanent_patient_id) {
+          // المريض الدائم: Done by Me تلقائياً بدون اختيار طبيب
+          setTreatmentDonePatientId(patientId);
+          await handleTreatmentDoneByDoctor(null, null, patientId);
         } else {
-          // Open treatment done modal
+          // المريض العادي: فتح نافذة اختيار الطبيب
           setTreatmentDonePatientId(patientId);
           loadClinicDoctors();
           setShowTreatmentDoneModal(true);
@@ -810,6 +804,12 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
         const undoPatient = patients.find(p => p.id === patientId);
         if (!undoPatient?.permanent_patient_id) {
           Alert.alert('Undo', 'Undo is only available for permanent patients');
+          break;
+        }
+
+        // فقط الطبيب الذي عمل Done يستطيع عمل Undo
+        if (undoPatient.doctor_name && undoPatient.doctor_name !== user?.name) {
+          Alert.alert('Undo', `Only Dr. ${undoPatient.doctor_name} can undo this treatment`);
           break;
         }
 
@@ -1127,12 +1127,13 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
   };
 
   // Handle treatment done by selected doctor
-  const handleTreatmentDoneByDoctor = async (doctorId: string | null, doctorName: string | null) => {
-    if (!treatmentDonePatientId) return;
+  const handleTreatmentDoneByDoctor = async (doctorId: string | null, doctorName: string | null, overridePatientId?: string) => {
+    const effectivePatientId = overridePatientId || treatmentDonePatientId;
+    if (!effectivePatientId) return;
 
     try {
       // Find the patient in the list
-      const patient = patients.find(p => p.id === treatmentDonePatientId);
+      const patient = patients.find(p => p.id === effectivePatientId);
 
       if (!patient) {
         Alert.alert('Error', 'Patient not found');
@@ -1338,7 +1339,7 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
             doctor_name: finalDoctorName,
             assigned_by_doctor_name: assignedByDoctorName,
           })
-          .eq('id', treatmentDonePatientId);
+          .eq('id', effectivePatientId);
 
         if (updateError) throw updateError;
 
@@ -1358,7 +1359,7 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
         await supabase
           .from('patients')
           .update(updateData)
-          .eq('id', treatmentDonePatientId);
+          .eq('id', effectivePatientId);
       }
 
       await loadPatients();
@@ -1603,33 +1604,34 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
 
       console.log('Converting patient:', patient.name, 'File Number:', convertFileNumber);
 
-      // Search for existing permanent patient or create new one
-      const searchResult = await searchPermanentPatientsByFileNumber(convertFileNumber.trim(), userClinicId || selectedClinicId);
-
-      let permanentPatientId: string;
+      // التحقق: نفس الاسم + نفس رقم الملف = مكرر
+      const clinicId = selectedClinicId || userClinicId;
+      const searchResult = await searchPermanentPatientsByFileNumber(convertFileNumber.trim(), clinicId);
 
       if (searchResult.data && searchResult.data.length > 0) {
-        // Existing permanent patient found - take the first one
-        console.log('Found existing permanent patient:', searchResult.data[0]);
-        permanentPatientId = searchResult.data[0].id;
-      } else {
-        // Create new permanent patient
-        console.log('Creating new permanent patient');
-        const createResult = await createPermanentPatient(
-          convertFileNumber.trim(),
-          patient.name || 'Patient',
-          userClinicId || selectedClinicId || ''
-        );
-
-        if (createResult.error || !createResult.data) {
-          console.error('Failed to create permanent patient:', createResult.error);
-          Alert.alert('Error', 'Failed to create permanent patient profile');
+        const duplicate = searchResult.data.find((p: any) => p.name === patient.name);
+        if (duplicate) {
+          Alert.alert('Error', 'A patient with the same name and file number already exists.');
           return;
         }
-
-        console.log('Created permanent patient:', createResult.data);
-        permanentPatientId = createResult.data.id;
       }
+
+      // إنشاء ملف جديد ومستقل تماماً
+      console.log('Creating new permanent patient');
+      const createResult = await createPermanentPatient(
+        convertFileNumber.trim(),
+        patient.name || 'Patient',
+        clinicId || ''
+      );
+
+      if (createResult.error || !createResult.data) {
+        console.error('Failed to create permanent patient:', createResult.error);
+        Alert.alert('Error', 'Failed to create permanent patient profile');
+        return;
+      }
+
+      console.log('Created permanent patient:', createResult.data);
+      const permanentPatientId = createResult.data.id;
 
       // Update the patient record to link with permanent patient
       console.log('Updating patient record in database...');
