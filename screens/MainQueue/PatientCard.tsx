@@ -275,6 +275,7 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
               onTogglePermanentExpansion={onTogglePermanentExpansion as any}
               onToothEditPress={(patientId: string, tooth: any) => onToothEditPress?.(patientId, String(tooth))}
               onPatientNamePress={onPatientNamePress}
+              doctorName={currentDoctorName}
             />
           )}
 

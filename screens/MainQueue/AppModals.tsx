@@ -590,87 +590,78 @@ export function AppModals(props: AppModalsProps) {
                 style={styles.modalGlassOverlay}
               />
 
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'edit')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="create-outline" size={22} color="#8B5CF6" />
-                </View>
-                <Text style={styles.menuItemText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'note')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="document-text" size={22} color="#3B82F6" />
-                </View>
-                <Text style={styles.menuItemText}>Note</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'na')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="person-remove" size={22} color="#6B7280" />
-                </View>
-                <Text style={styles.menuItemText}>Patient N/A</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'elderly')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="man" size={22} color="#F97316" />
-                </View>
-                <Text style={styles.menuItemText}>Elderly</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'special_needs')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="accessibility" size={22} color="#8B5CF6" />
-                </View>
-                <Text style={styles.menuItemText}>Special Needs</Text>
-              </TouchableOpacity>
-              {/* Show "New Profile" only for regular (walk-in) patients */}
-              {(() => {
-                const patient = props.patients.find(p => p.id === props.showMenuForPatient);
-                if (patient && !patient.permanent_patient_id) {
-                  return (
+              <View style={{ padding: 8 }}>
+                {/* الصف العلوي - الأزرار الأساسية */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                  {[
+                    { action: 'edit', icon: 'create-outline', color: '#8B5CF6', label: 'Edit' },
+                    { action: 'note', icon: 'document-text', color: '#3B82F6', label: 'Note' },
+                    { action: 'na', icon: 'person-remove', color: '#6B7280', label: 'N/A' },
+                    { action: 'elderly', icon: 'man', color: '#F97316', label: 'Elderly' },
+                    { action: 'special_needs', icon: 'accessibility', color: '#8B5CF6', label: 'Special' },
+                    ...(!props.patients.find(p => p.id === props.showMenuForPatient)?.permanent_patient_id
+                      ? [{ action: 'new_profile', icon: 'person-add', color: '#3B82F6', label: 'Profile' }]
+                      : []),
+                    { action: 'undo', icon: 'arrow-undo', color: '#D97706', label: 'Undo' },
+                  ].map((item) => (
                     <TouchableOpacity
-                      style={styles.menuItem}
-                      onPress={() => props.handleMenuAction(props.showMenuForPatient!, 'new_profile')}
+                      key={item.action}
+                      style={{
+                        width: 80,
+                        height: 80,
+                        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                        borderRadius: 18,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: 1.5,
+                        borderColor: 'rgba(255, 255, 255, 0.5)',
+                      }}
+                      onPress={() => props.handleMenuAction(props.showMenuForPatient!, item.action as any)}
                     >
-                      <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                        <Ionicons name="person-add" size={22} color="#3B82F6" />
-                      </View>
-                      <Text style={styles.menuItemText}>New Profile</Text>
+                      <Ionicons name={item.icon as any} size={26} color={item.color} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A', marginTop: 6 }}>
+                        {item.label}
+                      </Text>
                     </TouchableOpacity>
-                  );
-                }
-                return null;
-              })()}
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'complete')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="checkmark-circle" size={22} color="#22C55E" />
+                  ))}
                 </View>
-                <Text style={styles.menuItemText}>Treatment Done</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.menuItem, styles.menuItemDanger]}
-                onPress={() => props.handleMenuAction(props.showMenuForPatient, 'delete')}
-              >
-                <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="trash-bin" size={22} color="#EF4444" />
+
+                {/* الصف السفلي - Done و Delete فقط */}
+                <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 12 }}>
+                  <TouchableOpacity
+                    style={{
+                      width: 80,
+                      height: 80,
+                      backgroundColor: 'rgba(254, 226, 226, 0.4)',
+                      borderRadius: 18,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderWidth: 1.5,
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                    }}
+                    onPress={() => props.handleMenuAction(props.showMenuForPatient!, 'delete')}
+                  >
+                    <Ionicons name="trash-bin" size={26} color="#EF4444" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginTop: 6 }}>Delete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{
+                      width: 80,
+                      height: 80,
+                      backgroundColor: 'rgba(220, 252, 231, 0.4)',
+                      borderRadius: 18,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderWidth: 1.5,
+                      borderColor: 'rgba(34, 197, 94, 0.4)',
+                    }}
+                    onPress={() => props.handleMenuAction(props.showMenuForPatient!, 'complete')}
+                  >
+                    <Ionicons name="checkmark-circle" size={26} color="#22C55E" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#22C55E', marginTop: 6 }}>Done</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Delete</Text>
-              </TouchableOpacity>
+              </View>
             </View>
           </TouchableOpacity>
         </Modal>

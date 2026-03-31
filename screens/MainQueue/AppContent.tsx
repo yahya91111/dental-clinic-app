@@ -525,6 +525,14 @@ export function AppContent() {
         onBack={() => setShowArchiveScreen(false)}
         selectedClinicId={selectedClinicId}
         userClinicId={userClinicId}
+        onNavigatePatientFile={() => {
+          setShowArchiveScreen(false);
+          setShowPatientFile(true);
+        }}
+        onNavigateAppointments={() => {
+          setShowArchiveScreen(false);
+          setShowAppointments(true);
+        }}
       />
     );
   }

@@ -774,6 +774,16 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
         if (targetPatient?.status === 'complete') {
           // Undo treatment done - revert to normal status
           try {
+            // حذف السجلات الإحصائية للمريض الدائم
+            if (targetPatient.permanent_patient_id) {
+              await supabase
+                .from('patients')
+                .delete()
+                .eq('permanent_patient_id', targetPatient.permanent_patient_id)
+                .eq('queue_number', -1)
+                .is('archive_date', null);
+            }
+
             await supabase
               .from('patients')
               .update({
@@ -795,6 +805,213 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
           loadClinicDoctors();
           setShowTreatmentDoneModal(true);
         }
+        break;
+      case 'undo':
+        const undoPatient = patients.find(p => p.id === patientId);
+        if (!undoPatient?.permanent_patient_id) {
+          Alert.alert('Undo', 'Undo is only available for permanent patients');
+          break;
+        }
+
+        Alert.alert(
+          'Undo Changes',
+          'This will undo all treatments, referrals, and scaling from this visit. Are you sure?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Undo',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  const pid = undoPatient.permanent_patient_id!;
+                  const visitStart = undoPatient.registered_at
+                    ? new Date(undoPatient.registered_at).toISOString()
+                    : new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+
+                  // ══════════════════════════════════════════════
+                  // 1. إرجاع العلاجات (editing_records + tooth_surface_conditions)
+                  // ══════════════════════════════════════════════
+                  const { data: recentEdits } = await supabase
+                    .from('editing_records')
+                    .select('*')
+                    .eq('permanent_patient_id', pid)
+                    .gte('timestamp', visitStart);
+
+                  if (recentEdits && recentEdits.length > 0) {
+                    const affectedTeeth = [...new Set(recentEdits.map((r: any) => r.tooth_number))];
+                    const ALL_SURFACES = ['mesial', 'distal', 'buccal', 'lingual', 'occlusal'];
+
+                    // حذف ألوان العلاج الحالية للأسنان المتأثرة
+                    for (const tooth of affectedTeeth) {
+                      await supabase
+                        .from('tooth_surface_conditions')
+                        .delete()
+                        .eq('permanent_patient_id', pid)
+                        .eq('tooth_number', tooth);
+                    }
+
+                    // حذف سجلات العلاج (editing_records)
+                    await supabase
+                      .from('editing_records')
+                      .delete()
+                      .in('id', recentEdits.map((r: any) => r.id));
+
+                    // إرجاع الحالة الأصلية المشخّصة من planning_records
+                    const { data: planningData } = await supabase
+                      .from('planning_records')
+                      .select('*')
+                      .eq('permanent_patient_id', pid)
+                      .in('tooth_number', affectedTeeth)
+                      .eq('action', 'diagnosed')
+                      .order('timestamp_num', { ascending: true });
+
+                    if (planningData && planningData.length > 0) {
+                      const CONDITION_MAP: Record<string, string> = {
+                        'Caries': 'caries',
+                        'Broken\\Inappropriate Filling': 'broken',
+                        'Pulpectomy': 'pulpectomy',
+                        'Follow-up': 'follow_up',
+                        'Needs More Diagnosis': 'needs_diagnosis',
+                        'Temporary Filling': 'filling_replacement',
+                        'Fracture': 'fracture',
+                        'Restoration to Replace': 'filling_replacement',
+                        'Impacted': 'impacted',
+                      };
+                      const SURFACE_NAME_MAP: Record<string, string> = {
+                        mesial: 'mesial', distal: 'distal',
+                        buccal: 'buccal', lingual: 'lingual',
+                        palatal: 'lingual', occlusal: 'occlusal',
+                      };
+
+                      // استخراج اسم السطح من التسميات المختلفة
+                      const extractDbSurface = (label: string): string | null => {
+                        // صيغة "condition (surface)" مثل "caries (mesial)"
+                        const match = label.match(/\(([^)]+)\)/);
+                        if (match) {
+                          const name = match[1].trim().toLowerCase();
+                          return SURFACE_NAME_MAP[name] || null;
+                        }
+                        // صيغة مباشرة "mesial"
+                        const direct = label.toLowerCase().trim();
+                        return SURFACE_NAME_MAP[direct] || null;
+                      };
+
+                      for (const record of planningData) {
+                        const surfaces: string[] = JSON.parse(record.surfaces);
+                        const conditionDb = CONDITION_MAP[record.condition];
+
+                        if (record.condition === 'Extraction' || surfaces.some(s => s.toLowerCase().includes('extraction'))) {
+                          for (const s of ALL_SURFACES) {
+                            await supabase.from('tooth_surface_conditions').upsert({
+                              permanent_patient_id: pid, tooth_number: record.tooth_number,
+                              surface: s, condition: 'extraction',
+                            }, { onConflict: 'permanent_patient_id,tooth_number,surface' });
+                          }
+                        } else if (surfaces.some(s => s === 'Missing Tooth' || s === 'missing tooth')) {
+                          for (const s of ALL_SURFACES) {
+                            await supabase.from('tooth_surface_conditions').upsert({
+                              permanent_patient_id: pid, tooth_number: record.tooth_number,
+                              surface: s, condition: 'missing',
+                            }, { onConflict: 'permanent_patient_id,tooth_number,surface' });
+                          }
+                        } else if (surfaces.some(s => s.toLowerCase() === 'all surfaces') && conditionDb) {
+                          // حالة تؤثر على كل الأسطح (مثل Broken)
+                          for (const s of ALL_SURFACES) {
+                            await supabase.from('tooth_surface_conditions').upsert({
+                              permanent_patient_id: pid, tooth_number: record.tooth_number,
+                              surface: s, condition: conditionDb,
+                            }, { onConflict: 'permanent_patient_id,tooth_number,surface' });
+                          }
+                        } else if (conditionDb) {
+                          // حالة على أسطح محددة
+                          for (const surfaceLabel of surfaces) {
+                            const dbSurface = extractDbSurface(surfaceLabel);
+                            if (dbSurface) {
+                              await supabase.from('tooth_surface_conditions').upsert({
+                                permanent_patient_id: pid, tooth_number: record.tooth_number,
+                                surface: dbSurface, condition: conditionDb,
+                              }, { onConflict: 'permanent_patient_id,tooth_number,surface' });
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                  // ══════════════════════════════════════════════
+                  // 2. إرجاع التحويلات المعطاة إلى not_given
+                  // ══════════════════════════════════════════════
+                  const { data: givenReferrals } = await supabase
+                    .from('referrals')
+                    .select('id')
+                    .eq('permanent_patient_id', pid)
+                    .eq('status', 'given');
+
+                  if (givenReferrals && givenReferrals.length > 0) {
+                    await supabase
+                      .from('referrals')
+                      .update({ status: 'not_given' })
+                      .in('id', givenReferrals.map((r: any) => r.id));
+                  }
+
+                  // ══════════════════════════════════════════════
+                  // 3. حذف سجلات التنظيف من اليوم
+                  // ══════════════════════════════════════════════
+                  const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+                  await supabase
+                    .from('scaling_records')
+                    .delete()
+                    .eq('permanent_patient_id', pid)
+                    .gte('timestamp', todayStart);
+
+                  // ══════════════════════════════════════════════
+                  // 4. حذف السجلات الإحصائية
+                  // ══════════════════════════════════════════════
+                  await supabase
+                    .from('patients')
+                    .delete()
+                    .eq('permanent_patient_id', pid)
+                    .eq('queue_number', -1)
+                    .is('archive_date', null);
+
+                  // ══════════════════════════════════════════════
+                  // 5. إرجاع حالة المريض إلى normal
+                  // ══════════════════════════════════════════════
+                  await supabase
+                    .from('patients')
+                    .update({
+                      status: 'normal',
+                      completed_at: null,
+                      doctor_name: null,
+                      assigned_by_doctor_name: null,
+                    })
+                    .eq('id', patientId);
+
+                  // ══════════════════════════════════════════════
+                  // 6. تحديث الحالات المحلية وإعادة التحميل
+                  // ══════════════════════════════════════════════
+                  setLastScalingDates(prev => ({ ...prev, [patientId]: null }));
+                  setDentalSummaries(prev => {
+                    const next = { ...prev };
+                    delete next[patientId];
+                    return next;
+                  });
+                  setPatientReferrals(prev => {
+                    const next = { ...prev };
+                    delete next[pid];
+                    return next;
+                  });
+
+                  await loadDentalData(pid, patientId, true);
+                  await loadPatients();
+                  Alert.alert('Done', 'All changes from this visit have been undone');
+                } catch (error: any) {
+                  Alert.alert('Error', error.message);
+                }
+              },
+            },
+          ]
+        );
         break;
       case 'delete':
         try {
@@ -972,8 +1189,12 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
           });
         }
 
-        // 3. Check for Scaling (only if done today)
-        const scalingCount = await checkScalingDoneToday(lastScalingDates[patient.id]);
+        // 3. Check for Scaling (only if done today) - جلب مباشر من قاعدة البيانات
+        const scalingResult = await getScalingRecords(patient.permanent_patient_id);
+        const latestScalingDate = scalingResult.data && scalingResult.data.length > 0
+          ? scalingResult.data[0].timestamp
+          : null;
+        const scalingCount = checkScalingDoneToday(latestScalingDate);
         if (scalingCount > 0) {
           treatmentsToInsert.push({
             permanent_patient_id: patient.permanent_patient_id,

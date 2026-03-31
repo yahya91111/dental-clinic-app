@@ -607,11 +607,11 @@ export const styles = StyleSheet.create({
   },
   menuModal: {
     borderRadius: 24,
-    padding: 12,
-    width: '75%',
-    maxWidth: 300,
-    alignSelf: 'center', // لتوسيع النافذة
-    backgroundColor: 'rgba(255, 255, 255, 0.5)', // Glass effect أقل شفافية
+    padding: 16,
+    width: '85%',
+    maxWidth: 340,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.6)',
     shadowColor: '#000',

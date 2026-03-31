@@ -87,6 +87,8 @@ interface ExpandedPatientHeaderProps {
   onToothEditPress: (patientId: string, toothNumber: number) => void;
   // Patient Name Press
   onPatientNamePress?: (patientId: string, fileNumber: string) => void;
+  // Doctor Name
+  doctorName?: string;
   // General Notes
   generalNotes?: any[];
   onLoadGeneralNotes?: () => void;
@@ -116,6 +118,7 @@ export function ExpandedPatientHeader({
   onTogglePermanentExpansion,
   onToothEditPress,
   onPatientNamePress,
+  doctorName,
   generalNotes = [],
   onLoadGeneralNotes,
   onAddGeneralNote,
@@ -694,7 +697,7 @@ export function ExpandedPatientHeader({
                 onPress={async () => {
                   if (patient.permanent_patient_id) {
                     try {
-                      const { error } = await createScalingRecord(patient.permanent_patient_id, 'Doctor', scalingDate);
+                      const { error } = await createScalingRecord(patient.permanent_patient_id, doctorName || 'Doctor', scalingDate);
                       if (error) {
                         Alert.alert('Error', 'Failed to save scaling record');
                         return;
