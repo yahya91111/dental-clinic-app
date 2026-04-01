@@ -13,9 +13,6 @@ export interface ToothHandlersParams {
   selectedTooth: number | string | null;
   isClosing: boolean;
   isEditModeActive: boolean;
-  selectedTreatments: Record<number | string, string>;
-  selectedDetails: Record<number | string, string>;
-  selectedSurfaces: Record<number | string, string[]>;
   toothAnims: {
     buttonsOpacity: Animated.Value;
     stopToothAnimations: (toothNumber: number) => void;
@@ -28,18 +25,7 @@ export interface ToothHandlersParams {
   setShowConditionMenu: (show: boolean) => void;
   setIsClosing: (closing: boolean) => void;
   setSelectedToothForDetails: (tooth: number | null) => void;
-  setOriginalValues: (values: { treatment?: string; details?: string; surfaces?: string[] }) => void;
   setShowToothDetailsModal: (show: boolean) => void;
-  setHasModalChanges: (has: boolean) => void;
-  setIsEditMode: (edit: boolean) => void;
-  setShowNotesSection: (show: boolean) => void;
-  setShowDetailsSection: (show: boolean) => void;
-  setShowRecordsSection: (show: boolean) => void;
-  setRecordsType: (type: 'editing' | 'planning') => void;
-  setCurrentNote: (note: string) => void;
-  setSelectedTreatments: React.Dispatch<React.SetStateAction<Record<number | string, string>>>;
-  setSelectedDetails: React.Dispatch<React.SetStateAction<Record<number | string, string>>>;
-  setSelectedReferralFor: React.Dispatch<React.SetStateAction<Record<number | string, string[]>>>;
 }
 
 /**
@@ -80,27 +66,13 @@ export function handleToothPress(
     selectedTooth,
     isClosing,
     isEditModeActive,
-    selectedTreatments,
-    selectedDetails,
-    selectedSurfaces,
     toothAnims,
     setSelectedTooth,
     setSelectedSurface,
     setShowConditionMenu,
     setIsClosing,
     setSelectedToothForDetails,
-    setOriginalValues,
     setShowToothDetailsModal,
-    setHasModalChanges,
-    setIsEditMode,
-    setShowNotesSection,
-    setShowDetailsSection,
-    setShowRecordsSection,
-    setRecordsType,
-    setCurrentNote,
-    setSelectedTreatments,
-    setSelectedDetails,
-    setSelectedReferralFor,
   } = params;
 
   // السيناريو الثاني: إذا كان Edit Mode نشط، نعرض modal التفاصيل بدلاً من الانيميشن
@@ -108,27 +80,7 @@ export function handleToothPress(
   if (isEditModeActive) {
     console.log('Opening tooth details modal for tooth:', toothNumber);
     setSelectedToothForDetails(toothNumber as number);
-
-    // حفظ القيم الأصلية قبل فتح المودال
-    setOriginalValues({
-      treatment: selectedTreatments[toothNumber],
-      details: selectedDetails[toothNumber],
-      surfaces: selectedSurfaces[toothNumber] ? [...selectedSurfaces[toothNumber]] : []
-    });
-
     setShowToothDetailsModal(true);
-    setHasModalChanges(false); // Reset changes flag when opening modal
-    setIsEditMode(false); // تعطيل وضع التعديل عند الفتح
-    setShowNotesSection(false); // Hide notes section by default
-    setShowDetailsSection(true); // Show details section by default
-    setShowRecordsSection(false); // Hide records section by default
-    setRecordsType('editing'); // Reset records type to editing
-    setCurrentNote(''); // Clear current note input
-
-    // إعادة تعيين Treatment و Details و Referral إلى Select عند فتح الموديل
-    setSelectedTreatments(prev => ({ ...prev, [toothNumber]: '' }));
-    setSelectedDetails(prev => ({ ...prev, [toothNumber]: '' }));
-    setSelectedReferralFor(prev => ({ ...prev, [toothNumber]: [] }));  // Empty array for multiple referrals
     return;
   }
 

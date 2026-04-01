@@ -37,7 +37,6 @@ export interface ConditionSelectParams {
   setToothConditions: (fn: (prev: Record<number | string, ToothSurfaceConditions>) => Record<number | string, ToothSurfaceConditions>) => void;
   setPendingPlanningRecords: (fn: (prev: PendingPlanningRecord[]) => PendingPlanningRecord[]) => void;
   setToothRecords: (fn: (prev: Record<number | string, ToothRecord[]>) => Record<number | string, ToothRecord[]>) => void;
-  setHasModalChanges: (value: boolean) => void;
   setShowConditionMenu: (value: boolean) => void;
   setSelectedTooth: (value: number | string | null) => void;
   setSelectedSurface: (value: string | null) => void;
@@ -60,7 +59,6 @@ export function handleConditionSelect({
   setToothConditions,
   setPendingPlanningRecords,
   setToothRecords,
-  setHasModalChanges,
   setShowConditionMenu,
   setSelectedTooth,
   setSelectedSurface,
@@ -125,7 +123,6 @@ export function handleConditionSelect({
         };
       });
 
-      setHasModalChanges(true);
       setShowConditionMenu(false);
       return;
     }
@@ -192,8 +189,6 @@ export function handleConditionSelect({
           ]
         };
       });
-
-      setHasModalChanges(true);
     }
     // إذا كانت الحالة extraction (Condition - يحفظ Record فوراً)
     else if (condition === 'extraction') {
