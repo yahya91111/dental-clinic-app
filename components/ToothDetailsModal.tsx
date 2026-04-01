@@ -15,6 +15,7 @@ import {
   TextInput,
   Platform,
   Keyboard,
+  Animated,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -200,6 +201,33 @@ export default function ToothDetailsModal({
   // Modal state
   const [hasModalChanges, setHasModalChanges] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+
+  // أنيميشن نبض لزر Edit
+  const editPulseAnim = React.useRef(new Animated.Value(1)).current;
+  const pulseAnimRef = React.useRef<Animated.CompositeAnimation | null>(null);
+  React.useEffect(() => {
+    if (!isEditMode) {
+      editPulseAnim.setValue(1);
+      pulseAnimRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(editPulseAnim, { toValue: 1.15, duration: 900, useNativeDriver: true }),
+          Animated.timing(editPulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+        ])
+      );
+      pulseAnimRef.current.start();
+    } else {
+      if (pulseAnimRef.current) {
+        pulseAnimRef.current.stop();
+        pulseAnimRef.current = null;
+      }
+      editPulseAnim.setValue(1);
+    }
+    return () => {
+      if (pulseAnimRef.current) {
+        pulseAnimRef.current.stop();
+      }
+    };
+  }, [isEditMode, toothNumberNumeric]);
 
   // Section visibility
   const [showNotesSection, setShowNotesSection] = useState(false);
@@ -772,17 +800,6 @@ export default function ToothDetailsModal({
                         : 'Tooth'}
                     </Text>
                     <View style={styles.headerButtons}>
-                      <TouchableOpacity
-                        style={[styles.editButton, isEditMode && styles.editButtonActive]}
-                        onPress={() => {
-                          setIsEditMode(!isEditMode);
-                          if (isEditMode) {
-                            setHasModalChanges(false);
-                          }
-                        }}
-                      >
-                        <Ionicons name="create-outline" size={24} color={isEditMode ? '#FFFFFF' : '#1E3A8A'} />
-                      </TouchableOpacity>
                       <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                         <Ionicons name="close" size={24} color="#1E3A8A" />
                       </TouchableOpacity>
@@ -874,9 +891,35 @@ export default function ToothDetailsModal({
                       {!showRecordsSection && showDetailsSection && (
                         <ScrollView
                           style={{ flex: 1 }}
-                          contentContainerStyle={{ paddingBottom: 20 }}
+                          contentContainerStyle={{ paddingBottom: 20, paddingTop: 20 }}
                           showsVerticalScrollIndicator={true}
                         >
+                        {/* Edit Badge - باج نبضي فوق الكرت */}
+                        <View style={{ position: 'relative' }}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setIsEditMode(!isEditMode);
+                              if (isEditMode) {
+                                setHasModalChanges(false);
+                              }
+                            }}
+                            style={{ position: 'absolute', top: -18, right: 8, zIndex: 20 }}
+                          >
+                            <Animated.View style={{
+                              transform: [{ scale: isEditMode ? 1 : editPulseAnim }],
+                              backgroundColor: isEditMode ? '#3B82F6' : '#60A5FA',
+                              width: 40,
+                              height: 40,
+                              borderRadius: 20,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderWidth: 3,
+                              borderColor: '#FFFFFF',
+                            }}>
+                              <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+                            </Animated.View>
+                          </TouchableOpacity>
+
                         <View style={styles.mainSectionsContainer}>
                           {/* Treatment Section */}
                           <View style={styles.sectionRow}>
@@ -1094,6 +1137,7 @@ export default function ToothDetailsModal({
                               </Modal>
                             </>
                           )}
+                        </View>
                         </View>
                         </ScrollView>
                       )}

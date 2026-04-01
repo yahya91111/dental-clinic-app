@@ -376,44 +376,44 @@ export function ExpandedPatientHeader({
           {treatmentSections.map((section) => (
             <View key={section.key} style={{
               backgroundColor: 'rgba(255, 255, 255, 0.6)',
-              borderRadius: 16,
-              padding: 16,
-              borderWidth: 2,
+              borderRadius: 14,
+              padding: 13,
+              borderWidth: 1.5,
               borderColor: 'rgba(255, 255, 255, 0.7)',
             }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                marginHorizontal: -16, marginTop: -16, marginBottom: 12,
-                paddingHorizontal: 16, paddingVertical: 12,
-                borderTopLeftRadius: 14, borderTopRightRadius: 14,
+                marginHorizontal: -13, marginTop: -13, marginBottom: 10,
+                paddingHorizontal: 13, paddingVertical: 10,
+                borderTopLeftRadius: 12, borderTopRightRadius: 12,
                 borderBottomWidth: 1, borderBottomColor: 'rgba(37, 99, 235, 0.2)',
               }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <MaterialCommunityIcons name="tooth" size={20} color="#2563EB" />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#2563EB' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <MaterialCommunityIcons name="tooth" size={18} color="#2563EB" />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#2563EB' }}>
                     {section.name}
                   </Text>
                 </View>
-                <View style={{ backgroundColor: '#2563EB', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>{section.count}</Text>
+                <View style={{ backgroundColor: '#2563EB', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>{section.count}</Text>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
                 {section.teeth.map((tooth) => (
                   <TouchableOpacity
                     key={tooth}
                     style={{
                       backgroundColor: 'rgba(250, 204, 21, 0.15)',
-                      paddingHorizontal: 14,
-                      paddingVertical: 8,
-                      borderRadius: 10,
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 8,
                       borderWidth: 1.5,
                       borderColor: 'rgba(250, 204, 21, 0.4)',
                     }}
                     onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
                   >
-                    <Text style={{ color: '#1E3A8A', fontWeight: '700', fontSize: 14 }}>{tooth}</Text>
+                    <Text style={{ color: '#1E3A8A', fontWeight: '700', fontSize: 13 }}>{tooth}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
