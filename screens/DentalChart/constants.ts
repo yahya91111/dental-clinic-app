@@ -4,15 +4,16 @@
 // Centralized constants for colors, options, and configuration
 
 import type { ToothCondition } from '../../types';
+import { scale } from '../../lib/scale';
 
 // ---------------------------------------------------------------
-// Container Heights and Spacing
+// Container Heights and Spacing (scaled for responsive sizing)
 // ---------------------------------------------------------------
-export const REFERRAL_HEADER_HEIGHT = 130;
-export const REFERRAL_CONTENT_MIN = 70;
-export const REFERRAL_CONTENT_MAX = 320;
-export const CONTAINER_SPACING = 170;
-export const TREATMENT_PLANNING_SPACING = 100;
+export const REFERRAL_HEADER_HEIGHT = scale(130);
+export const REFERRAL_CONTENT_MIN = scale(300);
+export const REFERRAL_CONTENT_MAX = scale(300);
+export const CONTAINER_SPACING = scale(100);
+export const TREATMENT_PLANNING_SPACING = scale(120);
 
 // ---------------------------------------------------------------
 // Condition Colors

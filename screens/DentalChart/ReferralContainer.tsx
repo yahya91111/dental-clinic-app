@@ -386,10 +386,7 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
     checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
   );
 
-  const contentHeight = (
-    (referralTab === 'department' && hasActiveReferrals) ||
-    (referralTab === 'records' && referralRecords.length > 0)
-  ) ? 320 : 70;
+  const contentHeight = scale(240);
 
   return (
     <Animated.View
@@ -525,7 +522,7 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
                 {Object.entries(referrals).some(([_, checked]) => checked) && (
                   <View>
                     <ScrollView
-                      style={{ marginTop: scale(10), maxHeight: scale(242) }}
+                      style={{ marginTop: scale(10), maxHeight: scale(190) }}
                       contentContainerStyle={{ paddingBottom: 100 }}
                       showsVerticalScrollIndicator={true}
                       nestedScrollEnabled={true}

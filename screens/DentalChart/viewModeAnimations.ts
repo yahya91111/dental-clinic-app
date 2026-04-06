@@ -1,4 +1,5 @@
 import { Animated } from 'react-native';
+import { scale } from '../../lib/scale';
 
 // ═══════════════════════════════════════════════════════════════
 // View Mode Animations
@@ -40,47 +41,47 @@ export function animateShowViewMode({
   // إخفاء الأسنان وزر Edit والخطوط وأرقام الأسنان
   Animated.parallel([
     Animated.timing(toothAnims.rightTeethSlide, {
-      toValue: 500,
+      toValue: scale(500),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.leftTeethSlide, {
-      toValue: -500,
+      toValue: scale(-500),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.editButtonSlide, {
-      toValue: -300,
+      toValue: scale(-300),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.verticalTopLineSlide, {
-      toValue: -200,
+      toValue: scale(-200),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.verticalBottomLineSlide, {
-      toValue: 200,
+      toValue: scale(200),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.horizontalRightLineSlide, {
-      toValue: 500,
+      toValue: scale(500),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.horizontalLeftLineSlide, {
-      toValue: -500,
+      toValue: scale(-500),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.rightNumbersSlide, {
-      toValue: 500,
+      toValue: scale(500),
       duration: 400,
       useNativeDriver: true,
     }),
     Animated.timing(toothAnims.leftNumbersSlide, {
-      toValue: -500,
+      toValue: scale(-500),
       duration: 400,
       useNativeDriver: true,
     }),
@@ -148,21 +149,21 @@ export function animateHideViewMode({
   // إخفاء الحاويات بالتسلسل العكسي
   // 1. Planning Record (يمين)
   Animated.timing(toothAnims.planningRecordSlide, {
-    toValue: 1000,
+    toValue: scale(1000),
     duration: 100,
     useNativeDriver: true,
   }).start(() => {
     console.log('🟡 Planning Record hidden');
     // 2. Treatment Record (يسار)
     Animated.timing(toothAnims.treatmentRecordSlide, {
-      toValue: -1000,
+      toValue: scale(-1000),
       duration: 100,
       useNativeDriver: true,
     }).start(() => {
       console.log('🟡 Treatment Record hidden');
       // 3. Referral (يمين)
       Animated.timing(toothAnims.referralContainerSlide, {
-        toValue: 1000,
+        toValue: scale(1000),
         duration: 100,
         useNativeDriver: true,
       }).start(() => {

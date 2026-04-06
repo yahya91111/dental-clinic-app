@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Animated } from 'react-native';
+import { scale } from '../../lib/scale';
 import { styles, SCREEN_HEIGHT } from './styles';
 import { handleViewModeToggle, ViewModeAnimationsParams } from './viewModeAnimations';
 
@@ -90,11 +91,11 @@ export function EditViewModeButtons({
         zIndex: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
         elevation: isOralHygieneExpanded ? 700 : ((isTreatmentRecordExpanded || isPlanningRecordExpanded || isReferralExpanded) ? 9998 : (isViewModeActive ? 10020 : (selectedTooth ? 900 : 9999))),
         transform: [
-          { translateX: -50 },
+          { translateX: scale(-50) },
           {
             translateY: viewButtonPositionAnim.interpolate({
               inputRange: [0, 1],
-              outputRange: [0, -(SCREEN_HEIGHT * 0.41 - 100)]
+              outputRange: [0, -(SCREEN_HEIGHT * 0.41 - scale(100))]
             })
           }
         ]

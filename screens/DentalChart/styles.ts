@@ -1094,8 +1094,6 @@ export const styles = scaledStyleSheet({
     elevation: 8,
   },
   enlargedToothContainer: {
-    width: SCREEN_WIDTH * 0.8,
-    height: SCREEN_HEIGHT * 0.5,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 30,
     justifyContent: 'center',

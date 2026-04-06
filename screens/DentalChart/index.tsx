@@ -267,30 +267,44 @@ export default function DentalChartScreen({
     const data = await loadDentalDataFromDB(permanentPatientId);
 
     if (data) {
-      // Apply loaded data to state
-      setToothConditions(data.toothConditions);
-      setToothBorderColors(prev => ({ ...prev, ...data.toothBorderColors }));
-      setToothRecords(prev => {
-        const updated = { ...prev };
-        // Remove old planning records to prevent duplicates
-        Object.keys(updated).forEach((toothKey) => {
-          const toothNum = parseInt(toothKey);
-          updated[toothNum] = updated[toothNum]?.filter(record => record.type !== 'planning') || [];
+      // Apply loaded data to state - REPLACE instead of MERGE to prevent duplicates
+      // and to reflect deletions made by other doctors
+      // BUT preserve toothConditions for teeth with pending (unsubmitted) planning
+      setToothConditions(prev => {
+        const teethWithPending = new Set(pendingPlanningRecords.map(r => r.toothNumber));
+        if (teethWithPending.size === 0) return data.toothConditions;
+        const merged: typeof data.toothConditions = { ...data.toothConditions };
+        teethWithPending.forEach(toothNum => {
+          if (prev[toothNum]) {
+            merged[toothNum] = prev[toothNum];
+          }
         });
-        // Merge with new records
-        Object.keys(data.toothRecords).forEach((toothKey) => {
-          const toothNum = parseInt(toothKey);
-          updated[toothNum] = [
-            ...(updated[toothNum] || []),
-            ...data.toothRecords[toothNum]
-          ];
-        });
-        return updated;
+        return merged;
       });
+      setToothBorderColors(data.toothBorderColors);
+      setToothRecords(data.toothRecords);
       setAllPlanningRecordsGlobal(data.allPlanningRecordsGlobal);
-      setSelectedReferralFor(prev => ({ ...prev, ...data.selectedReferralFor }));
-      setReferrals(prev => ({ ...prev, ...data.referrals }));
-      setReferralStatus(prev => ({ ...prev, ...data.referralStatus }));
+      setSelectedReferralFor(data.selectedReferralFor);
+      // Reset all referrals to false first, then apply loaded ones
+      // This ensures deleted referrals from other doctors are reflected
+      setReferrals({
+        endodontics: false,
+        oralSurgery: false,
+        orthodontics: false,
+        periodontics: false,
+        prosthodontics: false,
+        oralMedicine: false,
+        ...data.referrals,
+      });
+      setReferralStatus({
+        endodontics: 'not_given',
+        oralSurgery: 'not_given',
+        orthodontics: 'not_given',
+        periodontics: 'not_given',
+        prosthodontics: 'not_given',
+        oralMedicine: 'not_given',
+        ...data.referralStatus,
+      });
       setReferralRecords(data.referralRecords);
       setScalingRecords(data.scalingRecords);
     }

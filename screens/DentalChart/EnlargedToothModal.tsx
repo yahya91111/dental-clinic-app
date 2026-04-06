@@ -1,6 +1,8 @@
 import React from 'react';
-import { StyleSheet, View, TouchableOpacity, Modal, Text } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Modal, Text, Dimensions } from 'react-native';
 import { scale } from '../../lib/scale';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
 import {
@@ -62,7 +64,7 @@ export function EnlargedToothModal({
         </TouchableOpacity>
 
         {/* Enlarged tooth container */}
-        <View style={styles.enlargedToothContainer}>
+        <View style={[styles.enlargedToothContainer, { width: SCREEN_WIDTH * 0.8, height: SCREEN_HEIGHT * 0.5 }]}>
           {/* Render the enlarged tooth based on tooth number */}
           {isTinyTooth ? (
             <ToothWithSectionsSquareTiny

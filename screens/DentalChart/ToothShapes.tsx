@@ -30,7 +30,7 @@ export interface ToothWithSectionsProps {
 export const ToothWithSections: React.FC = () => {
   return (
     <View style={{ width: scale(40), height: scale(52), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="40" height="52" viewBox="0 0 40 52">
+      <Svg width={scale(40)} height={scale(52)} viewBox="0 0 40 52">
         <Rect x="2" y="2" width="36" height="48" rx="18" ry="18" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="14" y="18" width="12" height="16" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
         <Line x1="14" y1="18" x2="8" y2="8" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -46,7 +46,7 @@ export const ToothWithSections: React.FC = () => {
 export const ToothWithSectionsSquare: React.FC = () => {
   return (
     <View style={{ width: scale(40), height: scale(52), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="40" height="52" viewBox="0 0 40 52">
+      <Svg width={scale(40)} height={scale(52)} viewBox="0 0 40 52">
         <Rect x="2" y="2" width="36" height="48" rx="8" ry="8" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="14" y="18" width="12" height="16" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
         <Line x1="14" y1="18" x2="4" y2="4" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -62,7 +62,7 @@ export const ToothWithSectionsSquare: React.FC = () => {
 export const ToothWithSectionsCanineSmall: React.FC = () => {
   return (
     <View style={{ width: scale(30), height: scale(38), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="38" viewBox="0 0 32 50">
+      <Svg width={scale(30)} height={scale(38)} viewBox="0 0 32 50">
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="rgba(251, 191, 36, 0.15)" stroke="rgba(251, 191, 36, 0.3)" strokeWidth="1" />
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="transparent" stroke="rgba(135, 206, 250, 0.95)" strokeWidth="2.5" />
         <Rect x="10" y="17" width="12" height="16" rx="2" ry="2" fill="rgba(251, 191, 36, 0.12)" stroke="rgba(135, 206, 250, 0.85)" strokeWidth="1.8" />
@@ -79,7 +79,7 @@ export const ToothWithSectionsCanineSmall: React.FC = () => {
 export const ToothWithSectionsIncisorSmall: React.FC = () => {
   return (
     <View style={{ width: scale(30), height: scale(38), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="38" viewBox="0 0 30 48">
+      <Svg width={scale(30)} height={scale(38)} viewBox="0 0 30 48">
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="rgba(251, 191, 36, 0.15)" stroke="rgba(251, 191, 36, 0.3)" strokeWidth="1" />
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(135, 206, 250, 0.95)" strokeWidth="2.5" />
         <Rect x="9" y="16" width="12" height="16" rx="2" ry="2" fill="rgba(251, 191, 36, 0.12)" stroke="rgba(135, 206, 250, 0.85)" strokeWidth="1.8" />
@@ -96,7 +96,7 @@ export const ToothWithSectionsIncisorSmall: React.FC = () => {
 export const ToothWithSectionsPremolar: React.FC = () => {
   return (
     <View style={{ width: scale(35), height: scale(45), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="35" height="45" viewBox="0 0 35 45">
+      <Svg width={scale(35)} height={scale(45)} viewBox="0 0 35 45">
         <Rect x="2" y="2" width="31" height="41" rx="15" ry="15" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="12" y="16" width="11" height="13" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
         <Line x1="12" y1="16" x2="7" y2="8" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -112,7 +112,7 @@ export const ToothWithSectionsPremolar: React.FC = () => {
 export const ToothWithSectionsCanine: React.FC = () => {
   return (
     <View style={{ width: scale(32), height: scale(50), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="32" height="50" viewBox="0 0 32 50">
+      <Svg width={scale(32)} height={scale(50)} viewBox="0 0 32 50">
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="11" y="18" width="10" height="14" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
         <Line x1="11" y1="18" x2="6" y2="8" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -128,7 +128,7 @@ export const ToothWithSectionsCanine: React.FC = () => {
 export const ToothWithSectionsIncisor: React.FC = () => {
   return (
     <View style={{ width: scale(30), height: scale(48), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="48" viewBox="0 0 30 48">
+      <Svg width={scale(30)} height={scale(48)} viewBox="0 0 30 48">
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="10" y="17" width="10" height="14" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
         <Line x1="10" y1="17" x2="5" y2="8" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -144,7 +144,7 @@ export const ToothWithSectionsIncisor: React.FC = () => {
 export const ToothWithSectionsIncisorNoCenter: React.FC = () => {
   return (
     <View style={{ width: scale(30), height: scale(48), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="30" height="48" viewBox="0 0 30 48">
+      <Svg width={scale(30)} height={scale(48)} viewBox="0 0 30 48">
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Line x1="15" y1="8" x2="15" y2="40" stroke="rgba(255, 255, 255, 0.7)" strokeWidth="1.5" />
         <Line x1="15" y1="17" x2="5" y2="8" stroke="rgba(255, 255, 255, 0.7)" strokeWidth="1.5" />
@@ -160,7 +160,7 @@ export const ToothWithSectionsIncisorNoCenter: React.FC = () => {
 export const ToothWithSectionsCanineNoCenter: React.FC = () => {
   return (
     <View style={{ width: scale(32), height: scale(50), alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width="32" height="50" viewBox="0 0 32 50">
+      <Svg width={scale(32)} height={scale(50)} viewBox="0 0 32 50">
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Line x1="16" y1="8" x2="16" y2="42" stroke="rgba(255, 255, 255, 0.7)" strokeWidth="1.5" />
         <Line x1="16" y1="18" x2="6" y2="8" stroke="rgba(255, 255, 255, 0.7)" strokeWidth="1.5" />
@@ -226,7 +226,7 @@ export const ToothWithSectionsSquareTiny: React.FC<ToothWithSectionsProps> = ({
       activeOpacity={0.7}
     >
       <Animated.View style={{ opacity: pulseAnim }}>
-        <Svg width="37" height="47" viewBox="0 0 37 47">
+        <Svg width={scale(37)} height={scale(47)} viewBox="0 0 37 47">
           <Defs>
             <ClipPath id="toothClipTiny">
               <Rect x="2.5" y="2.5" width="32" height="42" rx="8.5" ry="12" />
@@ -317,7 +317,7 @@ export const ToothWithSectionsSquareMedium: React.FC<ToothWithSectionsProps> = (
       activeOpacity={0.7}
     >
       <Animated.View style={{ opacity: pulseAnim }}>
-        <Svg width="33" height="42" viewBox="0 0 33 42">
+        <Svg width={scale(33)} height={scale(42)} viewBox="0 0 33 42">
           <Defs>
             <ClipPath id="toothClipMedium">
               <Rect x="2.3" y="2.3" width="28.4" height="37.4" rx="7.75" ry="10.7" />

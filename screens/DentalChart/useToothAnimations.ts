@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Animated, Dimensions } from 'react-native';
+import { scale } from '../../lib/scale';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -15,46 +16,47 @@ interface ToothPosition {
 }
 
 // Position data for all 32 teeth (matching original openTooth positions)
+// All numeric values scaled for responsive sizing across phone screens
 const TOOTH_POSITIONS: Record<number, ToothPosition> = {
   // Upper Right Quadrant (1-8)
-  1: { right: 160, top: '7.5%', width: 33, height: 42, baseRotation: '-80deg' },
-  2: { right: 120, top: '10%', width: 33, height: 42, baseRotation: '-60deg' },
-  3: { right: 90, top: '14%', width: 33, height: 42, baseRotation: '-35deg' },
-  4: { right: 67, top: '18.5%', width: 33, height: 42, baseRotation: '-20deg' },
-  5: { right: 55, top: '24%', width: 33, height: 42, baseRotation: '-15deg' },
-  6: { right: 45, top: '30%', width: 37, height: 47, baseRotation: '0deg' },
-  7: { right: 45, top: '36%', width: 37, height: 47, baseRotation: '0deg' },
-  8: { right: 45, top: '42%', width: 37, height: 47, baseRotation: '0deg' },
+  1: { right: scale(160), top: '7.5%', width: scale(33), height: scale(42), baseRotation: '-80deg' },
+  2: { right: scale(120), top: '10%', width: scale(33), height: scale(42), baseRotation: '-60deg' },
+  3: { right: scale(90), top: '14%', width: scale(33), height: scale(42), baseRotation: '-35deg' },
+  4: { right: scale(67), top: '18.5%', width: scale(33), height: scale(42), baseRotation: '-20deg' },
+  5: { right: scale(55), top: '24%', width: scale(33), height: scale(42), baseRotation: '-15deg' },
+  6: { right: scale(45), top: '30%', width: scale(37), height: scale(47), baseRotation: '0deg' },
+  7: { right: scale(45), top: '36%', width: scale(37), height: scale(47), baseRotation: '0deg' },
+  8: { right: scale(45), top: '42%', width: scale(37), height: scale(47), baseRotation: '0deg' },
 
   // Upper Left Quadrant (9-16)
-  9: { left: 45, top: '42%', width: 37, height: 47, baseRotation: '0deg' },
-  10: { left: 45, top: '36%', width: 37, height: 47, baseRotation: '0deg' },
-  11: { left: 45, top: '30%', width: 37, height: 47, baseRotation: '0deg' },
-  12: { left: 55, top: '24%', width: 33, height: 42, baseRotation: '15deg' },
-  13: { left: 67, top: '18.5%', width: 33, height: 42, baseRotation: '20deg' },
-  14: { left: 90, top: '14%', width: 33, height: 42, baseRotation: '35deg' },
-  15: { left: 120, top: '10%', width: 33, height: 42, baseRotation: '60deg' },
-  16: { left: 160, top: '7.5%', width: 33, height: 42, baseRotation: '80deg' },
+  9: { left: scale(45), top: '42%', width: scale(37), height: scale(47), baseRotation: '0deg' },
+  10: { left: scale(45), top: '36%', width: scale(37), height: scale(47), baseRotation: '0deg' },
+  11: { left: scale(45), top: '30%', width: scale(37), height: scale(47), baseRotation: '0deg' },
+  12: { left: scale(55), top: '24%', width: scale(33), height: scale(42), baseRotation: '15deg' },
+  13: { left: scale(67), top: '18.5%', width: scale(33), height: scale(42), baseRotation: '20deg' },
+  14: { left: scale(90), top: '14%', width: scale(33), height: scale(42), baseRotation: '35deg' },
+  15: { left: scale(120), top: '10%', width: scale(33), height: scale(42), baseRotation: '60deg' },
+  16: { left: scale(160), top: '7.5%', width: scale(33), height: scale(42), baseRotation: '80deg' },
 
   // Lower Right Quadrant (17-24)
-  17: { right: 160, bottom: '7.5%', width: 33, height: 42, baseRotation: '0deg' },
-  18: { right: 120, bottom: '10%', width: 33, height: 42, baseRotation: '0deg' },
-  19: { right: 90, bottom: '14%', width: 33, height: 42, baseRotation: '0deg' },
-  20: { right: 67, bottom: '18.5%', width: 33, height: 42, baseRotation: '15deg' },
-  21: { right: 55, bottom: '24%', width: 33, height: 42, baseRotation: '20deg' },
-  22: { right: 45, bottom: '30%', width: 37, height: 47, baseRotation: '35deg' },
-  23: { right: 45, bottom: '36%', width: 37, height: 47, baseRotation: '60deg' },
-  24: { right: 45, bottom: '42%', width: 37, height: 47, baseRotation: '80deg' },
+  17: { right: scale(160), bottom: '7.5%', width: scale(33), height: scale(42), baseRotation: '0deg' },
+  18: { right: scale(120), bottom: '10%', width: scale(33), height: scale(42), baseRotation: '0deg' },
+  19: { right: scale(90), bottom: '14%', width: scale(33), height: scale(42), baseRotation: '0deg' },
+  20: { right: scale(67), bottom: '18.5%', width: scale(33), height: scale(42), baseRotation: '15deg' },
+  21: { right: scale(55), bottom: '24%', width: scale(33), height: scale(42), baseRotation: '20deg' },
+  22: { right: scale(45), bottom: '30%', width: scale(37), height: scale(47), baseRotation: '35deg' },
+  23: { right: scale(45), bottom: '36%', width: scale(37), height: scale(47), baseRotation: '60deg' },
+  24: { right: scale(45), bottom: '42%', width: scale(37), height: scale(47), baseRotation: '80deg' },
 
   // Lower Left Quadrant (25-32)
-  25: { left: 45, bottom: '42%', width: 37, height: 47, baseRotation: '80deg' },
-  26: { left: 45, bottom: '36%', width: 37, height: 47, baseRotation: '60deg' },
-  27: { left: 45, bottom: '30%', width: 37, height: 47, baseRotation: '35deg' },
-  28: { left: 55, bottom: '24%', width: 33, height: 42, baseRotation: '20deg' },
-  29: { left: 67, bottom: '18.5%', width: 33, height: 42, baseRotation: '-20deg' },
-  30: { left: 90, bottom: '14%', width: 33, height: 42, baseRotation: '-35deg' },
-  31: { left: 120, bottom: '10%', width: 33, height: 42, baseRotation: '-60deg' },
-  32: { left: 160, bottom: '7.5%', width: 33, height: 42, baseRotation: '-80deg' },
+  25: { left: scale(45), bottom: '42%', width: scale(37), height: scale(47), baseRotation: '80deg' },
+  26: { left: scale(45), bottom: '36%', width: scale(37), height: scale(47), baseRotation: '60deg' },
+  27: { left: scale(45), bottom: '30%', width: scale(37), height: scale(47), baseRotation: '35deg' },
+  28: { left: scale(55), bottom: '24%', width: scale(33), height: scale(42), baseRotation: '20deg' },
+  29: { left: scale(67), bottom: '18.5%', width: scale(33), height: scale(42), baseRotation: '-20deg' },
+  30: { left: scale(90), bottom: '14%', width: scale(33), height: scale(42), baseRotation: '-35deg' },
+  31: { left: scale(120), bottom: '10%', width: scale(33), height: scale(42), baseRotation: '-60deg' },
+  32: { left: scale(160), bottom: '7.5%', width: scale(33), height: scale(42), baseRotation: '-80deg' },
 };
 
 export interface ToothAnimationValues {
@@ -192,7 +194,7 @@ export function useToothAnimations(): UseToothAnimationsReturn {
     }
 
     // Offset for right side teeth to accommodate menu
-    const offsetX = pos.right !== undefined ? 20 : 0;
+    const offsetX = pos.right !== undefined ? scale(20) : 0;
 
     return {
       moveX: screenCenterX - toothCenterX + offsetX,
