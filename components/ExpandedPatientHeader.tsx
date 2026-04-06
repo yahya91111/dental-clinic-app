@@ -95,6 +95,8 @@ interface ExpandedPatientHeaderProps {
   onLoadGeneralNotes?: () => void;
   onAddGeneralNote?: (note: string) => void;
   onDeleteGeneralNote?: (noteId: string) => void;
+  // Read-only mode (for archive)
+  readOnly?: boolean;
 }
 
 type SectionType = 'dental' | 'referrals' | 'hygiene' | 'notes' | 'consent' | 'general_notes' | null;
@@ -124,6 +126,7 @@ export function ExpandedPatientHeader({
   onLoadGeneralNotes,
   onAddGeneralNote,
   onDeleteGeneralNote,
+  readOnly = false,
 }: ExpandedPatientHeaderProps) {
   const [expandedSection, setExpandedSection] = useState<SectionType>(null);
   const [seenNotesCount, setSeenNotesCount] = useState<number | null>(null);
@@ -616,7 +619,8 @@ export function ExpandedPatientHeader({
             )}
           </View>
 
-          {/* Scaling Done Button */}
+          {/* Scaling Done Button - hidden in read-only mode */}
+          {!readOnly && (
           <TouchableOpacity
             style={{
               backgroundColor: '#059669',
@@ -636,6 +640,7 @@ export function ExpandedPatientHeader({
             <Ionicons name="checkmark-circle" size={scale(20)} color="#FFFFFF" />
             <Text style={{ fontSize: scale(16), fontWeight: '700', color: '#FFFFFF' }}>Scaling Done</Text>
           </TouchableOpacity>
+          )}
         </View>
 
         {/* Scaling Confirm Modal */}

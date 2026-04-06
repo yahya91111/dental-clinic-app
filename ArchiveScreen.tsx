@@ -768,12 +768,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                             onTogglePermanentExpansion={() => handleToggleArchiveExpansion(patient)}
                             onToothEditPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
                             doctorName={patient.doctor_name}
+                            readOnly={true}
                           />
                         ) : (
                           <>
                             {/* Badges */}
                             <View style={styles.badgesContainer}>
-                              {isComplete && (
+                              {isComplete && !isPermanent && (
                                 <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
                                   <Text style={styles.statusBadgeText}>DONE</Text>
                                 </View>
@@ -817,6 +818,11 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                                     marginRight: scale(6),
                                   }}>
                                     <Ionicons name="chevron-down" size={scale(18)} color={isComplete ? '#FFFFFF' : '#1E3A8A'} />
+                                  </View>
+                                )}
+                                {isComplete && isPermanent && (
+                                  <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
+                                    <Text style={styles.statusBadgeText}>DONE</Text>
                                   </View>
                                 )}
                               </View>

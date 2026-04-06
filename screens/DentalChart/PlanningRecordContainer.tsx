@@ -219,9 +219,6 @@ const PlanningRecordCard: React.FC<PlanningRecordCardProps> = ({ group, groupInd
         <Text style={{ fontSize: scale(13), color: '#2563EB', fontWeight: '600' }}>Dr. {group.doctorName}</Text>
       </View>
 
-      <Text style={{ fontSize: scale(10), color: '#999', marginTop: scale(4) }}>
-        Group #{groupIndex + 1} - {group.records.length} record(s)
-      </Text>
     </View>
   );
 };
