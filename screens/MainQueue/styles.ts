@@ -1,6 +1,7 @@
-import { StyleSheet, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import { scaledStyleSheet } from '../../lib/scale';
 
-export const styles = StyleSheet.create({
+export const styles = scaledStyleSheet({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   container: { flex: 1 },
   gradient: { flex: 1 },

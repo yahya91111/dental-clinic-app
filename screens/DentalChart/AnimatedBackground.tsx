@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Animated } from 'react-native';
+import { scale } from '../../lib/scale';
 import { styles } from './styles';
 
 // ═══════════════════════════════════════════════════════════════
@@ -59,13 +60,13 @@ export function AnimatedBackground() {
               {
                 translateX: blob1Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 30],
+                  outputRange: [scale(0), scale(30)],
                 }),
               },
               {
                 translateY: blob1Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -20],
+                  outputRange: [scale(0), scale(-20)],
                 }),
               },
             ],
@@ -87,13 +88,13 @@ export function AnimatedBackground() {
               {
                 translateX: blob2Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -25],
+                  outputRange: [scale(0), scale(-25)],
                 }),
               },
               {
                 translateY: blob2Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 35],
+                  outputRange: [scale(0), scale(35)],
                 }),
               },
             ],
@@ -116,13 +117,13 @@ export function AnimatedBackground() {
               {
                 translateX: blob3Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 20],
+                  outputRange: [scale(0), scale(20)],
                 }),
               },
               {
                 translateY: blob3Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -30],
+                  outputRange: [scale(0), scale(-30)],
                 }),
               },
             ],
@@ -144,13 +145,13 @@ export function AnimatedBackground() {
               {
                 translateX: blob4Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -20],
+                  outputRange: [scale(0), scale(-20)],
                 }),
               },
               {
                 translateY: blob4Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 25],
+                  outputRange: [scale(0), scale(25)],
                 }),
               },
             ],
@@ -172,13 +173,13 @@ export function AnimatedBackground() {
               {
                 translateX: blob5Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 28],
+                  outputRange: [scale(0), scale(28)],
                 }),
               },
               {
                 translateY: blob5Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -32],
+                  outputRange: [scale(0), scale(-32)],
                 }),
               },
             ],
@@ -200,13 +201,13 @@ export function AnimatedBackground() {
               {
                 translateX: blob6Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -18],
+                  outputRange: [scale(0), scale(-18)],
                 }),
               },
               {
                 translateY: blob6Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 22],
+                  outputRange: [scale(0), scale(22)],
                 }),
               },
             ],

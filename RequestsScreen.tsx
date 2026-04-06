@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView, Alert } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -107,14 +108,14 @@ export default function RequestsScreen({ onBack }: RequestsScreenProps) {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color="#2D3748" />
+              <Ionicons name="arrow-back" size={scale(24)} color="#2D3748" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>My Requests</Text>
             <TouchableOpacity 
               style={styles.addButton}
               onPress={() => Alert.alert('Coming Soon', 'New request feature will be available soon!')}
             >
-              <Ionicons name="add" size={24} color="#2D3748" />
+              <Ionicons name="add" size={scale(24)} color="#2D3748" />
             </TouchableOpacity>
           </View>
 
@@ -142,7 +143,7 @@ export default function RequestsScreen({ onBack }: RequestsScreenProps) {
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             {filteredRequests.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="mail-open-outline" size={64} color="#CBD5E0" />
+                <Ionicons name="mail-open-outline" size={scale(64)} color="#CBD5E0" />
                 <Text style={styles.emptyText}>No requests found</Text>
                 <Text style={styles.emptySubtext}>Create a new request to get started</Text>
               </View>
@@ -163,12 +164,12 @@ export default function RequestsScreen({ onBack }: RequestsScreenProps) {
                       {/* Header */}
                       <View style={styles.requestHeader}>
                         <View style={styles.requestIconWrapper}>
-                          <Ionicons name={getRequestIcon(request.type)} size={24} color="#FFFFFF" />
+                          <Ionicons name={getRequestIcon(request.type)} size={scale(24)} color="#FFFFFF" />
                         </View>
                         <View style={styles.statusBadge}>
                           <Ionicons 
                             name={getStatusIcon(request.status)} 
-                            size={16} 
+                            size={scale(16)} 
                             color={getStatusColor(request.status)} 
                           />
                           <Text style={[styles.statusText, { color: getStatusColor(request.status) }]}>
@@ -185,7 +186,7 @@ export default function RequestsScreen({ onBack }: RequestsScreenProps) {
 
                       {/* Footer */}
                       <View style={styles.requestFooter}>
-                        <Ionicons name="calendar-outline" size={14} color="rgba(255, 255, 255, 0.7)" />
+                        <Ionicons name="calendar-outline" size={scale(14)} color="rgba(255, 255, 255, 0.7)" />
                         <Text style={styles.requestDate}>{request.date}</Text>
                       </View>
                     </View>
@@ -200,7 +201,7 @@ export default function RequestsScreen({ onBack }: RequestsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
     backgroundColor: '#D4E8E0',

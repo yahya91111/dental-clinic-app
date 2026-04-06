@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,17 +25,17 @@ export default function ComingSoonScreen({ onBack, title }: ComingSoonScreenProp
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <View style={styles.backButtonGlass}>
               <View style={styles.backButtonInnerGlow} />
-              <Ionicons name="arrow-back" size={24} color="#FFFFFF" style={{ zIndex: 10 }} />
+              <Ionicons name="arrow-back" size={scale(24)} color="#FFFFFF" style={{ zIndex: 10 }} />
             </View>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{title}</Text>
-          <View style={{ width: 44 }} />
+          <View style={{ width: scale(44) }} />
         </View>
 
         {/* Content */}
         <View style={styles.content}>
           <View style={[styles.card, shadows.medium]}>
-            <Ionicons name="time-outline" size={80} color="#7DD3C0" style={{ marginBottom: 24 }} />
+            <Ionicons name="time-outline" size={scale(80)} color="#7DD3C0" style={{ marginBottom: scale(24) }} />
             <Text style={styles.soonText}>Soon</Text>
             <Text style={styles.descriptionText}>
               This feature is coming soon
@@ -46,7 +47,7 @@ export default function ComingSoonScreen({ onBack, title }: ComingSoonScreenProp
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

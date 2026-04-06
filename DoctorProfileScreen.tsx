@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, Animated, Dimensions, InteractionManager } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -789,8 +790,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   right: -50,
                   backgroundColor: 'rgba(167, 139, 250, 0.15)',
                   transform: [
-                    { translateX: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 30] }) },
-                    { translateY: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -40] }) },
+                    { translateX: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(30)] }) },
+                    { translateY: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-40)] }) },
                   ],
                 },
               ]}
@@ -803,8 +804,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   left: -80,
                   backgroundColor: 'rgba(125, 211, 252, 0.12)',
                   transform: [
-                    { translateX: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -50] }) },
-                    { translateY: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 30] }) },
+                    { translateX: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-50)] }) },
+                    { translateY: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(30)] }) },
                   ],
                 },
               ]}
@@ -817,8 +818,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   right: '20%',
                   backgroundColor: 'rgba(240, 98, 146, 0.1)',
                   transform: [
-                    { translateX: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 40] }) },
-                    { translateY: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -50] }) },
+                    { translateX: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(40)] }) },
+                    { translateY: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-50)] }) },
                   ],
                 },
               ]}
@@ -833,20 +834,20 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   onPress={() => setCurrentScreen('doctors')} 
                   style={[styles.viewDoctorBackButton, { zIndex: 1 }]}
                 >
-                  <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                  <Ionicons name="arrow-back" size={scale(24)} color="#FFFFFF" />
                 </TouchableOpacity>
                 
                 {/* Info */}
                 <View style={[styles.sideInfo, { zIndex: 1 }]}>
                   <Text style={styles.sideDoctorName} numberOfLines={1}>{viewingDoctorData.name}</Text>
                   <View style={styles.sideClinicRow}>
-                    <Ionicons name="location" size={12} color="#718096" />
+                    <Ionicons name="location" size={scale(12)} color="#718096" />
                     <Text style={styles.sideClinicName} numberOfLines={1}>{viewingDoctorData.clinicName}</Text>
                   </View>
                 </View>
                 
                 {/* Empty Space (no edit button) */}
-                <View style={{ width: 48, zIndex: 1 }} />
+                <View style={{ width: scale(48), zIndex: 1 }} />
               </View>
 
               {/* Content */}
@@ -864,7 +865,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     ]}
                   >
                     <TouchableOpacity 
-                      style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
+                      style={[styles.floatingCard, styles.cardRight, { marginTop: scale(0) }]}
                       activeOpacity={0.85}
                       onPress={() => {
                         setCurrentScreen('viewDoctorStats');
@@ -891,7 +892,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                         <View style={styles.cardContent}>
                           <View style={styles.cardIconWrapper}>
-                            <Ionicons name="analytics" size={32} color="#FFFFFF" />
+                            <Ionicons name="analytics" size={scale(32)} color="#FFFFFF" />
                           </View>
                           <Text style={styles.cardTitle}>My Statistics</Text>
                           <Text style={styles.cardSubtitle}>Performance</Text>
@@ -932,8 +933,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   right: -50,
                   backgroundColor: 'rgba(167, 139, 250, 0.15)',
                   transform: [
-                    { translateX: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 30] }) },
-                    { translateY: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -40] }) },
+                    { translateX: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(30)] }) },
+                    { translateY: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-40)] }) },
                   ],
                 },
               ]}
@@ -946,8 +947,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   left: -80,
                   backgroundColor: 'rgba(125, 211, 252, 0.12)',
                   transform: [
-                    { translateX: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -50] }) },
-                    { translateY: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 30] }) },
+                    { translateX: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-50)] }) },
+                    { translateY: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(30)] }) },
                   ],
                 },
               ]}
@@ -960,8 +961,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   right: '20%',
                   backgroundColor: 'rgba(240, 98, 146, 0.1)',
                   transform: [
-                    { translateX: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 40] }) },
-                    { translateY: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -50] }) },
+                    { translateX: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(40)] }) },
+                    { translateY: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-50)] }) },
                   ],
                 },
               ]}
@@ -976,13 +977,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     onPress={() => setCurrentScreen('viewDoctor')} 
                     style={styles.statsBackButton}
                   >
-                    <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                    <Ionicons name="arrow-back" size={scale(24)} color="#FFFFFF" />
                   </TouchableOpacity>
                   <View style={{ flex: 1, alignItems: 'center' }}>
                     <Text style={styles.statsHeaderTitle}>{viewingDoctorData.name}</Text>
                     <Text style={styles.statsHeaderSubtitle}>{viewingDoctorData.clinicName}</Text>
                   </View>
-                  <View style={{ width: 40 }} />
+                  <View style={{ width: scale(40) }} />
                 </View>
               </View>
 
@@ -1006,7 +1007,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                         colors={['#7DD3FC', '#7DD3FC']}
                         style={styles.statsTimelineDot}
                       >
-                        <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                        <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                       </LinearGradient>
                     </TouchableOpacity>
                     <Text style={styles.statsTimelineLabel}>From</Text>
@@ -1026,7 +1027,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                         colors={['#7DD3FC', '#7DD3FC']}
                         style={styles.statsTimelineDot}
                       >
-                        <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                        <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                       </LinearGradient>
                     </TouchableOpacity>
                     <Text style={styles.statsTimelineLabel}>To</Text>
@@ -1044,7 +1045,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                       loadDoctorStatistics(tempStatsDateFrom, tempStatsDateTo);
                     }}>
                       <View style={[styles.statsTimelineDot, styles.statsTimelineDotInactive]}>
-                        <Ionicons name="checkmark-circle" size={24} color="#F687B3" />
+                        <Ionicons name="checkmark-circle" size={scale(24)} color="#F687B3" />
                       </View>
                     </TouchableOpacity>
                     <Text style={styles.statsTimelineLabel}>Load</Text>
@@ -1078,7 +1079,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                         for (let i = 0; i < treatments.length; i += itemsPerPage) {
                           const pageItems = treatments.slice(i, i + itemsPerPage);
                           pages.push(
-                            <View key={`page-${i}`} style={styles.statsCircularCardsPage}>
+                            <View key={`page-${i}`} style={[styles.statsCircularCardsPage, { width: Dimensions.get('window').width }]}>
                               {pageItems.map(([treatment, count]: [string, any]) => {
                                 const percentage = Math.round((count / doctorStats.totalPatients) * 100);
                                 const colors = getTreatmentGradient(treatment);
@@ -1270,13 +1271,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 {
                   translateX: blob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 30],
+                    outputRange: [scale(0), scale(30)],
                   }),
                 },
                 {
                   translateY: blob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -40],
+                    outputRange: [scale(0), scale(-40)],
                   }),
                 },
               ],
@@ -1291,13 +1292,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 {
                   translateX: blob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -50],
+                    outputRange: [scale(0), scale(-50)],
                   }),
                 },
                 {
                   translateY: blob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 30],
+                    outputRange: [scale(0), scale(30)],
                   }),
                 },
               ],
@@ -1312,13 +1313,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 {
                   translateX: blob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 40],
+                    outputRange: [scale(0), scale(40)],
                   }),
                 },
                 {
                   translateY: blob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 50],
+                    outputRange: [scale(0), scale(50)],
                   }),
                 },
               ],
@@ -1348,7 +1349,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               <View style={styles.glassHeaderInfo}>
                 <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>{user?.name || 'Doctor'}</Text>
                 <View style={styles.glassHeaderClinicRow}>
-                  <Ionicons name="location" size={14} color="rgba(255, 255, 255, 0.9)" />
+                  <Ionicons name="location" size={scale(14)} color="rgba(255, 255, 255, 0.9)" />
                   <Text style={styles.glassHeaderClinicName} numberOfLines={1}>{user?.clinicName || 'Clinic'}</Text>
                 </View>
               </View>
@@ -1360,14 +1361,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   styles.glassHeaderEditButton,
                   Platform.OS === 'android' && {
                     shadowColor: 'transparent',
-                    shadowOffset: { width: 0, height: 0 },
+                    shadowOffset: { width: scale(0), height: scale(0) },
                     shadowOpacity: 0,
                     shadowRadius: 0,
                     elevation: 0,
                   }
                 ]}
               >
-                <Ionicons name="create-outline" size={22} color="#FFFFFF" />
+                <Ionicons name="create-outline" size={scale(22)} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -1395,10 +1396,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 0 },
+                      { marginTop: scale(0) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1432,7 +1433,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="pulse" size={32} color="#FFFFFF" />
+                          <Ionicons name="pulse" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Timeline</Text>
                         <Text style={styles.cardSubtitle}>Patient Queue</Text>
@@ -1451,10 +1452,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardLeft,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1487,7 +1488,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="people-circle" size={32} color="#FFFFFF" />
+                          <Ionicons name="people-circle" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>My Team</Text>
                         <Text style={styles.cardSubtitle}>Doctors List</Text>
@@ -1506,10 +1507,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1543,7 +1544,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="analytics" size={32} color="#FFFFFF" />
+                          <Ionicons name="analytics" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>My Statistics</Text>
                         <Text style={styles.cardSubtitle}>Performance</Text>
@@ -1562,10 +1563,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardLeft,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1595,7 +1596,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
+                          <Ionicons name="calendar-sharp" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Schedule</Text>
                         <Text style={styles.cardSubtitle}>Work Shifts</Text>
@@ -1614,10 +1615,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1647,7 +1648,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="mail-unread" size={32} color="#FFFFFF" />
+                          <Ionicons name="mail-unread" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Requests</Text>
                         <Text style={styles.cardSubtitle}>Pending Items</Text>
@@ -1671,10 +1672,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 0 },
+                      { marginTop: scale(0) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1706,7 +1707,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="people" size={32} color="#FFFFFF" />
+                          <Ionicons name="people" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Doctors</Text>
                         <Text style={styles.cardSubtitle}>Team Management</Text>
@@ -1725,10 +1726,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardLeft,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1762,7 +1763,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="analytics" size={32} color="#FFFFFF" />
+                          <Ionicons name="analytics" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>My Statistics</Text>
                         <Text style={styles.cardSubtitle}>Performance</Text>
@@ -1781,10 +1782,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1814,7 +1815,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="business" size={32} color="#FFFFFF" />
+                          <Ionicons name="business" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Dental Dept</Text>
                         <Text style={styles.cardSubtitle}>Departments</Text>
@@ -1833,10 +1834,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardLeft,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1866,7 +1867,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
+                          <Ionicons name="calendar-sharp" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Schedule</Text>
                         <Text style={styles.cardSubtitle}>Work Shifts</Text>
@@ -1885,10 +1886,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1918,7 +1919,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="mail-unread" size={32} color="#FFFFFF" />
+                          <Ionicons name="mail-unread" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Requests</Text>
                         <Text style={styles.cardSubtitle}>Pending Items</Text>
@@ -1942,10 +1943,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 0 },
+                      { marginTop: scale(0) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -1979,7 +1980,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="pulse" size={32} color="#FFFFFF" />
+                        <Ionicons name="pulse" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>Timeline</Text>
                       <Text style={styles.cardSubtitle}>Patient Queue</Text>
@@ -1998,10 +1999,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardLeft,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -2034,7 +2035,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="people-circle" size={32} color="#FFFFFF" />
+                        <Ionicons name="people-circle" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>My Team</Text>
                       <Text style={styles.cardSubtitle}>Doctors List</Text>
@@ -2053,10 +2054,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -2090,7 +2091,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="analytics" size={32} color="#FFFFFF" />
+                        <Ionicons name="analytics" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>My Statistics</Text>
                       <Text style={styles.cardSubtitle}>Performance</Text>
@@ -2109,10 +2110,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardLeft,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -2142,7 +2143,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
+                        <Ionicons name="calendar-sharp" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>Schedule</Text>
                       <Text style={styles.cardSubtitle}>Work Shifts</Text>
@@ -2161,10 +2162,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     style={[
                       styles.floatingCard,
                       styles.cardRight,
-                      { marginTop: 20 },
+                      { marginTop: scale(20) },
                       Platform.OS === 'android' && {
                         shadowColor: 'transparent',
-                        shadowOffset: { width: 0, height: 0 },
+                        shadowOffset: { width: scale(0), height: scale(0) },
                         shadowOpacity: 0,
                         shadowRadius: 0,
                         elevation: 0,
@@ -2194,7 +2195,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="mail-unread" size={32} color="#FFFFFF" />
+                        <Ionicons name="mail-unread" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>Requests</Text>
                       <Text style={styles.cardSubtitle}>Pending Items</Text>
@@ -2247,7 +2248,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   onPress={() => setShowEditModal(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color="#FFFFFF" />
+                  <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -2389,7 +2390,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   onPress={() => setShowChangePasswordModal(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color="#FFFFFF" />
+                  <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
 
@@ -2516,7 +2517,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
     backgroundColor: '#E8EAF6',
@@ -3359,7 +3360,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    width: Dimensions.get('window').width,
   },
   statsCircularCard: {
     width: '48%',

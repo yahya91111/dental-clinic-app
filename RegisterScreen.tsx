@@ -1,18 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Animated,
-  StatusBar,
-  ScrollView,
-} from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Animated, StatusBar, ScrollView } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from './lib/supabase';
@@ -253,13 +241,13 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
               {
                 translateX: blob1Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 30],
+                  outputRange: [scale(0), scale(30)],
                 }),
               },
               {
                 translateY: blob1Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -40],
+                  outputRange: [scale(0), scale(-40)],
                 }),
               },
             ],
@@ -279,13 +267,13 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
               {
                 translateX: blob2Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -25],
+                  outputRange: [scale(0), scale(-25)],
                 }),
               },
               {
                 translateY: blob2Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 35],
+                  outputRange: [scale(0), scale(35)],
                 }),
               },
             ],
@@ -306,13 +294,13 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
               {
                 translateX: blob3Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 20],
+                  outputRange: [scale(0), scale(20)],
                 }),
               },
               {
                 translateY: blob3Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -30],
+                  outputRange: [scale(0), scale(-30)],
                 }),
               },
             ],
@@ -332,13 +320,13 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
               {
                 translateX: blob4Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 28],
+                  outputRange: [scale(0), scale(28)],
                 }),
               },
               {
                 translateY: blob4Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -32],
+                  outputRange: [scale(0), scale(-32)],
                 }),
               },
             ],
@@ -358,13 +346,13 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
               {
                 translateX: blob5Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -20],
+                  outputRange: [scale(0), scale(-20)],
                 }),
               },
               {
                 translateY: blob5Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 25],
+                  outputRange: [scale(0), scale(25)],
                 }),
               },
             ],
@@ -384,7 +372,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
           <View style={styles.content}>
             {/* Back Button */}
             <TouchableOpacity style={styles.backButton} onPress={onBack}>
-              <Ionicons name="arrow-forward" size={24} color="#FFFFFF" />
+              <Ionicons name="arrow-forward" size={scale(24)} color="#FFFFFF" />
             </TouchableOpacity>
 
             {/* Glass Container with White Border and Color Tint */}
@@ -415,7 +403,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                   {/* First Name Field */}
                   <View style={styles.inputWrapper}>
                     <View style={styles.inputContainer}>
-                      <Ionicons name="person-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                      <Ionicons name="person-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
                         placeholder="الاسم الأول"
@@ -431,7 +419,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                   {/* Last Name Field */}
                   <View style={styles.inputWrapper}>
                     <View style={styles.inputContainer}>
-                      <Ionicons name="person-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                      <Ionicons name="person-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
                         placeholder="الاسم الثاني"
@@ -446,7 +434,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                   {/* Email Field */}
                   <View style={styles.inputWrapper}>
                     <View style={styles.inputContainer}>
-                      <Ionicons name="mail-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                      <Ionicons name="mail-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
                         placeholder="البريد الإلكتروني"
@@ -462,7 +450,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                   {/* Password Field */}
                   <View style={styles.inputWrapper}>
                     <View style={styles.inputContainer}>
-                      <Ionicons name="lock-closed-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                      <Ionicons name="lock-closed-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
                         placeholder="كلمة المرور"
@@ -477,7 +465,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                       >
                         <Ionicons
                           name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                          size={22}
+                          size={scale(22)}
                           color="#94A3B8"
                         />
                       </TouchableOpacity>
@@ -487,7 +475,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                   {/* Confirm Password Field */}
                   <View style={styles.inputWrapper}>
                     <View style={styles.inputContainer}>
-                      <Ionicons name="lock-closed-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                      <Ionicons name="lock-closed-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
                         placeholder="تأكيد كلمة المرور"
@@ -502,7 +490,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
                       >
                         <Ionicons
                           name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
-                          size={22}
+                          size={scale(22)}
                           color="#94A3B8"
                         />
                       </TouchableOpacity>
@@ -538,7 +526,7 @@ export default function RegisterScreen({ onBack, onRegisterSuccess }: RegisterSc
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

@@ -5,6 +5,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { View, TouchableOpacity, Animated } from 'react-native';
+import { scale } from '../../lib/scale';
 import Svg, { Line, Rect, Defs, ClipPath, G, Polygon } from 'react-native-svg';
 import { CONDITION_COLORS } from './constants';
 import { ToothSurfaceConditions } from './dentalHelpers';
@@ -28,7 +29,7 @@ export interface ToothWithSectionsProps {
 // Molar tooth shape - oval
 export const ToothWithSections: React.FC = () => {
   return (
-    <View style={{ width: 40, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(40), height: scale(52), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="40" height="52" viewBox="0 0 40 52">
         <Rect x="2" y="2" width="36" height="48" rx="18" ry="18" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="14" y="18" width="12" height="16" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -44,7 +45,7 @@ export const ToothWithSections: React.FC = () => {
 // Molar tooth shape - square (teeth 6, 7, 8)
 export const ToothWithSectionsSquare: React.FC = () => {
   return (
-    <View style={{ width: 40, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(40), height: scale(52), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="40" height="52" viewBox="0 0 40 52">
         <Rect x="2" y="2" width="36" height="48" rx="8" ry="8" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="14" y="18" width="12" height="16" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -60,7 +61,7 @@ export const ToothWithSectionsSquare: React.FC = () => {
 // Small canine (tooth 3)
 export const ToothWithSectionsCanineSmall: React.FC = () => {
   return (
-    <View style={{ width: 30, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(30), height: scale(38), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="30" height="38" viewBox="0 0 32 50">
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="rgba(251, 191, 36, 0.15)" stroke="rgba(251, 191, 36, 0.3)" strokeWidth="1" />
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="transparent" stroke="rgba(135, 206, 250, 0.95)" strokeWidth="2.5" />
@@ -77,7 +78,7 @@ export const ToothWithSectionsCanineSmall: React.FC = () => {
 // Small incisor (teeth 1, 2)
 export const ToothWithSectionsIncisorSmall: React.FC = () => {
   return (
-    <View style={{ width: 30, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(30), height: scale(38), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="30" height="38" viewBox="0 0 30 48">
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="rgba(251, 191, 36, 0.15)" stroke="rgba(251, 191, 36, 0.3)" strokeWidth="1" />
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(135, 206, 250, 0.95)" strokeWidth="2.5" />
@@ -94,7 +95,7 @@ export const ToothWithSectionsIncisorSmall: React.FC = () => {
 // Premolar
 export const ToothWithSectionsPremolar: React.FC = () => {
   return (
-    <View style={{ width: 35, height: 45, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(35), height: scale(45), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="35" height="45" viewBox="0 0 35 45">
         <Rect x="2" y="2" width="31" height="41" rx="15" ry="15" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="12" y="16" width="11" height="13" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -110,7 +111,7 @@ export const ToothWithSectionsPremolar: React.FC = () => {
 // Canine
 export const ToothWithSectionsCanine: React.FC = () => {
   return (
-    <View style={{ width: 32, height: 50, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(32), height: scale(50), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="32" height="50" viewBox="0 0 32 50">
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="11" y="18" width="10" height="14" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -126,7 +127,7 @@ export const ToothWithSectionsCanine: React.FC = () => {
 // Incisor
 export const ToothWithSectionsIncisor: React.FC = () => {
   return (
-    <View style={{ width: 30, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(30), height: scale(48), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="30" height="48" viewBox="0 0 30 48">
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Rect x="10" y="17" width="10" height="14" rx="2" ry="2" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="1.5" />
@@ -142,7 +143,7 @@ export const ToothWithSectionsIncisor: React.FC = () => {
 // Incisor without center box
 export const ToothWithSectionsIncisorNoCenter: React.FC = () => {
   return (
-    <View style={{ width: 30, height: 48, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(30), height: scale(48), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="30" height="48" viewBox="0 0 30 48">
         <Rect x="2" y="2" width="26" height="44" rx="13" ry="18" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Line x1="15" y1="8" x2="15" y2="40" stroke="rgba(255, 255, 255, 0.7)" strokeWidth="1.5" />
@@ -158,7 +159,7 @@ export const ToothWithSectionsIncisorNoCenter: React.FC = () => {
 // Canine without center box
 export const ToothWithSectionsCanineNoCenter: React.FC = () => {
   return (
-    <View style={{ width: 32, height: 50, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: scale(32), height: scale(50), alignItems: 'center', justifyContent: 'center' }}>
       <Svg width="32" height="50" viewBox="0 0 32 50">
         <Rect x="2" y="2" width="28" height="46" rx="14" ry="20" fill="transparent" stroke="rgba(255, 255, 255, 0.9)" strokeWidth="2" />
         <Line x1="16" y1="8" x2="16" y2="42" stroke="rgba(255, 255, 255, 0.7)" strokeWidth="1.5" />
@@ -220,7 +221,7 @@ export const ToothWithSectionsSquareTiny: React.FC<ToothWithSectionsProps> = ({
 
   return (
     <TouchableOpacity
-      style={{ width: 37, height: 47, alignItems: 'center', justifyContent: 'center' }}
+      style={{ width: scale(37), height: scale(47), alignItems: 'center', justifyContent: 'center' }}
       onPress={onToothPress}
       activeOpacity={0.7}
     >
@@ -255,11 +256,11 @@ export const ToothWithSectionsSquareTiny: React.FC<ToothWithSectionsProps> = ({
       </Animated.View>
       {onSurfacePress && (
         <>
-          <TouchableOpacity style={{ position: 'absolute', left: 3.7, top: 3.6, width: 29.6, height: 12.7, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }} activeOpacity={0.5} />
-          <TouchableOpacity style={{ position: 'absolute', left: 3.7, top: 30.8, width: 29.6, height: 12.6, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }} activeOpacity={0.5} />
-          <TouchableOpacity style={{ position: 'absolute', left: 3.7, top: 16.3, width: 9.3, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }} activeOpacity={0.5} />
-          <TouchableOpacity style={{ position: 'absolute', left: 24.1, top: 16.3, width: 9.2, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }} activeOpacity={0.5} />
-          <TouchableOpacity style={{ position: 'absolute', left: 13, top: 16.3, width: 11.1, height: 14.5, backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }} activeOpacity={0.5} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(3.7), top: scale(3.6), width: scale(29.6), height: scale(12.7), backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }} activeOpacity={0.5} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(3.7), top: scale(30.8), width: scale(29.6), height: scale(12.6), backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }} activeOpacity={0.5} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(3.7), top: scale(16.3), width: scale(9.3), height: scale(14.5), backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }} activeOpacity={0.5} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(24.1), top: scale(16.3), width: scale(9.2), height: scale(14.5), backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }} activeOpacity={0.5} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(13), top: scale(16.3), width: scale(11.1), height: scale(14.5), backgroundColor: 'transparent', zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }} activeOpacity={0.5} />
         </>
       )}
     </TouchableOpacity>
@@ -311,7 +312,7 @@ export const ToothWithSectionsSquareMedium: React.FC<ToothWithSectionsProps> = (
 
   return (
     <TouchableOpacity
-      style={{ width: 33, height: 42, alignItems: 'center', justifyContent: 'center' }}
+      style={{ width: scale(33), height: scale(42), alignItems: 'center', justifyContent: 'center' }}
       onPress={onToothPress}
       activeOpacity={0.7}
     >
@@ -346,11 +347,11 @@ export const ToothWithSectionsSquareMedium: React.FC<ToothWithSectionsProps> = (
       </Animated.View>
       {onSurfacePress && (
         <>
-          <TouchableOpacity style={{ position: 'absolute', left: 3.3, top: 3.2, width: 26.4, height: 11.3, zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }} activeOpacity={1} />
-          <TouchableOpacity style={{ position: 'absolute', left: 3.3, top: 27.5, width: 26.4, height: 11.3, zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }} activeOpacity={1} />
-          <TouchableOpacity style={{ position: 'absolute', left: 3.3, top: 14.5, width: 8.25, height: 13, zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }} activeOpacity={1} />
-          <TouchableOpacity style={{ position: 'absolute', left: 21.45, top: 14.5, width: 8.25, height: 13, zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }} activeOpacity={1} />
-          <TouchableOpacity style={{ position: 'absolute', left: 11.55, top: 14.5, width: 9.9, height: 12.9, zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }} activeOpacity={1} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(3.3), top: scale(3.2), width: scale(26.4), height: scale(11.3), zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('top'); }} activeOpacity={1} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(3.3), top: scale(27.5), width: scale(26.4), height: scale(11.3), zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('bottom'); }} activeOpacity={1} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(3.3), top: scale(14.5), width: scale(8.25), height: scale(13), zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'right' : 'left'); }} activeOpacity={1} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(21.45), top: scale(14.5), width: scale(8.25), height: scale(13), zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress(swapSides ? 'left' : 'right'); }} activeOpacity={1} />
+          <TouchableOpacity style={{ position: 'absolute', left: scale(11.55), top: scale(14.5), width: scale(9.9), height: scale(12.9), zIndex: 1005, elevation: 1005 }} onPress={(e) => { e.stopPropagation(); onSurfacePress('center'); }} activeOpacity={1} />
         </>
       )}
     </TouchableOpacity>

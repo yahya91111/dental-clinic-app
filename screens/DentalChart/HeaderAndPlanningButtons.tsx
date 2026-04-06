@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { scale } from '../../lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
 
@@ -32,7 +33,7 @@ export function HeaderAndPlanningButtons({
       {/* Header with Back Button */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={28} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={scale(28)} color="#FFFFFF" />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Dental Chart</Text>
@@ -40,33 +41,33 @@ export function HeaderAndPlanningButtons({
         <TouchableOpacity
           onPress={onGeneralNotesPress}
           style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
+            width: scale(42),
+            height: scale(42),
+            borderRadius: scale(12),
             backgroundColor: 'transparent',
             alignItems: 'center',
             justifyContent: 'center',
-            borderWidth: 2,
+            borderWidth: scale(2),
             borderColor: 'rgba(255, 255, 255, 0.6)',
           }}
         >
-          <Ionicons name="document-text" size={26} color="#93C5FD" />
+          <Ionicons name="document-text" size={scale(26)} color="#93C5FD" />
           {generalNotesCount > 0 && (
             <View style={{
               position: 'absolute',
-              top: -6,
-              right: -6,
+              top: scale(-6),
+              right: scale(-6),
               backgroundColor: '#FACC15',
-              borderRadius: 10,
-              minWidth: 20,
-              height: 20,
+              borderRadius: scale(10),
+              minWidth: scale(20),
+              height: scale(20),
               alignItems: 'center',
               justifyContent: 'center',
-              paddingHorizontal: 4,
-              borderWidth: 2,
+              paddingHorizontal: scale(4),
+              borderWidth: scale(2),
               borderColor: '#FFFFFF',
             }}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: '#1E3A8A' }}>{generalNotesCount}</Text>
+              <Text style={{ fontSize: scale(11), fontWeight: '800', color: '#1E3A8A' }}>{generalNotesCount}</Text>
             </View>
           )}
         </TouchableOpacity>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Keyboard, TouchableWithoutFeedback, Platform } from 'react-native';
+import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -128,7 +129,7 @@ export function AppModals(props: AppModalsProps) {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.modalContent, { minWidth: '90%', maxHeight: '80%', borderWidth: 3, borderColor: '#FFFFFF', borderRadius: 24 }]}>
+              <View style={[styles.modalContent, { minWidth: '90%', maxHeight: '80%', borderWidth: scale(3), borderColor: '#FFFFFF', borderRadius: scale(24) }]}>
                 {/* Glass Color Tint */}
                 <LinearGradient
                   colors={[
@@ -164,7 +165,7 @@ export function AppModals(props: AppModalsProps) {
                     }}
                     style={styles.modalCloseButton}
                   >
-                    <Ionicons name="close" size={24} color="#FFFFFF" />
+                    <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
 
@@ -191,7 +192,7 @@ export function AppModals(props: AppModalsProps) {
                   >
                     <Ionicons
                       name="walk"
-                      size={18}
+                      size={scale(18)}
                       color={props.patientMode === 'walk-in' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.7)'}
                     />
                     <Text style={[
@@ -219,7 +220,7 @@ export function AppModals(props: AppModalsProps) {
                   >
                     <Ionicons
                       name="person-add"
-                      size={18}
+                      size={scale(18)}
                       color={props.patientMode === 'new-profile' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.7)'}
                     />
                     <Text style={[
@@ -266,7 +267,7 @@ export function AppModals(props: AppModalsProps) {
                           (() => {
                             const firstChar = props.newPatientName.trim()[0];
                             const isArabic = firstChar && /[\u0600-\u06FF]/.test(firstChar);
-                            return isArabic ? { left: 12, right: undefined } : { right: 12, left: undefined };
+                            return isArabic ? { left: scale(12), right: undefined } : { right: scale(12), left: undefined };
                           })()
                         ]}
                         onPress={() => {
@@ -276,7 +277,7 @@ export function AppModals(props: AppModalsProps) {
                           props.setSelectedPermanentPatientId(null);
                         }}
                       >
-                        <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                        <Ionicons name="close-circle" size={scale(20)} color="rgba(0, 0, 0, 0.5)" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -315,7 +316,7 @@ export function AppModals(props: AppModalsProps) {
                               {`File #${arabicToEnglish(patient.file_number || '')} - ${patient.name}`}
                             </Text>
                             {props.selectedPermanentPatientId === patient.id && (
-                              <Ionicons name="checkmark-circle" size={20} color="#7DD3C0" />
+                              <Ionicons name="checkmark-circle" size={scale(20)} color="#7DD3C0" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -361,7 +362,7 @@ export function AppModals(props: AppModalsProps) {
                               props.setSelectedPermanentPatientId(null);
                             }}
                           >
-                            <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                            <Ionicons name="close-circle" size={scale(20)} color="rgba(0, 0, 0, 0.5)" />
                           </TouchableOpacity>
                         )}
                       </View>
@@ -398,7 +399,7 @@ export function AppModals(props: AppModalsProps) {
                               {patient.name}
                             </Text>
                             {props.selectedPermanentPatientId === patient.id && (
-                              <Ionicons name="checkmark-circle" size={20} color="#7DD3C0" />
+                              <Ionicons name="checkmark-circle" size={scale(20)} color="#7DD3C0" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -421,7 +422,7 @@ export function AppModals(props: AppModalsProps) {
                         style={styles.clearButton}
                         onPress={() => props.setNewPatientQueueNumber('')}
                       >
-                        <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                        <Ionicons name="close-circle" size={scale(20)} color="rgba(0, 0, 0, 0.5)" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -436,7 +437,7 @@ export function AppModals(props: AppModalsProps) {
                     </Text>
                     <Ionicons
                       name={props.isModalExpanded ? "chevron-up" : "chevron-down"}
-                      size={20}
+                      size={scale(20)}
                       color="#FFFFFF"
                     />
                   </TouchableOpacity>
@@ -471,7 +472,7 @@ export function AppModals(props: AppModalsProps) {
                               props.newPatientCondition === condition.name && styles.dropdownItemTextSelected
                             ]}>{condition.name}</Text>
                             {props.newPatientCondition === condition.name && (
-                              <Ionicons name="checkmark" size={20} color="#7DD3C0" />
+                              <Ionicons name="checkmark" size={scale(20)} color="#7DD3C0" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -517,7 +518,7 @@ export function AppModals(props: AppModalsProps) {
                                 props.newPatientTreatment === treatment.name && styles.dropdownItemTextSelected
                               ]}>{treatment.name}</Text>
                               {props.newPatientTreatment === treatment.name && (
-                              <Ionicons name="checkmark" size={20} color="#7DD3C0" />
+                              <Ionicons name="checkmark" size={scale(20)} color="#7DD3C0" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -530,7 +531,7 @@ export function AppModals(props: AppModalsProps) {
                     onPress={() => props.setIsElderly(!props.isElderly)}
                   >
                     <View style={[styles.checkbox, props.isElderly && styles.checkboxChecked]}>
-                      {props.isElderly && <Ionicons name="checkmark" size={18} color="#FFFFFF" />}
+                      {props.isElderly && <Ionicons name="checkmark" size={scale(18)} color="#FFFFFF" />}
                     </View>
                     <Text style={styles.checkboxLabel}>Elderly</Text>
                   </TouchableOpacity>
@@ -552,7 +553,7 @@ export function AppModals(props: AppModalsProps) {
                         style={[styles.clearButton, styles.clearButtonTextArea]}
                         onPress={() => props.setNewPatientNote('')}
                       >
-                        <Ionicons name="close-circle" size={20} color="rgba(0, 0, 0, 0.5)" />
+                        <Ionicons name="close-circle" size={scale(20)} color="rgba(0, 0, 0, 0.5)" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -590,9 +591,9 @@ export function AppModals(props: AppModalsProps) {
                 style={styles.modalGlassOverlay}
               />
 
-              <View style={{ padding: 8 }}>
+              <View style={{ padding: scale(8) }}>
                 {/* الصف العلوي - الأزرار الأساسية */}
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: scale(12) }}>
                   {[
                     { action: 'edit', icon: 'create-outline', color: '#8B5CF6', label: 'Edit' },
                     { action: 'note', icon: 'document-text', color: '#3B82F6', label: 'Note' },
@@ -606,19 +607,19 @@ export function AppModals(props: AppModalsProps) {
                     <TouchableOpacity
                       key={item.action}
                       style={{
-                        width: 80,
-                        height: 80,
+                        width: scale(80),
+                        height: scale(80),
                         backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                        borderRadius: 18,
+                        borderRadius: scale(18),
                         alignItems: 'center',
                         justifyContent: 'center',
-                        borderWidth: 1.5,
+                        borderWidth: scale(1.5),
                         borderColor: 'rgba(255, 255, 255, 0.5)',
                       }}
                       onPress={() => props.handleMenuAction(props.showMenuForPatient!, item.action as any)}
                     >
-                      <Ionicons name={item.icon as any} size={26} color={item.color} />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A', marginTop: 6 }}>
+                      <Ionicons name={item.icon as any} size={scale(26)} color={item.color} />
+                      <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#1E3A8A', marginTop: scale(6) }}>
                         {item.label}
                       </Text>
                     </TouchableOpacity>
@@ -626,38 +627,38 @@ export function AppModals(props: AppModalsProps) {
                 </View>
 
                 {/* الصف السفلي - Done و Delete فقط */}
-                <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'center', gap: scale(12), marginTop: scale(12) }}>
                   <TouchableOpacity
                     style={{
-                      width: 80,
-                      height: 80,
+                      width: scale(80),
+                      height: scale(80),
                       backgroundColor: 'rgba(254, 226, 226, 0.4)',
-                      borderRadius: 18,
+                      borderRadius: scale(18),
                       alignItems: 'center',
                       justifyContent: 'center',
-                      borderWidth: 1.5,
+                      borderWidth: scale(1.5),
                       borderColor: 'rgba(239, 68, 68, 0.4)',
                     }}
                     onPress={() => props.handleMenuAction(props.showMenuForPatient!, 'delete')}
                   >
-                    <Ionicons name="trash-bin" size={26} color="#EF4444" />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginTop: 6 }}>Delete</Text>
+                    <Ionicons name="trash-bin" size={scale(26)} color="#EF4444" />
+                    <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#EF4444', marginTop: scale(6) }}>Delete</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={{
-                      width: 80,
-                      height: 80,
+                      width: scale(80),
+                      height: scale(80),
                       backgroundColor: 'rgba(220, 252, 231, 0.4)',
-                      borderRadius: 18,
+                      borderRadius: scale(18),
                       alignItems: 'center',
                       justifyContent: 'center',
-                      borderWidth: 1.5,
+                      borderWidth: scale(1.5),
                       borderColor: 'rgba(34, 197, 94, 0.4)',
                     }}
                     onPress={() => props.handleMenuAction(props.showMenuForPatient!, 'complete')}
                   >
-                    <Ionicons name="checkmark-circle" size={26} color="#22C55E" />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#22C55E', marginTop: 6 }}>Done</Text>
+                    <Ionicons name="checkmark-circle" size={scale(26)} color="#22C55E" />
+                    <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#22C55E', marginTop: scale(6) }}>Done</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -690,7 +691,7 @@ export function AppModals(props: AppModalsProps) {
                     onPress={() => props.setShowNoteModal(false)}
                     style={styles.modalCloseButton}
                   >
-                    <Ionicons name="close" size={24} color="#FFFFFF" />
+                    <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
 
@@ -748,7 +749,7 @@ export function AppModals(props: AppModalsProps) {
                 }}
                 style={styles.modalCloseButton}
               >
-                <Ionicons name="close" size={24} color="#FFFFFF" />
+                <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
@@ -788,14 +789,14 @@ export function AppModals(props: AppModalsProps) {
                     }}
                     style={styles.modalCloseButton}
                   >
-                    <Ionicons name="close" size={24} color="#FFFFFF" />
+                    <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
 
                 <Text style={{
-                  fontSize: 14,
+                  fontSize: scale(14),
                   color: '#6B7280',
-                  marginBottom: 16,
+                  marginBottom: scale(16),
                   textAlign: 'center',
                 }}>
                   Enter file number to convert this patient to a permanent profile
@@ -816,7 +817,7 @@ export function AppModals(props: AppModalsProps) {
                 />
 
                 <TouchableOpacity
-                  style={[styles.button, { marginTop: 16 }]}
+                  style={[styles.button, { marginTop: scale(16) }]}
                   onPress={props.convertToPermanentPatient}
                 >
                   <Text style={styles.buttonText}>Convert to Permanent</Text>
@@ -854,7 +855,7 @@ export function AppModals(props: AppModalsProps) {
                     }}
                     style={styles.modalCloseButton}
                   >
-                    <Ionicons name="close" size={24} color="#FFFFFF" />
+                    <Ionicons name="close" size={scale(24)} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
 
@@ -863,13 +864,13 @@ export function AppModals(props: AppModalsProps) {
                   style={styles.treatmentDoneByMeButton}
                   onPress={() => props.handleTreatmentDoneByDoctor(null, null)}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(34, 197, 94, 0.2)', justifyContent: 'center', alignItems: 'center' }}>
-                      <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(12) }}>
+                    <View style={{ width: scale(40), height: scale(40), borderRadius: scale(20), backgroundColor: 'rgba(34, 197, 94, 0.2)', justifyContent: 'center', alignItems: 'center' }}>
+                      <Ionicons name="checkmark-circle" size={scale(24)} color="#22C55E" />
                     </View>
                     <Text style={styles.treatmentDoneByMeText}>Treatment Done by Me</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+                  <Ionicons name="chevron-forward" size={scale(20)} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <View style={styles.orDivider}>
@@ -880,7 +881,7 @@ export function AppModals(props: AppModalsProps) {
 
                 {/* Search Bar */}
                 <View style={styles.searchContainer}>
-                  <Ionicons name="search" size={20} color="#9CA3AF" />
+                  <Ionicons name="search" size={scale(20)} color="#9CA3AF" />
                   <TextInput
                     style={styles.searchInput}
                     placeholder="Search doctor..."
@@ -900,13 +901,13 @@ export function AppModals(props: AppModalsProps) {
                         style={styles.doctorItem}
                         onPress={() => props.handleTreatmentDoneByDoctor(doctor.id, doctor.name)}
                       >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(125, 211, 192, 0.2)', justifyContent: 'center', alignItems: 'center' }}>
-                            <Ionicons name="person" size={24} color="#7DD3C0" />
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(12) }}>
+                          <View style={{ width: scale(40), height: scale(40), borderRadius: scale(20), backgroundColor: 'rgba(125, 211, 192, 0.2)', justifyContent: 'center', alignItems: 'center' }}>
+                            <Ionicons name="person" size={scale(24)} color="#7DD3C0" />
                           </View>
                           <Text style={styles.doctorName}>{doctor.name}</Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+                        <Ionicons name="chevron-forward" size={scale(20)} color="#FFFFFF" />
                       </TouchableOpacity>
                     ))}
                   {props.clinicDoctors.filter(doctor => doctor.name.toLowerCase().includes(props.doctorSearchQuery.toLowerCase())).length === 0 && (
@@ -1052,10 +1053,10 @@ export function AppModals(props: AppModalsProps) {
             <LinearGradient colors={['#E8F5F0', '#F0E8F5']} style={styles.gradient}>
               <View style={styles.timelineHeader}>
                 <TouchableOpacity onPress={() => props.setShowTimelineModal(false)}>
-                  <Ionicons name="arrow-back" size={28} color="#1F2937" />
+                  <Ionicons name="arrow-back" size={scale(28)} color="#1F2937" />
                 </TouchableOpacity>
                 <Text style={styles.timelineTitle}>{props.selectedPatient.name}</Text>
-                <View style={{ width: 28 }} />
+                <View style={{ width: scale(28) }} />
               </View>
 
               <ScrollView style={styles.timelineContent}>

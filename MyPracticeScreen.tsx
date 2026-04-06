@@ -1,19 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-  Animated,
-  StatusBar,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Animated, StatusBar, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -239,13 +226,13 @@ export default function MyPracticeScreen({
                   {
                     translateX: blob1Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 30],
+                      outputRange: [scale(0), scale(30)],
                     }),
                   },
                   {
                     translateY: blob1Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -40],
+                      outputRange: [scale(0), scale(-40)],
                     }),
                   },
                 ],
@@ -260,13 +247,13 @@ export default function MyPracticeScreen({
                   {
                     translateX: blob2Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -50],
+                      outputRange: [scale(0), scale(-50)],
                     }),
                   },
                   {
                     translateY: blob2Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 30],
+                      outputRange: [scale(0), scale(30)],
                     }),
                   },
                 ],
@@ -281,13 +268,13 @@ export default function MyPracticeScreen({
                   {
                     translateX: blob3Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 40],
+                      outputRange: [scale(0), scale(40)],
                     }),
                   },
                   {
                     translateY: blob3Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 50],
+                      outputRange: [scale(0), scale(50)],
                     }),
                   },
                 ],
@@ -305,7 +292,7 @@ export default function MyPracticeScreen({
                 <View style={[styles.sideInfo, { zIndex: 1 }]}>
                   <Text style={styles.sideDoctorName} numberOfLines={1}>{doctorName}</Text>
                   <View style={styles.sideClinicRow}>
-                    <Ionicons name="briefcase" size={12} color="#718096" />
+                    <Ionicons name="briefcase" size={scale(12)} color="#718096" />
                     <Text style={styles.sideClinicName} numberOfLines={1}>My Practice</Text>
                   </View>
                 </View>
@@ -315,7 +302,7 @@ export default function MyPracticeScreen({
                   onPress={() => setShowEditModal(true)} 
                   style={[styles.sideEditButton, { zIndex: 1 }]}
                 >
-                  <Ionicons name="create-outline" size={20} color="#4A5568" />
+                  <Ionicons name="create-outline" size={scale(20)} color="#4A5568" />
                 </TouchableOpacity>
               </View>
 
@@ -333,7 +320,7 @@ export default function MyPracticeScreen({
                   ]}
                 >
                   <TouchableOpacity 
-                    style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
+                    style={[styles.floatingCard, styles.cardRight, { marginTop: scale(0) }]}
                     activeOpacity={0.85}
                     onPress={onNavigateToTimeline}
                   >
@@ -358,7 +345,7 @@ export default function MyPracticeScreen({
 
                       <View style={styles.cardContent}>
                         <View style={styles.cardIconWrapper}>
-                          <Ionicons name="pulse" size={32} color="#FFFFFF" />
+                          <Ionicons name="pulse" size={scale(32)} color="#FFFFFF" />
                         </View>
                         <Text style={styles.cardTitle}>Timeline</Text>
                         <Text style={styles.cardSubtitle}>Patient Queue</Text>
@@ -399,7 +386,7 @@ export default function MyPracticeScreen({
                   onPress={() => setShowEditModal(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color="#2D3748" />
+                  <Ionicons name="close" size={scale(24)} color="#2D3748" />
                 </TouchableOpacity>
               </View>
 
@@ -451,7 +438,7 @@ export default function MyPracticeScreen({
                       >
                         <Ionicons
                           name={showCurrentPassword ? 'eye-off' : 'eye'}
-                          size={20}
+                          size={scale(20)}
                           color="#6B7280"
                         />
                       </TouchableOpacity>
@@ -476,7 +463,7 @@ export default function MyPracticeScreen({
                       >
                         <Ionicons
                           name={showNewPassword ? 'eye-off' : 'eye'}
-                          size={20}
+                          size={scale(20)}
                           color="#6B7280"
                         />
                       </TouchableOpacity>
@@ -501,7 +488,7 @@ export default function MyPracticeScreen({
                       >
                         <Ionicons
                           name={showConfirmPassword ? 'eye-off' : 'eye'}
-                          size={20}
+                          size={scale(20)}
                           color="#6B7280"
                         />
                       </TouchableOpacity>
@@ -571,7 +558,7 @@ export default function MyPracticeScreen({
                     );
                   }}
                 >
-                  <Ionicons name="trash-outline" size={20} color="#DC2626" style={{ marginRight: 8 }} />
+                  <Ionicons name="trash-outline" size={scale(20)} color="#DC2626" style={{ marginRight: scale(8) }} />
                   <Text style={styles.deleteAccountButtonText}>حذف الحساب نهائياً</Text>
                 </TouchableOpacity>
 
@@ -706,7 +693,7 @@ export default function MyPracticeScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
     backgroundColor: '#E8EAF6',

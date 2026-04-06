@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, TouchableOpacity, Modal, Text } from 'react-native';
+import { scale } from '../../lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
 import {
@@ -57,7 +58,7 @@ export function EnlargedToothModal({
           style={styles.enlargedToothCloseButton}
           onPress={onClose}
         >
-          <Ionicons name="close-circle" size={50} color="#FFFFFF" />
+          <Ionicons name="close-circle" size={scale(50)} color="#FFFFFF" />
         </TouchableOpacity>
 
         {/* Enlarged tooth container */}

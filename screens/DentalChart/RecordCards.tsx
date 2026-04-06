@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, Dimensions } from 'react-native';
+import { scaledStyleSheet } from '../../lib/scale';
 import { ToothNumberBadge } from './DentalChartComponents';
 import { getToothName } from './dentalHelpers';
 
@@ -327,7 +328,7 @@ export const ReferralRecordCard: React.FC<ReferralRecordCardProps> = ({ record, 
 // Styles
 // ═══════════════════════════════════════════════════════════════
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   // Planning Record Card
   planningCard: {
     backgroundColor: 'rgba(37, 99, 235, 0.08)',

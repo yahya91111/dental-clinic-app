@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,10 +51,10 @@ export default function ScheduleScreen({ onBack }: ScheduleScreenProps) {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color="#2D3748" />
+              <Ionicons name="arrow-back" size={scale(24)} color="#2D3748" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Work Schedule</Text>
-            <View style={{ width: 40 }} />
+            <View style={{ width: scale(40) }} />
           </View>
 
           {/* Days Selector */}
@@ -88,7 +89,7 @@ export default function ScheduleScreen({ onBack }: ScheduleScreenProps) {
             
             {scheduleData[selectedDay].length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="calendar-outline" size={64} color="#CBD5E0" />
+                <Ionicons name="calendar-outline" size={scale(64)} color="#CBD5E0" />
                 <Text style={styles.emptyText}>No shifts scheduled</Text>
                 <Text style={styles.emptySubtext}>Enjoy your day off!</Text>
               </View>
@@ -103,12 +104,12 @@ export default function ScheduleScreen({ onBack }: ScheduleScreenProps) {
                   >
                     <View style={styles.shiftContent}>
                       <View style={styles.shiftHeader}>
-                        <Ionicons name="time" size={24} color="#FFFFFF" />
+                        <Ionicons name="time" size={scale(24)} color="#FFFFFF" />
                         <Text style={styles.shiftTime}>{shift.time}</Text>
                       </View>
                       <Text style={styles.shiftActivity}>{shift.activity}</Text>
                       <View style={styles.shiftFooter}>
-                        <Ionicons name="location" size={16} color="rgba(255, 255, 255, 0.8)" />
+                        <Ionicons name="location" size={scale(16)} color="rgba(255, 255, 255, 0.8)" />
                         <Text style={styles.shiftClinic}>{shift.clinic}</Text>
                       </View>
                     </View>
@@ -123,7 +124,7 @@ export default function ScheduleScreen({ onBack }: ScheduleScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
     backgroundColor: '#D4E8E0',

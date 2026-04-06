@@ -1,5 +1,6 @@
 // AppContent - Main application content component
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { scale } from '../../lib/scale';
 import {
   StyleSheet,
   View,
@@ -158,7 +159,7 @@ export function AppContent() {
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const headerTranslateY = React.useState(new Animated.Value(0))[0];
   const queueMarginTop = React.useState(new Animated.Value(0))[0];
-  const HEADER_COLLAPSE_HEIGHT = 300; // Height to collapse (Header + Statistics + Queue)
+  const HEADER_COLLAPSE_HEIGHT = scale(300); // Height to collapse (Header + Statistics + Queue)
 
   // Animation for hiding header elements when permanent card expands
   const headerElementsOpacity = React.useState(new Animated.Value(1))[0];
@@ -166,7 +167,7 @@ export function AppContent() {
   
   const toggleHeaderCollapse = () => {
     const translateValue = isHeaderCollapsed ? 0 : -HEADER_COLLAPSE_HEIGHT;
-    const marginValue = isHeaderCollapsed ? 0 : 10;
+    const marginValue = isHeaderCollapsed ? 0 : scale(10);
     
     Animated.parallel([
       Animated.spring(headerTranslateY, {

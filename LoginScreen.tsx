@@ -1,18 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Animated,
-  StatusBar,
-  Modal,
-} from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Animated, StatusBar, Modal } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -217,13 +205,13 @@ export default function LoginScreen() {
                   {
                     translateX: blob1Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 30],
+                      outputRange: [scale(0), scale(30)],
                     }),
                   },
                   {
                     translateY: blob1Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -40],
+                      outputRange: [scale(0), scale(-40)],
                     }),
                   },
                 ],
@@ -243,13 +231,13 @@ export default function LoginScreen() {
                   {
                     translateX: blob2Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -25],
+                      outputRange: [scale(0), scale(-25)],
                     }),
                   },
                   {
                     translateY: blob2Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 35],
+                      outputRange: [scale(0), scale(35)],
                     }),
                   },
                 ],
@@ -270,13 +258,13 @@ export default function LoginScreen() {
                   {
                     translateX: blob3Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 20],
+                      outputRange: [scale(0), scale(20)],
                     }),
                   },
                   {
                     translateY: blob3Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -30],
+                      outputRange: [scale(0), scale(-30)],
                     }),
                   },
                 ],
@@ -296,13 +284,13 @@ export default function LoginScreen() {
                   {
                     translateX: blob4Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 28],
+                      outputRange: [scale(0), scale(28)],
                     }),
                   },
                   {
                     translateY: blob4Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -32],
+                      outputRange: [scale(0), scale(-32)],
                     }),
                   },
                 ],
@@ -322,13 +310,13 @@ export default function LoginScreen() {
                   {
                     translateX: blob5Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -20],
+                      outputRange: [scale(0), scale(-20)],
                     }),
                   },
                   {
                     translateY: blob5Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 25],
+                      outputRange: [scale(0), scale(25)],
                     }),
                   },
                 ],
@@ -383,7 +371,7 @@ export default function LoginScreen() {
                 {/* Email Field */}
                 <View style={styles.inputWrapper}>
                   <View style={styles.inputContainer}>
-                    <Ionicons name="mail-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                    <Ionicons name="mail-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                     <TextInput
                       style={styles.input}
                       placeholder="البريد الإلكتروني"
@@ -399,7 +387,7 @@ export default function LoginScreen() {
                 {/* Password Field */}
                 <View style={styles.inputWrapper}>
                   <View style={styles.inputContainer}>
-                    <Ionicons name="lock-closed-outline" size={22} color="#94A3B8" style={styles.inputIcon} />
+                    <Ionicons name="lock-closed-outline" size={scale(22)} color="#94A3B8" style={styles.inputIcon} />
                     <TextInput
                       style={styles.input}
                       placeholder="كلمة المرور"
@@ -414,7 +402,7 @@ export default function LoginScreen() {
                     >
                       <Ionicons
                         name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                        size={22}
+                        size={scale(22)}
                         color="#94A3B8"
                       />
                     </TouchableOpacity>
@@ -497,7 +485,7 @@ export default function LoginScreen() {
               </Text>
 
               <View style={styles.modalInputContainer}>
-                <Ionicons name="mail-outline" size={22} color="#1F2937" style={styles.inputIcon} />
+                <Ionicons name="mail-outline" size={scale(22)} color="#1F2937" style={styles.inputIcon} />
                 <TextInput
                   style={styles.modalInput}
                   placeholder="البريد الإلكتروني"
@@ -545,7 +533,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

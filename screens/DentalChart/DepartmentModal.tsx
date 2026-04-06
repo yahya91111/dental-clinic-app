@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
@@ -110,18 +111,18 @@ const ToothButton: React.FC<ToothButtonProps> = ({
 }) => (
   <TouchableOpacity
     style={{
-      width: 32,
-      height: 32,
-      borderRadius: 6,
+      width: scale(32),
+      height: scale(32),
+      borderRadius: scale(6),
       backgroundColor: isSelected ? '#0284C7' : 'rgba(255, 255, 255, 0.8)',
-      borderWidth: 1.5,
+      borderWidth: scale(1.5),
       borderColor: isSelected ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
       justifyContent: 'center',
       alignItems: 'center',
     }}
     onPress={onPress}
   >
-    <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
+    <Text style={{ fontSize: scale(11), fontWeight: '700', color: isSelected ? '#FFFFFF' : '#0284C7' }}>
       {num}
     </Text>
   </TouchableOpacity>
@@ -235,9 +236,9 @@ const QuadrantTeethSelection: React.FC<QuadrantTeethSelectionProps> = ({
   };
 
   return (
-    <View style={{ marginBottom: 10 }}>
-      <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B', marginBottom: 6 }}>{quadrant}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }}>
+    <View style={{ marginBottom: scale(10) }}>
+      <Text style={{ fontSize: scale(12), fontWeight: '600', color: '#64748B', marginBottom: scale(6) }}>{quadrant}</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: scale(4) }}>
         {[1, 2, 3, 4, 5, 6, 7, 8].map(num => {
           const toothNumber = `${quadrant}${num}`;
           const toothNum = convertPalmerToNumber(toothNumber as ToothNumber);
@@ -395,17 +396,17 @@ const DepartmentSection: React.FC<DepartmentSectionProps> = ({
   };
 
   return (
-    <View style={{ marginBottom: 12 }}>
+    <View style={{ marginBottom: scale(12) }}>
       <TouchableOpacity
         disabled={mode === 'edit'}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingVertical: 14,
-          paddingHorizontal: 18,
-          borderRadius: 14,
+          paddingVertical: scale(14),
+          paddingHorizontal: scale(18),
+          borderRadius: scale(14),
           backgroundColor: 'rgba(255, 255, 255, 0.8)',
-          borderWidth: 1.5,
+          borderWidth: scale(1.5),
           borderColor: isChecked ? 'rgba(125, 211, 252, 0.8)' : 'rgba(186, 230, 253, 0.4)',
         }}
         onPress={handleDepartmentPress}
@@ -417,7 +418,7 @@ const DepartmentSection: React.FC<DepartmentSectionProps> = ({
         <View style={{ flex: 1 }} />
         <Ionicons
           name={isExpanded ? "chevron-up" : "chevron-down"}
-          size={20}
+          size={scale(20)}
           color="#0284C7"
         />
       </TouchableOpacity>
@@ -426,13 +427,13 @@ const DepartmentSection: React.FC<DepartmentSectionProps> = ({
       {isExpanded && isChecked && (
         <View style={{
           backgroundColor: 'rgba(224, 242, 254, 0.5)',
-          borderRadius: 12,
-          padding: 12,
-          marginTop: 8,
-          borderWidth: 1,
+          borderRadius: scale(12),
+          padding: scale(12),
+          marginTop: scale(8),
+          borderWidth: scale(1),
           borderColor: 'rgba(186, 230, 253, 0.4)',
         }}>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0284C7', marginBottom: 8 }}>
+          <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#0284C7', marginBottom: scale(8) }}>
             Select specific teeth (optional):
           </Text>
 
@@ -620,16 +621,16 @@ export const DepartmentModal: React.FC<DepartmentModalProps> = ({
         <BlurView intensity={100} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={{
           width: '85%',
-          maxWidth: 400,
+          maxWidth: scale(400),
           backgroundColor: 'rgba(240, 249, 255, 0.98)',
-          borderRadius: 24,
-          borderWidth: 2,
+          borderRadius: scale(24),
+          borderWidth: scale(2),
           borderColor: 'rgba(186, 230, 253, 0.6)',
           overflow: 'hidden',
           ...Platform.select({
             ios: {
               shadowColor: '#7DD3FC',
-              shadowOffset: { width: 0, height: 8 },
+              shadowOffset: { width: scale(0), height: scale(8) },
               shadowOpacity: 0.4,
               shadowRadius: 20,
             }
@@ -638,24 +639,24 @@ export const DepartmentModal: React.FC<DepartmentModalProps> = ({
           {/* Header */}
           <View style={{
             backgroundColor: 'rgba(186, 230, 253, 0.3)',
-            paddingVertical: 20,
-            paddingHorizontal: 24,
-            borderBottomWidth: 2,
+            paddingVertical: scale(20),
+            paddingHorizontal: scale(24),
+            borderBottomWidth: scale(2),
             borderBottomColor: 'rgba(186, 230, 253, 0.4)'
           }}>
             <Text style={{
-              fontSize: 22,
+              fontSize: scale(22),
               fontWeight: '700',
               color: '#0284C7',
               textAlign: 'center',
-              letterSpacing: 0.5
+              letterSpacing: scale(0.5)
             }}>
               {getTitle()}
             </Text>
           </View>
 
           {/* Departments List */}
-          <ScrollView style={{ maxHeight: 500, padding: 20 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: scale(500), padding: scale(20) }} showsVerticalScrollIndicator={false}>
             {DEPARTMENTS.map((department, index) => (
               <DepartmentSection
                 key={department.key}
@@ -682,21 +683,21 @@ export const DepartmentModal: React.FC<DepartmentModalProps> = ({
           </ScrollView>
 
           {/* Save and Cancel Buttons */}
-          <View style={{ padding: 20, paddingTop: 12, flexDirection: 'row', gap: 12 }}>
+          <View style={{ padding: scale(20), paddingTop: scale(12), flexDirection: 'row', gap: scale(12) }}>
             {/* Cancel Button */}
             <TouchableOpacity
               onPress={handleCancel}
               style={{
                 flex: 1,
                 backgroundColor: 'rgba(148, 163, 184, 0.2)',
-                paddingVertical: 16,
-                borderRadius: 16,
+                paddingVertical: scale(16),
+                borderRadius: scale(16),
                 alignItems: 'center',
-                borderWidth: 1.5,
+                borderWidth: scale(1.5),
                 borderColor: 'rgba(148, 163, 184, 0.4)',
               }}
             >
-              <Text style={{ fontSize: 17, fontWeight: '700', color: '#64748B', letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: scale(17), fontWeight: '700', color: '#64748B', letterSpacing: scale(0.5) }}>
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -708,20 +709,20 @@ export const DepartmentModal: React.FC<DepartmentModalProps> = ({
               style={{
                 flex: 1,
                 backgroundColor: hasSomeSelected ? '#0284C7' : 'rgba(148, 163, 184, 0.3)',
-                paddingVertical: 16,
-                borderRadius: 16,
+                paddingVertical: scale(16),
+                borderRadius: scale(16),
                 alignItems: 'center',
                 ...Platform.select({
                   ios: {
                     shadowColor: '#0284C7',
-                    shadowOffset: { width: 0, height: 4 },
+                    shadowOffset: { width: scale(0), height: scale(4) },
                     shadowOpacity: 0.3,
                     shadowRadius: 8,
                   }
                 })
               }}
             >
-              <Text style={{ fontSize: 17, fontWeight: '700', color: hasSomeSelected ? '#FFFFFF' : '#9CA3AF', letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: scale(17), fontWeight: '700', color: hasSomeSelected ? '#FFFFFF' : '#9CA3AF', letterSpacing: scale(0.5) }}>
                 Save
               </Text>
             </TouchableOpacity>

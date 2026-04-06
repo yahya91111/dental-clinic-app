@@ -8,6 +8,7 @@ import {
   StatusBar,
   Animated,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -324,13 +325,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 {
                   translateX: timelineBlob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 30],
+                    outputRange: [scale(0), scale(30)],
                   }),
                 },
                 {
                   translateY: timelineBlob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 40],
+                    outputRange: [scale(0), scale(40)],
                   }),
                 },
               ],
@@ -350,13 +351,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 {
                   translateX: timelineBlob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -25],
+                    outputRange: [scale(0), scale(-25)],
                   }),
                 },
                 {
                   translateY: timelineBlob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 35],
+                    outputRange: [scale(0), scale(35)],
                   }),
                 },
               ],
@@ -377,13 +378,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 {
                   translateX: timelineBlob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 20],
+                    outputRange: [scale(0), scale(20)],
                   }),
                 },
                 {
                   translateY: timelineBlob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -30],
+                    outputRange: [scale(0), scale(-30)],
                   }),
                 },
               ],
@@ -403,13 +404,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 {
                   translateX: timelineBlob4Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -20],
+                    outputRange: [scale(0), scale(-20)],
                   }),
                 },
                 {
                   translateY: timelineBlob4Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 25],
+                    outputRange: [scale(0), scale(25)],
                   }),
                 },
               ],
@@ -429,13 +430,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 {
                   translateX: timelineBlob5Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 28],
+                    outputRange: [scale(0), scale(28)],
                   }),
                 },
                 {
                   translateY: timelineBlob5Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -32],
+                    outputRange: [scale(0), scale(-32)],
                   }),
                 },
               ],
@@ -455,13 +456,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 {
                   translateX: timelineBlob6Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -18],
+                    outputRange: [scale(0), scale(-18)],
                   }),
                 },
                 {
                   translateY: timelineBlob6Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 22],
+                    outputRange: [scale(0), scale(22)],
                   }),
                 },
               ],
@@ -527,7 +528,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             >
               <View style={styles.profileButtonGlass}>
                 <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="arrow-back" size={24} color="#7DD3C0" style={{ zIndex: 10 }} />
+                <Ionicons name="arrow-back" size={scale(24)} color="#7DD3C0" style={{ zIndex: 10 }} />
               </View>
             </TouchableOpacity>
           ) : (
@@ -541,7 +542,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             >
               <View style={styles.profileButtonGlass}>
                 <View style={styles.profileButtonInnerGlow} />
-                <Ionicons name="arrow-back" size={24} color="#7DD3C0" style={{ zIndex: 10 }} />
+                <Ionicons name="arrow-back" size={scale(24)} color="#7DD3C0" style={{ zIndex: 10 }} />
               </View>
             </TouchableOpacity>
           )}
@@ -553,7 +554,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             )}
           </View>
 
-          <View style={{ width: 44 }} />
+          <View style={{ width: scale(44) }} />
         </Animated.View>
 
         {/* Statistics */}
@@ -577,7 +578,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               onPress={() => setShowTreatmentStats(false)}
             >
               <View style={styles.expandedHeader}>
-                <MaterialCommunityIcons name="chart-bar" size={32} color="#9CA3AF" />
+                <MaterialCommunityIcons name="chart-bar" size={scale(32)} color="#9CA3AF" />
                 <Text style={styles.expandedTitle}>Statistics</Text>
               </View>
               <View style={styles.treatmentStatsList}>
@@ -598,7 +599,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 style={[styles.statCard, shadows.neumorphic]}
                 onPress={() => setShowTreatmentStats(true)}
               >
-                <MaterialCommunityIcons name="tooth-outline" size={48} color="#9CA3AF" style={{ marginBottom: 8 }} />
+                <MaterialCommunityIcons name="tooth-outline" size={scale(48)} color="#9CA3AF" style={{ marginBottom: scale(8) }} />
                 <Text style={styles.statLabel}>Total Patients</Text>
                 <Text style={styles.statValue}>{totalPatients}</Text>
               </TouchableOpacity>
@@ -606,7 +607,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 style={[styles.statCard, shadows.neumorphic, filterWaitingOnly && styles.statCardActive]}
                 onPress={() => setFilterWaitingOnly(!filterWaitingOnly)}
               >
-                <Ionicons name="person-outline" size={48} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: 8 }} />
+                <Ionicons name="person-outline" size={scale(48)} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: scale(8) }} />
                 <Text style={[styles.statLabel, filterWaitingOnly && styles.statLabelActive]}>Waiting</Text>
                 <Text style={[styles.statValue, filterWaitingOnly && styles.statValueActive]}>{waitingPatients}</Text>
               </TouchableOpacity>
@@ -641,7 +642,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               <View style={styles.minimizeButtonInnerGlow} />
               <Ionicons
                 name={isHeaderCollapsed ? 'chevron-down' : 'chevron-up'}
-                size={24}
+                size={scale(24)}
                 color="#7DD3C0"
                 style={{
                   zIndex: 10
@@ -676,7 +677,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 setExpandedCardId(null);
               }}
             >
-              <Ionicons name="time-outline" size={20} color={showTimeline ? '#7DD3C0' : '#6B7280'} />
+              <Ionicons name="time-outline" size={scale(20)} color={showTimeline ? '#7DD3C0' : '#6B7280'} />
               <Text style={[styles.headerOptionText, showTimeline && styles.headerOptionTextActive]}>
                 {showTimeline ? 'Hide Timeline' : 'Show Timeline'}
               </Text>
@@ -689,7 +690,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 setExpandedCardId(null);
               }}
             >
-              <Ionicons name="eye-outline" size={20} color={showNAPatients ? '#7DD3C0' : '#6B7280'} />
+              <Ionicons name="eye-outline" size={scale(20)} color={showNAPatients ? '#7DD3C0' : '#6B7280'} />
               <Text style={[styles.headerOptionText, showNAPatients && styles.headerOptionTextActive]}>
                 {showNAPatients ? 'Hide NA Patient' : 'Show NA Patient'}
               </Text>
@@ -705,7 +706,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           }}
         >
           {/* Patient List */}
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(80) }]}>
           {filteredPatients
             .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
             .map((patient, index) => (
@@ -810,7 +811,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
         {/* Bottom Navigation - Glass Effect Updated v2.0 - Fixed outside animation */}
         <View style={[styles.bottomNav, shadows.medium]}>
           <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="home-sharp" size={26} color="#7DD3C0" />
+            <Ionicons name="home-sharp" size={scale(26)} color="#7DD3C0" />
             <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
           </TouchableOpacity>
 
@@ -818,7 +819,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             style={styles.navItem}
             onPress={() => setShowPatientFile(true)}
           >
-            <Ionicons name="person-circle" size={28} color="#9CA3AF" />
+            <Ionicons name="person-circle" size={scale(28)} color="#9CA3AF" />
             <Text style={styles.navLabel}>Patient File</Text>
           </TouchableOpacity>
 
@@ -826,7 +827,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             style={styles.navItem}
             onPress={() => setShowAppointments(true)}
           >
-            <Ionicons name="calendar-sharp" size={26} color="#9CA3AF" />
+            <Ionicons name="calendar-sharp" size={scale(26)} color="#9CA3AF" />
             <Text style={styles.navLabel}>Appointments</Text>
           </TouchableOpacity>
 
@@ -834,7 +835,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             style={styles.navItem}
             onPress={() => setShowArchiveScreen(true)}
           >
-            <Ionicons name="archive-sharp" size={26} color="#9CA3AF" />
+            <Ionicons name="archive-sharp" size={scale(26)} color="#9CA3AF" />
             <Text style={styles.navLabel}>Archive</Text>
           </TouchableOpacity>
         </View>

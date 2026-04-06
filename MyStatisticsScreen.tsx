@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated, Modal, Platform, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StatusBar, ScrollView, Dimensions, Animated, Modal, Platform, Alert } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -176,7 +177,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                   style={styles.backButton}
                   onPress={onBack}
                 >
-                  <Ionicons name="arrow-back" size={28} color="#2D3748" />
+                  <Ionicons name="arrow-back" size={scale(28)} color="#2D3748" />
                 </TouchableOpacity>
                 <View style={{ flex: 1, alignItems: 'center' }}>
                   <Text style={styles.headerTitle}>{doctorName || 'My Statistics'}</Text>
@@ -184,7 +185,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                     <Text style={styles.headerSubtitle}>{clinicName}</Text>
                   )}
                 </View>
-                <View style={{ width: 40 }} />
+                <View style={{ width: scale(40) }} />
               </View>
             </View>
 
@@ -204,7 +205,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                       colors={['#A78BFA', '#A78BFA']}
                       style={styles.timelineDot}
                     >
-                      <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                      <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                     </LinearGradient>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>From</Text>
@@ -224,7 +225,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                       colors={['#7DD3FC', '#7DD3FC']}
                       style={styles.timelineDot}
                     >
-                      <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                      <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                     </LinearGradient>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>To</Text>
@@ -242,7 +243,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                     loadMyStatistics(tempDateFrom, tempDateTo);
                   }}>
                     <View style={[styles.timelineDot, styles.timelineDotInactive]}>
-                      <Ionicons name="checkmark-circle" size={24} color="#F687B3" />
+                      <Ionicons name="checkmark-circle" size={scale(24)} color="#F687B3" />
                     </View>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>Load</Text>
@@ -276,7 +277,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
                       for (let i = 0; i < treatments.length; i += itemsPerPage) {
                         const pageItems = treatments.slice(i, i + itemsPerPage);
                         pages.push(
-                          <View key={`page-${i}`} style={styles.circularCardsPage}>
+                          <View key={`page-${i}`} style={[styles.circularCardsPage, { width: Dimensions.get('window').width }]}>
                             {pageItems.map(([treatment, count]: [string, any]) => {
                               const percentage = Math.round((count / statsData.total) * 100);
                               const treatmentColors: { [key: string]: string[] } = {
@@ -444,7 +445,7 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
     backgroundColor: '#E8EAF6',
@@ -551,7 +552,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    width: Dimensions.get('window').width,
   },
   circularCard: {
     width: '48%',

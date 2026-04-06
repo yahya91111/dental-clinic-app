@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { scale } from '../lib/scale';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -225,32 +226,32 @@ export function ExpandedPatientHeader({
 
   const renderIcon = (item: typeof icons[0]) => {
     if (item.iconType === 'material') {
-      return <MaterialCommunityIcons name={item.icon as any} size={32} color={item.color} />;
+      return <MaterialCommunityIcons name={item.icon as any} size={scale(32)} color={item.color} />;
     }
-    return <Ionicons name={item.icon as any} size={32} color={item.color} />;
+    return <Ionicons name={item.icon as any} size={scale(32)} color={item.color} />;
   };
 
   // Render Icons Grid
   const renderIconsGrid = () => (
-    <View style={{ padding: 16 }}>
+    <View style={{ padding: scale(16) }}>
       {/* Header Bar: Close + Name + File Number */}
       <View style={{
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        borderRadius: 16,
-        padding: 12,
-        marginBottom: 20,
-        borderWidth: 2,
+        borderRadius: scale(16),
+        padding: scale(12),
+        marginBottom: scale(20),
+        borderWidth: scale(2),
         borderColor: 'rgba(255, 255, 255, 0.35)',
       }}>
         {/* Close Button */}
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255, 255, 255, 0.3)',
-            width: 36,
-            height: 36,
-            borderRadius: 12,
+            width: scale(36),
+            height: scale(36),
+            borderRadius: scale(12),
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -259,7 +260,7 @@ export function ExpandedPatientHeader({
             onTogglePermanentExpansion(patient);
           }}
         >
-          <Ionicons name="chevron-up" size={22} color="#1E3A8A" />
+          <Ionicons name="chevron-up" size={scale(22)} color="#1E3A8A" />
         </TouchableOpacity>
 
         {/* Name + File Number */}
@@ -272,9 +273,9 @@ export function ExpandedPatientHeader({
             }
           }}
         >
-          <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A' }}>{patient.name}</Text>
+          <Text style={{ fontSize: scale(20), fontWeight: '800', color: '#1E3A8A' }}>{patient.name}</Text>
           {patient.file_number && (
-            <Text style={{ fontSize: 13, color: '#3B5998', marginTop: 2, fontWeight: '600' }}>
+            <Text style={{ fontSize: scale(13), color: '#3B5998', marginTop: scale(2), fontWeight: '600' }}>
               File: {patient.file_number}
             </Text>
           )}
@@ -284,9 +285,9 @@ export function ExpandedPatientHeader({
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255, 255, 255, 0.3)',
-            width: 36,
-            height: 36,
-            borderRadius: 12,
+            width: scale(36),
+            height: scale(36),
+            borderRadius: scale(12),
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -295,23 +296,23 @@ export function ExpandedPatientHeader({
             onOpenDentalChart();
           }}
         >
-          <Ionicons name="open-outline" size={20} color="#1E3A8A" />
+          <Ionicons name="open-outline" size={scale(20)} color="#1E3A8A" />
         </TouchableOpacity>
       </View>
 
       {/* Icons Grid - 3 columns */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 16 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: scale(16) }}>
         {icons.map((item) => (
           <TouchableOpacity
             key={item.id}
             style={{
-              width: 90,
-              height: 90,
+              width: scale(90),
+              height: scale(90),
               backgroundColor: item.bgColor,
-              borderRadius: 20,
+              borderRadius: scale(20),
               alignItems: 'center',
               justifyContent: 'center',
-              borderWidth: 2,
+              borderWidth: scale(2),
               borderColor: 'rgba(255, 255, 255, 0.6)',
             }}
             onPress={(e) => {
@@ -330,26 +331,26 @@ export function ExpandedPatientHeader({
             {item.badge > 0 && (
               <View style={{
                 position: 'absolute',
-                top: -10,
-                left: -10,
+                top: scale(-10),
+                left: scale(-10),
                 backgroundColor: (item as any).badgeColor || '#EF4444',
-                borderRadius: 14,
-                minWidth: 28,
-                height: 28,
+                borderRadius: scale(14),
+                minWidth: scale(28),
+                height: scale(28),
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingHorizontal: 7,
-                borderWidth: 2.5,
+                paddingHorizontal: scale(7),
+                borderWidth: scale(2.5),
                 borderColor: '#FFFFFF',
                 zIndex: 10,
               }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#FFFFFF' }}>
                   {item.badge}
                 </Text>
               </View>
             )}
             {renderIcon(item)}
-            <Text style={{ fontSize: 12, color: '#1E3A8A', marginTop: 8, fontWeight: '700' }}>
+            <Text style={{ fontSize: scale(12), color: '#1E3A8A', marginTop: scale(8), fontWeight: '700' }}>
               {item.label}
             </Text>
           </TouchableOpacity>
@@ -368,52 +369,52 @@ export function ExpandedPatientHeader({
   ].filter(s => s.count > 0) : [];
 
   const renderTreatmentContent = () => (
-    <ScrollView style={{ flex: 1, padding: 16 }}>
+    <ScrollView style={{ flex: 1, padding: scale(16) }}>
       {loadingDentalData ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : treatmentSections.length > 0 ? (
-        <View style={{ gap: 14 }}>
+        <View style={{ gap: scale(14) }}>
           {treatmentSections.map((section) => (
             <View key={section.key} style={{
               backgroundColor: 'rgba(255, 255, 255, 0.6)',
-              borderRadius: 14,
-              padding: 13,
-              borderWidth: 1.5,
+              borderRadius: scale(14),
+              padding: scale(13),
+              borderWidth: scale(1.5),
               borderColor: 'rgba(255, 255, 255, 0.7)',
             }}>
               <View style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                marginHorizontal: -13, marginTop: -13, marginBottom: 10,
-                paddingHorizontal: 13, paddingVertical: 10,
-                borderTopLeftRadius: 12, borderTopRightRadius: 12,
-                borderBottomWidth: 1, borderBottomColor: 'rgba(37, 99, 235, 0.2)',
+                marginHorizontal: scale(-13), marginTop: scale(-13), marginBottom: scale(10),
+                paddingHorizontal: scale(13), paddingVertical: scale(10),
+                borderTopLeftRadius: scale(12), borderTopRightRadius: scale(12),
+                borderBottomWidth: scale(1), borderBottomColor: 'rgba(37, 99, 235, 0.2)',
               }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <MaterialCommunityIcons name="tooth" size={18} color="#2563EB" />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#2563EB' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
+                  <MaterialCommunityIcons name="tooth" size={scale(18)} color="#2563EB" />
+                  <Text style={{ fontSize: scale(14), fontWeight: '700', color: '#2563EB' }}>
                     {section.name}
                   </Text>
                 </View>
-                <View style={{ backgroundColor: '#2563EB', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>{section.count}</Text>
+                <View style={{ backgroundColor: '#2563EB', paddingHorizontal: scale(10), paddingVertical: scale(3), borderRadius: scale(10) }}>
+                  <Text style={{ fontSize: scale(13), fontWeight: '800', color: '#FFFFFF' }}>{section.count}</Text>
                 </View>
               </View>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(7) }}>
                 {section.teeth.map((tooth) => (
                   <TouchableOpacity
                     key={tooth}
                     style={{
                       backgroundColor: 'rgba(250, 204, 21, 0.15)',
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      borderRadius: 8,
-                      borderWidth: 1.5,
+                      paddingHorizontal: scale(12),
+                      paddingVertical: scale(6),
+                      borderRadius: scale(8),
+                      borderWidth: scale(1.5),
                       borderColor: 'rgba(250, 204, 21, 0.4)',
                     }}
                     onPress={() => patient.permanent_patient_id && onToothEditPress(patient.permanent_patient_id, tooth)}
                   >
-                    <Text style={{ color: '#1E3A8A', fontWeight: '700', fontSize: 13 }}>{tooth}</Text>
+                    <Text style={{ color: '#1E3A8A', fontWeight: '700', fontSize: scale(13) }}>{tooth}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -421,9 +422,9 @@ export function ExpandedPatientHeader({
           ))}
         </View>
       ) : dentalSummary ? (
-        <View style={{ alignItems: 'center', padding: 24 }}>
-          <Ionicons name="checkmark-circle" size={48} color="#10B981" />
-          <Text style={{ color: '#FFFFFF', marginTop: 12, fontSize: 16, fontWeight: '600' }}>No treatment needed</Text>
+        <View style={{ alignItems: 'center', padding: scale(24) }}>
+          <Ionicons name="checkmark-circle" size={scale(48)} color="#10B981" />
+          <Text style={{ color: '#FFFFFF', marginTop: scale(12), fontSize: scale(16), fontWeight: '600' }}>No treatment needed</Text>
         </View>
       ) : (
         <Text style={{ color: 'rgba(255, 255, 255, 0.7)', textAlign: 'center' }}>No dental data available</Text>
@@ -433,27 +434,27 @@ export function ExpandedPatientHeader({
 
   // Render Referrals Content
   const renderReferralsContent = () => (
-    <ScrollView style={{ flex: 1, padding: 16 }}>
+    <ScrollView style={{ flex: 1, padding: scale(16) }}>
       {loadingReferrals ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : patientReferrals.length > 0 ? (
-        <View style={{ gap: 12 }}>
+        <View style={{ gap: scale(12) }}>
           {patientReferrals.map((referral) => {
             const isGiven = referral.status === 'given';
             const department = referral.department || referral.referral_type || 'Unknown';
             return (
               <View key={referral.id} style={{
                 backgroundColor: 'rgba(255, 255, 255, 0.6)',
-                borderRadius: 16,
-                padding: 16,
-                borderWidth: 2,
+                borderRadius: scale(16),
+                padding: scale(16),
+                borderWidth: scale(2),
                 borderColor: 'rgba(255, 255, 255, 0.7)',
               }}>
                 {/* Department + Status Toggle */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                    <Ionicons name="arrow-redo" size={18} color="#EA580C" />
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#EA580C' }}>{department}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: scale(8) }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), flex: 1 }}>
+                    <Ionicons name="arrow-redo" size={scale(18)} color="#EA580C" />
+                    <Text style={{ fontSize: scale(16), fontWeight: '700', color: '#EA580C' }}>{department}</Text>
                   </View>
                   <TouchableOpacity
                     onPress={async () => {
@@ -472,47 +473,47 @@ export function ExpandedPatientHeader({
                     }}
                     style={{
                       backgroundColor: isGiven ? '#059669' : '#DC2626',
-                      paddingHorizontal: 14,
-                      paddingVertical: 6,
-                      borderRadius: 12,
+                      paddingHorizontal: scale(14),
+                      paddingVertical: scale(6),
+                      borderRadius: scale(12),
                       flexDirection: 'row',
                       alignItems: 'center',
-                      gap: 6,
+                      gap: scale(6),
                     }}
                   >
-                    <Ionicons name={isGiven ? 'checkmark-circle' : 'close-circle'} size={16} color="#FFFFFF" />
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>
+                    <Ionicons name={isGiven ? 'checkmark-circle' : 'close-circle'} size={scale(16)} color="#FFFFFF" />
+                    <Text style={{ fontSize: scale(13), fontWeight: '700', color: '#FFFFFF' }}>
                       {isGiven ? 'Given' : 'Not Given'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* Divider */}
-                <View style={{ height: 1, backgroundColor: 'rgba(234, 88, 12, 0.2)', marginBottom: 10 }} />
+                <View style={{ height: scale(1), backgroundColor: 'rgba(234, 88, 12, 0.2)', marginBottom: scale(10) }} />
 
                 {/* Tooth + Doctor + Notes */}
-                <View style={{ gap: 6 }}>
+                <View style={{ gap: scale(6) }}>
                   {referral.tooth_number && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="medical" size={14} color="#6B7280" />
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: '#1E3A8A' }}>Tooth: #{referral.tooth_number}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
+                      <Ionicons name="medical" size={scale(14)} color="#6B7280" />
+                      <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#1E3A8A' }}>Tooth: #{referral.tooth_number}</Text>
                     </View>
                   )}
                   {referral.doctor_name && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="person" size={14} color="#6B7280" />
-                      <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151' }}>Dr. {referral.doctor_name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
+                      <Ionicons name="person" size={scale(14)} color="#6B7280" />
+                      <Text style={{ fontSize: scale(14), fontWeight: '500', color: '#374151' }}>Dr. {referral.doctor_name}</Text>
                     </View>
                   )}
                   {(referral.notes || referral.reason) && (
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-                      <Ionicons name="document-text" size={14} color="#6B7280" style={{ marginTop: 2 }} />
-                      <Text style={{ fontSize: 13, color: '#6B7280', flex: 1 }}>{referral.notes || referral.reason}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: scale(6) }}>
+                      <Ionicons name="document-text" size={scale(14)} color="#6B7280" style={{ marginTop: scale(2) }} />
+                      <Text style={{ fontSize: scale(13), color: '#6B7280', flex: 1 }}>{referral.notes || referral.reason}</Text>
                     </View>
                   )}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="time" size={14} color="#9CA3AF" />
-                    <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
+                    <Ionicons name="time" size={scale(14)} color="#9CA3AF" />
+                    <Text style={{ fontSize: scale(12), color: '#9CA3AF' }}>
                       {new Date(referral.timestamp || referral.created_at).toLocaleDateString()}
                     </Text>
                   </View>
@@ -522,9 +523,9 @@ export function ExpandedPatientHeader({
           })}
         </View>
       ) : (
-        <View style={{ alignItems: 'center', padding: 24 }}>
-          <Ionicons name="document-outline" size={48} color="rgba(255, 255, 255, 0.5)" />
-          <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: 12, fontSize: 16 }}>No referrals</Text>
+        <View style={{ alignItems: 'center', padding: scale(24) }}>
+          <Ionicons name="document-outline" size={scale(48)} color="rgba(255, 255, 255, 0.5)" />
+          <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: scale(12), fontSize: scale(16) }}>No referrals</Text>
         </View>
       )}
     </ScrollView>
@@ -552,64 +553,64 @@ export function ExpandedPatientHeader({
     const progressPercent = monthsSinceScaling !== null ? Math.min(monthsSinceScaling / 6, 1) : 0;
 
     return (
-      <ScrollView style={{ flex: 1, padding: 16 }}>
+      <ScrollView style={{ flex: 1, padding: scale(16) }}>
         {/* Scaling Card */}
         <View style={{
           backgroundColor: 'rgba(255, 255, 255, 0.6)',
-          borderRadius: 16,
-          padding: 16,
-          borderWidth: 2,
+          borderRadius: scale(16),
+          padding: scale(16),
+          borderWidth: scale(2),
           borderColor: 'rgba(255, 255, 255, 0.7)',
         }}>
           {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <MaterialCommunityIcons name="tooth" size={20} color="#059669" />
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#059669' }}>Scaling</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: scale(8) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8) }}>
+              <MaterialCommunityIcons name="tooth" size={scale(20)} color="#059669" />
+              <Text style={{ fontSize: scale(16), fontWeight: '700', color: '#059669' }}>Scaling</Text>
             </View>
-            <View style={{ backgroundColor: status.color, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ionicons name={status.icon} size={14} color="#FFFFFF" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{status.label}</Text>
+            <View style={{ backgroundColor: status.color, paddingHorizontal: scale(10), paddingVertical: scale(4), borderRadius: scale(10), flexDirection: 'row', alignItems: 'center', gap: scale(4) }}>
+              <Ionicons name={status.icon} size={scale(14)} color="#FFFFFF" />
+              <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#FFFFFF' }}>{status.label}</Text>
             </View>
           </View>
 
           {/* Divider */}
-          <View style={{ height: 1, backgroundColor: 'rgba(5, 150, 105, 0.2)', marginBottom: 14 }} />
+          <View style={{ height: scale(1), backgroundColor: 'rgba(5, 150, 105, 0.2)', marginBottom: scale(14) }} />
 
           {/* Last Scaling Date */}
-          <View style={{ alignItems: 'center', marginBottom: 14 }}>
-            <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>Last scaling</Text>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A', marginTop: 4 }}>
+          <View style={{ alignItems: 'center', marginBottom: scale(14) }}>
+            <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>Last scaling</Text>
+            <Text style={{ fontSize: scale(20), fontWeight: '800', color: '#1E3A8A', marginTop: scale(4) }}>
               {effectiveScalingDate ? effectiveScalingDate.toLocaleDateString() : '—'}
             </Text>
             {monthsSinceScaling !== null && (
-              <Text style={{ fontSize: 13, color: status.color, fontWeight: '600', marginTop: 2 }}>
+              <Text style={{ fontSize: scale(13), color: status.color, fontWeight: '600', marginTop: scale(2) }}>
                 {monthsSinceScaling === 0 ? 'This month' : `${monthsSinceScaling} month${monthsSinceScaling !== 1 ? 's' : ''} ago`}
               </Text>
             )}
           </View>
 
           {/* Progress Bar */}
-          <View style={{ marginBottom: 16 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-              <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '500' }}>0 months</Text>
-              <Text style={{ fontSize: 11, color: '#6B7280', fontWeight: '500' }}>6 months</Text>
+          <View style={{ marginBottom: scale(16) }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: scale(6) }}>
+              <Text style={{ fontSize: scale(11), color: '#6B7280', fontWeight: '500' }}>0 months</Text>
+              <Text style={{ fontSize: scale(11), color: '#6B7280', fontWeight: '500' }}>6 months</Text>
             </View>
-            <View style={{ height: 10, backgroundColor: 'rgba(0, 0, 0, 0.08)', borderRadius: 5 }}>
+            <View style={{ height: scale(10), backgroundColor: 'rgba(0, 0, 0, 0.08)', borderRadius: scale(5) }}>
               <View style={{
-                height: 10,
+                height: scale(10),
                 width: `${progressPercent * 100}%`,
                 backgroundColor: status.color,
-                borderRadius: 5,
+                borderRadius: scale(5),
               }} />
             </View>
             {monthsSinceScaling !== null && monthsSinceScaling <= 6 && (
-              <Text style={{ fontSize: 12, color: status.color, fontWeight: '600', textAlign: 'center', marginTop: 6 }}>
+              <Text style={{ fontSize: scale(12), color: status.color, fontWeight: '600', textAlign: 'center', marginTop: scale(6) }}>
                 {6 - monthsSinceScaling} month{6 - monthsSinceScaling !== 1 ? 's' : ''} remaining
               </Text>
             )}
             {monthsSinceScaling !== null && monthsSinceScaling > 6 && (
-              <Text style={{ fontSize: 12, color: '#DC2626', fontWeight: '700', textAlign: 'center', marginTop: 6 }}>
+              <Text style={{ fontSize: scale(12), color: '#DC2626', fontWeight: '700', textAlign: 'center', marginTop: scale(6) }}>
                 Overdue by {monthsSinceScaling - 6} month{monthsSinceScaling - 6 !== 1 ? 's' : ''}!
               </Text>
             )}
@@ -619,12 +620,12 @@ export function ExpandedPatientHeader({
           <TouchableOpacity
             style={{
               backgroundColor: '#059669',
-              borderRadius: 14,
-              paddingVertical: 14,
+              borderRadius: scale(14),
+              paddingVertical: scale(14),
               alignItems: 'center',
               justifyContent: 'center',
               flexDirection: 'row',
-              gap: 8,
+              gap: scale(8),
             }}
             onPress={() => {
               setScalingDate(new Date());
@@ -632,8 +633,8 @@ export function ExpandedPatientHeader({
               setShowDatePicker(false);
             }}
           >
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Scaling Done</Text>
+            <Ionicons name="checkmark-circle" size={scale(20)} color="#FFFFFF" />
+            <Text style={{ fontSize: scale(16), fontWeight: '700', color: '#FFFFFF' }}>Scaling Done</Text>
           </TouchableOpacity>
         </View>
 
@@ -641,23 +642,23 @@ export function ExpandedPatientHeader({
         {showScalingConfirm && (
           <View style={{
             backgroundColor: 'rgba(255, 255, 255, 0.6)',
-            borderRadius: 16,
-            padding: 16,
-            marginTop: 14,
-            borderWidth: 2,
+            borderRadius: scale(16),
+            padding: scale(16),
+            marginTop: scale(14),
+            borderWidth: scale(2),
             borderColor: 'rgba(255, 255, 255, 0.7)',
           }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E3A8A', textAlign: 'center', marginBottom: 14 }}>
+            <Text style={{ fontSize: scale(16), fontWeight: '700', color: '#1E3A8A', textAlign: 'center', marginBottom: scale(14) }}>
               Confirm Scaling Date
             </Text>
 
             {/* Date Picker - always visible as spinner */}
             <View style={{
               backgroundColor: 'rgba(0, 0, 0, 0.05)',
-              borderRadius: 12,
-              borderWidth: 1.5,
+              borderRadius: scale(12),
+              borderWidth: scale(1.5),
               borderColor: 'rgba(5, 150, 105, 0.3)',
-              marginBottom: 14,
+              marginBottom: scale(14),
               overflow: 'hidden',
               alignItems: 'center',
             }}>
@@ -673,25 +674,25 @@ export function ExpandedPatientHeader({
             </View>
 
             {/* Confirm + Cancel */}
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: scale(10) }}>
               <TouchableOpacity
                 style={{
                   flex: 1,
                   backgroundColor: 'rgba(0, 0, 0, 0.06)',
-                  borderRadius: 12,
-                  paddingVertical: 12,
+                  borderRadius: scale(12),
+                  paddingVertical: scale(12),
                   alignItems: 'center',
                 }}
                 onPress={() => setShowScalingConfirm(false)}
               >
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
+                <Text style={{ fontSize: scale(15), fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={{
                   flex: 1,
                   backgroundColor: '#059669',
-                  borderRadius: 12,
-                  paddingVertical: 12,
+                  borderRadius: scale(12),
+                  paddingVertical: scale(12),
                   alignItems: 'center',
                 }}
                 onPress={async () => {
@@ -712,7 +713,7 @@ export function ExpandedPatientHeader({
                   setShowScalingConfirm(false);
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Confirm</Text>
+                <Text style={{ fontSize: scale(15), fontWeight: '700', color: '#FFFFFF' }}>Confirm</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -723,44 +724,44 @@ export function ExpandedPatientHeader({
 
   // Render Notes Content
   const renderNotesContent = () => (
-    <ScrollView style={{ flex: 1, padding: 16 }}>
+    <ScrollView style={{ flex: 1, padding: scale(16) }}>
       {loadingToothNotes ? (
         <ActivityIndicator size="large" color="#FFFFFF" />
       ) : toothNotes.length > 0 ? (
-        <View style={{ gap: 12 }}>
+        <View style={{ gap: scale(12) }}>
           {toothNotes.map((note, index) => (
             <View key={index} style={{
               backgroundColor: 'rgba(255, 255, 255, 0.6)',
-              borderRadius: 16,
-              padding: 16,
-              borderWidth: 2,
+              borderRadius: scale(16),
+              padding: scale(16),
+              borderWidth: scale(2),
               borderColor: 'rgba(255, 255, 255, 0.7)',
             }}>
               {/* Tooth Number */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Ionicons name="document-text" size={18} color="#7C3AED" />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#7C3AED' }}>Tooth #{note.tooth_number}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: scale(8) }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8) }}>
+                  <Ionicons name="document-text" size={scale(18)} color="#7C3AED" />
+                  <Text style={{ fontSize: scale(16), fontWeight: '700', color: '#7C3AED' }}>Tooth #{note.tooth_number}</Text>
                 </View>
               </View>
 
               {/* Divider */}
-              <View style={{ height: 1, backgroundColor: 'rgba(124, 58, 237, 0.2)', marginBottom: 10 }} />
+              <View style={{ height: scale(1), backgroundColor: 'rgba(124, 58, 237, 0.2)', marginBottom: scale(10) }} />
 
               {/* Note Text */}
-              <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8, lineHeight: 20 }}>{note.note}</Text>
+              <Text style={{ fontSize: scale(14), fontWeight: '500', color: '#374151', marginBottom: scale(8), lineHeight: scale(20) }}>{note.note}</Text>
 
               {/* Doctor + Date */}
-              <View style={{ gap: 4 }}>
+              <View style={{ gap: scale(4) }}>
                 {note.doctor_name && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Ionicons name="person" size={14} color="#6B7280" />
-                    <Text style={{ fontSize: 13, fontWeight: '500', color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
+                    <Ionicons name="person" size={scale(14)} color="#6B7280" />
+                    <Text style={{ fontSize: scale(13), fontWeight: '500', color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
                   </View>
                 )}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="time" size={14} color="#9CA3AF" />
-                  <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(6) }}>
+                  <Ionicons name="time" size={scale(14)} color="#9CA3AF" />
+                  <Text style={{ fontSize: scale(12), color: '#9CA3AF' }}>
                     {new Date(note.timestamp || note.created_at).toLocaleDateString()}
                   </Text>
                 </View>
@@ -769,9 +770,9 @@ export function ExpandedPatientHeader({
           ))}
         </View>
       ) : (
-        <View style={{ alignItems: 'center', padding: 24 }}>
-          <Ionicons name="document-text-outline" size={48} color="rgba(255, 255, 255, 0.5)" />
-          <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: 12, fontSize: 16 }}>No notes</Text>
+        <View style={{ alignItems: 'center', padding: scale(24) }}>
+          <Ionicons name="document-text-outline" size={scale(48)} color="rgba(255, 255, 255, 0.5)" />
+          <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: scale(12), fontSize: scale(16) }}>No notes</Text>
         </View>
       )}
     </ScrollView>
@@ -779,20 +780,20 @@ export function ExpandedPatientHeader({
 
   // Render General Notes Content
   const renderGeneralNotesContent = () => (
-    <View style={{ flex: 1, padding: 16 }}>
+    <View style={{ flex: 1, padding: scale(16) }}>
       {/* Input */}
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+      <View style={{ flexDirection: 'row', gap: scale(10), marginBottom: scale(14) }}>
         <TextInput
           style={{
             flex: 1,
             backgroundColor: 'rgba(255, 255, 255, 0.6)',
-            borderRadius: 12,
-            padding: 12,
-            fontSize: 14,
+            borderRadius: scale(12),
+            padding: scale(12),
+            fontSize: scale(14),
             color: '#1E3A8A',
-            borderWidth: 1.5,
+            borderWidth: scale(1.5),
             borderColor: 'rgba(255, 255, 255, 0.7)',
-            minHeight: 44,
+            minHeight: scale(44),
           }}
           placeholder="Write a general note..."
           placeholderTextColor="#9CA3AF"
@@ -803,9 +804,9 @@ export function ExpandedPatientHeader({
         <TouchableOpacity
           style={{
             backgroundColor: newGeneralNoteText.trim() ? '#2563EB' : 'rgba(255, 255, 255, 0.3)',
-            borderRadius: 12,
-            width: 44,
-            height: 44,
+            borderRadius: scale(12),
+            width: scale(44),
+            height: scale(44),
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -824,29 +825,29 @@ export function ExpandedPatientHeader({
           }}
           disabled={!newGeneralNoteText.trim()}
         >
-          <Ionicons name="send" size={20} color="#FFFFFF" />
+          <Ionicons name="send" size={scale(20)} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
       {/* Notes List */}
       <ScrollView showsVerticalScrollIndicator={false}>
         {effectiveGeneralNotes.length > 0 ? (
-          <View style={{ gap: 10 }}>
+          <View style={{ gap: scale(10) }}>
             {effectiveGeneralNotes.map((note: any) => (
               <View key={note.id} style={{
                 backgroundColor: 'rgba(255, 255, 255, 0.6)',
-                borderRadius: 14,
-                padding: 14,
-                borderWidth: 2,
+                borderRadius: scale(14),
+                padding: scale(14),
+                borderWidth: scale(2),
                 borderColor: 'rgba(255, 255, 255, 0.7)',
               }}>
-                <Text style={{ fontSize: 14, color: '#1E3A8A', lineHeight: 20 }}>{note.note}</Text>
-                <View style={{ height: 1, backgroundColor: 'rgba(37, 99, 235, 0.15)', marginVertical: 10 }} />
+                <Text style={{ fontSize: scale(14), color: '#1E3A8A', lineHeight: scale(20) }}>{note.note}</Text>
+                <View style={{ height: scale(1), backgroundColor: 'rgba(37, 99, 235, 0.15)', marginVertical: scale(10) }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="person" size={13} color="#6B7280" />
-                    <Text style={{ fontSize: 12, color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
-                    <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8) }}>
+                    <Ionicons name="person" size={scale(13)} color="#6B7280" />
+                    <Text style={{ fontSize: scale(12), color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
+                    <Text style={{ fontSize: scale(12), color: '#9CA3AF' }}>
                       {new Date(note.created_at).toLocaleDateString()}
                     </Text>
                   </View>
@@ -859,18 +860,18 @@ export function ExpandedPatientHeader({
                         loadLocalGeneralNotes();
                       }
                     }}
-                    style={{ padding: 4 }}
+                    style={{ padding: scale(4) }}
                   >
-                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    <Ionicons name="trash-outline" size={scale(16)} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
               </View>
             ))}
           </View>
         ) : (
-          <View style={{ alignItems: 'center', padding: 30 }}>
-            <Ionicons name="document-text-outline" size={48} color="rgba(255, 255, 255, 0.5)" />
-            <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: 10, fontSize: 15 }}>No general notes yet</Text>
+          <View style={{ alignItems: 'center', padding: scale(30) }}>
+            <Ionicons name="document-text-outline" size={scale(48)} color="rgba(255, 255, 255, 0.5)" />
+            <Text style={{ color: 'rgba(255, 255, 255, 0.7)', marginTop: scale(10), fontSize: scale(15) }}>No general notes yet</Text>
           </View>
         )}
       </ScrollView>
@@ -914,21 +915,21 @@ export function ExpandedPatientHeader({
           flexDirection: 'row',
           alignItems: 'center',
           backgroundColor: 'rgba(255, 255, 255, 0.2)',
-          borderRadius: 16,
-          padding: 12,
-          marginHorizontal: 16,
-          marginTop: 12,
-          marginBottom: 4,
-          borderWidth: 2,
+          borderRadius: scale(16),
+          padding: scale(12),
+          marginHorizontal: scale(16),
+          marginTop: scale(12),
+          marginBottom: scale(4),
+          borderWidth: scale(2),
           borderColor: 'rgba(255, 255, 255, 0.35)',
         }}>
           {/* Back Button - Left */}
           <TouchableOpacity
             style={{
               backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              width: 36,
-              height: 36,
-              borderRadius: 12,
+              width: scale(36),
+              height: scale(36),
+              borderRadius: scale(12),
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -937,18 +938,18 @@ export function ExpandedPatientHeader({
               setExpandedSection(null);
             }}
           >
-            <Ionicons name="chevron-back" size={22} color="#1E3A8A" />
+            <Ionicons name="chevron-back" size={scale(22)} color="#1E3A8A" />
           </TouchableOpacity>
 
           {/* Title - Center */}
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1E3A8A', letterSpacing: 0.5 }}>
+            <Text style={{ fontSize: scale(18), fontWeight: '800', color: '#1E3A8A', letterSpacing: scale(0.5) }}>
               {sectionTitle}
             </Text>
           </View>
 
           {/* Spacer to balance the back button */}
-          <View style={{ width: 36 }} />
+          <View style={{ width: scale(36) }} />
         </View>
 
         {/* Content */}
@@ -958,7 +959,7 @@ export function ExpandedPatientHeader({
   };
 
   return (
-    <View style={{ marginBottom: 16 }}>
+    <View style={{ marginBottom: scale(16) }}>
       {!expandedSection ? renderIconsGrid() : renderSectionContent()}
     </View>
   );

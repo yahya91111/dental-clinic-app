@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar, Animated, Dimensions, ScrollView, Platform } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -433,8 +434,8 @@ export default function ClinicDetailsScreen({
               {
                 top: '5%',
                 left: '10%',
-                width: 180,
-                height: 180,
+                width: scale(180),
+                height: scale(180),
                 backgroundColor: 'rgba(91, 159, 237, 0.15)',
                 transform: [
                   { translateX: blob1TranslateX },
@@ -449,8 +450,8 @@ export default function ClinicDetailsScreen({
               {
                 top: '60%',
                 right: '5%',
-                width: 220,
-                height: 220,
+                width: scale(220),
+                height: scale(220),
                 backgroundColor: 'rgba(168, 85, 247, 0.12)',
                 transform: [
                   { translateX: blob2TranslateX },
@@ -465,9 +466,9 @@ export default function ClinicDetailsScreen({
               {
                 bottom: '8%',
                 left: '50%',
-                marginLeft: -110,
-                width: 200,
-                height: 200,
+                marginLeft: scale(-110),
+                width: scale(200),
+                height: scale(200),
                 backgroundColor: 'rgba(236, 72, 153, 0.1)',
                 transform: [
                   { translateX: blob3TranslateX },
@@ -482,14 +483,14 @@ export default function ClinicDetailsScreen({
             {/* Side Header with Clinic Name */}
             <View style={styles.sideHeader}>
               <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                <Ionicons name="arrow-back" size={24} color="#4A5568" />
+                <Ionicons name="arrow-back" size={scale(24)} color="#4A5568" />
               </TouchableOpacity>
               
               <View style={styles.sideInfo}>
                 <Text style={styles.sideClinicName} numberOfLines={1}>{clinicName}</Text>
               </View>
               
-              <View style={{ width: 40 }} />
+              <View style={{ width: scale(40) }} />
             </View>
 
             {/* Content - 3D Floating Cards */}
@@ -505,7 +506,7 @@ export default function ClinicDetailsScreen({
                 ]}
               >
                 <TouchableOpacity
-                  style={[styles.floatingCard, styles.cardRight, { marginTop: 0 }]}
+                  style={[styles.floatingCard, styles.cardRight, { marginTop: scale(0) }]}
                   activeOpacity={0.85}
                   onPress={() => {
                     onTimelinePress();
@@ -532,7 +533,7 @@ export default function ClinicDetailsScreen({
 
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="pulse" size={32} color="#FFFFFF" />
+                        <Ionicons name="pulse" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>Timeline</Text>
                       <Text style={styles.cardSubtitle}>Patient Queue</Text>
@@ -548,7 +549,7 @@ export default function ClinicDetailsScreen({
                 ]}
               >
                 <TouchableOpacity 
-                  style={[styles.floatingCard, styles.cardLeft, { marginTop: 20 }]}
+                  style={[styles.floatingCard, styles.cardLeft, { marginTop: scale(20) }]}
                   activeOpacity={0.85}
                   onPress={onDoctorsPress}
                 >
@@ -573,7 +574,7 @@ export default function ClinicDetailsScreen({
 
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="people-circle" size={32} color="#FFFFFF" />
+                        <Ionicons name="people-circle" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>Doctors</Text>
                       <Text style={styles.cardSubtitle}>Medical Staff</Text>
@@ -589,7 +590,7 @@ export default function ClinicDetailsScreen({
                 ]}
               >
                 <TouchableOpacity
-                  style={[styles.floatingCard, styles.cardRight, { marginTop: 20 }]}
+                  style={[styles.floatingCard, styles.cardRight, { marginTop: scale(20) }]}
                   activeOpacity={0.85}
                   onPress={() => {
                     // TODO: Add schedules functionality
@@ -616,7 +617,7 @@ export default function ClinicDetailsScreen({
 
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconWrapper}>
-                        <Ionicons name="calendar-sharp" size={32} color="#FFFFFF" />
+                        <Ionicons name="calendar-sharp" size={scale(32)} color="#FFFFFF" />
                       </View>
                       <Text style={styles.cardTitle}>Schedules</Text>
                       <Text style={styles.cardSubtitle}>Work Shifts</Text>
@@ -632,7 +633,7 @@ export default function ClinicDetailsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

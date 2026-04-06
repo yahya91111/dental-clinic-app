@@ -12,6 +12,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { ToothCondition } from '../../types';
@@ -49,16 +50,16 @@ export const ToothNumberBadge: React.FC<ToothNumberBadgeProps> = ({ toothNumber 
     <View style={[
       {
         backgroundColor: 'rgba(37, 99, 235, 0.12)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 8,
-        minWidth: 40,
+        paddingHorizontal: scale(10),
+        paddingVertical: scale(6),
+        borderRadius: scale(8),
+        minWidth: scale(40),
         alignItems: 'center',
         justifyContent: 'center',
       },
       borderStyles[quadrant]
     ]}>
-      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E40AF', letterSpacing: 0.3 }}>
+      <Text style={{ fontSize: scale(14), fontWeight: '700', color: '#1E40AF', letterSpacing: scale(0.3) }}>
         {displayNumber}
       </Text>
     </View>
@@ -102,37 +103,37 @@ export const ConditionMenu: React.FC<ConditionMenuProps> = ({
         onPress={onClose}
       >
         <TouchableWithoutFeedback>
-          <View style={{ width: '85%', borderRadius: 24, overflow: 'hidden' }}>
+          <View style={{ width: '85%', borderRadius: scale(24), overflow: 'hidden' }}>
             <BlurView intensity={90} tint="light" style={styles.conditionMenuContainer}>
               <View style={{ backgroundColor: 'rgba(240, 249, 255, 0.95)' }}>
                 {/* Header */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: scale(20), paddingVertical: scale(18) }}>
                   <View style={{ flex: 1, alignItems: 'center' }}>
                     <Text style={styles.conditionMenuTitle}>{getSurfaceName(selectedSurface, selectedTooth || undefined)}</Text>
                     <Text style={styles.conditionMenuSubtitle}>{getToothPosition(selectedTooth || 0)}</Text>
                   </View>
-                  <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-                    <Ionicons name="close" size={24} color="#1E3A8A" />
+                  <TouchableOpacity onPress={onClose} style={{ padding: scale(4) }}>
+                    <Ionicons name="close" size={scale(24)} color="#1E3A8A" />
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.conditionMenuDivider} />
 
                 {/* Tab Buttons */}
-                <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 12, marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: scale(12), paddingHorizontal: scale(16), marginTop: scale(12), marginBottom: scale(12) }}>
                   <TouchableOpacity
                     style={{
                       flex: 1,
                       backgroundColor: activeTab === 'condition' ? '#3B82F6' : 'rgba(255, 255, 255, 0.9)',
-                      paddingVertical: 12,
-                      paddingHorizontal: 18,
-                      borderRadius: 12,
+                      paddingVertical: scale(12),
+                      paddingHorizontal: scale(18),
+                      borderRadius: scale(12),
                       alignItems: 'center',
                       borderWidth: activeTab === 'condition' ? 0 : 1.5,
                       borderColor: 'rgba(203, 213, 225, 0.5)',
                       shadowColor: activeTab === 'condition' ? '#3B82F6' : '#000',
                       shadowOffset: {
-                        width: 0,
+                        width: scale(0),
                         height: activeTab === 'condition' ? 4 : 2,
                       },
                       shadowOpacity: activeTab === 'condition' ? 0.3 : 0.08,
@@ -142,25 +143,25 @@ export const ConditionMenu: React.FC<ConditionMenuProps> = ({
                     onPress={() => setActiveTab('condition')}
                   >
                     <Text style={{
-                      fontSize: 13,
+                      fontSize: scale(13),
                       fontWeight: '700',
                       color: activeTab === 'condition' ? '#FFFFFF' : '#475569',
-                      letterSpacing: 0.3,
+                      letterSpacing: scale(0.3),
                     }}>Condition</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={{
                       flex: 1,
                       backgroundColor: activeTab === 'toothStatus' ? '#3B82F6' : 'rgba(255, 255, 255, 0.9)',
-                      paddingVertical: 12,
-                      paddingHorizontal: 18,
-                      borderRadius: 12,
+                      paddingVertical: scale(12),
+                      paddingHorizontal: scale(18),
+                      borderRadius: scale(12),
                       alignItems: 'center',
                       borderWidth: activeTab === 'toothStatus' ? 0 : 1.5,
                       borderColor: 'rgba(203, 213, 225, 0.5)',
                       shadowColor: activeTab === 'toothStatus' ? '#3B82F6' : '#000',
                       shadowOffset: {
-                        width: 0,
+                        width: scale(0),
                         height: activeTab === 'toothStatus' ? 4 : 2,
                       },
                       shadowOpacity: activeTab === 'toothStatus' ? 0.3 : 0.08,
@@ -170,18 +171,18 @@ export const ConditionMenu: React.FC<ConditionMenuProps> = ({
                     onPress={() => setActiveTab('toothStatus')}
                   >
                     <Text style={{
-                      fontSize: 13,
+                      fontSize: scale(13),
                       fontWeight: '700',
                       color: activeTab === 'toothStatus' ? '#FFFFFF' : '#475569',
-                      letterSpacing: 0.3,
+                      letterSpacing: scale(0.3),
                     }}>Tooth Status</Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* Icon Grid */}
-                <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+                <View style={{ paddingHorizontal: scale(16), paddingVertical: scale(12) }}>
                   {activeTab === 'condition' ? (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: scale(12) }}>
                       {[
                         { key: 'caries', name: 'Caries', color: '#DC2626' },
                         { key: 'broken', name: 'Broken', color: '#EC4899' },
@@ -193,42 +194,42 @@ export const ConditionMenu: React.FC<ConditionMenuProps> = ({
                         <TouchableOpacity
                           key={item.key}
                           style={{
-                            width: 90,
-                            height: 90,
+                            width: scale(90),
+                            height: scale(90),
                             backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                            borderRadius: 18,
+                            borderRadius: scale(18),
                             alignItems: 'center',
                             justifyContent: 'center',
-                            borderWidth: 2,
+                            borderWidth: scale(2),
                             borderColor: 'rgba(255, 255, 255, 0.6)',
                           }}
                           onPress={() => onSelect(item.key as ToothCondition)}
                         >
-                          <MaterialCommunityIcons name="tooth" size={30} color={item.color} />
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A', marginTop: 6, textAlign: 'center' }}>{item.name}</Text>
+                          <MaterialCommunityIcons name="tooth" size={scale(30)} color={item.color} />
+                          <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#1E3A8A', marginTop: scale(6), textAlign: 'center' }}>{item.name}</Text>
                         </TouchableOpacity>
                       ))}
 
                       {/* Clear */}
                       <TouchableOpacity
                         style={{
-                          width: 90,
-                          height: 90,
+                          width: scale(90),
+                          height: scale(90),
                           backgroundColor: 'rgba(255, 220, 220, 0.9)',
-                          borderRadius: 18,
+                          borderRadius: scale(18),
                           alignItems: 'center',
                           justifyContent: 'center',
-                          borderWidth: 2,
+                          borderWidth: scale(2),
                           borderColor: 'rgba(239, 68, 68, 0.3)',
                         }}
                         onPress={() => onSelect(null)}
                       >
-                        <Ionicons name="close-circle" size={30} color="#EF4444" />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginTop: 6 }}>Clear</Text>
+                        <Ionicons name="close-circle" size={scale(30)} color="#EF4444" />
+                        <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#EF4444', marginTop: scale(6) }}>Clear</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: scale(12) }}>
                       {[
                         { key: 'missing', name: 'Missing', color: '#6B7280', useX: true },
                         { key: 'filling_replacement', name: 'Temp Fill', color: '#808080' },
@@ -238,41 +239,41 @@ export const ConditionMenu: React.FC<ConditionMenuProps> = ({
                         <TouchableOpacity
                           key={item.key}
                           style={{
-                            width: 90,
-                            height: 90,
+                            width: scale(90),
+                            height: scale(90),
                             backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                            borderRadius: 18,
+                            borderRadius: scale(18),
                             alignItems: 'center',
                             justifyContent: 'center',
-                            borderWidth: 2,
+                            borderWidth: scale(2),
                             borderColor: 'rgba(255, 255, 255, 0.6)',
                           }}
                           onPress={() => onSelect(item.key as ToothCondition)}
                         >
                           {(item as any).useX
-                            ? <Ionicons name="close" size={30} color={item.color} />
-                            : <MaterialCommunityIcons name="tooth" size={30} color={item.color} />
+                            ? <Ionicons name="close" size={scale(30)} color={item.color} />
+                            : <MaterialCommunityIcons name="tooth" size={scale(30)} color={item.color} />
                           }
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#1E3A8A', marginTop: 6, textAlign: 'center' }}>{item.name}</Text>
+                          <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#1E3A8A', marginTop: scale(6), textAlign: 'center' }}>{item.name}</Text>
                         </TouchableOpacity>
                       ))}
 
                       {/* Clear */}
                       <TouchableOpacity
                         style={{
-                          width: 90,
-                          height: 90,
+                          width: scale(90),
+                          height: scale(90),
                           backgroundColor: 'rgba(255, 220, 220, 0.9)',
-                          borderRadius: 18,
+                          borderRadius: scale(18),
                           alignItems: 'center',
                           justifyContent: 'center',
-                          borderWidth: 2,
+                          borderWidth: scale(2),
                           borderColor: 'rgba(239, 68, 68, 0.3)',
                         }}
                         onPress={() => onSelect('CLEAR_TOOTH_STATUS' as any)}
                       >
-                        <Ionicons name="close-circle" size={30} color="#EF4444" />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginTop: 6 }}>Clear</Text>
+                        <Ionicons name="close-circle" size={scale(30)} color="#EF4444" />
+                        <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#EF4444', marginTop: scale(6) }}>Clear</Text>
                       </TouchableOpacity>
                     </View>
                   )}

@@ -1,20 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  StatusBar,
-  ScrollView,
-  Animated,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TouchableWithoutFeedback, StatusBar, ScrollView, Animated, Modal, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DentalChartScreen from './screens/DentalChart';
@@ -273,7 +259,7 @@ export default function PatientProfileScreen({
         return (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8' }}>
             <ActivityIndicator size="large" color="#7DD3C0" />
-            <Text style={{ marginTop: 16, fontSize: 16, color: '#4A5568' }}>جاري تحميل بيانات المريض...</Text>
+            <Text style={{ marginTop: scale(16), fontSize: scale(16), color: '#4A5568' }}>جاري تحميل بيانات المريض...</Text>
           </View>
         );
       }
@@ -325,13 +311,13 @@ export default function PatientProfileScreen({
                   {
                     translateX: blob1Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 30],
+                      outputRange: [scale(0), scale(30)],
                     }),
                   },
                   {
                     translateY: blob1Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -20],
+                      outputRange: [scale(0), scale(-20)],
                     }),
                   },
                 ],
@@ -351,13 +337,13 @@ export default function PatientProfileScreen({
                   {
                     translateX: blob2Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -25],
+                      outputRange: [scale(0), scale(-25)],
                     }),
                   },
                   {
                     translateY: blob2Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 35],
+                      outputRange: [scale(0), scale(35)],
                     }),
                   },
                 ],
@@ -378,13 +364,13 @@ export default function PatientProfileScreen({
                   {
                     translateX: blob3Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 20],
+                      outputRange: [scale(0), scale(20)],
                     }),
                   },
                   {
                     translateY: blob3Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -30],
+                      outputRange: [scale(0), scale(-30)],
                     }),
                   },
                 ],
@@ -404,13 +390,13 @@ export default function PatientProfileScreen({
                   {
                     translateX: blob4Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -20],
+                      outputRange: [scale(0), scale(-20)],
                     }),
                   },
                   {
                     translateY: blob4Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 25],
+                      outputRange: [scale(0), scale(25)],
                     }),
                   },
                 ],
@@ -430,13 +416,13 @@ export default function PatientProfileScreen({
                   {
                     translateX: blob5Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 28],
+                      outputRange: [scale(0), scale(28)],
                     }),
                   },
                   {
                     translateY: blob5Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -32],
+                      outputRange: [scale(0), scale(-32)],
                     }),
                   },
                 ],
@@ -456,13 +442,13 @@ export default function PatientProfileScreen({
                   {
                     translateX: blob6Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, -18],
+                      outputRange: [scale(0), scale(-18)],
                     }),
                   },
                   {
                     translateY: blob6Anim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0, 22],
+                      outputRange: [scale(0), scale(22)],
                     }),
                   },
                 ],
@@ -517,15 +503,15 @@ export default function PatientProfileScreen({
                   <TouchableOpacity
                     style={{
                       position: 'absolute',
-                      left: 20,
+                      left: scale(20),
                       top: '50%',
-                      marginTop: -20,
+                      marginTop: scale(-20),
                     }}
                     activeOpacity={0.7}
                     onPress={() => setShowMenu(true)}
                   >
                     <View style={styles.addPatientIconContainer}>
-                      <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+                      <Ionicons name="ellipsis-horizontal" size={scale(22)} color="#FFFFFF" />
                     </View>
                   </TouchableOpacity>
                 )}
@@ -542,7 +528,7 @@ export default function PatientProfileScreen({
               {/* Search Bar */}
               <View style={styles.searchAndAddContainer}>
                 <View style={styles.searchBarContainer}>
-                  <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
+                  <Ionicons name="search" size={scale(20)} color="#6B7280" style={styles.searchIcon} />
                   <TextInput
                     style={styles.searchInput}
                     placeholder="Search patients..."
@@ -552,7 +538,7 @@ export default function PatientProfileScreen({
                   />
                   {searchQuery.length > 0 && (
                     <TouchableOpacity onPress={() => setSearchQuery('')}>
-                      <Ionicons name="close-circle" size={20} color="#6B7280" />
+                      <Ionicons name="close-circle" size={scale(20)} color="#6B7280" />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -579,12 +565,12 @@ export default function PatientProfileScreen({
                       }}
                     >
                       <View style={styles.patientCardContent}>
-                        <Ionicons name="person-circle" size={40} color="#A855F7" />
+                        <Ionicons name="person-circle" size={scale(40)} color="#A855F7" />
                         <View style={styles.patientCardInfo}>
                           <Text style={styles.patientCardName}>{patient.name}</Text>
                           <Text style={styles.patientCardFileNumber}>File: {patient.file_number}</Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={24} color="#9CA3AF" />
+                        <Ionicons name="chevron-forward" size={scale(24)} color="#9CA3AF" />
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -593,7 +579,7 @@ export default function PatientProfileScreen({
 
               {!isSearching && searchQuery.trim() !== '' && searchResults.length === 0 && (
                 <View style={styles.noResultsContainer}>
-                  <Ionicons name="search-outline" size={48} color="#9CA3AF" />
+                  <Ionicons name="search-outline" size={scale(48)} color="#9CA3AF" />
                   <Text style={styles.noResultsText}>لم يتم العثور على مريض بهذا الرقم</Text>
                 </View>
               )}
@@ -607,18 +593,18 @@ export default function PatientProfileScreen({
               {selectedPatient && (
                 <View style={{
                   backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                  borderRadius: 16,
-                  padding: 16,
-                  marginHorizontal: 4,
-                  marginBottom: 16,
-                  borderWidth: 1.5,
+                  borderRadius: scale(16),
+                  padding: scale(16),
+                  marginHorizontal: scale(4),
+                  marginBottom: scale(16),
+                  borderWidth: scale(1.5),
                   borderColor: 'rgba(255, 255, 255, 0.2)',
                   alignItems: 'center',
                 }}>
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#8B5CF6' }} numberOfLines={1}>
+                  <Text style={{ fontSize: scale(22), fontWeight: '800', color: '#8B5CF6' }} numberOfLines={1}>
                     {selectedPatient.name}
                   </Text>
-                  <Text style={{ fontSize: 14, color: '#A78BFA', marginTop: 4, fontWeight: '600' }}>
+                  <Text style={{ fontSize: scale(14), color: '#A78BFA', marginTop: scale(4), fontWeight: '600' }}>
                     File: {selectedPatient.file_number}
                   </Text>
                 </View>
@@ -647,12 +633,12 @@ export default function PatientProfileScreen({
           {/* Bottom Navigation - Same as App.tsx */}
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navItem} onPress={onNavigateHome}>
-              <Ionicons name="home-sharp" size={26} color="#9CA3AF" />
+              <Ionicons name="home-sharp" size={scale(26)} color="#9CA3AF" />
               <Text style={styles.navLabel}>Home</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.navItem}>
-              <Ionicons name="person-circle" size={28} color="#7DD3C0" />
+              <Ionicons name="person-circle" size={scale(28)} color="#7DD3C0" />
               <Text style={[styles.navLabel, styles.navLabelActive]}>Patient File</Text>
             </TouchableOpacity>
 
@@ -660,7 +646,7 @@ export default function PatientProfileScreen({
               style={styles.navItem}
               onPress={onNavigateAppointments}
             >
-              <Ionicons name="calendar-sharp" size={26} color="#9CA3AF" />
+              <Ionicons name="calendar-sharp" size={scale(26)} color="#9CA3AF" />
               <Text style={styles.navLabel}>Appointments</Text>
             </TouchableOpacity>
 
@@ -668,7 +654,7 @@ export default function PatientProfileScreen({
               style={styles.navItem}
               onPress={onNavigateArchive}
             >
-              <Ionicons name="archive-sharp" size={26} color="#9CA3AF" />
+              <Ionicons name="archive-sharp" size={scale(26)} color="#9CA3AF" />
               <Text style={styles.navLabel}>Archive</Text>
             </TouchableOpacity>
           </View>
@@ -693,7 +679,7 @@ export default function PatientProfileScreen({
                     onPress={() => setIsAddPatientModalVisible(false)}
                     style={styles.modalCloseButton}
                   >
-                    <Ionicons name="close" size={22} color="#6B7280" />
+                    <Ionicons name="close" size={scale(22)} color="#6B7280" />
                   </TouchableOpacity>
                 </View>
 
@@ -756,7 +742,7 @@ export default function PatientProfileScreen({
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
                         <>
-                          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                          <Ionicons name="checkmark-circle" size={scale(20)} color="#FFFFFF" />
                           <Text style={styles.modalSaveButtonText}>Save</Text>
                         </>
                       )}
@@ -778,17 +764,17 @@ export default function PatientProfileScreen({
         >
           <View style={{
             backgroundColor: '#F0F4F8',
-            borderRadius: 20,
+            borderRadius: scale(20),
             width: '75%',
-            padding: 8,
+            padding: scale(8),
           }}>
             <TouchableOpacity
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 12,
-                padding: 16,
-                borderRadius: 14,
+                gap: scale(12),
+                padding: scale(16),
+                borderRadius: scale(14),
               }}
               onPress={() => {
                 setShowMenu(false);
@@ -799,27 +785,27 @@ export default function PatientProfileScreen({
                 }
               }}
             >
-              <Ionicons name="create-outline" size={22} color="#2563EB" />
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#1E3A8A' }}>Edit Patient</Text>
+              <Ionicons name="create-outline" size={scale(22)} color="#2563EB" />
+              <Text style={{ fontSize: scale(16), fontWeight: '600', color: '#1E3A8A' }}>Edit Patient</Text>
             </TouchableOpacity>
 
-            <View style={{ height: 1, backgroundColor: 'rgba(0,0,0,0.08)', marginHorizontal: 12 }} />
+            <View style={{ height: scale(1), backgroundColor: 'rgba(0,0,0,0.08)', marginHorizontal: scale(12) }} />
 
             <TouchableOpacity
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 12,
-                padding: 16,
-                borderRadius: 14,
+                gap: scale(12),
+                padding: scale(16),
+                borderRadius: scale(14),
               }}
               onPress={() => {
                 setShowMenu(false);
                 handleDeletePatient();
               }}
             >
-              <Ionicons name="trash-outline" size={22} color="#EF4444" />
-              <Text style={{ fontSize: 16, fontWeight: '600', color: '#EF4444' }}>Delete Patient</Text>
+              <Ionicons name="trash-outline" size={scale(22)} color="#EF4444" />
+              <Text style={{ fontSize: scale(16), fontWeight: '600', color: '#EF4444' }}>Delete Patient</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -831,42 +817,42 @@ export default function PatientProfileScreen({
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={{
               backgroundColor: '#F0F4F8',
-              borderRadius: 20,
-              width: 320,
-              padding: 24,
+              borderRadius: scale(20),
+              width: scale(320),
+              padding: scale(24),
             }}>
-              <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A', marginBottom: 20, textAlign: 'center' }}>
+              <Text style={{ fontSize: scale(20), fontWeight: '800', color: '#1E3A8A', marginBottom: scale(20), textAlign: 'center' }}>
                 Edit Patient
               </Text>
 
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 6 }}>Patient Name</Text>
+              <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#6B7280', marginBottom: scale(6) }}>Patient Name</Text>
               <TextInput
                 style={{
                   backgroundColor: '#FFFFFF',
-                  borderRadius: 12,
-                  padding: 14,
-                  fontSize: 16,
+                  borderRadius: scale(12),
+                  padding: scale(14),
+                  fontSize: scale(16),
                   color: '#1E3A8A',
-                  borderWidth: 1.5,
+                  borderWidth: scale(1.5),
                   borderColor: 'rgba(37, 99, 235, 0.2)',
-                  marginBottom: 16,
+                  marginBottom: scale(16),
                 }}
                 value={editName}
                 onChangeText={setEditName}
                 placeholder="Name"
               />
 
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#6B7280', marginBottom: 6 }}>File Number</Text>
+              <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#6B7280', marginBottom: scale(6) }}>File Number</Text>
               <TextInput
                 style={{
                   backgroundColor: '#FFFFFF',
-                  borderRadius: 12,
-                  padding: 14,
-                  fontSize: 16,
+                  borderRadius: scale(12),
+                  padding: scale(14),
+                  fontSize: scale(16),
                   color: '#1E3A8A',
-                  borderWidth: 1.5,
+                  borderWidth: scale(1.5),
                   borderColor: 'rgba(37, 99, 235, 0.2)',
-                  marginBottom: 24,
+                  marginBottom: scale(24),
                 }}
                 value={editFileNumber}
                 onChangeText={setEditFileNumber}
@@ -874,30 +860,30 @@ export default function PatientProfileScreen({
                 keyboardType="number-pad"
               />
 
-              <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flexDirection: 'row', gap: scale(10) }}>
                 <TouchableOpacity
                   style={{
                     flex: 1,
                     backgroundColor: 'rgba(0,0,0,0.06)',
-                    borderRadius: 12,
-                    paddingVertical: 14,
+                    borderRadius: scale(12),
+                    paddingVertical: scale(14),
                     alignItems: 'center',
                   }}
                   onPress={() => setShowEditModal(false)}
                 >
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
+                  <Text style={{ fontSize: scale(15), fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={{
                     flex: 1,
                     backgroundColor: '#2563EB',
-                    borderRadius: 12,
-                    paddingVertical: 14,
+                    borderRadius: scale(12),
+                    paddingVertical: scale(14),
                     alignItems: 'center',
                   }}
                   onPress={handleEditPatient}
                 >
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>Save</Text>
+                  <Text style={{ fontSize: scale(15), fontWeight: '700', color: '#FFFFFF' }}>Save</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -908,7 +894,7 @@ export default function PatientProfileScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

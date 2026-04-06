@@ -7,6 +7,7 @@ import {
   Animated,
   Alert,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
@@ -220,13 +221,13 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
     <View
       style={{
         backgroundColor: 'rgba(224, 242, 254, 0.95)',
-        borderWidth: 2,
+        borderWidth: scale(2),
         borderColor: 'rgba(56, 189, 248, 0.5)',
-        borderRadius: 14,
-        padding: 16,
-        marginBottom: 12,
+        borderRadius: scale(14),
+        padding: scale(16),
+        marginBottom: scale(12),
         shadowColor: '#0284C7',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: scale(0), height: scale(2) },
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: openReferralMenu === referralKey ? 1000 : 3,
@@ -234,21 +235,21 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: referredTeeth.length > 0 ? 8 : 0 }}>
-        <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
+        <Text style={{ fontSize: scale(15), fontWeight: '600', color: '#0284C7' }}>
           {getReferralName(referralKey)}
         </Text>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8) }}>
           {/* Three-dot menu button */}
           <TouchableOpacity
             onPress={() => setOpenReferralMenu(openReferralMenu === referralKey ? null : referralKey)}
             style={{
-              padding: 6,
-              borderRadius: 6,
+              padding: scale(6),
+              borderRadius: scale(6),
               backgroundColor: 'rgba(148, 163, 184, 0.1)',
             }}
           >
-            <Ionicons name="ellipsis-horizontal" size={18} color="#64748B" />
+            <Ionicons name="ellipsis-horizontal" size={scale(18)} color="#64748B" />
           </TouchableOpacity>
 
           {/* Not Given / Given button */}
@@ -258,17 +259,17 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
               backgroundColor: referralStatus[referralKey as keyof typeof referralStatus] === 'given'
                 ? 'rgba(34, 197, 94, 0.15)'
                 : 'rgba(156, 163, 175, 0.2)',
-              paddingVertical: 6,
-              paddingHorizontal: 12,
-              borderRadius: 8,
-              borderWidth: 1,
+              paddingVertical: scale(6),
+              paddingHorizontal: scale(12),
+              borderRadius: scale(8),
+              borderWidth: scale(1),
               borderColor: referralStatus[referralKey as keyof typeof referralStatus] === 'given'
                 ? 'rgba(34, 197, 94, 0.3)'
                 : 'rgba(156, 163, 175, 0.4)',
             }}
           >
             <Text style={{
-              fontSize: 13,
+              fontSize: scale(13),
               fontWeight: '600',
               color: referralStatus[referralKey as keyof typeof referralStatus] === 'given'
                 ? '#16A34A'
@@ -282,7 +283,7 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
 
       {/* Teeth badges */}
       {referredTeeth.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(6), marginTop: scale(4) }}>
           {referredTeeth.map(toothNumber => (
             <ToothNumberBadge key={`${referralKey}-${toothNumber}`} toothNumber={toothNumber} />
           ))}
@@ -293,19 +294,19 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
       {openReferralMenu === referralKey && (
         <View style={{
           position: 'absolute',
-          top: 40,
-          right: 10,
+          top: scale(40),
+          right: scale(10),
           backgroundColor: 'rgba(224, 242, 254, 0.95)',
-          borderRadius: 12,
-          padding: 8,
+          borderRadius: scale(12),
+          padding: scale(8),
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
+          shadowOffset: { width: scale(0), height: scale(4) },
           shadowOpacity: 0.15,
           shadowRadius: 12,
           elevation: 1001,
-          borderWidth: 1,
+          borderWidth: scale(1),
           borderColor: 'rgba(148, 163, 184, 0.2)',
-          minWidth: 140,
+          minWidth: scale(140),
           zIndex: 1001,
         }}>
           {/* Edit Button */}
@@ -319,16 +320,16 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-              borderRadius: 8,
+              paddingVertical: scale(10),
+              paddingHorizontal: scale(12),
+              borderRadius: scale(8),
             }}
           >
-            <Ionicons name="create-outline" size={18} color="#3B82F6" />
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#3B82F6', marginLeft: 10 }}>Edit</Text>
+            <Ionicons name="create-outline" size={scale(18)} color="#3B82F6" />
+            <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#3B82F6', marginLeft: scale(10) }}>Edit</Text>
           </TouchableOpacity>
 
-          <View style={{ height: 1, backgroundColor: 'rgba(148, 163, 184, 0.15)', marginVertical: 4 }} />
+          <View style={{ height: scale(1), backgroundColor: 'rgba(148, 163, 184, 0.15)', marginVertical: scale(4) }} />
 
           {/* Delete Button */}
           <TouchableOpacity
@@ -336,13 +337,13 @@ const ReferralCard: React.FC<ReferralCardProps> = ({
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              paddingVertical: 10,
-              paddingHorizontal: 12,
-              borderRadius: 8,
+              paddingVertical: scale(10),
+              paddingHorizontal: scale(12),
+              borderRadius: scale(8),
             }}
           >
-            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#EF4444', marginLeft: 10 }}>Delete</Text>
+            <Ionicons name="trash-outline" size={scale(18)} color="#EF4444" />
+            <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#EF4444', marginLeft: scale(10) }}>Delete</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -421,26 +422,26 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
           {/* Tab Buttons */}
           <View style={{
             flexDirection: 'row',
-            gap: 10,
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: 8,
+            gap: scale(10),
+            paddingHorizontal: scale(16),
+            paddingTop: scale(12),
+            paddingBottom: scale(8),
           }}>
             <TouchableOpacity
               onPress={() => setReferralTab('department')}
               style={{
                 flex: 1,
-                paddingVertical: 10,
-                paddingHorizontal: 16,
-                borderRadius: 10,
+                paddingVertical: scale(10),
+                paddingHorizontal: scale(16),
+                borderRadius: scale(10),
                 backgroundColor: referralTab === 'department' ? '#0284C7' : 'rgba(186, 230, 253, 0.3)',
-                borderWidth: 1.5,
+                borderWidth: scale(1.5),
                 borderColor: referralTab === 'department' ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
                 alignItems: 'center',
               }}
             >
               <Text style={{
-                fontSize: 14,
+                fontSize: scale(14),
                 fontWeight: '700',
                 color: referralTab === 'department' ? '#FFFFFF' : '#0284C7',
               }}>
@@ -452,11 +453,11 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
               onPress={() => setReferralTab('records')}
               style={{
                 flex: 1,
-                paddingVertical: 10,
-                paddingHorizontal: 8,
-                borderRadius: 10,
+                paddingVertical: scale(10),
+                paddingHorizontal: scale(8),
+                borderRadius: scale(10),
                 backgroundColor: referralTab === 'records' ? '#0284C7' : 'rgba(186, 230, 253, 0.3)',
-                borderWidth: 1.5,
+                borderWidth: scale(1.5),
                 borderColor: referralTab === 'records' ? '#0284C7' : 'rgba(186, 230, 253, 0.6)',
                 alignItems: 'center',
               }}
@@ -465,7 +466,7 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 style={{
-                  fontSize: 12,
+                  fontSize: scale(12),
                   fontWeight: '700',
                   color: referralTab === 'records' ? '#FFFFFF' : '#0284C7',
                 }}
@@ -478,8 +479,8 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
           {/* Content Container */}
           <View style={{
             height: contentHeight,
-            paddingHorizontal: 16,
-            paddingBottom: 8
+            paddingHorizontal: scale(16),
+            paddingBottom: scale(8)
           }}>
             {/* Department Tab Content */}
             {referralTab === 'department' && (
@@ -502,29 +503,29 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
                     setShowDepartmentModal(true);
                   }}
                   style={{
-                    marginTop: 4,
+                    marginTop: scale(4),
                     backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                    borderWidth: 1.5,
+                    borderWidth: scale(1.5),
                     borderColor: 'rgba(186, 230, 253, 0.6)',
-                    borderRadius: 12,
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
+                    borderRadius: scale(12),
+                    paddingVertical: scale(12),
+                    paddingHorizontal: scale(16),
                     flexDirection: 'row',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                   }}
                 >
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
+                  <Text style={{ fontSize: scale(15), fontWeight: '600', color: '#0284C7' }}>
                     Select Department
                   </Text>
-                  <Ionicons name="chevron-forward" size={20} color="#7DD3FC" />
+                  <Ionicons name="chevron-forward" size={scale(20)} color="#7DD3FC" />
                 </TouchableOpacity>
 
                 {/* Selected Departments Display */}
                 {Object.entries(referrals).some(([_, checked]) => checked) && (
                   <View>
                     <ScrollView
-                      style={{ marginTop: 10, maxHeight: 242 }}
+                      style={{ marginTop: scale(10), maxHeight: scale(242) }}
                       contentContainerStyle={{ paddingBottom: 100 }}
                       showsVerticalScrollIndicator={true}
                       nestedScrollEnabled={true}
@@ -571,11 +572,11 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
             {/* Referral Records Tab Content */}
             {referralTab === 'records' && (
               <ScrollView
-                style={{ marginTop: 4, maxHeight: 290 }}
+                style={{ marginTop: scale(4), maxHeight: scale(290) }}
                 showsVerticalScrollIndicator={true}
               >
                 {referralRecords.length === 0 ? (
-                  <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginTop: 20 }}>
+                  <Text style={{ fontSize: scale(14), color: '#64748B', textAlign: 'center', marginTop: scale(20) }}>
                     No referral records yet
                   </Text>
                 ) : (
@@ -586,51 +587,51 @@ export const ReferralContainer: React.FC<ReferralContainerProps> = ({
                         key={index}
                         style={{
                           backgroundColor: 'rgba(224, 242, 254, 0.95)',
-                          borderWidth: 2,
+                          borderWidth: scale(2),
                           borderColor: 'rgba(56, 189, 248, 0.5)',
-                          borderRadius: 14,
-                          padding: 16,
-                          marginBottom: 12,
+                          borderRadius: scale(14),
+                          padding: scale(16),
+                          marginBottom: scale(12),
                           shadowColor: '#0284C7',
-                          shadowOffset: { width: 0, height: 2 },
+                          shadowOffset: { width: scale(0), height: scale(2) },
                           shadowOpacity: 0.1,
                           shadowRadius: 4,
                           elevation: 3,
                         }}
                       >
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <Text style={{ fontSize: 15, fontWeight: '600', color: '#0284C7' }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: scale(8) }}>
+                          <Text style={{ fontSize: scale(15), fontWeight: '600', color: '#0284C7' }}>
                             {record.departmentName}
                           </Text>
                           <View
                             style={{
                               backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                              paddingVertical: 4,
-                              paddingHorizontal: 10,
-                              borderRadius: 8,
-                              borderWidth: 1,
+                              paddingVertical: scale(4),
+                              paddingHorizontal: scale(10),
+                              borderRadius: scale(8),
+                              borderWidth: scale(1),
                               borderColor: 'rgba(34, 197, 94, 0.3)',
                             }}
                           >
-                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#16A34A' }}>
+                            <Text style={{ fontSize: scale(12), fontWeight: '600', color: '#16A34A' }}>
                               Given
                             </Text>
                           </View>
                         </View>
 
                         {record.teeth.length > 0 && (
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(6), marginBottom: scale(8) }}>
                             {record.teeth.map((toothNumber, idx) => (
                               <ToothNumberBadge key={`${index}-${toothNumber}-${idx}`} toothNumber={toothNumber} />
                             ))}
                           </View>
                         )}
 
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                          <Text style={{ fontSize: 12, color: '#64748B' }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: scale(4) }}>
+                          <Text style={{ fontSize: scale(12), color: '#64748B' }}>
                             {record.doctorName}
                           </Text>
-                          <Text style={{ fontSize: 12, color: '#64748B' }}>
+                          <Text style={{ fontSize: scale(12), color: '#64748B' }}>
                             {record.timestamp}
                           </Text>
                         </View>

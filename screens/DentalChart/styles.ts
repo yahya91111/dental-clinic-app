@@ -1,8 +1,9 @@
-import { StyleSheet, Dimensions, Platform } from 'react-native';
+import { Dimensions, Platform } from 'react-native';
+import { scaledStyleSheet } from '../../lib/scale';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export const styles = StyleSheet.create({
+export const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  Switch,
-} from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, Switch } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 // NotificationService removed - not needed for basic notifications
 
@@ -94,11 +87,11 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Ionicons name="notifications" size={24} color="#2D3748" />
+              <Ionicons name="notifications" size={scale(24)} color="#2D3748" />
               <Text style={styles.headerTitle}>الإشعارات</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#2D3748" />
+              <Ionicons name="close" size={scale(24)} color="#2D3748" />
             </TouchableOpacity>
           </View>
 
@@ -107,7 +100,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
             <View style={styles.toggleLeft}>
               <Ionicons 
                 name={notificationsEnabled ? "notifications" : "notifications-off"} 
-                size={20} 
+                size={scale(20)} 
                 color={notificationsEnabled ? "#3B82F6" : "#9CA3AF"} 
               />
               <Text style={styles.toggleText}>
@@ -129,14 +122,14 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
               style={styles.actionButton}
               onPress={handleMarkAllAsRead}
             >
-              <Ionicons name="checkmark-done" size={18} color="#3B82F6" />
+              <Ionicons name="checkmark-done" size={scale(18)} color="#3B82F6" />
               <Text style={styles.actionButtonText}>تحديد الكل كمقروء</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.actionButton}
               onPress={handleClearAll}
             >
-              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+              <Ionicons name="trash-outline" size={scale(18)} color="#EF4444" />
               <Text style={[styles.actionButtonText, { color: '#EF4444' }]}>مسح الكل</Text>
             </TouchableOpacity>
           </View>
@@ -145,7 +138,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
           <ScrollView style={styles.notificationsList}>
             {notifications.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="notifications-off-outline" size={48} color="#9CA3AF" />
+                <Ionicons name="notifications-off-outline" size={scale(48)} color="#9CA3AF" />
                 <Text style={styles.emptyText}>لا توجد إشعارات</Text>
               </View>
             ) : (
@@ -160,7 +153,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
                   <View style={styles.notificationIcon}>
                     <Ionicons 
                       name="person-add" 
-                      size={20} 
+                      size={scale(20)} 
                       color="#3B82F6" 
                     />
                   </View>
@@ -182,7 +175,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

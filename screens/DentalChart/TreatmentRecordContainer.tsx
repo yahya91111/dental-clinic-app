@@ -6,6 +6,7 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { BlurView } from 'expo-blur';
 import { styles, SCREEN_WIDTH, SCREEN_HEIGHT } from './styles';
 import { ToothNumberBadge } from './DentalChartComponents';
@@ -94,27 +95,27 @@ const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record }) => 
     return (
       <View style={{
         backgroundColor: 'rgba(16, 185, 129, 0.08)',
-        borderRadius: 18,
-        padding: 20,
-        marginBottom: 16,
-        borderWidth: 2,
+        borderRadius: scale(18),
+        padding: scale(20),
+        marginBottom: scale(16),
+        borderWidth: scale(2),
         borderColor: 'rgba(16, 185, 129, 0.35)',
       }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(12) }}>
           <View style={{
-            width: 10,
-            height: 10,
-            borderRadius: 5,
+            width: scale(10),
+            height: scale(10),
+            borderRadius: scale(5),
             backgroundColor: '#047857',
-            marginRight: 10,
+            marginRight: scale(10),
           }} />
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#047857' }}>
+          <Text style={{ fontSize: scale(18), fontWeight: '700', color: '#047857' }}>
             Scaling Done
           </Text>
         </View>
-        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(16, 185, 129, 0.2)', paddingTop: 12, marginTop: 8, gap: 6 }}>
-          <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
-          <Text style={{ fontSize: 13, color: '#047857', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
+        <View style={{ borderTopWidth: scale(1), borderTopColor: 'rgba(16, 185, 129, 0.2)', paddingTop: scale(12), marginTop: scale(8), gap: scale(6) }}>
+          <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
+          <Text style={{ fontSize: scale(13), color: '#047857', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
         </View>
       </View>
     );
@@ -123,33 +124,33 @@ const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record }) => 
   return (
     <View style={{
       backgroundColor: 'rgba(37, 99, 235, 0.08)',
-      borderRadius: 18,
-      padding: 20,
-      marginBottom: 16,
-      borderWidth: 2,
+      borderRadius: scale(18),
+      padding: scale(20),
+      marginBottom: scale(16),
+      borderWidth: scale(2),
       borderColor: 'rgba(37, 99, 235, 0.35)',
     }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(14), gap: scale(10) }}>
         <ToothNumberBadge toothNumber={record.toothNumber} />
-        <Text style={{ fontSize: 15, fontWeight: '700', color: '#4B5563' }}>
+        <Text style={{ fontSize: scale(15), fontWeight: '700', color: '#4B5563' }}>
           {getToothName(record.toothNumber).english}
         </Text>
       </View>
 
-      <View style={{ gap: 8, marginBottom: 12 }}>
+      <View style={{ gap: scale(8), marginBottom: scale(12) }}>
         <View style={{ flexDirection: 'row' }}>
-          <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Treatment:</Text>
+          <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Treatment:</Text>
           {['Extraction', 'Filling', 'Pulpectomy'].includes(record.treatment || '') ? (
             <View style={{
               backgroundColor: record.treatment === 'Extraction' ? 'rgba(156, 163, 175, 0.15)'
                 : record.treatment === 'Filling' ? 'rgba(16, 185, 129, 0.15)'
                 : 'rgba(139, 92, 246, 0.15)',
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: 8,
+              paddingHorizontal: scale(10),
+              paddingVertical: scale(4),
+              borderRadius: scale(8),
             }}>
               <Text style={{
-                fontSize: 14,
+                fontSize: scale(14),
                 color: record.treatment === 'Extraction' ? '#4B5563'
                   : record.treatment === 'Filling' ? '#047857'
                   : '#7C3AED',
@@ -159,28 +160,28 @@ const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record }) => 
               </Text>
             </View>
           ) : (
-            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.treatment}</Text>
+            <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.treatment}</Text>
           )}
         </View>
 
         {record.details && (
           <View style={{ flexDirection: 'row' }}>
-            <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Details:</Text>
-            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.details}</Text>
+            <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Details:</Text>
+            <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.details}</Text>
           </View>
         )}
 
         <View style={{ flexDirection: 'row' }}>
-          <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Surfaces:</Text>
-          <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+          <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Surfaces:</Text>
+          <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
             {record.treatment === 'Extraction' ? 'N/A' : (record.surfaces?.join(', ') || '-')}
           </Text>
         </View>
       </View>
 
-      <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(37, 99, 235, 0.2)', paddingTop: 12, gap: 6 }}>
-        <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
-        <Text style={{ fontSize: 13, color: '#2563EB', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
+      <View style={{ borderTopWidth: scale(1), borderTopColor: 'rgba(37, 99, 235, 0.2)', paddingTop: scale(12), gap: scale(6) }}>
+        <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
+        <Text style={{ fontSize: scale(13), color: '#2563EB', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
       </View>
     </View>
   );
@@ -326,20 +327,20 @@ export const TreatmentRecordContainer: React.FC<TreatmentRecordContainerProps> =
       {isTreatmentRecordExpanded ? (
         <View style={{ width: SCREEN_WIDTH * 0.85, height: SCREEN_HEIGHT * 0.75 }}>
           <BlurView intensity={80} tint="light" style={[styles.additionalContent, { width: '100%', height: '100%' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: scale(16) }}>
               <Text style={styles.additionalTitle}>Total Treatment Record</Text>
-              <TouchableOpacity onPress={handleClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
+              <TouchableOpacity onPress={handleClose} style={{ width: scale(36), height: scale(36), borderRadius: scale(18), alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: scale(22), fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1, width: '100%', marginTop: 16, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ flex: 1, width: '100%', marginTop: scale(16), paddingHorizontal: scale(16) }} showsVerticalScrollIndicator={false}>
               {(() => {
                 const allRecords = getAllRecords();
 
                 if (allRecords.length === 0) {
                   return (
-                    <Text style={{ color: '#666', textAlign: 'center', paddingVertical: 20 }}>
+                    <Text style={{ color: '#666', textAlign: 'center', paddingVertical: scale(20) }}>
                       No treatment records yet
                     </Text>
                   );

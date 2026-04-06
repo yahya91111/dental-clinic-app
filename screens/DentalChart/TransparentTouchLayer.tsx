@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, TouchableWithoutFeedback } from 'react-native';
+import { scale } from '../../lib/scale';
 import { SCREEN_WIDTH, SCREEN_HEIGHT } from './styles';
 
 // ═══════════════════════════════════════════════════════════════
@@ -112,8 +113,8 @@ export function TransparentTouchLayer({ selectedTooth, onClose }: TransparentTou
         <View
           style={{
             position: 'absolute',
-            top: 0,
-            left: 0,
+            top: scale(0),
+            left: scale(0),
             width: SCREEN_WIDTH,
             height: toothTop,
             zIndex: 998,
@@ -128,7 +129,7 @@ export function TransparentTouchLayer({ selectedTooth, onClose }: TransparentTou
           style={{
             position: 'absolute',
             top: toothBottom,
-            left: 0,
+            left: scale(0),
             width: SCREEN_WIDTH,
             height: SCREEN_HEIGHT - toothBottom,
             zIndex: 998,
@@ -143,7 +144,7 @@ export function TransparentTouchLayer({ selectedTooth, onClose }: TransparentTou
           style={{
             position: 'absolute',
             top: toothTop,
-            left: 0,
+            left: scale(0),
             width: toothLeft,
             height: toothHeight,
             zIndex: 998,

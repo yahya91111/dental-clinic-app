@@ -1,17 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Modal,
-  Alert,
-  Platform,
-  Dimensions,
-  Animated,
-} from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Modal, Alert, Platform, Dimensions, Animated } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -459,13 +448,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       {
                         translateX: archiveBlob1Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 25],
+                          outputRange: [scale(0), scale(25)],
                         }),
                       },
                       {
                         translateY: archiveBlob1Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, -35],
+                          outputRange: [scale(0), scale(-35)],
                         }),
                       },
                     ],
@@ -485,13 +474,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       {
                         translateX: archiveBlob2Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, -30],
+                          outputRange: [scale(0), scale(-30)],
                         }),
                       },
                       {
                         translateY: archiveBlob2Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 40],
+                          outputRange: [scale(0), scale(40)],
                         }),
                       },
                     ],
@@ -512,13 +501,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       {
                         translateX: archiveBlob3Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 35],
+                          outputRange: [scale(0), scale(35)],
                         }),
                       },
                       {
                         translateY: archiveBlob3Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, -25],
+                          outputRange: [scale(0), scale(-25)],
                         }),
                       },
                     ],
@@ -538,13 +527,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       {
                         translateX: archiveBlob4Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, -22],
+                          outputRange: [scale(0), scale(-22)],
                         }),
                       },
                       {
                         translateY: archiveBlob4Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 28],
+                          outputRange: [scale(0), scale(28)],
                         }),
                       },
                     ],
@@ -564,13 +553,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       {
                         translateX: archiveBlob5Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 30],
+                          outputRange: [scale(0), scale(30)],
                         }),
                       },
                       {
                         translateY: archiveBlob5Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, -35],
+                          outputRange: [scale(0), scale(-35)],
                         }),
                       },
                     ],
@@ -590,13 +579,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       {
                         translateX: archiveBlob6Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, -20],
+                          outputRange: [scale(0), scale(-20)],
                         }),
                       },
                       {
                         translateY: archiveBlob6Anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0, 25],
+                          outputRange: [scale(0), scale(25)],
                         }),
                       },
                     ],
@@ -661,7 +650,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       colors={['#A78BFA', '#A78BFA']}
                       style={styles.timelineDot}
                     >
-                      <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                      <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                     </LinearGradient>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>Date</Text>
@@ -675,7 +664,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                 <View style={styles.timelineStep}>
                   <TouchableOpacity onPress={() => setShowClinicDropdown(true)}>
                     <View style={[styles.timelineDot, styles.timelineDotInactive]}>
-                      <Ionicons name="medkit" size={24} color="#7DD3FC" />
+                      <Ionicons name="medkit" size={scale(24)} color="#7DD3FC" />
                     </View>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>Clinic</Text>
@@ -689,7 +678,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                 <View style={styles.timelineStep}>
                   <TouchableOpacity onPress={() => loadArchivedPatients(selectedDate)}>
                     <View style={[styles.timelineDot, styles.timelineDotInactive]}>
-                      <Ionicons name="checkmark-circle" size={24} color="#F687B3" />
+                      <Ionicons name="checkmark-circle" size={scale(24)} color="#F687B3" />
                     </View>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>Load</Text>
@@ -817,17 +806,17 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                               <View style={styles.leftSection}>
                                 {isPermanent && (
                                   <View style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 16,
+                                    width: scale(32),
+                                    height: scale(32),
+                                    borderRadius: scale(16),
                                     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                                    borderWidth: 1.5,
+                                    borderWidth: scale(1.5),
                                     borderColor: 'rgba(255, 255, 255, 0.4)',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    marginRight: 6,
+                                    marginRight: scale(6),
                                   }}>
-                                    <Ionicons name="chevron-down" size={18} color={isComplete ? '#FFFFFF' : '#1E3A8A'} />
+                                    <Ionicons name="chevron-down" size={scale(18)} color={isComplete ? '#FFFFFF' : '#1E3A8A'} />
                                   </View>
                                 )}
                               </View>
@@ -850,9 +839,9 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                             </View>
 
                             {/* Timeline */}
-                            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: isComplete ? 'rgba(255, 255, 255, 0.3)' : '#E5E7EB' }}>
+                            <View style={{ marginTop: scale(8), paddingTop: scale(8), borderTopWidth: scale(1), borderTopColor: isComplete ? 'rgba(255, 255, 255, 0.3)' : '#E5E7EB' }}>
                               {patient.timeline && patient.timeline.map((event, index) => (
-                                <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                                <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(4) }}>
                                   <Ionicons
                                     name={
                                       event.type === 'registered' ? 'add-circle-outline' :
@@ -860,20 +849,20 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                                       event.type === 'completed' ? 'checkmark-circle-outline' :
                                       'ellipse-outline'
                                     }
-                                    size={14}
+                                    size={scale(14)}
                                     color={isComplete ? '#FFFFFF' : '#9CA3AF'}
                                   />
-                                  <View style={{ marginLeft: 6, flex: 1 }}>
-                                    <Text style={{ fontSize: 11, color: isComplete ? '#FFFFFF' : '#9CA3AF' }}>
+                                  <View style={{ marginLeft: scale(6), flex: 1 }}>
+                                    <Text style={{ fontSize: scale(11), color: isComplete ? '#FFFFFF' : '#9CA3AF' }}>
                                       {eventText(event)}: {formatTime(event.timestamp)}
                                     </Text>
                                     {event.doctor_name && event.type === 'completed' && (
-                                      <Text style={{ fontSize: 11, color: isComplete ? 'rgba(255, 255, 255, 0.9)' : '#4B5563', fontWeight: '600', marginTop: 2 }}>
+                                      <Text style={{ fontSize: scale(11), color: isComplete ? 'rgba(255, 255, 255, 0.9)' : '#4B5563', fontWeight: '600', marginTop: scale(2) }}>
                                         Done by Dr. {event.doctor_name}
                                       </Text>
                                     )}
                                     {patient.assigned_by_doctor_name && event.type === 'completed' && (
-                                      <Text style={{ fontSize: 11, color: isComplete ? 'rgba(255, 255, 255, 0.7)' : '#6B7280', fontStyle: 'italic', marginTop: 2 }}>
+                                      <Text style={{ fontSize: scale(11), color: isComplete ? 'rgba(255, 255, 255, 0.7)' : '#6B7280', fontStyle: 'italic', marginTop: scale(2) }}>
                                         Assigned by Dr. {patient.assigned_by_doctor_name}
                                       </Text>
                                     )}
@@ -920,7 +909,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       colors={['#A78BFA', '#A78BFA']}
                       style={styles.timelineDot}
                     >
-                      <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                      <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                     </LinearGradient>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>From</Text>
@@ -937,7 +926,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       colors={['#7DD3FC', '#7DD3FC']}
                       style={styles.timelineDot}
                     >
-                      <Ionicons name="calendar" size={24} color="#FFFFFF" />
+                      <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
                     </LinearGradient>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>To</Text>
@@ -951,7 +940,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                 <View style={styles.timelineStep}>
                   <TouchableOpacity onPress={() => loadStatistics(dateFrom, dateTo)}>
                     <View style={[styles.timelineDot, styles.timelineDotInactive]}>
-                      <Ionicons name="checkmark-circle" size={24} color="#F687B3" />
+                      <Ionicons name="checkmark-circle" size={scale(24)} color="#F687B3" />
                     </View>
                   </TouchableOpacity>
                   <Text style={styles.timelineLabel}>Load</Text>
@@ -985,7 +974,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                       for (let i = 0; i < treatments.length; i += itemsPerPage) {
                         const pageItems = treatments.slice(i, i + itemsPerPage);
                         pages.push(
-                          <View key={`page-${i}`} style={styles.circularCardsPage}>
+                          <View key={`page-${i}`} style={[styles.circularCardsPage, { width: Dimensions.get('window').width }]}>
                             {pageItems.map(([treatment, count]: [string, any]) => {
                               const percentage = Math.round((count / statsData.total) * 100);
                               const treatmentColors: { [key: string]: string[] } = {
@@ -1057,9 +1046,9 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                   )}
 
                   {/* Total Treatments */}
-                  <View style={[styles.glassCard, { marginTop: 16, marginBottom: 24, alignItems: 'center', paddingVertical: 20 }]}>
-                    <Text style={{ fontSize: 18, color: '#6B7280', fontWeight: '600', marginBottom: 8 }}>Total Treatments</Text>
-                    <Text style={{ fontSize: 48, fontWeight: '700', color: '#1F2937' }}>{statsData.total}</Text>
+                  <View style={[styles.glassCard, { marginTop: scale(16), marginBottom: scale(24), alignItems: 'center', paddingVertical: scale(20) }]}>
+                    <Text style={{ fontSize: scale(18), color: '#6B7280', fontWeight: '600', marginBottom: scale(8) }}>Total Treatments</Text>
+                    <Text style={{ fontSize: scale(48), fontWeight: '700', color: '#1F2937' }}>{statsData.total}</Text>
                   </View>
 
                   {/* Condition Breakdown */}
@@ -1281,7 +1270,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                 >
                   <Text style={styles.dropdownItemText}>{clinic}</Text>
                   {selectedClinic === clinic && (
-                    <Ionicons name="checkmark" size={24} color="#5B9FED" />
+                    <Ionicons name="checkmark" size={scale(24)} color="#5B9FED" />
                   )}
                 </TouchableOpacity>
               ))}
@@ -1300,7 +1289,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
               <View style={styles.noteModalHeader}>
                 <Text style={styles.noteModalTitle}>Patient Note</Text>
                 <TouchableOpacity onPress={() => setShowNoteModal(false)}>
-                  <Ionicons name="close" size={24} color="#4A5568" />
+                  <Ionicons name="close" size={scale(24)} color="#4A5568" />
                 </TouchableOpacity>
               </View>
               <View style={styles.noteModalContent}>
@@ -1320,7 +1309,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
           style={styles.navItem}
           onPress={onBack}
         >
-          <Ionicons name="home-sharp" size={26} color="#9CA3AF" />
+          <Ionicons name="home-sharp" size={scale(26)} color="#9CA3AF" />
           <Text style={styles.navLabel}>Home</Text>
         </TouchableOpacity>
 
@@ -1328,7 +1317,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
           style={styles.navItem}
           onPress={() => onNavigatePatientFile?.()}
         >
-          <Ionicons name="person-circle" size={28} color="#9CA3AF" />
+          <Ionicons name="person-circle" size={scale(28)} color="#9CA3AF" />
           <Text style={styles.navLabel}>Patient File</Text>
         </TouchableOpacity>
 
@@ -1336,12 +1325,12 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
           style={styles.navItem}
           onPress={() => onNavigateAppointments?.()}
         >
-          <Ionicons name="calendar-sharp" size={26} color="#9CA3AF" />
+          <Ionicons name="calendar-sharp" size={scale(26)} color="#9CA3AF" />
           <Text style={styles.navLabel}>Appointments</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="archive-sharp" size={26} color="#7DD3C0" />
+          <Ionicons name="archive-sharp" size={scale(26)} color="#7DD3C0" />
           <Text style={[styles.navLabel, styles.navLabelActive]}>Archive</Text>
         </TouchableOpacity>
       </View>
@@ -1349,7 +1338,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },
@@ -1986,7 +1975,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    width: Dimensions.get('window').width,
   },
   circularCard: {
     width: '48%',

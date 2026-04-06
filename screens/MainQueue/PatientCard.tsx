@@ -7,6 +7,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Patient, TimelineEvent } from './constants';
 import { styles } from './styles';
@@ -28,25 +29,25 @@ export const CircularBadge = ({
 }) => {
   const BadgeContent = (
     <View style={{
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: scale(32),
+      height: scale(32),
+      borderRadius: scale(16),
       backgroundColor: backgroundColor,
-      borderWidth: 1.5,
+      borderWidth: scale(1.5),
       borderColor: 'rgba(255, 255, 255, 0.4)',
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
-      shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
+      shadowOffset: { width: scale(0), height: Platform.OS === 'android' ? 0 : 4 },
       shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
       shadowRadius: Platform.OS === 'android' ? 0 : 8,
       elevation: Platform.OS === 'android' ? 3 : 4,
     }}>
       <Text style={{
-        fontSize: 13,
+        fontSize: scale(13),
         fontWeight: '800',
         color: '#FFFFFF',
-        letterSpacing: 0.5,
+        letterSpacing: scale(0.5),
       }}>
         {letter}
       </Text>
@@ -112,7 +113,7 @@ export function AnimatedPatientCard({ index, animKey, ...props }: { index: numbe
           {
             translateY: expandAnim.interpolate({
               inputRange: [0, 1],
-              outputRange: [0, 0],
+              outputRange: [scale(0), scale(0)],
             }),
           },
         ],
@@ -221,7 +222,7 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
             flex: 1,
             paddingRight: expandAnim.interpolate({
               inputRange: [0, 1],
-              outputRange: [60, 10],
+              outputRange: [scale(60), scale(10)],
             }),
           }}
         >
@@ -324,19 +325,19 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
       <Animated.View
         style={{
           position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: 50,
+          right: scale(0),
+          top: scale(0),
+          bottom: scale(0),
+          width: scale(50),
           transform: [{
             translateX: expandAnim.interpolate({
               inputRange: [0, 1],
-              outputRange: [0, 100], // Slide out 100px to the right when expanded
+              outputRange: [0, scale(100)], // Slide out 100px to the right when expanded
             }),
           }],
           opacity: expandAnim.interpolate({
             inputRange: [0, 1],
-            outputRange: [1, 0], // Fade out when expanded
+            outputRange: [scale(1), scale(0)], // Fade out when expanded
           }),
         }}
       >

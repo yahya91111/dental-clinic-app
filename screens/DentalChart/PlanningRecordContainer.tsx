@@ -6,6 +6,7 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { BlurView } from 'expo-blur';
 import { styles, SCREEN_WIDTH, SCREEN_HEIGHT } from './styles';
 import { ToothNumberBadge } from './DentalChartComponents';
@@ -109,29 +110,29 @@ const PlanningRecordCard: React.FC<PlanningRecordCardProps> = ({ group, groupInd
   return (
     <View style={{
       backgroundColor: 'rgba(37, 99, 235, 0.08)',
-      borderRadius: 18,
-      padding: 20,
-      marginBottom: 16,
-      borderWidth: 2,
+      borderRadius: scale(18),
+      padding: scale(20),
+      marginBottom: scale(16),
+      borderWidth: scale(2),
       borderColor: 'rgba(37, 99, 235, 0.35)',
     }}>
       {/* Tooth Info Header */}
-      <View style={{ marginBottom: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+      <View style={{ marginBottom: scale(14) }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(10), marginBottom: scale(8) }}>
           <ToothNumberBadge toothNumber={group.toothNumber} />
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#4B5563' }}>
+          <Text style={{ fontSize: scale(15), fontWeight: '700', color: '#4B5563' }}>
             {getToothName(group.toothNumber).english}
           </Text>
         </View>
 
         <View style={{
-          paddingHorizontal: 10,
-          paddingVertical: 4,
-          borderRadius: 8,
+          paddingHorizontal: scale(10),
+          paddingVertical: scale(4),
+          borderRadius: scale(8),
           backgroundColor: group.action === 'diagnosed' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(156, 163, 175, 0.15)',
           alignSelf: 'flex-start',
         }}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: group.action === 'diagnosed' ? '#D97706' : '#6B7280' }}>
+          <Text style={{ fontSize: scale(12), fontWeight: '600', color: group.action === 'diagnosed' ? '#D97706' : '#6B7280' }}>
             {group.action === 'diagnosed' ? 'Diagnosed' : 'Canceled'}
           </Text>
         </View>
@@ -141,56 +142,56 @@ const PlanningRecordCard: React.FC<PlanningRecordCardProps> = ({ group, groupInd
       {firstRecord.isChange && (
         <View style={{
           backgroundColor: 'rgba(251, 146, 60, 0.1)',
-          borderWidth: 2,
+          borderWidth: scale(2),
           borderColor: 'rgba(251, 146, 60, 0.3)',
-          padding: 16,
-          borderRadius: 12,
-          marginBottom: 12
+          padding: scale(16),
+          borderRadius: scale(12),
+          marginBottom: scale(12)
         }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <Text style={{ fontSize: 18, marginRight: 8 }}>🔄</Text>
-            <Text style={{ fontSize: 15, color: '#EA580C', fontWeight: '700' }}>Condition Changed</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(10) }}>
+            <Text style={{ fontSize: scale(18), marginRight: scale(8) }}>🔄</Text>
+            <Text style={{ fontSize: scale(15), color: '#EA580C', fontWeight: '700' }}>Condition Changed</Text>
           </View>
 
-          <View style={{ gap: 6, marginBottom: 10 }}>
+          <View style={{ gap: scale(6), marginBottom: scale(10) }}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>−</Text>
-              <Text style={{ fontSize: 14, color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
+              <Text style={{ fontSize: scale(16), color: '#DC2626', fontWeight: '600', marginRight: scale(6) }}>−</Text>
+              <Text style={{ fontSize: scale(14), color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
                 {firstRecord.previousCondition}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 16, color: '#059669', fontWeight: '600', marginRight: 6 }}>+</Text>
-              <Text style={{ fontSize: 14, color: '#059669', fontWeight: '600' }}>{firstRecord.condition}</Text>
+              <Text style={{ fontSize: scale(16), color: '#059669', fontWeight: '600', marginRight: scale(6) }}>+</Text>
+              <Text style={{ fontSize: scale(14), color: '#059669', fontWeight: '600' }}>{firstRecord.condition}</Text>
             </View>
           </View>
 
           {changedSurfaces.length > 0 && (
-            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: '#EA580C', fontWeight: '600', minWidth: 70 }}>Surfaces:</Text>
-              <Text style={{ fontSize: 13, color: '#9A3412', fontWeight: '500', flex: 1 }}>{changedSurfaces.join(', ')}</Text>
+            <View style={{ flexDirection: 'row', marginBottom: scale(8) }}>
+              <Text style={{ fontSize: scale(13), color: '#EA580C', fontWeight: '600', minWidth: scale(70) }}>Surfaces:</Text>
+              <Text style={{ fontSize: scale(13), color: '#9A3412', fontWeight: '500', flex: 1 }}>{changedSurfaces.join(', ')}</Text>
             </View>
           )}
 
-          <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(251, 146, 60, 0.2)', paddingTop: 8, marginTop: 4 }}>
-            <Text style={{ fontSize: 13, color: '#9A3412', fontWeight: '600' }}>Modified by: Dr. {group.doctorName}</Text>
+          <View style={{ borderTopWidth: scale(1), borderTopColor: 'rgba(251, 146, 60, 0.2)', paddingTop: scale(8), marginTop: scale(4) }}>
+            <Text style={{ fontSize: scale(13), color: '#9A3412', fontWeight: '600' }}>Modified by: Dr. {group.doctorName}</Text>
           </View>
         </View>
       )}
 
       {/* Planning Details */}
-      <View style={{ gap: 8, marginBottom: 12 }}>
+      <View style={{ gap: scale(8), marginBottom: scale(12) }}>
         {!firstRecord.isChange && allConditions.length > 0 && (
           hasRootCanalTreated ? (
             <>
               <View style={{ flexDirection: 'row' }}>
-                <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Condition:</Text>
-                <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>Root Canal Treated</Text>
+                <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Condition:</Text>
+                <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>Root Canal Treated</Text>
               </View>
               {allSurfaces.filter(s => s !== 'Root Canal Treated').length > 0 && (
                 <View style={{ flexDirection: 'row' }}>
-                  <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Surfaces:</Text>
-                  <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                  <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Surfaces:</Text>
+                  <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
                     {allSurfaces.filter(s => s !== 'Root Canal Treated').join(', ')}
                   </Text>
                 </View>
@@ -198,27 +199,27 @@ const PlanningRecordCard: React.FC<PlanningRecordCardProps> = ({ group, groupInd
             </>
           ) : (
             <View style={{ flexDirection: 'row' }}>
-              <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Condition:</Text>
-              <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>{allConditions.join(', ')}</Text>
+              <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Condition:</Text>
+              <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>{allConditions.join(', ')}</Text>
             </View>
           )
         )}
 
         {!firstRecord.isChange && allSurfaces.length > 0 && !allConditions.includes('Extraction') && !hasRootCanalTreated && (
           <View style={{ flexDirection: 'row' }}>
-            <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Surfaces:</Text>
-            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>{allSurfaces.join(', ')}</Text>
+            <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Surfaces:</Text>
+            <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>{allSurfaces.join(', ')}</Text>
           </View>
         )}
       </View>
 
       {/* Footer */}
-      <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(37, 99, 235, 0.2)', paddingTop: 12, gap: 6 }}>
-        <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>{firstRecord.timestamp}</Text>
-        <Text style={{ fontSize: 13, color: '#2563EB', fontWeight: '600' }}>Dr. {group.doctorName}</Text>
+      <View style={{ borderTopWidth: scale(1), borderTopColor: 'rgba(37, 99, 235, 0.2)', paddingTop: scale(12), gap: scale(6) }}>
+        <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{firstRecord.timestamp}</Text>
+        <Text style={{ fontSize: scale(13), color: '#2563EB', fontWeight: '600' }}>Dr. {group.doctorName}</Text>
       </View>
 
-      <Text style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+      <Text style={{ fontSize: scale(10), color: '#999', marginTop: scale(4) }}>
         Group #{groupIndex + 1} - {group.records.length} record(s)
       </Text>
     </View>
@@ -360,20 +361,20 @@ export const PlanningRecordContainer: React.FC<PlanningRecordContainerProps> = (
       {isPlanningRecordExpanded ? (
         <View style={{ width: SCREEN_WIDTH * 0.85, height: SCREEN_HEIGHT * 0.75 }}>
           <BlurView intensity={80} tint="light" style={[styles.additionalContent, { width: '100%', height: '100%' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: scale(16) }}>
               <Text style={styles.additionalTitle}>Total Planning Record</Text>
-              <TouchableOpacity onPress={handleClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 22, fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
+              <TouchableOpacity onPress={handleClose} style={{ width: scale(36), height: scale(36), borderRadius: scale(18), alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: scale(22), fontWeight: '700', color: '#9CA3AF' }}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1, width: '100%', marginTop: 16, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ flex: 1, width: '100%', marginTop: scale(16), paddingHorizontal: scale(16) }} showsVerticalScrollIndicator={false}>
               {(() => {
                 const groupedRecords = getGroupedRecords();
 
                 if (groupedRecords.length === 0) {
                   return (
-                    <Text style={{ color: '#666', textAlign: 'center', paddingVertical: 20 }}>
+                    <Text style={{ color: '#666', textAlign: 'center', paddingVertical: scale(20) }}>
                       No planning records yet
                     </Text>
                   );

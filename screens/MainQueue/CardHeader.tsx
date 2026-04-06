@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 import { Patient } from './constants';
 import { styles } from './styles';
@@ -69,7 +70,7 @@ export const CardHeader = ({
           >
             <Ionicons
               name="chevron-down"
-              size={18}
+              size={scale(18)}
               color={chevronColor}
             />
           </TouchableOpacity>
@@ -117,7 +118,7 @@ export const CardHeader = ({
             }
           }}
         >
-          <Text style={[styles.patientName, { color: nameColor, ...(isComplete ? { fontSize: 20 } : {}) }]}>{patient.name}</Text>
+          <Text style={[styles.patientName, { color: nameColor, ...(isComplete ? { fontSize: scale(20) } : {}) }]}>{patient.name}</Text>
         </TouchableOpacity>
       ) : (
         <Text style={[styles.patientName, { color: isComplete ? '#FFFFFF' : textColor }]}>{patient.name}</Text>

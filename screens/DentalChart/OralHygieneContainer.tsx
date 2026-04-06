@@ -1,15 +1,6 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  Animated,
-  StyleSheet,
-  Platform,
-  Alert,
-  Dimensions,
-} from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Animated, Platform, Alert, Dimensions } from 'react-native';
+import { scaledStyleSheet, scale } from '../../lib/scale';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -93,7 +84,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
             }),
             height: expandAnim.interpolate({
               inputRange: [0, 1],
-              outputRange: [38, 320],
+              outputRange: [scale(38), scale(320)],
             }),
             backgroundColor: isExpanded
               ? 'rgba(254, 215, 170, 0.2)'
@@ -111,7 +102,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
               {
                 translateY: expandAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [-19, -160],
+                  outputRange: [scale(-19), scale(-160)],
                 }),
               },
             ],
@@ -142,7 +133,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
                 ]}
               >
                 {isExpanded && (
-                  <Ionicons name="fitness-outline" size={24} color="#92400E" />
+                  <Ionicons name="fitness-outline" size={scale(24)} color="#92400E" />
                 )}
                 <Text
                   style={[
@@ -153,7 +144,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
                   Oral Hygiene
                 </Text>
                 {isExpanded && (
-                  <Ionicons name="chevron-up" size={20} color="#92400E" />
+                  <Ionicons name="chevron-up" size={scale(20)} color="#92400E" />
                 )}
               </View>
               {isExpanded && <View style={styles.divider} />}
@@ -173,7 +164,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
                 >
                   <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill}>
                     <View style={styles.scalingButtonContent}>
-                      <Ionicons name="checkmark-circle" size={22} color="#059669" />
+                      <Ionicons name="checkmark-circle" size={scale(22)} color="#059669" />
                       <Text style={styles.scalingButtonText}>Scaling Done</Text>
                     </View>
                   </BlurView>
@@ -183,7 +174,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
                 {scalingRecords.length > 0 && (
                   <View style={styles.recordsContainer}>
                     <View style={styles.recordsHeader}>
-                      <Ionicons name="file-tray-full" size={20} color="#92400E" />
+                      <Ionicons name="file-tray-full" size={scale(20)} color="#92400E" />
                       <Text style={styles.recordsTitle}>Scaling Records</Text>
                     </View>
                     {scalingRecords.map((record, index) => (
@@ -191,11 +182,11 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
                         key={record.id || index}
                         style={[
                           styles.recordItem,
-                          index === scalingRecords.length - 1 && { marginBottom: 0 },
+                          index === scalingRecords.length - 1 && { marginBottom: scale(0) },
                         ]}
                       >
                         <View style={styles.recordIcon}>
-                          <Ionicons name="medical" size={18} color="#92400E" />
+                          <Ionicons name="medical" size={scale(18)} color="#92400E" />
                         </View>
                         <View style={styles.recordInfo}>
                           <Text style={styles.recordDoctor}>
@@ -210,7 +201,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
                           style={styles.deleteButton}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                          <Ionicons name="trash-outline" size={scale(18)} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
                     ))}
@@ -229,7 +220,7 @@ export const OralHygieneContainer: React.FC<OralHygieneContainerProps> = ({
 // Styles
 // ═══════════════════════════════════════════════════════════════
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     position: 'absolute',
     top: '50%',

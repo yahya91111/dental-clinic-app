@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Animated, Dimensions, Modal, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -423,13 +424,13 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 {
                   translateX: blob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 30],
+                    outputRange: [scale(0), scale(30)],
                   }),
                 },
                 {
                   translateY: blob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 40],
+                    outputRange: [scale(0), scale(40)],
                   }),
                 },
               ],
@@ -445,13 +446,13 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 {
                   translateX: blob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -25],
+                    outputRange: [scale(0), scale(-25)],
                   }),
                 },
                 {
                   translateY: blob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 35],
+                    outputRange: [scale(0), scale(35)],
                   }),
                 },
               ],
@@ -467,13 +468,13 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 {
                   translateX: blob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 20],
+                    outputRange: [scale(0), scale(20)],
                   }),
                 },
                 {
                   translateY: blob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -30],
+                    outputRange: [scale(0), scale(-30)],
                   }),
                 },
               ],
@@ -488,27 +489,27 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 style={styles.backButton}
                 onPress={onBack}
               >
-                <Ionicons name="arrow-back" size={24} color="#4A5568" />
+                <Ionicons name="arrow-back" size={scale(24)} color="#4A5568" />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Dental Departments</Text>
               {isSuperAdmin && (
                 <TouchableOpacity
                   style={[
                     styles.addButton,
-                    Platform.OS === 'android' && { marginLeft: 10 }
+                    Platform.OS === 'android' && { marginLeft: scale(10) }
                   ]}
                   onPress={() => setShowAddModal(true)}
                 >
-                  <Ionicons name="add" size={28} color="#4A5568" />
+                  <Ionicons name="add" size={scale(28)} color="#4A5568" />
                 </TouchableOpacity>
               )}
-              {!isSuperAdmin && <View style={{ width: 40 }} />}
+              {!isSuperAdmin && <View style={{ width: scale(40) }} />}
             </View>
 
             {/* Search Bar */}
             <View style={styles.searchContainer}>
               <View style={styles.searchBar}>
-                <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+                <Ionicons name="search" size={scale(20)} color="#9CA3AF" style={styles.searchIcon} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="ابحث عن مركز..."
@@ -518,7 +519,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 />
                 {searchQuery.length > 0 && (
                   <TouchableOpacity onPress={() => setSearchQuery('')}>
-                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                    <Ionicons name="close-circle" size={scale(20)} color="#9CA3AF" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -535,7 +536,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 <View style={styles.clinicsList}>
                   {filteredClinics.length === 0 ? (
                     <View style={styles.emptyState}>
-                      <Ionicons name="search-outline" size={48} color="#9CA3AF" />
+                      <Ionicons name="search-outline" size={scale(48)} color="#9CA3AF" />
                       <Text style={styles.emptyText}>لا توجد نتائج</Text>
                     </View>
                   ) : (
@@ -554,7 +555,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                           style={styles.menuButton}
                           onPress={() => setMenuClinicId(clinic.id)}
                         >
-                          <Ionicons name="ellipsis-vertical" size={20} color="#9CA3AF" />
+                          <Ionicons name="ellipsis-vertical" size={scale(20)} color="#9CA3AF" />
                         </TouchableOpacity>
                       )}
 
@@ -575,7 +576,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                             style={styles.clinicIcon}
                           >
                             <View style={styles.clinicInnerGlow}>
-                              <Ionicons name="business-outline" size={30} color="#FFFFFF" />
+                              <Ionicons name="business-outline" size={scale(30)} color="#FFFFFF" />
                             </View>
                           </LinearGradient>
                         </View>
@@ -618,7 +619,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                     onPress={() => setShowAddModal(false)}
                     style={styles.modalCloseButton}
                   >
-                    <Ionicons name="close" size={24} color="#2D3748" />
+                    <Ionicons name="close" size={scale(24)} color="#2D3748" />
                   </TouchableOpacity>
                 </View>
 
@@ -684,7 +685,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 }
               }}
             >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="trash-outline" size={scale(20)} color="#FFFFFF" />
               <Text style={styles.deleteMenuText}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -715,7 +716,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 }}
                 style={styles.modalCloseButton}
               >
-                <Ionicons name="close" size={24} color="#2D3748" />
+                <Ionicons name="close" size={scale(24)} color="#2D3748" />
               </TouchableOpacity>
             </View>
 
@@ -727,7 +728,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
                 </View>
               ) : departmentReferrals.length === 0 ? (
                 <View style={styles.emptyReferralsContainer}>
-                  <Ionicons name="checkmark-circle-outline" size={48} color="#10B981" />
+                  <Ionicons name="checkmark-circle-outline" size={scale(48)} color="#10B981" />
                   <Text style={styles.emptyReferralsText}>No pending referrals</Text>
                 </View>
               ) : (
@@ -786,7 +787,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   gradient: {
     flex: 1,
     position: 'relative',

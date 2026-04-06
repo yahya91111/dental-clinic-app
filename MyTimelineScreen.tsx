@@ -1,18 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Modal,
-  TextInput,
-  Alert,
-  Keyboard,
-  TouchableWithoutFeedback,
-  Animated,
-} from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Modal, TextInput, Alert, Keyboard, TouchableWithoutFeedback, Animated } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -505,13 +493,13 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
               {
                 translateX: blob1Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 30],
+                  outputRange: [scale(0), scale(30)],
                 }),
               },
               {
                 translateY: blob1Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 40],
+                  outputRange: [scale(0), scale(40)],
                 }),
               },
             ],
@@ -531,13 +519,13 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
               {
                 translateX: blob2Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -25],
+                  outputRange: [scale(0), scale(-25)],
                 }),
               },
               {
                 translateY: blob2Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -35],
+                  outputRange: [scale(0), scale(-35)],
                 }),
               },
             ],
@@ -557,13 +545,13 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
               {
                 translateX: blob3Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 20],
+                  outputRange: [scale(0), scale(20)],
                 }),
               },
               {
                 translateY: blob3Anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, -30],
+                  outputRange: [scale(0), scale(-30)],
                 }),
               },
             ],
@@ -577,7 +565,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <View style={styles.profileButtonGlass}>
               <View style={styles.profileButtonInnerGlow} />
-              <Ionicons name="arrow-back" size={24} color="#FFFFFF" style={{ zIndex: 10 }} />
+              <Ionicons name="arrow-back" size={scale(24)} color="#FFFFFF" style={{ zIndex: 10 }} />
             </View>
           </TouchableOpacity>
 
@@ -586,13 +574,13 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
             <Text style={styles.headerSubtitle}>My Practice - {user?.user_metadata?.full_name || 'Doctor'}</Text>
           </View>
 
-          <View style={{ width: 50 }} />
+          <View style={{ width: scale(50) }} />
         </View>
 
         {/* Statistics */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <MaterialCommunityIcons name="tooth-outline" size={48} color="#9CA3AF" style={{ marginBottom: 8 }} />
+            <MaterialCommunityIcons name="tooth-outline" size={scale(48)} color="#9CA3AF" style={{ marginBottom: scale(8) }} />
             <Text style={styles.statLabel}>Total Patients</Text>
             <Text style={styles.statValue}>{totalPatients}</Text>
           </View>
@@ -600,7 +588,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
             style={[styles.statCard, filterWaitingOnly && styles.statCardActive]}
             onPress={() => setFilterWaitingOnly(!filterWaitingOnly)}
           >
-            <Ionicons name="person-outline" size={48} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: 8 }} />
+            <Ionicons name="person-outline" size={scale(48)} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: scale(8) }} />
             <Text style={[styles.statLabel, filterWaitingOnly && styles.statLabelActive]}>Waiting</Text>
             <Text style={[styles.statValue, filterWaitingOnly && styles.statValueActive]}>{waitingPatients}</Text>
           </TouchableOpacity>
@@ -614,11 +602,11 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
               <View style={styles.minimizeButtonInnerGlow} />
               <Ionicons 
                 name="chevron-up" 
-                size={24} 
+                size={scale(24)} 
                 color="#FFFFFF" 
                 style={{ 
                   textShadowColor: 'rgba(0, 0, 0, 0.3)', 
-                  textShadowOffset: { width: 0, height: 2 }, 
+                  textShadowOffset: { width: scale(0), height: scale(2) }, 
                   textShadowRadius: 5,
                   zIndex: 10 
                 }}
@@ -645,7 +633,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                 setExpandedCardId(null);
               }}
             >
-              <Ionicons name="time-outline" size={20} color={showTimeline ? '#7DD3C0' : '#6B7280'} />
+              <Ionicons name="time-outline" size={scale(20)} color={showTimeline ? '#7DD3C0' : '#6B7280'} />
               <Text style={[styles.headerOptionText, showTimeline && styles.headerOptionTextActive]}>
                 {showTimeline ? 'Hide Timeline' : 'Show Timeline'}
               </Text>
@@ -752,27 +740,27 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
 
                 {/* Timeline */}
                 {showTimeline && (
-                  <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
+                  <View style={{ marginTop: scale(8), paddingTop: scale(8), borderTopWidth: scale(1), borderTopColor: '#E5E7EB' }}>
                     {patient.registered_at && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                        <Ionicons name="add-circle-outline" size={14} color="#9CA3AF" />
-                        <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(4) }}>
+                        <Ionicons name="add-circle-outline" size={scale(14)} color="#9CA3AF" />
+                        <Text style={{ fontSize: scale(11), color: '#9CA3AF', marginLeft: scale(6) }}>
                           Registered: {patient.registered_at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                         </Text>
                       </View>
                     )}
                     {patient.clinic_entry_at && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                        <Ionicons name="enter-outline" size={14} color="#9CA3AF" />
-                        <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(4) }}>
+                        <Ionicons name="enter-outline" size={scale(14)} color="#9CA3AF" />
+                        <Text style={{ fontSize: scale(11), color: '#9CA3AF', marginLeft: scale(6) }}>
                           Entered Clinic: {patient.clinic_entry_at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                         </Text>
                       </View>
                     )}
                     {patient.completed_at && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                        <Ionicons name="checkmark-circle-outline" size={14} color="#9CA3AF" />
-                        <Text style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(4) }}>
+                        <Ionicons name="checkmark-circle-outline" size={scale(14)} color="#9CA3AF" />
+                        <Text style={{ fontSize: scale(11), color: '#9CA3AF', marginLeft: scale(6) }}>
                           Completed: {patient.completed_at.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                         </Text>
                       </View>
@@ -806,7 +794,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
         {/* Bottom Navigation - Coming Soon features removed */}
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="home" size={26} color="#7DD3C0" />
+            <Ionicons name="home" size={scale(26)} color="#7DD3C0" />
             <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
           </TouchableOpacity>
         </View>
@@ -837,8 +825,8 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                     }
                   }}
                 >
-                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="document-text" size={22} color="#3B82F6" />
+                  <View style={{ width: scale(36), height: scale(36), borderRadius: scale(10), backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="document-text" size={scale(22)} color="#3B82F6" />
                   </View>
                   <Text style={styles.menuItemText}>Note</Text>
                 </TouchableOpacity>
@@ -847,8 +835,8 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                   style={styles.menuItem}
                   onPress={() => handleMenuAction('na')}
                 >
-                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="person-remove" size={22} color="#6B7280" />
+                  <View style={{ width: scale(36), height: scale(36), borderRadius: scale(10), backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="person-remove" size={scale(22)} color="#6B7280" />
                   </View>
                   <Text style={styles.menuItemText}>Patient N/A</Text>
                 </TouchableOpacity>
@@ -857,8 +845,8 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                   style={styles.menuItem}
                   onPress={() => handleMenuAction('elderly')}
                 >
-                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="man" size={22} color="#F97316" />
+                  <View style={{ width: scale(36), height: scale(36), borderRadius: scale(10), backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="man" size={scale(22)} color="#F97316" />
                   </View>
                   <Text style={styles.menuItemText}>Elderly</Text>
                 </TouchableOpacity>
@@ -867,8 +855,8 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                   style={styles.menuItem}
                   onPress={() => handleMenuAction('done')}
                 >
-                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="checkmark-circle" size={22} color="#22C55E" />
+                  <View style={{ width: scale(36), height: scale(36), borderRadius: scale(10), backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="checkmark-circle" size={scale(22)} color="#22C55E" />
                   </View>
                   <Text style={styles.menuItemText}>Treatment Done</Text>
                 </TouchableOpacity>
@@ -877,8 +865,8 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                   style={styles.menuItem}
                   onPress={() => handleMenuAction('delete')}
                 >
-                  <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                    <Ionicons name="trash" size={22} color="#EF4444" />
+                  <View style={{ width: scale(36), height: scale(36), borderRadius: scale(10), backgroundColor: 'rgba(255, 255, 255, 0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="trash" size={scale(22)} color="#EF4444" />
                   </View>
                   <Text style={styles.menuItemText}>Delete</Text>
                 </TouchableOpacity>
@@ -901,7 +889,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                   <View style={styles.modalHeader}>
                     <Text style={styles.modalTitle}>Patient Note</Text>
                     <TouchableOpacity onPress={() => setShowNoteModal(false)}>
-                      <Ionicons name="close" size={28} color="#4A5568" />
+                      <Ionicons name="close" size={scale(28)} color="#4A5568" />
                     </TouchableOpacity>
                   </View>
 
@@ -998,7 +986,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                   <View style={styles.addModalHeader}>
                     <Text style={styles.addModalTitle}>Add New Patient</Text>
                     <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                      <Ionicons name="close" size={28} color="#4A5568" />
+                      <Ionicons name="close" size={scale(28)} color="#4A5568" />
                     </TouchableOpacity>
                   </View>
 
@@ -1048,7 +1036,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                               newPatientCondition === condition.name && styles.dropdownItemTextSelected
                             ]}>{condition.name}</Text>
                             {newPatientCondition === condition.name && (
-                              <Ionicons name="checkmark" size={20} color="#7DD3C0" />
+                              <Ionicons name="checkmark" size={scale(20)} color="#7DD3C0" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -1083,7 +1071,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                               newPatientTreatment === treatment.name && styles.dropdownItemTextSelected
                             ]}>{treatment.name}</Text>
                             {newPatientTreatment === treatment.name && (
-                              <Ionicons name="checkmark" size={20} color="#7DD3C0" />
+                              <Ionicons name="checkmark" size={scale(20)} color="#7DD3C0" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -1096,7 +1084,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                     onPress={() => setIsElderly(!isElderly)}
                   >
                     <View style={[styles.checkbox, isElderly && styles.checkboxChecked]}>
-                      {isElderly && <Ionicons name="checkmark" size={18} color="#FFFFFF" />}
+                      {isElderly && <Ionicons name="checkmark" size={scale(18)} color="#FFFFFF" />}
                     </View>
                     <Text style={styles.checkboxLabel}>Elderly</Text>
                   </TouchableOpacity>
@@ -1133,7 +1121,7 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },

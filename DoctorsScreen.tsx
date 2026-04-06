@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, Animated, Dimensions } from 'react-native';
+import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -296,13 +297,13 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 {
                   translateX: blob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 30],
+                    outputRange: [scale(0), scale(30)],
                   }),
                 },
                 {
                   translateY: blob1Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 40],
+                    outputRange: [scale(0), scale(40)],
                   }),
                 },
               ],
@@ -318,13 +319,13 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 {
                   translateX: blob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -25],
+                    outputRange: [scale(0), scale(-25)],
                   }),
                 },
                 {
                   translateY: blob2Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 35],
+                    outputRange: [scale(0), scale(35)],
                   }),
                 },
               ],
@@ -340,13 +341,13 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 {
                   translateX: blob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, 20],
+                    outputRange: [scale(0), scale(20)],
                   }),
                 },
                 {
                   translateY: blob3Anim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -30],
+                    outputRange: [scale(0), scale(-30)],
                   }),
                 },
               ],
@@ -367,7 +368,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 style={styles.backButton}
                 onPress={onBack}
               >
-                <Ionicons name="arrow-back" size={24} color="#4A5568" />
+                <Ionicons name="arrow-back" size={scale(24)} color="#4A5568" />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Doctors</Text>
               {permissions?.canAddDoctor && (
@@ -378,7 +379,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     setShowAddModal(true);
                   }}
                 >
-                  <Ionicons name="add" size={24} color="#4A5568" />
+                  <Ionicons name="add" size={scale(24)} color="#4A5568" />
                 </TouchableOpacity>
               )}
             </View>
@@ -386,7 +387,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
             {/* Search Bar */}
             <View style={styles.searchContainer}>
               <View style={styles.searchBar}>
-                <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+                <Ionicons name="search" size={scale(20)} color="#9CA3AF" style={styles.searchIcon} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="ابحث عن طبيب..."
@@ -396,7 +397,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 />
                 {searchQuery.length > 0 && (
                   <TouchableOpacity onPress={() => setSearchQuery('')}>
-                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                    <Ionicons name="close-circle" size={scale(20)} color="#9CA3AF" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -415,7 +416,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                   {selectedRoleFilter === 'doctor' && `Doctors (${doctors.filter(d => d.role === 'doctor' && d.clinicId !== null).length})`}
                   {selectedRoleFilter === 'pending' && `Pending Doctors (${doctors.filter(d => d.clinicId === null).length})`}
                 </Text>
-                <Ionicons name={showRoleFilterDropdown ? "chevron-up" : "chevron-down"} size={20} color="#6B7280" />
+                <Ionicons name={showRoleFilterDropdown ? "chevron-up" : "chevron-down"} size={scale(20)} color="#6B7280" />
               </TouchableOpacity>
 
               {/* Dropdown Menu */}
@@ -495,7 +496,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
               <View style={styles.doctorsList}>
                 {filteredDoctors.length === 0 ? (
                   <View style={styles.emptyState}>
-                    <Ionicons name="people-outline" size={48} color="#9CA3AF" />
+                    <Ionicons name="people-outline" size={scale(48)} color="#9CA3AF" />
                     <Text style={styles.emptyText}>لا توجد نتائج</Text>
                   </View>
                 ) : (
@@ -526,7 +527,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                         }}
                         style={styles.menuButton}
                       >
-                        <Ionicons name="ellipsis-vertical" size={20} color="#9CA3AF" />
+                        <Ionicons name="ellipsis-vertical" size={scale(20)} color="#9CA3AF" />
                       </TouchableOpacity>
 
                       {/* Doctor Info - Right Side */}
@@ -554,7 +555,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                             style={styles.doctorIcon}
                           >
                             <View style={styles.innerGlow}>
-                              <MaterialCommunityIcons name="doctor" size={28} color="#FFFFFF" />
+                              <MaterialCommunityIcons name="doctor" size={scale(28)} color="#FFFFFF" />
                             </View>
                           </LinearGradient>
                         </View>
@@ -597,7 +598,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                   onPress={() => setShowAddModal(false)}
                   style={styles.modalCloseButton}
                 >
-                  <Ionicons name="close" size={24} color="#2D3748" />
+                  <Ionicons name="close" size={scale(24)} color="#2D3748" />
                 </TouchableOpacity>
               </View>
 
@@ -606,10 +607,10 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 {/* Name Field */}
                 <View style={styles.formField}>
                   <Text style={styles.fieldLabel}>Name:</Text>
-                  <View style={[styles.textInput, { flexDirection: 'row-reverse', alignItems: 'center', paddingVertical: 0 }]}>
-                    <Text style={{ color: '#2D3748', fontSize: 16, fontWeight: '600', marginLeft: 4 }}>د. </Text>
+                  <View style={[styles.textInput, { flexDirection: 'row-reverse', alignItems: 'center', paddingVertical: scale(0) }]}>
+                    <Text style={{ color: '#2D3748', fontSize: scale(16), fontWeight: '600', marginLeft: scale(4) }}>د. </Text>
                     <TextInput
-                      style={{ flex: 1, color: '#2D3748', fontSize: 16, paddingVertical: 12, textAlign: 'right' }}
+                      style={{ flex: 1, color: '#2D3748', fontSize: scale(16), paddingVertical: scale(12), textAlign: 'right' }}
                       value={newDoctorName}
                       onChangeText={setNewDoctorName}
                       placeholder="أدخل اسم الطبيب"
@@ -654,12 +655,12 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     onPress={() => setShowClinicDropdown(!showClinicDropdown)}
                   >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ color: '#2D3748', fontSize: 16, flex: 1 }}>
+                      <Text style={{ color: '#2D3748', fontSize: scale(16), flex: 1 }}>
                         {clinics.find(c => c.id === newDoctorClinic)?.name || 'Select clinic'}
                       </Text>
                       <Ionicons 
                         name={showClinicDropdown ? "chevron-up" : "chevron-down"} 
-                        size={20} 
+                        size={scale(20)} 
                         color="#4A5568" 
                       />
                     </View>
@@ -680,7 +681,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                             {clinic.name}
                           </Text>
                           {newDoctorClinic === clinic.id && (
-                            <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                            <Ionicons name="checkmark" size={scale(20)} color="#3B82F6" />
                           )}
                         </TouchableOpacity>
                       ))}
@@ -694,7 +695,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                   <View style={styles.formField}>
                     <Text style={styles.fieldLabel}>Role:</Text>
                     <View style={[styles.textInput, { backgroundColor: '#F3F4F6' }]}>
-                      <Text style={{ color: '#6B7280', fontSize: 16 }}>Doctor (Fixed)</Text>
+                      <Text style={{ color: '#6B7280', fontSize: scale(16) }}>Doctor (Fixed)</Text>
                     </View>
                   </View>
                 ) : (
@@ -705,12 +706,12 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                     onPress={() => setShowRoleDropdown(!showRoleDropdown)}
                   >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ color: '#2D3748', fontSize: 16, flex: 1 }}>
+                      <Text style={{ color: '#2D3748', fontSize: scale(16), flex: 1 }}>
                         {newDoctorRole === 'doctor' ? 'Doctor' : newDoctorRole === 'coordinator' ? 'Coordinator' : 'Team Leader'}
                       </Text>
                       <Ionicons 
                         name={showRoleDropdown ? "chevron-up" : "chevron-down"} 
-                        size={20} 
+                        size={scale(20)} 
                         color="#4A5568" 
                       />
                     </View>
@@ -727,7 +728,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       >
                         <Text style={styles.clinicDropdownItemText}>Doctor</Text>
                         {newDoctorRole === 'doctor' && (
-                          <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                          <Ionicons name="checkmark" size={scale(20)} color="#3B82F6" />
                         )}
                       </TouchableOpacity>
                       {/* Coordinator - Only for Super Admin */}
@@ -741,7 +742,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       >
                         <Text style={styles.clinicDropdownItemText}>Coordinator</Text>
                         {newDoctorRole === 'coordinator' && (
-                          <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                          <Ionicons name="checkmark" size={scale(20)} color="#3B82F6" />
                         )}
                       </TouchableOpacity>
                       )}
@@ -754,7 +755,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       >
                         <Text style={styles.clinicDropdownItemText}>Team Leader</Text>
                         {newDoctorRole === 'team_leader' && (
-                          <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                          <Ionicons name="checkmark" size={scale(20)} color="#3B82F6" />
                         )}
                       </TouchableOpacity>
                     </View>
@@ -874,17 +875,17 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         onRequestClose={() => setShowActionsModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { width: '90%', paddingHorizontal: 24, paddingVertical: 24 }]}>
+          <View style={[styles.modalContent, { width: '90%', paddingHorizontal: scale(24), paddingVertical: scale(24) }]}>
             {/* Header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Doctor Actions</Text>
               <TouchableOpacity onPress={() => setShowActionsModal(false)}>
-                <Ionicons name="close" size={28} color="#4A5568" />
+                <Ionicons name="close" size={scale(28)} color="#4A5568" />
               </TouchableOpacity>
             </View>
 
             {/* Action Buttons */}
-            <View style={{ gap: 12, marginTop: 20 }}>
+            <View style={{ gap: scale(12), marginTop: scale(20) }}>
               {/* View Profile - Only for Team Leader, NOT for Doctor */}
               {user?.role !== 'doctor' && (
               <TouchableOpacity
@@ -897,7 +898,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 }}
               >
                 <View style={[styles.actionIconContainer, { backgroundColor: '#3B82F6' }]}>
-                  <Ionicons name="person-outline" size={24} color="#FFFFFF" />
+                  <Ionicons name="person-outline" size={scale(24)} color="#FFFFFF" />
                 </View>
                 <Text style={styles.actionButtonText}>View Profile</Text>
               </TouchableOpacity>
@@ -914,7 +915,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 }}
               >
                 <View style={[styles.actionIconContainer, { backgroundColor: '#10B981' }]}>
-                  <Ionicons name="swap-horizontal" size={24} color="#FFFFFF" />
+                  <Ionicons name="swap-horizontal" size={scale(24)} color="#FFFFFF" />
                 </View>
                 <Text style={styles.actionButtonText}>Transfer Doctor</Text>
               </TouchableOpacity>
@@ -931,7 +932,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 }}
               >
                 <View style={[styles.actionIconContainer, { backgroundColor: '#F59E0B' }]}>
-                  <Ionicons name="key-outline" size={24} color="#FFFFFF" />
+                  <Ionicons name="key-outline" size={scale(24)} color="#FFFFFF" />
                 </View>
                 <Text style={styles.actionButtonText}>Change Role</Text>
               </TouchableOpacity>
@@ -976,7 +977,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 }}
               >
                 <View style={[styles.actionIconContainer, { backgroundColor: '#8B5CF6' }]}>
-                  <Ionicons name="lock-closed-outline" size={24} color="#FFFFFF" />
+                  <Ionicons name="lock-closed-outline" size={scale(24)} color="#FFFFFF" />
                 </View>
                 <Text style={styles.actionButtonText}>Reset Password</Text>
               </TouchableOpacity>
@@ -1081,7 +1082,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 }}
               >
                 <View style={[styles.actionIconContainer, { backgroundColor: '#EF4444' }]}>
-                  <Ionicons name="trash-outline" size={24} color="#FFFFFF" />
+                  <Ionicons name="trash-outline" size={scale(24)} color="#FFFFFF" />
                 </View>
                 <Text style={styles.actionButtonText}>Delete</Text>
               </TouchableOpacity>
@@ -1099,18 +1100,18 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         onRequestClose={() => setShowTransferModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { width: '90%', paddingHorizontal: 24, paddingVertical: 24 }]}>
+          <View style={[styles.modalContent, { width: '90%', paddingHorizontal: scale(24), paddingVertical: scale(24) }]}>
             {/* Header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Transfer Doctor</Text>
               <TouchableOpacity onPress={() => setShowTransferModal(false)}>
-                <Ionicons name="close" size={28} color="#4A5568" />
+                <Ionicons name="close" size={scale(28)} color="#4A5568" />
               </TouchableOpacity>
             </View>
 
             {/* Clinic Selection */}
-            <View style={{ marginTop: 20 }}>
-              <Text style={[styles.fieldLabel, { marginBottom: 12 }]}>Select New Clinic:</Text>
+            <View style={{ marginTop: scale(20) }}>
+              <Text style={[styles.fieldLabel, { marginBottom: scale(12) }]}>Select New Clinic:</Text>
               {clinics.filter(c => c.id !== 0).map((clinic) => (
                 <TouchableOpacity
                   key={clinic.id}
@@ -1139,7 +1140,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
             </View>
 
             {/* Action Buttons */}
-            <View style={[styles.modalActions, { marginTop: 24 }]}>
+            <View style={[styles.modalActions, { marginTop: scale(24) }]}>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
@@ -1233,18 +1234,18 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
         onRequestClose={() => setShowChangeRoleModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { width: '90%', paddingHorizontal: 24, paddingVertical: 24 }]}>
+          <View style={[styles.modalContent, { width: '90%', paddingHorizontal: scale(24), paddingVertical: scale(24) }]}>
             {/* Header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Change Role</Text>
               <TouchableOpacity onPress={() => setShowChangeRoleModal(false)}>
-                <Ionicons name="close" size={28} color="#4A5568" />
+                <Ionicons name="close" size={scale(28)} color="#4A5568" />
               </TouchableOpacity>
             </View>
 
             {/* Role Selection */}
-            <View style={{ marginTop: 20 }}>
-              <Text style={[styles.fieldLabel, { marginBottom: 12 }]}>Select New Role:</Text>
+            <View style={{ marginTop: scale(20) }}>
+              <Text style={[styles.fieldLabel, { marginBottom: scale(12) }]}>Select New Role:</Text>
               
               {/* Doctor Option */}
               <TouchableOpacity
@@ -1322,7 +1323,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
             </View>
 
             {/* Action Buttons */}
-            <View style={[styles.modalActions, { marginTop: 24 }]}>
+            <View style={[styles.modalActions, { marginTop: scale(24) }]}>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => {
@@ -1374,7 +1375,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
   );
 }
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   container: {
     flex: 1,
     position: 'relative',

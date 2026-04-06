@@ -16,6 +16,7 @@ import {
   Platform,
   LogBox,
 } from 'react-native';
+import { scale } from '../../lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 import { styles } from './styles';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -662,41 +663,41 @@ export default function DentalChartScreen({
         >
           <View style={{
             backgroundColor: '#F0F4F8',
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
+            borderTopLeftRadius: scale(24),
+            borderTopRightRadius: scale(24),
             maxHeight: '80%',
-            padding: 20,
+            padding: scale(20),
           }}>
             {/* Header */}
             <View style={{
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: 16,
+              marginBottom: scale(16),
             }}>
-              <Text style={{ fontSize: 20, fontWeight: '800', color: '#1E3A8A' }}>General Notes</Text>
+              <Text style={{ fontSize: scale(20), fontWeight: '800', color: '#1E3A8A' }}>General Notes</Text>
               <TouchableOpacity onPress={() => setShowGeneralNotesModal(false)}>
-                <Ionicons name="close" size={24} color="#1E3A8A" />
+                <Ionicons name="close" size={scale(24)} color="#1E3A8A" />
               </TouchableOpacity>
             </View>
 
             {/* Input */}
             <View style={{
               flexDirection: 'row',
-              gap: 10,
-              marginBottom: 16,
+              gap: scale(10),
+              marginBottom: scale(16),
             }}>
               <TextInput
                 style={{
                   flex: 1,
                   backgroundColor: '#FFFFFF',
-                  borderRadius: 12,
-                  padding: 12,
-                  fontSize: 15,
+                  borderRadius: scale(12),
+                  padding: scale(12),
+                  fontSize: scale(15),
                   color: '#1E3A8A',
-                  borderWidth: 1.5,
+                  borderWidth: scale(1.5),
                   borderColor: 'rgba(37, 99, 235, 0.3)',
-                  minHeight: 45,
+                  minHeight: scale(45),
                 }}
                 placeholder="Write a note..."
                 placeholderTextColor="#9CA3AF"
@@ -707,54 +708,54 @@ export default function DentalChartScreen({
               <TouchableOpacity
                 style={{
                   backgroundColor: newGeneralNote.trim() ? '#2563EB' : '#D1D5DB',
-                  borderRadius: 12,
-                  width: 45,
-                  height: 45,
+                  borderRadius: scale(12),
+                  width: scale(45),
+                  height: scale(45),
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
                 onPress={handleAddGeneralNote}
                 disabled={!newGeneralNote.trim()}
               >
-                <Ionicons name="send" size={20} color="#FFFFFF" />
+                <Ionicons name="send" size={scale(20)} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
             {/* Notes List */}
             <ScrollView showsVerticalScrollIndicator={false}>
               {generalNotes.length > 0 ? (
-                <View style={{ gap: 10 }}>
+                <View style={{ gap: scale(10) }}>
                   {generalNotes.map((note) => (
                     <View key={note.id} style={{
                       backgroundColor: '#FFFFFF',
-                      borderRadius: 14,
-                      padding: 14,
-                      borderWidth: 1.5,
+                      borderRadius: scale(14),
+                      padding: scale(14),
+                      borderWidth: scale(1.5),
                       borderColor: 'rgba(37, 99, 235, 0.15)',
                     }}>
-                      <Text style={{ fontSize: 14, color: '#1E3A8A', lineHeight: 20 }}>{note.note}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <Ionicons name="person" size={13} color="#6B7280" />
-                          <Text style={{ fontSize: 12, color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
-                          <Text style={{ fontSize: 12, color: '#9CA3AF' }}>
+                      <Text style={{ fontSize: scale(14), color: '#1E3A8A', lineHeight: scale(20) }}>{note.note}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: scale(10) }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8) }}>
+                          <Ionicons name="person" size={scale(13)} color="#6B7280" />
+                          <Text style={{ fontSize: scale(12), color: '#6B7280' }}>Dr. {note.doctor_name}</Text>
+                          <Text style={{ fontSize: scale(12), color: '#9CA3AF' }}>
                             {new Date(note.created_at).toLocaleDateString()}
                           </Text>
                         </View>
                         <TouchableOpacity
                           onPress={() => handleDeleteGeneralNote(note.id)}
-                          style={{ padding: 4 }}
+                          style={{ padding: scale(4) }}
                         >
-                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                          <Ionicons name="trash-outline" size={scale(16)} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
                     </View>
                   ))}
                 </View>
               ) : (
-                <View style={{ alignItems: 'center', padding: 30 }}>
-                  <Ionicons name="document-text-outline" size={48} color="#D1D5DB" />
-                  <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 15 }}>No general notes yet</Text>
+                <View style={{ alignItems: 'center', padding: scale(30) }}>
+                  <Ionicons name="document-text-outline" size={scale(48)} color="#D1D5DB" />
+                  <Text style={{ color: '#9CA3AF', marginTop: scale(10), fontSize: scale(15) }}>No general notes yet</Text>
                 </View>
               )}
             </ScrollView>

@@ -5,18 +5,8 @@
 // Can be used in both DentalChartScreen and Timeline (App.tsx)
 
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
-  TextInput,
-  Platform,
-  Keyboard,
-  Animated,
-} from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, Platform, Keyboard, Animated } from 'react-native';
+import { scaledStyleSheet, scale } from '../lib/scale';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -748,7 +738,7 @@ export default function ToothDetailsModal({
   return (
     <Modal visible={visible} animationType="fade" transparent={true} onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
-        <View style={{ width: '95%', height: '75%', borderRadius: 24, overflow: 'hidden' }}>
+        <View style={{ width: '95%', height: '75%', borderRadius: scale(24), overflow: 'hidden' }}>
           <BlurView intensity={90} tint="light" style={styles.newModalContainer}>
             <View style={{ backgroundColor: 'rgba(240, 249, 255, 0.95)', flex: 1 }}>
                   {/* ════════════════════════════════════════════ */}
@@ -760,29 +750,29 @@ export default function ToothDetailsModal({
                         styles.toothNumberBox,
                         convertNumberToPalmer(toothNumberNumeric) &&
                           getToothQuadrant(convertNumberToPalmer(toothNumberNumeric)!) === 'UL' && {
-                            borderLeftWidth: 2,
-                            borderBottomWidth: 2,
+                            borderLeftWidth: scale(2),
+                            borderBottomWidth: scale(2),
                             borderLeftColor: '#1E3A8A',
                             borderBottomColor: '#1E3A8A',
                           },
                         convertNumberToPalmer(toothNumberNumeric) &&
                           getToothQuadrant(convertNumberToPalmer(toothNumberNumeric)!) === 'UR' && {
-                            borderRightWidth: 2,
-                            borderBottomWidth: 2,
+                            borderRightWidth: scale(2),
+                            borderBottomWidth: scale(2),
                             borderRightColor: '#1E3A8A',
                             borderBottomColor: '#1E3A8A',
                           },
                         convertNumberToPalmer(toothNumberNumeric) &&
                           getToothQuadrant(convertNumberToPalmer(toothNumberNumeric)!) === 'LL' && {
-                            borderLeftWidth: 2,
-                            borderTopWidth: 2,
+                            borderLeftWidth: scale(2),
+                            borderTopWidth: scale(2),
                             borderLeftColor: '#1E3A8A',
                             borderTopColor: '#1E3A8A',
                           },
                         convertNumberToPalmer(toothNumberNumeric) &&
                           getToothQuadrant(convertNumberToPalmer(toothNumberNumeric)!) === 'LR' && {
-                            borderRightWidth: 2,
-                            borderTopWidth: 2,
+                            borderRightWidth: scale(2),
+                            borderTopWidth: scale(2),
                             borderRightColor: '#1E3A8A',
                             borderTopColor: '#1E3A8A',
                           },
@@ -801,7 +791,7 @@ export default function ToothDetailsModal({
                     </Text>
                     <View style={styles.headerButtons}>
                       <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-                        <Ionicons name="close" size={24} color="#1E3A8A" />
+                        <Ionicons name="close" size={scale(24)} color="#1E3A8A" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -822,7 +812,7 @@ export default function ToothDetailsModal({
                         setShowReferralSection(false);
                       }}
                     >
-                      <Ionicons name="document-text-outline" size={22} color={showRecordsSection ? '#FFFFFF' : '#64748B'} />
+                      <Ionicons name="document-text-outline" size={scale(22)} color={showRecordsSection ? '#FFFFFF' : '#64748B'} />
                       <Text style={[styles.tabBtnText, showRecordsSection && styles.tabBtnTextActive]}>Records</Text>
                     </TouchableOpacity>
 
@@ -835,7 +825,7 @@ export default function ToothDetailsModal({
                         setShowReferralSection(false);
                       }}
                     >
-                      <Ionicons name="information-circle-outline" size={22} color={showDetailsSection ? '#FFFFFF' : '#64748B'} />
+                      <Ionicons name="information-circle-outline" size={scale(22)} color={showDetailsSection ? '#FFFFFF' : '#64748B'} />
                       <Text style={[styles.tabBtnText, showDetailsSection && styles.tabBtnTextActive]}>Details</Text>
                     </TouchableOpacity>
 
@@ -859,7 +849,7 @@ export default function ToothDetailsModal({
                       }}
                     >
                       <View>
-                        <Ionicons name="create-outline" size={22} color={showNotesSection ? '#FFFFFF' : '#64748B'} />
+                        <Ionicons name="create-outline" size={scale(22)} color={showNotesSection ? '#FFFFFF' : '#64748B'} />
                         {unreadNotes[toothNumberNumeric] > 0 && !viewedNotesTooths[toothNumberNumeric] && (
                           <View style={styles.notificationBadge}>
                             <Text style={styles.notificationBadgeText}>{unreadNotes[toothNumberNumeric]}</Text>
@@ -878,7 +868,7 @@ export default function ToothDetailsModal({
                         setShowRecordsSection(false);
                       }}
                     >
-                      <Ionicons name="arrow-redo-outline" size={22} color={showReferralSection ? '#FFFFFF' : '#64748B'} />
+                      <Ionicons name="arrow-redo-outline" size={scale(22)} color={showReferralSection ? '#FFFFFF' : '#64748B'} />
                       <Text style={[styles.tabBtnText, showReferralSection && styles.tabBtnTextActive]}>Referral</Text>
                     </TouchableOpacity>
                   </View>
@@ -886,7 +876,7 @@ export default function ToothDetailsModal({
                   {/* ════════════════════════════════════════════ */}
                   {/* CONTENT SECTIONS */}
                   {/* ════════════════════════════════════════════ */}
-                  <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
+                  <View style={{ flex: 1, paddingHorizontal: scale(16), paddingTop: scale(16) }}>
                       {/* DETAILS SECTION */}
                       {!showRecordsSection && showDetailsSection && (
                         <ScrollView
@@ -903,20 +893,20 @@ export default function ToothDetailsModal({
                                 setHasModalChanges(false);
                               }
                             }}
-                            style={{ position: 'absolute', top: -18, right: 8, zIndex: 20 }}
+                            style={{ position: 'absolute', top: scale(-18), right: scale(8), zIndex: 20 }}
                           >
                             <Animated.View style={{
                               transform: [{ scale: isEditMode ? 1 : editPulseAnim }],
                               backgroundColor: isEditMode ? '#3B82F6' : '#60A5FA',
-                              width: 40,
-                              height: 40,
-                              borderRadius: 20,
+                              width: scale(40),
+                              height: scale(40),
+                              borderRadius: scale(20),
                               alignItems: 'center',
                               justifyContent: 'center',
-                              borderWidth: 3,
+                              borderWidth: scale(3),
                               borderColor: '#FFFFFF',
                             }}>
-                              <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+                              <Ionicons name="create-outline" size={scale(20)} color="#FFFFFF" />
                             </Animated.View>
                           </TouchableOpacity>
 
@@ -924,7 +914,7 @@ export default function ToothDetailsModal({
                           {/* Treatment Section */}
                           <View style={styles.sectionRow}>
                             <View style={styles.sectionLabelContainer}>
-                              <Ionicons name="medical-outline" size={20} color="#1E293B" />
+                              <Ionicons name="medical-outline" size={scale(20)} color="#1E293B" />
                               <Text style={styles.sectionTitle}>Treatment</Text>
                             </View>
                             <TouchableOpacity
@@ -932,7 +922,7 @@ export default function ToothDetailsModal({
                               onPress={() => isEditMode && setShowTreatmentOptions(!showTreatmentOptions)}
                               disabled={!isEditMode}
                             >
-                              <Ionicons name={showTreatmentOptions ? 'chevron-up' : 'chevron-down'} size={20} color="#64748B" />
+                              <Ionicons name={showTreatmentOptions ? 'chevron-up' : 'chevron-down'} size={scale(20)} color="#64748B" />
                               <Text style={styles.dropdownText}>
                                 {selectedTreatments[toothNumberNumeric]
                                   ? treatmentOptions.find((opt) => opt.key === selectedTreatments[toothNumberNumeric])?.label || 'Select'
@@ -986,7 +976,7 @@ export default function ToothDetailsModal({
                             <>
                               <View style={styles.sectionRow}>
                                 <View style={styles.sectionLabelContainer}>
-                                  <Ionicons name="list-outline" size={20} color="#1E293B" />
+                                  <Ionicons name="list-outline" size={scale(20)} color="#1E293B" />
                                   <Text style={styles.sectionTitle}>Details</Text>
                                 </View>
                                 <TouchableOpacity
@@ -994,7 +984,7 @@ export default function ToothDetailsModal({
                                   onPress={() => isEditMode && setShowDetailsOptions(!showDetailsOptions)}
                                   disabled={!isEditMode}
                                 >
-                                  <Ionicons name={showDetailsOptions ? 'chevron-up' : 'chevron-down'} size={20} color="#64748B" />
+                                  <Ionicons name={showDetailsOptions ? 'chevron-up' : 'chevron-down'} size={scale(20)} color="#64748B" />
                                   <Text style={styles.dropdownText}>
                                     {selectedDetails[toothNumberNumeric]
                                       ? detailsOptions.find((opt) => opt.key === selectedDetails[toothNumberNumeric])?.label || 'Select'
@@ -1057,7 +1047,7 @@ export default function ToothDetailsModal({
                                   {/* Surfaces Section */}
                                   <View style={styles.sectionRow}>
                                     <View style={styles.sectionLabelContainer}>
-                                      <Ionicons name="layers-outline" size={20} color="#1E293B" />
+                                      <Ionicons name="layers-outline" size={scale(20)} color="#1E293B" />
                                       <Text style={styles.sectionTitle}>Surfaces</Text>
                                     </View>
                                     <TouchableOpacity
@@ -1065,7 +1055,7 @@ export default function ToothDetailsModal({
                                       onPress={() => isEditMode && setShowSurfaceOptions(!showSurfaceOptions)}
                                       disabled={!isEditMode}
                                     >
-                                      <Ionicons name={showSurfaceOptions ? 'chevron-up' : 'chevron-down'} size={20} color="#64748B" />
+                                      <Ionicons name={showSurfaceOptions ? 'chevron-up' : 'chevron-down'} size={scale(20)} color="#64748B" />
                                       <Text style={styles.dropdownText}>
                                         {(() => {
                                           const allSurfaces = selectedSurfaces[toothNumberNumeric] || [];
@@ -1110,7 +1100,7 @@ export default function ToothDetailsModal({
                                               }}
                                             >
                                               <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                                                {isSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                                                {isSelected && <Ionicons name="checkmark" size={scale(14)} color="#FFFFFF" />}
                                               </View>
                                               <Text style={styles.optionText}>{surface.label}</Text>
                                             </TouchableOpacity>
@@ -1122,14 +1112,14 @@ export default function ToothDetailsModal({
                                       <TouchableOpacity
                                         style={{
                                           backgroundColor: '#2563EB',
-                                          paddingVertical: 12,
-                                          borderRadius: 8,
-                                          marginTop: 12,
+                                          paddingVertical: scale(12),
+                                          borderRadius: scale(8),
+                                          marginTop: scale(12),
                                           alignItems: 'center',
                                         }}
                                         onPress={() => setShowSurfaceOptions(false)}
                                       >
-                                        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>Done</Text>
+                                        <Text style={{ color: '#FFFFFF', fontSize: scale(16), fontWeight: '600' }}>Done</Text>
                                       </TouchableOpacity>
                                     </View>
                                   </TouchableOpacity>
@@ -1177,7 +1167,7 @@ export default function ToothDetailsModal({
                                 .slice()
                                 .reverse()
                                 .map((note, index) => (
-                                  <View key={index} style={[styles.noteCard, { marginBottom: 12 }]}>
+                                  <View key={index} style={[styles.noteCard, { marginBottom: scale(12) }]}>
                                     <View style={styles.noteHeader}>
                                       <Text style={styles.noteDoctorName}>{note.doctorName || 'Dr. Unknown'}</Text>
                                       <Text style={styles.noteTimestamp}>{note.timestamp}</Text>
@@ -1195,14 +1185,14 @@ export default function ToothDetailsModal({
                         <>
                           <View style={styles.sectionRow}>
                             <View style={styles.sectionLabelContainer}>
-                              <Ionicons name="share-outline" size={18} color="#1E293B" />
-                              <Text style={[styles.sectionTitle, { fontSize: 14 }]}>Need Referral</Text>
+                              <Ionicons name="share-outline" size={scale(18)} color="#1E293B" />
+                              <Text style={[styles.sectionTitle, { fontSize: scale(14) }]}>Need Referral</Text>
                             </View>
                             <TouchableOpacity
                               style={[styles.dropdownInput, styles.dropdownInputActive]}
                               onPress={() => setShowReferralOptions(!showReferralOptions)}
                             >
-                              <Ionicons name={showReferralOptions ? 'chevron-up' : 'chevron-down'} size={20} color="#64748B" />
+                              <Ionicons name={showReferralOptions ? 'chevron-up' : 'chevron-down'} size={scale(20)} color="#64748B" />
                               <Text style={styles.dropdownText}>
                                 {(() => {
                                   const selectedReferrals = selectedReferralFor[toothNumberNumeric] || [];
@@ -1247,7 +1237,7 @@ export default function ToothDetailsModal({
                                           }}
                                         >
                                           <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                                            {isSelected && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                                            {isSelected && <Ionicons name="checkmark" size={scale(16)} color="#FFFFFF" />}
                                           </View>
                                           <Text style={styles.optionText}>{referral.label}</Text>
                                         </TouchableOpacity>
@@ -1356,25 +1346,25 @@ export default function ToothDetailsModal({
                                           key={groupIndex}
                                           style={{
                                             backgroundColor: 'rgba(37, 99, 235, 0.08)',
-                                            borderRadius: 18,
-                                            padding: 20,
-                                            marginBottom: 16,
-                                            borderWidth: 2,
+                                            borderRadius: scale(18),
+                                            padding: scale(20),
+                                            marginBottom: scale(16),
+                                            borderWidth: scale(2),
                                             borderColor: 'rgba(37, 99, 235, 0.35)',
                                           }}
                                         >
                                           {/* Diagnosed/Canceled Badge */}
-                                          <View style={{ marginBottom: 14 }}>
+                                          <View style={{ marginBottom: scale(14) }}>
                                             <View
                                               style={{
-                                                paddingHorizontal: 10,
-                                                paddingVertical: 4,
-                                                borderRadius: 8,
+                                                paddingHorizontal: scale(10),
+                                                paddingVertical: scale(4),
+                                                borderRadius: scale(8),
                                                 backgroundColor: group.action === 'diagnosed' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(156, 163, 175, 0.15)',
                                                 alignSelf: 'flex-start',
                                               }}
                                             >
-                                              <Text style={{ fontSize: 12, fontWeight: '600', color: group.action === 'diagnosed' ? '#D97706' : '#6B7280' }}>
+                                              <Text style={{ fontSize: scale(12), fontWeight: '600', color: group.action === 'diagnosed' ? '#D97706' : '#6B7280' }}>
                                                 {group.action === 'diagnosed' ? 'Diagnosed' : 'Canceled'}
                                               </Text>
                                             </View>
@@ -1384,52 +1374,52 @@ export default function ToothDetailsModal({
                                           {firstRecord.isChange && (
                                             <View style={{
                                               backgroundColor: 'rgba(251, 146, 60, 0.1)',
-                                              borderWidth: 2,
+                                              borderWidth: scale(2),
                                               borderColor: 'rgba(251, 146, 60, 0.3)',
-                                              padding: 16,
-                                              borderRadius: 12,
-                                              marginBottom: 12
+                                              padding: scale(16),
+                                              borderRadius: scale(12),
+                                              marginBottom: scale(12)
                                             }}>
-                                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                                                <Text style={{ fontSize: 18, marginRight: 8 }}>🔄</Text>
-                                                <Text style={{ fontSize: 15, color: '#EA580C', fontWeight: '700', letterSpacing: 0.3 }}>
+                                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(10) }}>
+                                                <Text style={{ fontSize: scale(18), marginRight: scale(8) }}>🔄</Text>
+                                                <Text style={{ fontSize: scale(15), color: '#EA580C', fontWeight: '700', letterSpacing: scale(0.3) }}>
                                                   Condition Changed
                                                 </Text>
                                               </View>
 
-                                              <View style={{ gap: 6, marginBottom: 10 }}>
+                                              <View style={{ gap: scale(6), marginBottom: scale(10) }}>
                                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                  <Text style={{ fontSize: 16, color: '#DC2626', fontWeight: '600', marginRight: 6 }}>−</Text>
-                                                  <Text style={{ fontSize: 14, color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
+                                                  <Text style={{ fontSize: scale(16), color: '#DC2626', fontWeight: '600', marginRight: scale(6) }}>−</Text>
+                                                  <Text style={{ fontSize: scale(14), color: '#DC2626', fontWeight: '500', textDecorationLine: 'line-through' }}>
                                                     {firstRecord.previousCondition}
                                                   </Text>
                                                 </View>
                                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                  <Text style={{ fontSize: 16, color: '#059669', fontWeight: '600', marginRight: 6 }}>+</Text>
-                                                  <Text style={{ fontSize: 14, color: '#059669', fontWeight: '600' }}>
+                                                  <Text style={{ fontSize: scale(16), color: '#059669', fontWeight: '600', marginRight: scale(6) }}>+</Text>
+                                                  <Text style={{ fontSize: scale(14), color: '#059669', fontWeight: '600' }}>
                                                     {firstRecord.condition}
                                                   </Text>
                                                 </View>
                                               </View>
 
                                               {changedSurfaces.length > 0 && (
-                                                <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-                                                  <Text style={{ fontSize: 13, color: '#EA580C', fontWeight: '600', minWidth: 70 }}>
+                                                <View style={{ flexDirection: 'row', marginBottom: scale(8) }}>
+                                                  <Text style={{ fontSize: scale(13), color: '#EA580C', fontWeight: '600', minWidth: scale(70) }}>
                                                     Surfaces:
                                                   </Text>
-                                                  <Text style={{ fontSize: 13, color: '#9A3412', fontWeight: '500', flex: 1 }}>
+                                                  <Text style={{ fontSize: scale(13), color: '#9A3412', fontWeight: '500', flex: 1 }}>
                                                     {changedSurfaces.join(', ')}
                                                   </Text>
                                                 </View>
                                               )}
 
                                               <View style={{
-                                                borderTopWidth: 1,
+                                                borderTopWidth: scale(1),
                                                 borderTopColor: 'rgba(251, 146, 60, 0.2)',
-                                                paddingTop: 8,
-                                                marginTop: 4
+                                                paddingTop: scale(8),
+                                                marginTop: scale(4)
                                               }}>
-                                                <Text style={{ fontSize: 13, color: '#9A3412', fontWeight: '600' }}>
+                                                <Text style={{ fontSize: scale(13), color: '#9A3412', fontWeight: '600' }}>
                                                   Modified by: Dr. {group.doctorName}
                                                 </Text>
                                               </View>
@@ -1437,7 +1427,7 @@ export default function ToothDetailsModal({
                                           )}
 
                                           {/* Planning Details (only if NOT isChange) */}
-                                          <View style={{ gap: 8, marginBottom: 12 }}>
+                                          <View style={{ gap: scale(8), marginBottom: scale(12) }}>
                                             {!firstRecord.isChange && allConditions.length > 0 && (() => {
                                               // حالة خاصة: Root Canal Treated
                                               // Root Canal Treated يُحفظ كـ condition="Tooth Status", surfaces=['Root Canal Treated']
@@ -1451,10 +1441,10 @@ export default function ToothDetailsModal({
                                                   <>
                                                     {/* عرض Root Canal Treated كـ Condition رئيسي */}
                                                     <View style={{ flexDirection: 'row' }}>
-                                                      <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                                      <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>
                                                         Condition:
                                                       </Text>
-                                                      <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                                      <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
                                                         Root Canal Treated
                                                       </Text>
                                                     </View>
@@ -1462,10 +1452,10 @@ export default function ToothDetailsModal({
                                                     {/* عرض باقي الأسطح تحت Surfaces */}
                                                     {otherSurfaces.length > 0 && (
                                                       <View style={{ flexDirection: 'row' }}>
-                                                        <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                                        <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>
                                                           Surfaces:
                                                         </Text>
-                                                        <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                                        <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
                                                           {otherSurfaces.join(', ')}
                                                         </Text>
                                                       </View>
@@ -1476,10 +1466,10 @@ export default function ToothDetailsModal({
                                                 // الحالة العادية: عرض كل الـ conditions بدون معالجة خاصة
                                                 return (
                                                   <View style={{ flexDirection: 'row' }}>
-                                                    <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                                    <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>
                                                       Condition:
                                                     </Text>
-                                                    <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                                    <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
                                                       {allConditions.join(', ')}
                                                     </Text>
                                                   </View>
@@ -1489,10 +1479,10 @@ export default function ToothDetailsModal({
 
                                             {!firstRecord.isChange && allSurfaces.length > 0 && !allConditions.includes('Extraction') && !allSurfaces.some(s => s === 'Root Canal Treated') && (
                                               <View style={{ flexDirection: 'row' }}>
-                                                <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>
+                                                <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>
                                                   Surfaces:
                                                 </Text>
-                                                <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                                <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
                                                   {allSurfaces.join(', ')}
                                                 </Text>
                                               </View>
@@ -1502,14 +1492,14 @@ export default function ToothDetailsModal({
                                           {/* Footer Info */}
                                           <View
                                             style={{
-                                              borderTopWidth: 1,
+                                              borderTopWidth: scale(1),
                                               borderTopColor: 'rgba(37, 99, 235, 0.2)',
-                                              paddingTop: 12,
-                                              gap: 6,
+                                              paddingTop: scale(12),
+                                              gap: scale(6),
                                             }}
                                           >
-                                            <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>{firstRecord.timestamp}</Text>
-                                            <Text style={{ fontSize: 13, color: '#2563EB', fontWeight: '600' }}>Dr. {group.doctorName}</Text>
+                                            <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{firstRecord.timestamp}</Text>
+                                            <Text style={{ fontSize: scale(13), color: '#2563EB', fontWeight: '600' }}>Dr. {group.doctorName}</Text>
                                           </View>
                                         </View>
                                       );
@@ -1522,17 +1512,17 @@ export default function ToothDetailsModal({
                                       key={index}
                                       style={{
                                         backgroundColor: 'rgba(37, 99, 235, 0.08)',
-                                        borderRadius: 18,
-                                        padding: 20,
-                                        marginBottom: 16,
-                                        borderWidth: 2,
+                                        borderRadius: scale(18),
+                                        padding: scale(20),
+                                        marginBottom: scale(16),
+                                        borderWidth: scale(2),
                                         borderColor: 'rgba(37, 99, 235, 0.35)',
                                       }}
                                     >
                                       {/* Treatment Details */}
-                                      <View style={{ gap: 8, marginBottom: 12 }}>
+                                      <View style={{ gap: scale(8), marginBottom: scale(12) }}>
                                         <View style={{ flexDirection: 'row' }}>
-                                          <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Treatment:</Text>
+                                          <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Treatment:</Text>
                                           {record.treatment === 'Extraction' || record.treatment === 'Filling' || record.treatment === 'Pulpectomy' ? (
                                             <View style={{
                                               backgroundColor:
@@ -1541,13 +1531,13 @@ export default function ToothDetailsModal({
                                                   : record.treatment === 'Filling'
                                                     ? 'rgba(16, 185, 129, 0.15)'
                                                     : 'rgba(139, 92, 246, 0.15)',
-                                              paddingHorizontal: 10,
-                                              paddingVertical: 4,
-                                              borderRadius: 8,
+                                              paddingHorizontal: scale(10),
+                                              paddingVertical: scale(4),
+                                              borderRadius: scale(8),
                                               alignSelf: 'flex-start',
                                             }}>
                                               <Text style={{
-                                                fontSize: 14,
+                                                fontSize: scale(14),
                                                 color: record.treatment === 'Extraction'
                                                   ? '#4B5563'
                                                   : record.treatment === 'Filling'
@@ -1559,22 +1549,22 @@ export default function ToothDetailsModal({
                                               </Text>
                                             </View>
                                           ) : (
-                                            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.treatment}</Text>
+                                            <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.treatment}</Text>
                                           )}
                                         </View>
 
                                         {record.details && (
                                           <View style={{ flexDirection: 'row' }}>
-                                            <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Details:</Text>
-                                            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.details}</Text>
+                                            <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Details:</Text>
+                                            <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>{record.details}</Text>
                                           </View>
                                         )}
 
                                         {/* Hide Surfaces row if Extraction */}
                                         {record.treatment !== 'Extraction' && (
                                           <View style={{ flexDirection: 'row' }}>
-                                            <Text style={{ fontSize: 14, color: '#2563EB', fontWeight: '600', minWidth: 90 }}>Surfaces:</Text>
-                                            <Text style={{ fontSize: 14, color: '#1F2937', fontWeight: '500', flex: 1 }}>
+                                            <Text style={{ fontSize: scale(14), color: '#2563EB', fontWeight: '600', minWidth: scale(90) }}>Surfaces:</Text>
+                                            <Text style={{ fontSize: scale(14), color: '#1F2937', fontWeight: '500', flex: 1 }}>
                                               {record.surfaces && record.surfaces.length > 0 ? record.surfaces.join(', ') : '-'}
                                             </Text>
                                           </View>
@@ -1584,14 +1574,14 @@ export default function ToothDetailsModal({
                                       {/* Footer Info */}
                                       <View
                                         style={{
-                                          borderTopWidth: 1,
+                                          borderTopWidth: scale(1),
                                           borderTopColor: 'rgba(37, 99, 235, 0.2)',
-                                          paddingTop: 12,
-                                          gap: 6,
+                                          paddingTop: scale(12),
+                                          gap: scale(6),
                                         }}
                                       >
-                                        <Text style={{ fontSize: 13, color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
-                                        <Text style={{ fontSize: 13, color: '#2563EB', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
+                                        <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
+                                        <Text style={{ fontSize: scale(13), color: '#2563EB', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
                                       </View>
                                     </View>
                                   ));
@@ -1599,8 +1589,8 @@ export default function ToothDetailsModal({
                               </>
                             ) : (
                               <View style={styles.noRecordsContainer}>
-                                <Ionicons name="document-text-outline" size={48} color="rgba(100, 116, 139, 0.3)" />
-                                <Text style={{ fontSize: 14, color: '#64748B', fontWeight: '500' }}>
+                                <Ionicons name="document-text-outline" size={scale(48)} color="rgba(100, 116, 139, 0.3)" />
+                                <Text style={{ fontSize: scale(14), color: '#64748B', fontWeight: '500' }}>
                                   {recordsType === 'editing' ? 'No editing records yet' : 'No planning records yet'}
                                 </Text>
                               </View>
@@ -1619,7 +1609,7 @@ export default function ToothDetailsModal({
                       disabled={!hasModalChanges}
                       onPress={handleSubmitChanges}
                     >
-                      <Ionicons name="checkmark-circle-outline" size={22} color={hasModalChanges ? '#FFFFFF' : '#64748B'} />
+                      <Ionicons name="checkmark-circle-outline" size={scale(22)} color={hasModalChanges ? '#FFFFFF' : '#64748B'} />
                       <Text style={[styles.submitButtonText, hasModalChanges && { color: '#FFFFFF' }]}>Submit</Text>
                     </TouchableOpacity>
                   </View>
@@ -1635,7 +1625,7 @@ export default function ToothDetailsModal({
 // STYLES
 // ===============================================================
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

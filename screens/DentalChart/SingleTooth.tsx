@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import { View, Text, Animated } from 'react-native';
+import { scaledStyleSheet } from '../../lib/scale';
 import {
   ToothWithSectionsSquareTiny,
   ToothWithSectionsSquareMedium,
@@ -147,7 +148,7 @@ export const SingleTooth: React.FC<SingleToothProps> = ({
 // Styles
 // ═══════════════════════════════════════════════════════════════
 
-const styles = StyleSheet.create({
+const styles = scaledStyleSheet({
   toothGlowEffect: {
     shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 0 },
