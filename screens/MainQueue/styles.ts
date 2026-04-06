@@ -254,7 +254,7 @@ export const styles = scaledStyleSheet({
     fontWeight: '700',
     color: '#2D3748',
     letterSpacing: 0.3,
-    fontFamily: 'Cairo-Bold', // خط Cairo Bold
+    fontFamily: 'IBMPlexSansArabic-Bold', // خط IBM Plex Sans Arabic Bold (رسمي)
     marginLeft: 70, // مسافة من اليسار
     marginRight: 20, // إبعاد الاسم 20px عن الحافة اليمنى
   },

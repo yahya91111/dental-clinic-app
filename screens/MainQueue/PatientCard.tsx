@@ -208,8 +208,52 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
       : { color: '#000000', fontWeight: '700' as const };
   };
 
+  // Small notification-style badge for overlay
+  const SmallBadge = ({ letter, color, onPress }: { letter: string; color: string; onPress?: (e: any) => void }) => {
+    const content = (
+      <View style={{
+        width: scale(38),
+        height: scale(20),
+        borderRadius: scale(6),
+        backgroundColor: color,
+        borderWidth: scale(1.5),
+        borderColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#FFFFFF' }}>{letter}</Text>
+      </View>
+    );
+    return onPress ? <TouchableOpacity onPress={onPress}>{content}</TouchableOpacity> : content;
+  };
+
+  // Compute badges to render outside the clipped wrapper
+  const renderBadgesOverlay = () => {
+    if (isPermanentCardExpanded) return null;
+    return (
+      <View style={{
+        position: 'absolute',
+        top: scale(-10),
+        left: scale(23),
+        flexDirection: 'row',
+        gap: scale(3),
+        zIndex: 100,
+      }}>
+        {isComplete && <SmallBadge letter="D" color="#10B981" />}
+        {patient.isElderly && <SmallBadge letter="E" color="#F97316" />}
+        {patient.isSpecialNeeds && <SmallBadge letter="S" color="#8B5CF6" />}
+        {!isComplete && patient.status === 'na' && <SmallBadge letter="X" color="#6B7280" />}
+        {patient.note && (
+          <SmallBadge letter="N" color="#3B82F6" onPress={(e) => { e.stopPropagation(); onNotePress(); }} />
+        )}
+      </View>
+    );
+  };
+
   return (
-    <View style={[styles.patientCardWrapper, shadows.card]}>
+    <View style={{ position: 'relative' }}>
+      {renderBadgesOverlay()}
+      <View style={[styles.patientCardWrapper, shadows.card]}>
       {/* Patient Card Content */}
       <LinearGradient
         colors={gradientColors}
@@ -351,6 +395,7 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
         </LinearGradient>
       </Animated.View>
 
+      </View>
     </View>
   );
 }

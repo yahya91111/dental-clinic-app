@@ -1636,7 +1636,7 @@ const styles = scaledStyleSheet({
     fontWeight: '700',
     color: '#2D3748',
     letterSpacing: 0.3,
-    fontFamily: 'Cairo-Bold',
+    fontFamily: 'IBMPlexSansArabic-Bold',
     marginLeft: 70,
     marginRight: 20,
   },

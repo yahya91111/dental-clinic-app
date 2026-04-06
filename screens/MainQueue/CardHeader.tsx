@@ -75,38 +75,6 @@ export const CardHeader = ({
             />
           </TouchableOpacity>
         )}
-
-        {/* Badges - After expand arrow */}
-        {/* Done Badge - Green Circle (only for complete) */}
-        {isComplete && (
-          <CircularBadge letter="D" backgroundColor="#10B981" />
-        )}
-
-        {/* Elderly Badge - Orange Circle */}
-        {patient.isElderly && (
-          <CircularBadge letter="E" backgroundColor="#F97316" />
-        )}
-
-        {/* Special Needs Badge - Purple Circle */}
-        {patient.isSpecialNeeds && (
-          <CircularBadge letter="S" backgroundColor="#8B5CF6" />
-        )}
-
-        {/* N/A Badge - Gray Circle (only for non-complete) */}
-        {!isComplete && patient.status === 'na' && (
-          <CircularBadge letter="X" backgroundColor="#6B7280" />
-        )}
-
-        {/* Note Badge - Blue Circle with tap action */}
-        {patient.note && (
-          isComplete ? (
-            <CircularBadge letter="N" backgroundColor="#3B82F6" onPress={onNotePress} />
-          ) : (
-            <TouchableOpacity onPress={(e) => { e.stopPropagation(); onNotePress(); }}>
-              <CircularBadge letter="N" backgroundColor="#3B82F6" />
-            </TouchableOpacity>
-          )
-        )}
       </View>
 
       {isPermanentPatient ? (
