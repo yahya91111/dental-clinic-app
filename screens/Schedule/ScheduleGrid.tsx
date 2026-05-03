@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { scale } from '../../lib/scale';
+import { LinearGradient } from 'expo-linear-gradient';
 import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } from './types';
 
 interface ScheduleGridProps {
@@ -64,39 +65,11 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
 
   return (
     <View style={{ marginBottom: scale(12) }}>
-      {/* Header Row - Days */}
+      {/* Header Row - Periods (horizontal) */}
       <View style={{ flexDirection: 'row', gap: scale(3), marginBottom: scale(3) }}>
-        {/* Corner - empty */}
-        <View style={{ width: scale(48) }} />
-        {DAYS.map(day => (
-          <View key={day.key} style={{
+        {PERIODS.map(period => (
+          <View key={period.id} style={{
             flex: 1,
-            backgroundColor: 'rgba(102,126,234,0.15)',
-            borderRadius: scale(10),
-            paddingVertical: scale(8),
-            alignItems: 'center',
-            borderWidth: scale(1.5),
-            borderColor: 'rgba(102,126,234,0.25)',
-          }}>
-            <Text style={{
-              fontSize: scale(10),
-              fontWeight: '800',
-              color: '#667EEA',
-            }}>{day.shortLabel}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Period Rows */}
-      {PERIODS.map(period => (
-        <View key={period.id} style={{
-          flexDirection: 'row',
-          gap: scale(3),
-          marginBottom: scale(3),
-        }}>
-          {/* Time Column */}
-          <View style={{
-            width: scale(48),
             backgroundColor: 'rgba(255,255,255,0.35)',
             borderRadius: scale(10),
             paddingVertical: scale(6),
@@ -105,17 +78,28 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
             borderWidth: scale(1.5),
             borderColor: 'rgba(255,255,255,0.5)',
           }}>
-            <Text style={{ fontSize: scale(14) }}>{period.icon}</Text>
-            <Text style={{ fontSize: scale(7), fontWeight: '700', color: '#4A5568', marginTop: scale(2) }}>
+            <Text style={{ fontSize: scale(12) }}>{period.icon}</Text>
+            <Text style={{ fontSize: scale(7), fontWeight: '700', color: '#4A5568', marginTop: scale(1) }}>
               {period.start}
             </Text>
             <Text style={{ fontSize: scale(7), fontWeight: '700', color: '#4A5568' }}>
               {period.end}
             </Text>
           </View>
+        ))}
+        {/* Corner - empty */}
+        <View style={{ width: scale(48) }} />
+      </View>
 
-          {/* Day Cells */}
-          {DAYS.map(day => {
+      {/* Day Rows (vertical) */}
+      {DAYS.map(day => (
+        <View key={day.key} style={{
+          flexDirection: 'row',
+          gap: scale(3),
+          marginBottom: scale(3),
+        }}>
+          {/* Period Cells */}
+          {PERIODS.map(period => {
             const cellSlots = getSlots(day.key, period.id);
             const hasSlots = cellSlots.length > 0;
 
@@ -147,6 +131,42 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
               </TouchableOpacity>
             );
           })}
+
+          {/* Day Label Column - game button style */}
+          <View style={{
+            width: scale(48),
+            borderRadius: scale(14),
+            overflow: 'hidden',
+            borderWidth: scale(2.5),
+            borderColor: 'rgba(4, 120, 87, 0.3)',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: scale(2) },
+            shadowOpacity: 0.25,
+            shadowRadius: scale(3),
+            elevation: 4,
+          }}>
+            {/* Vertical gradient: edges dark, center light */}
+            <LinearGradient
+              colors={['rgba(5,150,105,0.5)', 'rgba(52,211,153,0.35)', 'rgba(52,211,153,0.35)', 'rgba(5,150,105,0.5)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingVertical: scale(8),
+              }}
+            >
+              <Text style={{
+                fontSize: scale(10),
+                fontWeight: '800',
+                color: '#FFFFFF',
+                textShadowColor: 'rgba(4, 120, 87, 0.7)',
+                textShadowOffset: { width: 0, height: scale(1) },
+                textShadowRadius: scale(2),
+              }}>{day.shortLabel}</Text>
+            </LinearGradient>
+          </View>
         </View>
       ))}
     </View>

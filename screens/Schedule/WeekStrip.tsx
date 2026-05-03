@@ -91,15 +91,6 @@ export function WeekStrip({ selectedWeekStart, onSelectWeek }: WeekStripProps) {
       paddingBottom: scale(10),
       paddingTop: scale(4),
     }}>
-      {/* Month Label */}
-      <TouchableOpacity onPress={goToCurrentWeek} style={{ alignItems: 'center', marginBottom: scale(8) }}>
-        <Text style={{
-          fontSize: scale(13),
-          fontWeight: '700',
-          color: currentPage === CENTER_PAGE ? '#667EEA' : '#4A5568',
-        }}>{getPageLabel(currentPage)}</Text>
-      </TouchableOpacity>
-
       {/* Paging ScrollView */}
       <ScrollView
         ref={scrollRef}
@@ -149,11 +140,11 @@ export function WeekStrip({ selectedWeekStart, onSelectWeek }: WeekStripProps) {
                   }}
                 >
                   <Text style={{
-                    fontSize: scale(12),
+                    fontSize: scale(13),
                     fontWeight: '700',
                     color: isSelected ? '#FFFFFF' : '#4A5568',
                   }}>
-                    {week.getDate()}-{thursday.getDate()}
+                    {week.getDate()}
                   </Text>
                   <Text style={{
                     fontSize: scale(9),
