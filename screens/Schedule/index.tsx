@@ -162,39 +162,6 @@ export default function ScheduleScreen({ onBack }: ScheduleScreenProps) {
               onCellPress={(day, period) => setSelectedCell({ day, period })}
             />
 
-            {/* Legend */}
-            <View style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
-              gap: scale(10),
-              justifyContent: 'center',
-              padding: scale(12),
-              backgroundColor: 'rgba(255,255,255,0.35)',
-              borderRadius: scale(14),
-              borderWidth: scale(1.5),
-              borderColor: 'rgba(255,255,255,0.5)',
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(4) }}>
-                <View style={{ width: scale(10), height: scale(10), borderRadius: scale(5), backgroundColor: '#3B82F6' }} />
-                <Text style={{ fontSize: scale(11), color: '#4A5568', fontWeight: '600' }}>Clinic</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(4) }}>
-                <View style={{ width: scale(10), height: scale(10), borderRadius: scale(5), backgroundColor: '#8B5CF6' }} />
-                <Text style={{ fontSize: scale(11), color: '#4A5568', fontWeight: '600' }}>Delegator</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(4) }}>
-                <View style={{ width: scale(10), height: scale(10), borderRadius: scale(5), backgroundColor: '#EF4444' }} />
-                <Text style={{ fontSize: scale(11), color: '#4A5568', fontWeight: '600' }}>Sick Leave</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(4) }}>
-                <View style={{ width: scale(10), height: scale(10), borderRadius: scale(5), backgroundColor: '#F59E0B' }} />
-                <Text style={{ fontSize: scale(11), color: '#4A5568', fontWeight: '600' }}>Permission</Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(4) }}>
-                <View style={{ width: scale(10), height: scale(10), borderRadius: scale(5), backgroundColor: '#6B7280' }} />
-                <Text style={{ fontSize: scale(11), color: '#4A5568', fontWeight: '600' }}>Vacation</Text>
-              </View>
-            </View>
           </ScrollView>
         </View>
       </SafeAreaView>

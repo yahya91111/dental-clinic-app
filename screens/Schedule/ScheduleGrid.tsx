@@ -9,164 +9,131 @@ interface ScheduleGridProps {
   onCellPress: (day: DayOfWeek, period: number) => void;
 }
 
-// Mini badge for doctor name inside grid cell
-const MiniBadge = ({ slot }: { slot: ScheduleSlot }) => {
-  const isSpecialStatus = slot.status !== 'active';
-  const config = isSpecialStatus ? STATUS_CONFIG[slot.status] : ROLE_CONFIG[slot.role];
-
-  return (
-    <View style={{
-      width: '100%',
-      paddingVertical: scale(2),
-      paddingHorizontal: scale(3),
-      borderRadius: scale(5),
-      backgroundColor: config.bgColor,
-      borderWidth: scale(1),
-      borderColor: config.borderColor,
-      marginBottom: scale(2),
-    }}>
-      <Text style={{
-        fontSize: scale(8),
-        fontWeight: '700',
-        color: config.color,
-        textAlign: 'center',
-      }} numberOfLines={1}>
-        {slot.role === 'delegator' && slot.status === 'active' ? '📋' : ''}
-        {isSpecialStatus ? STATUS_CONFIG[slot.status].icon : ''}
-        {slot.doctorName}
-      </Text>
-    </View>
-  );
-};
-
-// Empty slot placeholder
-const EmptyBadge = () => (
-  <View style={{
-    width: '100%',
-    paddingVertical: scale(4),
-    borderRadius: scale(5),
-    borderWidth: scale(1),
-    borderStyle: 'dashed',
-    borderColor: 'rgba(0,0,0,0.08)',
-    backgroundColor: 'rgba(0,0,0,0.02)',
-  }}>
-    <Text style={{
-      fontSize: scale(8),
-      color: '#CBD5E0',
-      textAlign: 'center',
-      fontWeight: '600',
-    }}>+</Text>
-  </View>
-);
-
 export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
   const getSlots = (day: DayOfWeek, period: number) =>
     slots.filter(s => s.day === day && s.period === period);
 
   return (
-    <View style={{ marginBottom: scale(12) }}>
-      {/* Header Row - Periods (horizontal) */}
-      <View style={{ flexDirection: 'row', gap: scale(3), marginBottom: scale(3) }}>
-        {PERIODS.map(period => (
-          <View key={period.id} style={{
-            flex: 1,
-            backgroundColor: 'rgba(255,255,255,0.35)',
-            borderRadius: scale(10),
-            paddingVertical: scale(6),
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderWidth: scale(1.5),
-            borderColor: 'rgba(255,255,255,0.5)',
-          }}>
-            <Text style={{ fontSize: scale(12) }}>{period.icon}</Text>
-            <Text style={{ fontSize: scale(7), fontWeight: '700', color: '#4A5568', marginTop: scale(1) }}>
-              {period.start}
-            </Text>
-            <Text style={{ fontSize: scale(7), fontWeight: '700', color: '#4A5568' }}>
-              {period.end}
-            </Text>
-          </View>
-        ))}
-        {/* Corner - empty */}
-        <View style={{ width: scale(48) }} />
-      </View>
-
-      {/* Day Rows (vertical) */}
+    <View style={{ gap: scale(16) }}>
       {DAYS.map(day => (
         <View key={day.key} style={{
           flexDirection: 'row',
-          gap: scale(3),
-          marginBottom: scale(3),
+          borderRadius: scale(18),
+          overflow: 'hidden',
+          backgroundColor: 'rgba(255, 255, 255, 0.35)',
+          borderWidth: scale(2.5),
+          borderColor: 'rgba(255, 255, 255, 0.7)',
+          shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
+          shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : scale(2) },
+          shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
+          shadowRadius: Platform.OS === 'android' ? 0 : scale(8),
+          elevation: Platform.OS === 'android' ? 0 : 3,
         }}>
-          {/* Period Cells */}
-          {PERIODS.map(period => {
-            const cellSlots = getSlots(day.key, period.id);
-            const hasSlots = cellSlots.length > 0;
+          {/* Card Content - periods horizontal */}
+          <LinearGradient
+            colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+            }}
+          >
+            {PERIODS.map((period, periodIndex) => {
+              const cellSlots = getSlots(day.key, period.id);
+              return (
+                <TouchableOpacity
+                  key={period.id}
+                  activeOpacity={0.7}
+                  onPress={() => onCellPress(day.key, period.id)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: scale(10),
+                    paddingHorizontal: scale(4),
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
+                    borderRightWidth: periodIndex < PERIODS.length - 1 ? scale(1.5) : 0,
+                    borderRightColor: 'rgba(255, 255, 255, 0.6)',
+                  }}
+                >
+                  {/* Period label - same gradient style as day column */}
+                  <LinearGradient
+                    colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{
+                      paddingVertical: scale(4),
+                      marginBottom: scale(6),
+                      marginTop: scale(-10),
+                      marginHorizontal: scale(-4),
+                      width: '115%',
+                      alignItems: 'center',
+                      borderBottomWidth: scale(1.5),
+                      borderBottomColor: 'rgba(255, 255, 255, 0.5)',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: scale(9),
+                      fontWeight: '800',
+                      color: '#FFFFFF',
+                      textShadowColor: 'rgba(88, 74, 126, 0.5)',
+                      textShadowOffset: { width: 0, height: scale(1) },
+                      textShadowRadius: scale(2),
+                    }}>P{period.id}</Text>
+                    <Text style={{
+                      fontSize: scale(7),
+                      fontWeight: '600',
+                      color: 'rgba(255, 255, 255, 0.85)',
+                    }}>{period.start}-{period.end}</Text>
+                  </LinearGradient>
 
-            return (
-              <TouchableOpacity
-                key={`${day.key}-${period.id}`}
-                activeOpacity={0.7}
-                onPress={() => onCellPress(day.key, period.id)}
-                style={{
-                  flex: 1,
-                  backgroundColor: hasSlots
-                    ? 'rgba(255,255,255,0.45)'
-                    : 'rgba(255,255,255,0.25)',
-                  borderRadius: scale(10),
-                  padding: scale(4),
-                  minHeight: scale(70),
-                  justifyContent: cellSlots.length > 0 ? 'flex-start' : 'center',
-                  alignItems: 'center',
-                  borderWidth: scale(1.5),
-                  borderColor: hasSlots
-                    ? 'rgba(255,255,255,0.6)'
-                    : 'rgba(255,255,255,0.4)',
-                }}
-              >
-                {cellSlots.length > 0
-                  ? cellSlots.map(slot => <MiniBadge key={slot.id} slot={slot} />)
-                  : <EmptyBadge />
-                }
-              </TouchableOpacity>
-            );
-          })}
+                  {/* Doctor names */}
+                  {cellSlots.length > 0 ? cellSlots.map(slot => {
+                    const isSpecial = slot.status !== 'active';
+                    const color = isSpecial ? STATUS_CONFIG[slot.status].color : ROLE_CONFIG[slot.role].color;
+                    return (
+                      <Text key={slot.id} style={{
+                        fontSize: scale(9),
+                        fontWeight: '700',
+                        color: color,
+                        marginBottom: scale(2),
+                        textAlign: 'center',
+                      }} numberOfLines={1}>{slot.doctorName}</Text>
+                    );
+                  }) : (
+                    <Text style={{
+                      fontSize: scale(10),
+                      color: '#CBD5E0',
+                      fontWeight: '600',
+                    }}>—</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </LinearGradient>
 
-          {/* Day Label Column - game button style */}
-          <View style={{
-            width: scale(48),
-            borderRadius: scale(14),
-            overflow: 'hidden',
-            borderWidth: scale(2.5),
-            borderColor: 'rgba(4, 120, 87, 0.3)',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: scale(2) },
-            shadowOpacity: 0.25,
-            shadowRadius: scale(3),
-            elevation: 4,
-          }}>
-            {/* Vertical gradient: edges dark, center light */}
-            <LinearGradient
-              colors={['rgba(5,150,105,0.5)', 'rgba(52,211,153,0.35)', 'rgba(52,211,153,0.35)', 'rgba(5,150,105,0.5)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={{
-                flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: scale(8),
-              }}
-            >
-              <Text style={{
-                fontSize: scale(10),
-                fontWeight: '800',
-                color: '#FFFFFF',
-                textShadowColor: 'rgba(4, 120, 87, 0.7)',
-                textShadowOffset: { width: 0, height: scale(1) },
-                textShadowRadius: scale(2),
-              }}>{day.shortLabel}</Text>
-            </LinearGradient>
-          </View>
+          {/* Day name - right side like Queue Number */}
+          <LinearGradient
+            colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={{
+              width: scale(45),
+              justifyContent: 'center',
+              alignItems: 'center',
+              borderLeftWidth: scale(1.5),
+              borderLeftColor: 'rgba(255, 255, 255, 0.5)',
+            }}
+          >
+            <Text style={{
+              fontSize: scale(11),
+              fontWeight: '800',
+              color: '#FFFFFF',
+              textShadowColor: 'rgba(88, 74, 126, 0.5)',
+              textShadowOffset: { width: 0, height: scale(1) },
+              textShadowRadius: scale(2),
+            }}>{day.shortLabel}</Text>
+          </LinearGradient>
         </View>
       ))}
     </View>

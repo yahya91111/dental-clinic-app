@@ -34,10 +34,10 @@ export const DAYS: { key: DayOfWeek; label: string; shortLabel: string }[] = [
 ];
 
 export const PERIODS: { id: number; label: string; icon: string; start: string; end: string }[] = [
-  { id: 1, label: 'Period 1', icon: '☀️', start: '7:00', end: '10:30' },
-  { id: 2, label: 'Period 2', icon: '🌤️', start: '10:30', end: '14:00' },
-  { id: 3, label: 'Period 3', icon: '🌅', start: '14:00', end: '17:30' },
   { id: 4, label: 'Period 4', icon: '🌙', start: '17:30', end: '21:00' },
+  { id: 3, label: 'Period 3', icon: '🌅', start: '14:00', end: '17:30' },
+  { id: 2, label: 'Period 2', icon: '🌤️', start: '10:30', end: '14:00' },
+  { id: 1, label: 'Period 1', icon: '☀️', start: '7:00', end: '10:30' },
 ];
 
 export const STATUS_CONFIG: Record<DoctorStatus, { label: string; color: string; bgColor: string; borderColor: string; icon: string }> = {
