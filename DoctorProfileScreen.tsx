@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DentalDepartmentsScreen from './DentalDepartmentsScreen';
 import DoctorsScreen from './DoctorsScreen';
 import ComingSoonScreen from './ComingSoonScreen';
+import ScheduleScreen from './screens/Schedule';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
@@ -749,9 +750,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // Schedule screen
   if (currentScreen === 'schedule') {
     return (
-      <ComingSoonScreen 
+      <ScheduleScreen
         onBack={() => setCurrentScreen('profile')}
-        title="Schedule"
       />
     );
   }
