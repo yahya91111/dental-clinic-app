@@ -16,6 +16,9 @@ export const MOCK_SLOTS: ScheduleSlot[] = [
   // Sunday - Period 4
   { id: '9', day: 'sunday', period: 4, clinicNumber: 1, doctorId: 'd9', doctorName: 'ريم', role: 'clinic', status: 'active' },
   { id: '10', day: 'sunday', period: 4, clinicNumber: 0, doctorId: 'd10', doctorName: 'سعود', role: 'clinic', status: 'vacation' },
+  // Sunday - EX (period: 0)
+  { id: '50', day: 'sunday', period: 0, clinicNumber: 0, doctorId: 'd11', doctorName: 'ناصر', role: 'clinic', status: 'sick_leave' },
+  { id: '51', day: 'sunday', period: 0, clinicNumber: 0, doctorId: 'd12', doctorName: 'منى', role: 'clinic', status: 'vacation' },
 
   // Monday - Period 1
   { id: '11', day: 'monday', period: 1, clinicNumber: 1, doctorId: 'd4', doctorName: 'محمد', role: 'clinic', status: 'active' },

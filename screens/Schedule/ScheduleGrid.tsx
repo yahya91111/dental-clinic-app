@@ -49,6 +49,7 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                       flex: 1,
                       paddingVertical: scale(10),
                       paddingHorizontal: scale(4),
+                      minHeight: scale(90),
                       alignItems: 'center',
                       justifyContent: 'flex-start',
                       borderRightWidth: periodIndex < PERIODS.length - 1 ? scale(1.5) : 0,
@@ -86,26 +87,125 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                       }}>{period.start}-{period.end}</Text>
                     </LinearGradient>
 
-                    {/* Doctor names */}
-                    {cellSlots.length > 0 ? cellSlots.map(slot => {
-                      const isSpecial = slot.status !== 'active';
-                      const color = isSpecial ? STATUS_CONFIG[slot.status].color : ROLE_CONFIG[slot.role].color;
+                    {/* Clinic rows - mini card style */}
+                    {(() => {
+                      const clinicSlots = cellSlots.filter(s => s.role === 'clinic' && s.clinicNumber > 0);
+                      const delegatorSlots = cellSlots.filter(s => s.role === 'delegator');
+                      const maxClinic = Math.max(2, ...clinicSlots.map(s => s.clinicNumber));
+
                       return (
-                        <Text key={slot.id} style={{
-                          fontSize: scale(9),
-                          fontWeight: '700',
-                          color: color,
-                          marginBottom: scale(2),
-                          textAlign: 'center',
-                        }} numberOfLines={1}>{slot.doctorName}</Text>
+                        <>
+                          {/* Clinic mini cards */}
+                          {Array.from({ length: maxClinic }, (_, i) => {
+                            const clinicNum = i + 1;
+                            const slot = clinicSlots.find(s => s.clinicNumber === clinicNum);
+                            const isSpecial = slot && slot.status !== 'active';
+                            const nameColor = slot
+                              ? (isSpecial ? STATUS_CONFIG[slot.status].color : '#2D3748')
+                              : '#CBD5E0';
+                            return (
+                              <View key={`c${clinicNum}`} style={{
+                                flexDirection: 'row',
+                                alignSelf: 'stretch',
+                                marginBottom: scale(3),
+                                borderRadius: scale(6),
+                                overflow: 'hidden',
+                                borderWidth: scale(1),
+                                borderColor: 'rgba(255,255,255,0.6)',
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                              }}>
+                                {/* Name */}
+                                <Text style={{
+                                  flex: 1,
+                                  fontSize: scale(8),
+                                  fontWeight: '700',
+                                  color: slot ? '#3B5998' : '#CBD5E0',
+                                  paddingVertical: scale(3),
+                                  paddingHorizontal: scale(4),
+                                  textAlign: 'right',
+                                }} numberOfLines={1}>{slot ? slot.doctorName : '—'}</Text>
+                                {/* Clinic number - right side */}
+                                <LinearGradient
+                                  colors={['rgba(71,118,186,0.45)', 'rgba(120,160,210,0.3)', 'rgba(120,160,210,0.3)', 'rgba(71,118,186,0.45)']}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 0, y: 1 }}
+                                  style={{
+                                    paddingHorizontal: scale(4),
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    borderLeftWidth: scale(1),
+                                    borderLeftColor: 'rgba(255,255,255,0.5)',
+                                  }}
+                                >
+                                  <Text style={{
+                                    fontSize: scale(6),
+                                    fontWeight: '800',
+                                    color: '#FFFFFF',
+                                    textShadowColor: 'rgba(50, 80, 140, 0.5)',
+                                    textShadowOffset: { width: 0, height: scale(0.5) },
+                                    textShadowRadius: scale(1),
+                                  }}>CL{clinicNum}</Text>
+                                </LinearGradient>
+                              </View>
+                            );
+                          })}
+
+                          {/* Divider */}
+                          <View style={{
+                            height: scale(1),
+                            backgroundColor: 'rgba(255,255,255,0.5)',
+                            alignSelf: 'stretch',
+                            marginVertical: scale(2),
+                          }} />
+
+                          {/* Delegator mini card */}
+                          <View style={{
+                            flexDirection: 'row',
+                            alignSelf: 'stretch',
+                            borderRadius: scale(6),
+                            overflow: 'hidden',
+                            borderWidth: scale(1),
+                            borderColor: 'rgba(255,255,255,0.6)',
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                          }}>
+                            {/* Name */}
+                            <Text style={{
+                              flex: 1,
+                              fontSize: scale(8),
+                              fontWeight: '700',
+                              color: delegatorSlots.length > 0 ? '#6B4C9A' : '#CBD5E0',
+                              paddingVertical: scale(3),
+                              paddingHorizontal: scale(4),
+                              textAlign: 'right',
+                            }} numberOfLines={1}>
+                              {delegatorSlots.length > 0 ? delegatorSlots[0].doctorName : '—'}
+                            </Text>
+                            {/* DLG label - right side */}
+                            <LinearGradient
+                              colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 0, y: 1 }}
+                              style={{
+                                paddingHorizontal: scale(4),
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                borderLeftWidth: scale(1),
+                                borderLeftColor: 'rgba(255,255,255,0.5)',
+                              }}
+                            >
+                              <Text style={{
+                                fontSize: scale(6),
+                                fontWeight: '800',
+                                color: '#FFFFFF',
+                                textShadowColor: 'rgba(88, 74, 126, 0.5)',
+                                textShadowOffset: { width: 0, height: scale(0.5) },
+                                textShadowRadius: scale(1),
+                              }}>DLG</Text>
+                            </LinearGradient>
+                          </View>
+                        </>
                       );
-                    }) : (
-                      <Text style={{
-                        fontSize: scale(10),
-                        color: '#CBD5E0',
-                        fontWeight: '600',
-                      }}>—</Text>
-                    )}
+                    })()}
                   </TouchableOpacity>
                 );
               })}
@@ -150,7 +250,7 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
           </View>
 
           {/* Row 2: EX + doctors area */}
-          <View style={{ flexDirection: 'row', minHeight: scale(35) }}>
+          <View style={{ flexDirection: 'row', minHeight: scale(50) }}>
             {/* EX doctors content */}
             <LinearGradient
               colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
@@ -165,11 +265,21 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                 gap: scale(8),
                 alignItems: 'center',
               }}>
-              <Text style={{
-                fontSize: scale(9),
-                fontWeight: '600',
-                color: '#9CA3AF',
-              }}> </Text>
+              {(() => {
+                const exSlots = slots.filter(s => s.day === day.key && s.period === 0);
+                return exSlots.length > 0 ? exSlots.map(slot => {
+                  const config = STATUS_CONFIG[slot.status];
+                  return (
+                    <Text key={slot.id} style={{
+                      fontSize: scale(9),
+                      fontWeight: '700',
+                      color: config.color,
+                    }}>{slot.doctorName}</Text>
+                  );
+                }) : (
+                  <Text style={{ fontSize: scale(9), fontWeight: '600', color: '#9CA3AF' }}> </Text>
+                );
+              })()}
             </LinearGradient>
 
             {/* EX label - right side, same style as day */}
