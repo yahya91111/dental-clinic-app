@@ -14,6 +14,7 @@ import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings } from '
 interface ScheduleScreenProps {
   onBack: () => void;
   clinicId?: string | null;
+  userId?: string;
 }
 
 type ScheduleTab = 'daily_duty' | 'doctors' | 'vacation' | 'weekend_duty';
@@ -25,7 +26,7 @@ const TABS: { key: ScheduleTab; label: string; icon: string }[] = [
   { key: 'weekend_duty', label: 'Weekend', icon: 'time-outline' },
 ];
 
-export default function ScheduleScreen({ onBack, clinicId }: ScheduleScreenProps) {
+export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScreenProps) {
   // Blob animations (matching DoctorProfileScreen)
   const blob1Anim = useRef(new Animated.Value(0)).current;
   const blob2Anim = useRef(new Animated.Value(0)).current;
@@ -331,6 +332,7 @@ export default function ScheduleScreen({ onBack, clinicId }: ScheduleScreenProps
                 slots={slots}
                 clinicCount={clinicCount}
                 onCellPress={(day, period) => setSelectedCell({ day, period })}
+                userId={userId}
               />
             )}
             {activeTab === 'doctors' && <DoctorsTab clinicId={clinicId || null} />}

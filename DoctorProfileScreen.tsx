@@ -753,6 +753,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       <ScheduleScreen
         onBack={() => setCurrentScreen('profile')}
         clinicId={user?.clinicId}
+        userId={user?.id}
       />
     );
   }

@@ -1,22 +1,39 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Platform } from 'react-native';
 import { scale } from '../../lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } from './types';
 
 interface ScheduleGridProps {
   slots: ScheduleSlot[];
   clinicCount: number;
   onCellPress: (day: DayOfWeek, period: number) => void;
+  userId?: string;
 }
 
-export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridProps) {
+export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: ScheduleGridProps) {
+  const [expandAll, setExpandAll] = useState(false);
+
   const getSlots = (day: DayOfWeek, period: number) =>
     slots.filter(s => s.day === day && s.period === period);
 
+  // Filter slots: show only current user + delegator, unless day is expanded
+  const getVisibleSlots = (day: DayOfWeek, period: number) => {
+    const all = getSlots(day, period);
+    if (!userId || expandAll) return all;
+    return all.filter(s => s.doctorId === userId || s.role === 'delegator');
+  };
+
+  // Check if user has any assignment on this day
+  const userHasSlotOnDay = (dayKey: DayOfWeek) => {
+    return slots.some(s => s.day === dayKey && s.doctorId === userId);
+  };
+
   return (
     <View style={{ gap: scale(16) }}>
-      {DAYS.map(day => (
+      {DAYS.map(day => {
+        return (
         <View key={day.key} style={{
           borderRadius: scale(18),
           overflow: 'hidden',
@@ -40,9 +57,22 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridPr
               style={{ flex: 1, flexDirection: 'row' }}
             >
               {(() => {
+                // Determine which clinics to show
+                const showAllClinics = !userId || expandAll;
+                const visibleClinicNums = showAllClinics
+                  ? Array.from({ length: clinicCount }, (_, i) => i + 1)
+                  : (() => {
+                      const nums = new Set<number>();
+                      for (const p of PERIODS) {
+                        const s = slots.filter(sl => sl.day === day.key && sl.period === p.id && sl.doctorId === userId && sl.role === 'clinic');
+                        s.forEach(sl => nums.add(sl.clinicNumber));
+                      }
+                      return Array.from(nums).sort();
+                    })();
+
                 // Compute max doctors per clinic across all periods for this day
                 const maxDoctorsPerClinic: Record<number, number> = {};
-                for (let c = 1; c <= clinicCount; c++) {
+                for (const c of visibleClinicNums) {
                   let max = 1;
                   for (const p of PERIODS) {
                     const count = slots.filter(s => s.day === day.key && s.period === p.id && s.role === 'clinic' && s.clinicNumber === c).length;
@@ -50,10 +80,10 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridPr
                   }
                   maxDoctorsPerClinic[c] = max;
                 }
-                const lineH = scale(14); // height per doctor line
+                const lineH = scale(14);
 
                 return PERIODS.map((period, periodIndex) => {
-                const cellSlots = getSlots(day.key, period.id);
+                const cellSlots = getVisibleSlots(day.key, period.id);
                 return (
                   <TouchableOpacity
                     key={period.id}
@@ -105,14 +135,14 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridPr
                     {(() => {
                       const clinicSlots = cellSlots.filter(s => s.role === 'clinic' && s.clinicNumber > 0);
                       const delegatorSlots = cellSlots.filter(s => s.role === 'delegator');
-                      const maxClinic = clinicCount;
 
                       return (
                         <>
                           {/* Clinic mini cards */}
-                          {Array.from({ length: maxClinic }, (_, i) => {
-                            const clinicNum = i + 1;
+                          {visibleClinicNums.map(clinicNum => {
                             const matchingSlots = clinicSlots.filter(s => s.clinicNumber === clinicNum);
+                            // In filtered mode: hide card content if user not in this clinic for this period
+                            const userInThisCell = !userId || showAllClinics || matchingSlots.some(s => s.doctorId === userId);
                             return (
                               <View key={`c${clinicNum}`} style={{
                                 flexDirection: 'row',
@@ -121,10 +151,12 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridPr
                                 borderRadius: scale(6),
                                 overflow: 'hidden',
                                 borderWidth: scale(1),
-                                borderColor: 'rgba(255,255,255,0.6)',
-                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                borderColor: userInThisCell ? 'rgba(255,255,255,0.6)' : 'transparent',
+                                backgroundColor: userInThisCell ? 'rgba(255,255,255,0.2)' : 'transparent',
                                 minHeight: scale(6) + (maxDoctorsPerClinic[clinicNum] || 1) * lineH,
                               }}>
+                                {userInThisCell ? (
+                                <>
                                 {/* Name(s) */}
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(4), justifyContent: 'center' }}>
                                   {matchingSlots.length > 0 ? matchingSlots.map(s => (
@@ -160,6 +192,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridPr
                                     textShadowRadius: scale(1),
                                   }}>CL{clinicNum}</Text>
                                 </LinearGradient>
+                                </>) : null}
                               </View>
                             );
                           })}
@@ -226,103 +259,110 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridPr
               })()}
             </LinearGradient>
 
-            {/* Day label - right side */}
-            <LinearGradient
-              colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={{
-                width: scale(45),
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderLeftWidth: scale(1.5),
-                borderLeftColor: 'rgba(255, 255, 255, 0.5)',
-              }}
+            {/* Day label - right side (toggle) */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setExpandAll(prev => !prev)}
+              style={{ alignSelf: 'stretch' }}
             >
-              <Text style={{
-                fontSize: scale(11),
-                fontWeight: '800',
-                color: '#FFFFFF',
-                textShadowColor: 'rgba(88, 74, 126, 0.5)',
-                textShadowOffset: { width: 0, height: scale(1) },
-                textShadowRadius: scale(2),
-              }}>{day.shortLabel}</Text>
-            </LinearGradient>
+              <LinearGradient
+                colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={{
+                  width: scale(45),
+                  flex: 1,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderLeftWidth: scale(1.5),
+                  borderLeftColor: 'rgba(255, 255, 255, 0.5)',
+                }}
+              >
+                <Text style={{
+                  fontSize: scale(11),
+                  fontWeight: '800',
+                  color: '#FFFFFF',
+                  textShadowColor: 'rgba(88, 74, 126, 0.5)',
+                  textShadowOffset: { width: 0, height: scale(1) },
+                  textShadowRadius: scale(2),
+                }}>{day.shortLabel}</Text>
+                {userId && (
+                  <Ionicons
+                    name={expandAll ? 'people' : 'person'}
+                    size={scale(10)}
+                    color="rgba(255,255,255,0.7)"
+                    style={{ marginTop: scale(3) }}
+                  />
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
-          {/* Divider between Day row and EX row */}
-          <View style={{ flexDirection: 'row' }}>
-            <View style={{
-              flex: 1,
-              height: scale(1.5),
-              backgroundColor: 'rgba(255, 255, 255, 0.6)',
-            }} />
-            <View style={{
-              width: scale(45),
-              height: scale(1.5),
-              backgroundColor: 'rgba(255, 255, 255, 0.5)',
-            }} />
-          </View>
-
-          {/* Row 2: EX + doctors area */}
-          <View style={{ flexDirection: 'row', minHeight: scale(50) }}>
-            {/* EX doctors content */}
-            <LinearGradient
-              colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{
-                flex: 1,
-                paddingVertical: scale(8),
-                paddingHorizontal: scale(10),
-                flexDirection: 'row',
-                flexWrap: 'wrap',
-                gap: scale(8),
-                alignItems: 'center',
-              }}>
-              {(() => {
-                const exSlots = slots.filter(s => s.day === day.key && s.period === 0);
-                return exSlots.length > 0 ? exSlots.map(slot => {
-                  const config = STATUS_CONFIG[slot.status];
-                  return (
-                    <Text key={slot.id} style={{
-                      fontSize: scale(9),
-                      fontWeight: '700',
-                      color: config.color,
-                    }}>{slot.doctorName}</Text>
-                  );
-                }) : (
-                  <Text style={{ fontSize: scale(9), fontWeight: '600', color: '#9CA3AF' }}> </Text>
-                );
-              })()}
-            </LinearGradient>
-
-            {/* EX label - right side, same style as day */}
-            <LinearGradient
-              colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={{
-                width: scale(45),
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderLeftWidth: scale(1.5),
-                borderLeftColor: 'rgba(255, 255, 255, 0.5)',
-              }}
-            >
-              <Text style={{
-                fontSize: scale(10),
-                fontWeight: '800',
-                color: '#FFFFFF',
-                textShadowColor: 'rgba(88, 74, 126, 0.5)',
-                textShadowOffset: { width: 0, height: scale(1) },
-                textShadowRadius: scale(2),
-              }}>EX</Text>
-            </LinearGradient>
-          </View>
+          {/* EX section - only when expanded */}
+          {(!userId || expandAll) && (
+            <>
+              <View style={{ flexDirection: 'row' }}>
+                <View style={{ flex: 1, height: scale(1.5), backgroundColor: 'rgba(255, 255, 255, 0.6)' }} />
+                <View style={{ width: scale(45), height: scale(1.5), backgroundColor: 'rgba(255, 255, 255, 0.5)' }} />
+              </View>
+              <View style={{ flexDirection: 'row', minHeight: scale(50) }}>
+                <LinearGradient
+                  colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    flex: 1,
+                    paddingVertical: scale(8),
+                    paddingHorizontal: scale(10),
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    gap: scale(8),
+                    alignItems: 'center',
+                  }}>
+                  {(() => {
+                    const exSlots = slots.filter(s => s.day === day.key && s.period === 0);
+                    return exSlots.length > 0 ? exSlots.map(slot => {
+                      const config = STATUS_CONFIG[slot.status];
+                      return (
+                        <Text key={slot.id} style={{
+                          fontSize: scale(9),
+                          fontWeight: '700',
+                          color: config.color,
+                        }}>{slot.doctorName}</Text>
+                      );
+                    }) : (
+                      <Text style={{ fontSize: scale(9), fontWeight: '600', color: '#9CA3AF' }}> </Text>
+                    );
+                  })()}
+                </LinearGradient>
+                <LinearGradient
+                  colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={{
+                    width: scale(45),
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderLeftWidth: scale(1.5),
+                    borderLeftColor: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                >
+                  <Text style={{
+                    fontSize: scale(10),
+                    fontWeight: '800',
+                    color: '#FFFFFF',
+                    textShadowColor: 'rgba(88, 74, 126, 0.5)',
+                    textShadowOffset: { width: 0, height: scale(1) },
+                    textShadowRadius: scale(2),
+                  }}>EX</Text>
+                </LinearGradient>
+              </View>
+            </>
+          )}
 
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
