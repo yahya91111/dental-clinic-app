@@ -63,6 +63,7 @@ export default function ScheduleScreen({ onBack, clinicId }: ScheduleScreenProps
   const [showClinicInput, setShowClinicInput] = useState(false);
   const [clinicCount, setClinicCount] = useState(2);
   const [clinicInputValue, setClinicInputValue] = useState('');
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Active tab
   const [activeTab, setActiveTab] = useState<ScheduleTab>('daily_duty');
@@ -103,6 +104,7 @@ export default function ScheduleScreen({ onBack, clinicId }: ScheduleScreenProps
     if (data?.clinic_count) {
       setClinicCount(data.clinic_count);
     }
+    setSettingsLoaded(true);
   }, [clinicId]);
 
   // Load weekly schedule from Supabase
@@ -324,7 +326,7 @@ export default function ScheduleScreen({ onBack, clinicId }: ScheduleScreenProps
             onScroll={handleContentScroll}
             scrollEventThrottle={16}
           >
-            {activeTab === 'daily_duty' && (
+            {activeTab === 'daily_duty' && settingsLoaded && (
               <ScheduleGrid
                 slots={slots}
                 clinicCount={clinicCount}
@@ -516,6 +518,11 @@ export default function ScheduleScreen({ onBack, clinicId }: ScheduleScreenProps
         onClose={() => setSelectedCell(null)}
         onSaved={() => {
           loadSchedule();
+        }}
+        onChangePeriod={(p) => {
+          if (selectedCell) {
+            setSelectedCell({ ...selectedCell, period: p });
+          }
         }}
       />
     </View>

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Modal, ScrollView, Alert } from 'react-na
 import { scale } from '../../lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ScheduleSlot, DayOfWeek, DAYS, PERIODS } from './types';
+import { ScheduleSlot, DayOfWeek, DAYS } from './types';
 import { supabase } from '../../lib/supabase';
 import { upsertScheduleSlot, deleteScheduleSlot } from '../../lib/database';
 
@@ -17,6 +17,7 @@ interface CellDetailModalProps {
   weekStart: string;
   onClose: () => void;
   onSaved: () => void;
+  onChangePeriod?: (period: number) => void;
 }
 
 const GROUP_COLORS = [
@@ -44,7 +45,7 @@ interface PickerGroup {
   isExpanded: boolean;
 }
 
-export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, onClose, onSaved }: CellDetailModalProps) {
+export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, onClose, onSaved, onChangePeriod }: CellDetailModalProps) {
   const [selectingFor, setSelectingFor] = useState<{ role: 'clinic' | 'delegator'; clinicNumber: number } | null>(null);
   const [pickerGroups, setPickerGroups] = useState<PickerGroup[]>([]);
   const [unassignedDoctors, setUnassignedDoctors] = useState<DoctorOption[]>([]);
@@ -53,7 +54,6 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   if (!day || period === null || period === undefined) return null;
 
   const dayInfo = DAYS.find(d => d.key === day);
-  const periodInfo = PERIODS.find(p => p.id === period);
   const cellSlots = slots.filter(s => s.day === day && s.period === period);
   const clinicSlots = cellSlots.filter(s => s.role === 'clinic' && s.clinicNumber > 0);
   const delegatorSlot = cellSlots.find(s => s.role === 'delegator');
@@ -111,19 +111,32 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
 
   const handleSelectDoctor = async (doctor: DoctorOption) => {
     if (!selectingFor || !clinicId) return;
+    const currentClinicNum = selectingFor.clinicNumber;
+    const currentRole = selectingFor.role;
+
     await upsertScheduleSlot(
       clinicId,
       weekStart,
       day,
       period,
-      selectingFor.role === 'delegator' ? 0 : selectingFor.clinicNumber,
+      currentRole === 'delegator' ? 0 : currentClinicNum,
       doctor.id,
       doctor.name,
-      selectingFor.role,
+      currentRole,
       'active'
     );
-    setSelectingFor(null);
     onSaved();
+
+    // Auto-advance: clinic → next clinic → next period CL1 → done
+    if (currentRole === 'clinic' && currentClinicNum < clinicCount) {
+      setSelectingFor({ role: 'clinic', clinicNumber: currentClinicNum + 1 });
+    } else if (currentRole === 'clinic' && period && period < 4 && onChangePeriod) {
+      // Last clinic done, move to next period CL1
+      onChangePeriod(period + 1);
+      setSelectingFor({ role: 'clinic', clinicNumber: 1 });
+    } else {
+      setSelectingFor(null);
+    }
   };
 
   const handleRemoveSlot = (slot: ScheduleSlot) => {
@@ -154,95 +167,199 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   const sameDaySlots = slots.filter(s => s.day === day);
 
   const renderDoctorRow = (doctor: DoctorOption) => {
-    const assignedInCell = cellSlots.some(s => s.doctorId === doctor.id);
+    const assignedSlot = cellSlots.find(s => s.doctorId === doctor.id);
+    const assignedInCell = !!assignedSlot;
     const assignedInDay = !assignedInCell && sameDaySlots.some(s => s.doctorId === doctor.id);
     const isUsed = assignedInCell || assignedInDay;
-    const isVacation = doctor.workStatus && doctor.workStatus !== 'active';
     return (
-      <TouchableOpacity
+      <View
         key={doctor.id}
-        onPress={() => handleSelectDoctor(doctor)}
-        activeOpacity={0.7}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingVertical: scale(10),
-          paddingHorizontal: scale(12),
-          borderRadius: scale(8),
-          marginBottom: scale(3),
-          backgroundColor: isUsed ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.5)',
-          opacity: isUsed ? 0.5 : (doctor.workStatus === 'vacation') ? 0.5 : 1,
+          paddingVertical: scale(8),
+          paddingHorizontal: scale(10),
+          borderRadius: scale(6),
+          marginBottom: scale(2),
+          opacity: (assignedInDay && !assignedInCell) ? 0.4 : (doctor.workStatus === 'vacation' && !assignedInCell) ? 0.4 : 1,
         }}
       >
-        {isVacation && (
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: doctor.workStatus === 'vacation' ? 'rgba(107,114,128,0.12)' : 'rgba(245,158,11,0.12)',
-            borderRadius: scale(6),
-            paddingHorizontal: scale(5),
-            paddingVertical: scale(1),
-            marginRight: scale(6),
-          }}>
-            <Ionicons
-              name={doctor.workStatus === 'vacation' ? 'airplane' : 'sunny'}
-              size={scale(9)}
-              color={doctor.workStatus === 'vacation' ? '#6B7280' : '#F59E0B'}
-            />
-          </View>
+        {/* X button for assigned doctors */}
+        {assignedInCell ? (
+          <TouchableOpacity
+            onPress={async () => {
+              await deleteScheduleSlot(assignedSlot.id);
+              onSaved();
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            style={{ marginRight: scale(6) }}
+          >
+            <Ionicons name="close-circle" size={scale(20)} color="#FF4444" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            onPress={() => handleSelectDoctor(doctor)}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+            activeOpacity={0.7}
+          >
+            {doctor.workStatus && doctor.workStatus !== 'active' && (
+              <Ionicons
+                name={doctor.workStatus === 'vacation' ? 'airplane' : 'sunny'}
+                size={scale(10)}
+                color={doctor.workStatus === 'vacation' ? 'rgba(255,255,255,0.5)' : '#F59E0B'}
+                style={{ marginRight: scale(6) }}
+              />
+            )}
+            <Text style={{
+              flex: 1,
+              fontSize: scale(13),
+              fontWeight: '600',
+              color: isUsed ? 'rgba(255,255,255,0.35)' : (doctor.workStatus === 'vacation') ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.9)',
+              textAlign: 'right',
+            }}>{doctor.name}</Text>
+          </TouchableOpacity>
         )}
-        <Text style={{
-          flex: 1,
-          fontSize: scale(13),
-          fontWeight: '600',
-          color: isUsed ? '#9CA3AF' : (doctor.workStatus === 'vacation') ? '#9CA3AF' : '#2D3748',
-          textAlign: 'right',
-        }}>{doctor.name}</Text>
         {assignedInCell && (
-          <Ionicons name="checkmark-circle" size={scale(14)} color="#9CA3AF" style={{ marginLeft: scale(6) }} />
+          <TouchableOpacity
+            onPress={() => handleSelectDoctor(doctor)}
+            style={{ flex: 1 }}
+            activeOpacity={0.7}
+          >
+            <Text style={{
+              fontSize: scale(13),
+              fontWeight: '600',
+              color: 'rgba(255,255,255,0.35)',
+              textAlign: 'right',
+            }}>{doctor.name}</Text>
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
     );
   };
 
   // Doctor picker view
   if (selectingFor) {
-    const label = selectingFor.role === 'delegator' ? 'Delegator' : `Clinic ${selectingFor.clinicNumber}`;
+    const label = selectingFor.role === 'delegator' ? 'Delegator' : `CL${selectingFor.clinicNumber}`;
     const totalDoctors = pickerGroups.reduce((sum, g) => sum + g.doctors.length, 0) + unassignedDoctors.length;
     return (
       <Modal transparent visible={visible} animationType="fade" onRequestClose={() => setSelectingFor(null)}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
           <View style={{
-            width: '85%',
-            maxHeight: '75%',
-            backgroundColor: 'rgba(255,255,255,0.95)',
-            borderRadius: scale(24),
-            padding: scale(20),
-            borderWidth: scale(2),
-            borderColor: 'rgba(255,255,255,0.8)',
-          }}>
+              width: '85%',
+              maxHeight: '75%',
+              backgroundColor: 'rgba(30, 25, 50, 0.55)',
+              borderRadius: scale(20),
+              padding: scale(16),
+              borderWidth: scale(2),
+              borderColor: 'rgba(255,255,255,0.35)',
+              shadowColor: 'rgba(255,255,255,0.4)',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.5,
+              shadowRadius: scale(15),
+              elevation: 10,
+            }}
+          >
             {/* Header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(14) }}>
-              <TouchableOpacity onPress={() => setSelectingFor(null)} style={{ marginRight: scale(10) }}>
-                <Ionicons name="arrow-back" size={scale(22)} color="#6B7280" />
+            <View style={{
+              alignItems: 'center',
+              marginBottom: scale(10),
+              paddingBottom: scale(8),
+              borderBottomWidth: scale(1),
+              borderBottomColor: 'rgba(255,255,255,0.15)',
+            }}>
+              <TouchableOpacity
+                onPress={() => setSelectingFor(null)}
+                style={{ position: 'absolute', left: 0, top: 0, padding: scale(4) }}
+              >
+                <Ionicons name="arrow-back" size={scale(20)} color="rgba(255,255,255,0.6)" />
               </TouchableOpacity>
-              <Text style={{ flex: 1, fontSize: scale(16), fontWeight: '700', color: '#1E3A8A' }}>
-                Select Doctor - {label}
-              </Text>
+
+              {/* Clinic navigation: RTL arrows + label */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8) }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!selectingFor || selectingFor.role !== 'clinic') return;
+                    if (selectingFor.clinicNumber < clinicCount) setSelectingFor({ role: 'clinic', clinicNumber: selectingFor.clinicNumber + 1 });
+                  }}
+                  disabled={!selectingFor || selectingFor.role !== 'clinic' || selectingFor.clinicNumber >= clinicCount}
+                  style={{ padding: scale(2), opacity: selectingFor?.role === 'clinic' && selectingFor.clinicNumber < clinicCount ? 1 : 0.2 }}
+                >
+                  <Ionicons name="chevron-back" size={scale(20)} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+                <Text style={{ fontSize: scale(17), fontWeight: '800', color: '#E8DEFF' }}>
+                  {label}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (!selectingFor || selectingFor.role !== 'clinic') return;
+                    if (selectingFor.clinicNumber > 1) setSelectingFor({ role: 'clinic', clinicNumber: selectingFor.clinicNumber - 1 });
+                  }}
+                  disabled={!selectingFor || selectingFor.role !== 'clinic' || selectingFor.clinicNumber <= 1}
+                  style={{ padding: scale(2), opacity: selectingFor?.role === 'clinic' && selectingFor.clinicNumber > 1 ? 1 : 0.2 }}
+                >
+                  <Ionicons name="chevron-forward" size={scale(20)} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Period navigation: RTL arrows + text + dots */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: scale(6), gap: scale(6) }}>
+                <TouchableOpacity
+                  onPress={() => period && period < 4 && onChangePeriod?.(period + 1)}
+                  disabled={!period || period >= 4}
+                  style={{ padding: scale(2), opacity: period && period < 4 ? 1 : 0.2 }}
+                >
+                  <Ionicons name="chevron-back" size={scale(14)} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+                <Text style={{ fontSize: scale(12), fontWeight: '700', color: 'rgba(200,180,255,0.7)' }}>
+                  Period {period}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => period && period > 1 && onChangePeriod?.(period - 1)}
+                  disabled={!period || period <= 1}
+                  style={{ padding: scale(2), opacity: period && period > 1 ? 1 : 0.2 }}
+                >
+                  <Ionicons name="chevron-forward" size={scale(14)} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              </View>
+              {/* Period dots - RTL (P1 on right) */}
+              <View style={{ flexDirection: 'row', marginTop: scale(4), gap: scale(5) }}>
+                {[4, 3, 2, 1].map(p => (
+                  <TouchableOpacity
+                    key={p}
+                    onPress={() => onChangePeriod?.(p)}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  >
+                    <View style={{
+                      width: p === period ? scale(14) : scale(7),
+                      height: scale(6),
+                      borderRadius: scale(3),
+                      backgroundColor: p === period ? 'rgba(232,222,255,0.8)' : 'rgba(255,255,255,0.2)',
+                    }} />
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
+
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {loadingDoctors ? (
-                <Text style={{ textAlign: 'center', color: '#9CA3AF', paddingVertical: scale(20) }}>Loading...</Text>
+                <Text style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', paddingVertical: scale(20) }}>Loading...</Text>
               ) : totalDoctors === 0 ? (
-                <Text style={{ textAlign: 'center', color: '#9CA3AF', paddingVertical: scale(20) }}>No doctors found</Text>
+                <Text style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', paddingVertical: scale(20) }}>No doctors found</Text>
               ) : (
                 <>
                   {/* Groups */}
                   {pickerGroups.map(group => {
                     const gc = GROUP_COLORS[group.colorIndex % GROUP_COLORS.length];
                     return (
-                      <View key={group.id} style={{ marginBottom: scale(8) }}>
+                      <View key={group.id} style={{
+                        marginBottom: scale(8),
+                        borderRadius: scale(10),
+                        borderWidth: scale(1),
+                        borderColor: 'rgba(255,255,255,0.15)',
+                        backgroundColor: 'rgba(255,255,255,0.06)',
+                        overflow: 'hidden',
+                      }}>
                         {/* Group header */}
                         <TouchableOpacity
                           onPress={() => togglePickerGroup(group.id)}
@@ -250,12 +367,8 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
                           style={{
                             flexDirection: 'row',
                             alignItems: 'center',
-                            paddingVertical: scale(9),
-                            paddingHorizontal: scale(10),
-                            borderRadius: scale(10),
-                            backgroundColor: gc.bg,
-                            borderWidth: scale(1),
-                            borderColor: gc.border,
+                            paddingVertical: scale(10),
+                            paddingHorizontal: scale(12),
                           }}
                         >
                           <View style={{
@@ -265,30 +378,33 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
                             backgroundColor: gc.color,
                             marginRight: scale(8),
                           }} />
-                          <Text style={{ flex: 1, fontSize: scale(13), fontWeight: '700', color: gc.color }}>
+                          <Text style={{ flex: 1, fontSize: scale(13), fontWeight: '700', color: 'rgba(255,255,255,0.85)' }}>
                             {group.name}
                           </Text>
-                          <Text style={{ fontSize: scale(11), fontWeight: '600', color: gc.color, marginRight: scale(6) }}>
+                          <Text style={{ fontSize: scale(11), fontWeight: '600', color: 'rgba(255,255,255,0.4)', marginRight: scale(6) }}>
                             {group.doctors.length}
                           </Text>
                           <Ionicons
                             name={group.isExpanded ? 'chevron-up' : 'chevron-down'}
-                            size={scale(16)}
-                            color={gc.color}
+                            size={scale(14)}
+                            color="rgba(255,255,255,0.4)"
                           />
                         </TouchableOpacity>
 
                         {/* Group doctors */}
                         {group.isExpanded && (
-                          <View style={{ paddingLeft: scale(6), paddingTop: scale(4) }}>
+                          <View style={{
+                            borderTopWidth: scale(1),
+                            borderTopColor: 'rgba(255,255,255,0.1)',
+                            paddingVertical: scale(4),
+                            paddingHorizontal: scale(6),
+                          }}>
                             {group.doctors.map(doc => renderDoctorRow(doc))}
                           </View>
                         )}
                       </View>
                     );
                   })}
-
-                  {/* Unassigned doctors hidden from picker */}
                 </>
               )}
             </ScrollView>
@@ -301,188 +417,186 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   // Main cell detail view
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-        <View style={{
+      <TouchableOpacity activeOpacity={1} onPress={onClose} style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
+        <TouchableOpacity activeOpacity={1} style={{
           width: '85%',
           maxHeight: '75%',
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          borderRadius: scale(24),
-          padding: scale(20),
+          backgroundColor: 'rgba(30, 25, 50, 0.55)',
+          borderRadius: scale(20),
+          padding: scale(16),
           borderWidth: scale(2),
-          borderColor: 'rgba(255,255,255,0.8)',
+          borderColor: 'rgba(255,255,255,0.35)',
+          shadowColor: 'rgba(255,255,255,0.4)',
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.5,
+          shadowRadius: scale(15),
+          elevation: 10,
         }}>
-          {/* Header */}
+          {/* Header - centered */}
           <View style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: scale(16),
-            paddingBottom: scale(12),
-            borderBottomWidth: scale(1.5),
-            borderBottomColor: 'rgba(0,0,0,0.06)',
+            marginBottom: scale(14),
+            paddingBottom: scale(10),
+            borderBottomWidth: scale(1),
+            borderBottomColor: 'rgba(255,255,255,0.15)',
           }}>
-            <View>
-              <Text style={{ fontSize: scale(18), fontWeight: '700', color: '#1E3A8A' }}>
-                {dayInfo?.label} - P{period}
-              </Text>
-              <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#667EEA', marginTop: scale(2) }}>
-                {periodInfo?.start} - {periodInfo?.end}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={{
-              width: scale(36),
-              height: scale(36),
-              borderRadius: scale(18),
-              backgroundColor: 'rgba(0,0,0,0.06)',
-              alignItems: 'center',
-              justifyContent: 'center',
+            <Text style={{
+              fontSize: scale(20),
+              fontWeight: '800',
+              color: '#E8DEFF',
+              letterSpacing: 0.5,
             }}>
-              <Ionicons name="close" size={scale(20)} color="#6B7280" />
-            </TouchableOpacity>
+              {dayInfo?.label}
+            </Text>
+            <Text style={{
+              fontSize: scale(14),
+              fontWeight: '700',
+              color: 'rgba(200, 180, 255, 0.7)',
+              marginTop: scale(2),
+            }}>
+              Period {period}
+            </Text>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Clinic Slots */}
+            {/* Clinic Slots - matching grid card style */}
             {Array.from({ length: clinicCount }, (_, i) => {
               const clinicNum = i + 1;
               const matchingSlots = clinicSlots.filter(s => s.clinicNumber === clinicNum);
               return (
-                <View key={`c${clinicNum}`} style={{
-                  marginBottom: scale(8),
-                  borderRadius: scale(12),
-                  overflow: 'hidden',
-                  borderWidth: scale(1.5),
-                  borderColor: matchingSlots.length > 0 ? 'rgba(59,130,246,0.25)' : 'rgba(0,0,0,0.06)',
-                  backgroundColor: matchingSlots.length > 0 ? 'rgba(59,130,246,0.06)' : 'rgba(0,0,0,0.02)',
-                }}>
-                  {/* Header: CL label + Add button */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <LinearGradient
-                      colors={['rgba(71,118,186,0.45)', 'rgba(120,160,210,0.3)']}
-                      style={{
-                        paddingHorizontal: scale(10),
-                        paddingVertical: scale(10),
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <Text style={{ fontSize: scale(10), fontWeight: '800', color: '#FFFFFF' }}>CL{clinicNum}</Text>
-                    </LinearGradient>
-                    <View style={{ flex: 1 }} />
-                    <TouchableOpacity
-                      onPress={() => openDoctorPicker('clinic', clinicNum)}
-                      style={{ paddingHorizontal: scale(10), paddingVertical: scale(8) }}
-                    >
-                      <Ionicons name="add-circle" size={scale(20)} color="#3B82F6" />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Assigned doctors */}
-                  {matchingSlots.length === 0 ? (
-                    <TouchableOpacity
-                      onPress={() => openDoctorPicker('clinic', clinicNum)}
-                      style={{ paddingHorizontal: scale(12), paddingVertical: scale(8) }}
-                    >
-                      <Text style={{ fontSize: scale(13), color: '#9CA3AF', textAlign: 'right' }}>Tap to assign</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    matchingSlots.map(slot => (
-                      <View key={slot.id} style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: scale(12),
-                        paddingVertical: scale(6),
-                        borderTopWidth: scale(1),
-                        borderTopColor: 'rgba(0,0,0,0.04)',
-                      }}>
-                        <Text style={{
-                          flex: 1,
-                          fontSize: scale(13),
-                          fontWeight: '600',
-                          color: '#2D3748',
-                          textAlign: 'right',
-                        }}>{slot.doctorName}</Text>
+                <TouchableOpacity
+                  key={`c${clinicNum}`}
+                  activeOpacity={0.7}
+                  onPress={() => openDoctorPicker('clinic', clinicNum)}
+                  style={{
+                    flexDirection: 'row',
+                    alignSelf: 'stretch',
+                    marginBottom: scale(6),
+                    borderRadius: scale(8),
+                    overflow: 'hidden',
+                    borderWidth: scale(1),
+                    borderColor: 'rgba(255,255,255,0.6)',
+                    backgroundColor: 'rgba(255,255,255,0.3)',
+                  }}
+                >
+                  {/* Names - left side */}
+                  <View style={{ flex: 1, paddingVertical: scale(6), paddingHorizontal: scale(8), justifyContent: 'center' }}>
+                    {matchingSlots.length > 0 ? matchingSlots.map(slot => (
+                      <View key={slot.id} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: scale(1) }}>
                         <TouchableOpacity
                           onPress={() => handleRemoveSlot(slot)}
-                          style={{ paddingLeft: scale(8) }}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                         >
-                          <Ionicons name="close-circle" size={scale(18)} color="#EF4444" />
+                          <Ionicons name="close-circle" size={scale(14)} color="rgba(239,68,68,0.6)" />
                         </TouchableOpacity>
+                        <Text style={{
+                          flex: 1,
+                          fontSize: scale(12),
+                          fontWeight: '700',
+                          color: '#3B5998',
+                          textAlign: 'right',
+                          marginLeft: scale(4),
+                        }} numberOfLines={1}>{slot.doctorName}</Text>
                       </View>
-                    ))
-                  )}
-                </View>
+                    )) : (
+                      <Text style={{ fontSize: scale(11), fontWeight: '600', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                    )}
+                  </View>
+                  {/* CL label - right side */}
+                  <LinearGradient
+                    colors={['rgba(71,118,186,0.45)', 'rgba(120,160,210,0.3)', 'rgba(120,160,210,0.3)', 'rgba(71,118,186,0.45)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={{
+                      paddingHorizontal: scale(8),
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderLeftWidth: scale(1),
+                      borderLeftColor: 'rgba(255,255,255,0.5)',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: scale(9),
+                      fontWeight: '800',
+                      color: '#FFFFFF',
+                      textShadowColor: 'rgba(50, 80, 140, 0.5)',
+                      textShadowOffset: { width: 0, height: scale(0.5) },
+                      textShadowRadius: scale(1),
+                    }}>CL{clinicNum}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               );
             })}
 
             {/* Divider */}
-            <View style={{ height: scale(1), backgroundColor: 'rgba(0,0,0,0.06)', marginVertical: scale(8) }} />
+            <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(4) }} />
 
-            {/* Delegator Slot */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              marginBottom: scale(8),
-              borderRadius: scale(12),
-              overflow: 'hidden',
-              borderWidth: scale(1.5),
-              borderColor: delegatorSlot ? 'rgba(124,108,180,0.25)' : 'rgba(0,0,0,0.06)',
-              backgroundColor: delegatorSlot ? 'rgba(124,108,180,0.06)' : 'rgba(0,0,0,0.02)',
-            }}>
+            {/* Delegator Slot - matching grid card style */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                if (!delegatorSlot) openDoctorPicker('delegator', 0);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignSelf: 'stretch',
+                marginBottom: scale(6),
+                borderRadius: scale(8),
+                overflow: 'hidden',
+                borderWidth: scale(1),
+                borderColor: 'rgba(255,255,255,0.6)',
+                backgroundColor: 'rgba(255,255,255,0.3)',
+              }}
+            >
+              {/* Name - left side */}
+              <View style={{ flex: 1, paddingVertical: scale(6), paddingHorizontal: scale(8), justifyContent: 'center' }}>
+                {delegatorSlot ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveSlot(delegatorSlot)}
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    >
+                      <Ionicons name="close-circle" size={scale(14)} color="rgba(239,68,68,0.6)" />
+                    </TouchableOpacity>
+                    <Text style={{
+                      flex: 1,
+                      fontSize: scale(12),
+                      fontWeight: '700',
+                      color: '#6B4C9A',
+                      textAlign: 'right',
+                      marginLeft: scale(4),
+                    }} numberOfLines={1}>{delegatorSlot.doctorName}</Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: scale(11), fontWeight: '600', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                )}
+              </View>
+              {/* DLG label - right side */}
               <LinearGradient
-                colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)']}
+                colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
                 style={{
-                  paddingHorizontal: scale(10),
-                  paddingVertical: scale(12),
+                  paddingHorizontal: scale(8),
                   justifyContent: 'center',
                   alignItems: 'center',
+                  borderLeftWidth: scale(1),
+                  borderLeftColor: 'rgba(255,255,255,0.5)',
                 }}
               >
                 <Text style={{
-                  fontSize: scale(10),
+                  fontSize: scale(9),
                   fontWeight: '800',
                   color: '#FFFFFF',
+                  textShadowColor: 'rgba(88, 74, 126, 0.5)',
+                  textShadowOffset: { width: 0, height: scale(0.5) },
+                  textShadowRadius: scale(1),
                 }}>DLG</Text>
               </LinearGradient>
-
-              <TouchableOpacity
-                style={{ flex: 1, paddingHorizontal: scale(10), paddingVertical: scale(12) }}
-                onPress={() => {
-                  if (delegatorSlot) return;
-                  openDoctorPicker('delegator', 0);
-                }}
-                onLongPress={() => { if (delegatorSlot) handleRemoveSlot(delegatorSlot); }}
-                activeOpacity={0.7}
-              >
-                <Text style={{
-                  fontSize: scale(14),
-                  fontWeight: '600',
-                  color: delegatorSlot ? '#6B4C9A' : '#9CA3AF',
-                  textAlign: 'right',
-                }}>
-                  {delegatorSlot ? delegatorSlot.doctorName : 'Tap to assign'}
-                </Text>
-              </TouchableOpacity>
-
-              {delegatorSlot ? (
-                <TouchableOpacity
-                  onPress={() => handleRemoveSlot(delegatorSlot)}
-                  style={{ paddingHorizontal: scale(10) }}
-                >
-                  <Ionicons name="close-circle" size={scale(20)} color="#EF4444" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  onPress={() => openDoctorPicker('delegator', 0)}
-                  style={{ paddingHorizontal: scale(10) }}
-                >
-                  <Ionicons name="add-circle" size={scale(20)} color="#7C3AED" />
-                </TouchableOpacity>
-              )}
-            </View>
+            </TouchableOpacity>
           </ScrollView>
-        </View>
-      </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 }
