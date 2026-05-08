@@ -1303,3 +1303,348 @@ export async function deleteGeneralNote(
     return { data: null, error: error as Error };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Schedule - Doctor Groups
+// ═══════════════════════════════════════════════════════════════
+
+export async function getDoctorGroups(clinicId: string): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('doctor_groups')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .order('sort_order');
+
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error fetching doctor groups:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function createDoctorGroup(
+  clinicId: string,
+  name: string,
+  colorIndex: number,
+  sortOrder: number
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('doctor_groups')
+      .insert({ clinic_id: clinicId, name, color_index: colorIndex, sort_order: sortOrder })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error creating doctor group:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function updateDoctorGroup(
+  groupId: string,
+  name: string,
+  colorIndex: number
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('doctor_groups')
+      .update({ name, color_index: colorIndex, updated_at: new Date().toISOString() })
+      .eq('id', groupId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error updating doctor group:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function deleteDoctorGroup(groupId: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('doctor_groups')
+      .delete()
+      .eq('id', groupId);
+
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error deleting doctor group:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Schedule - Doctor Group Members
+// ═══════════════════════════════════════════════════════════════
+
+export async function getGroupMembers(groupId: string): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('doctor_group_members')
+      .select('*')
+      .eq('group_id', groupId)
+      .order('doctor_name');
+
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error fetching group members:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function getAllGroupMembers(clinicId: string): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('doctor_group_members')
+      .select('*, doctor_groups!inner(clinic_id)')
+      .eq('doctor_groups.clinic_id', clinicId);
+
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error fetching all group members:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function addDoctorToGroup(
+  groupId: string,
+  doctorId: string,
+  doctorName: string,
+  workStatus: string = 'active'
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('doctor_group_members')
+      .insert({ group_id: groupId, doctor_id: doctorId, doctor_name: doctorName, work_status: workStatus })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error adding doctor to group:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function removeDoctorFromGroup(
+  groupId: string,
+  doctorId: string
+): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('doctor_group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('doctor_id', doctorId);
+
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error removing doctor from group:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function moveDoctorBetweenGroups(
+  doctorId: string,
+  fromGroupId: string | null,
+  toGroupId: string | null,
+  doctorName: string
+): Promise<DatabaseResponse<null>> {
+  try {
+    // Remove from old group
+    if (fromGroupId) {
+      await supabase
+        .from('doctor_group_members')
+        .delete()
+        .eq('group_id', fromGroupId)
+        .eq('doctor_id', doctorId);
+    }
+    // Add to new group
+    if (toGroupId) {
+      await supabase
+        .from('doctor_group_members')
+        .insert({ group_id: toGroupId, doctor_id: doctorId, doctor_name: doctorName });
+    }
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error moving doctor between groups:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function updateDoctorWorkStatus(
+  groupId: string,
+  doctorId: string,
+  workStatus: string
+): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('doctor_group_members')
+      .update({ work_status: workStatus, updated_at: new Date().toISOString() })
+      .eq('group_id', groupId)
+      .eq('doctor_id', doctorId);
+
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error updating doctor work status:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Schedule - Weekly Slots
+// ═══════════════════════════════════════════════════════════════
+
+export async function getWeeklySchedule(
+  clinicId: string,
+  weekStart: string
+): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_slots')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .eq('week_start', weekStart)
+      .order('day_of_week')
+      .order('period')
+      .order('clinic_number');
+
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error fetching weekly schedule:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function upsertScheduleSlot(
+  clinicId: string,
+  weekStart: string,
+  dayOfWeek: string,
+  period: number,
+  clinicNumber: number,
+  doctorId: string,
+  doctorName: string,
+  role: string,
+  status: string = 'active'
+): Promise<DatabaseResponse<any>> {
+  try {
+    // For delegator: replace existing (only one delegator per period)
+    if (role === 'delegator') {
+      const { data: existing } = await supabase
+        .from('schedule_slots')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('week_start', weekStart)
+        .eq('day_of_week', dayOfWeek)
+        .eq('period', period)
+        .eq('role', 'delegator')
+        .maybeSingle();
+
+      if (existing) {
+        const { data, error } = await supabase
+          .from('schedule_slots')
+          .update({ doctor_id: doctorId, doctor_name: doctorName, status, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return { data, error: null };
+      }
+    }
+
+    // For clinic: allow multiple doctors per clinic number (just insert)
+    {
+      const { data, error } = await supabase
+        .from('schedule_slots')
+        .insert({
+          clinic_id: clinicId,
+          week_start: weekStart,
+          day_of_week: dayOfWeek,
+          period,
+          clinic_number: clinicNumber,
+          doctor_id: doctorId,
+          doctor_name: doctorName,
+          role,
+          status,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return { data, error: null };
+    }
+  } catch (error) {
+    console.error('Error upserting schedule slot:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function deleteScheduleSlot(slotId: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('schedule_slots')
+      .delete()
+      .eq('id', slotId);
+
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error deleting schedule slot:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Schedule - Settings
+// ═══════════════════════════════════════════════════════════════
+
+export async function getScheduleSettings(clinicId: string): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_settings')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return { data: data || { clinic_count: 2 }, error: null };
+  } catch (error) {
+    console.error('Error fetching schedule settings:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function updateScheduleSettings(
+  clinicId: string,
+  clinicCount: number
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_settings')
+      .upsert(
+        { clinic_id: clinicId, clinic_count: clinicCount, updated_at: new Date().toISOString() },
+        { onConflict: 'clinic_id' }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error updating schedule settings:', error);
+    return { data: null, error: error as Error };
+  }
+}

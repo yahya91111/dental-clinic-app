@@ -6,10 +6,11 @@ import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } fr
 
 interface ScheduleGridProps {
   slots: ScheduleSlot[];
+  clinicCount: number;
   onCellPress: (day: DayOfWeek, period: number) => void;
 }
 
-export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
+export function ScheduleGrid({ slots, clinicCount, onCellPress }: ScheduleGridProps) {
   const getSlots = (day: DayOfWeek, period: number) =>
     slots.filter(s => s.day === day && s.period === period);
 
@@ -38,7 +39,20 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
               end={{ x: 1, y: 1 }}
               style={{ flex: 1, flexDirection: 'row' }}
             >
-              {PERIODS.map((period, periodIndex) => {
+              {(() => {
+                // Compute max doctors per clinic across all periods for this day
+                const maxDoctorsPerClinic: Record<number, number> = {};
+                for (let c = 1; c <= clinicCount; c++) {
+                  let max = 1;
+                  for (const p of PERIODS) {
+                    const count = slots.filter(s => s.day === day.key && s.period === p.id && s.role === 'clinic' && s.clinicNumber === c).length;
+                    if (count > max) max = count;
+                  }
+                  maxDoctorsPerClinic[c] = max;
+                }
+                const lineH = scale(14); // height per doctor line
+
+                return PERIODS.map((period, periodIndex) => {
                 const cellSlots = getSlots(day.key, period.id);
                 return (
                   <TouchableOpacity
@@ -50,7 +64,7 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                       paddingVertical: scale(10),
                       paddingHorizontal: scale(4),
                       minHeight: scale(90),
-                      alignItems: 'center',
+                      alignItems: 'stretch',
                       justifyContent: 'flex-start',
                       borderRightWidth: periodIndex < PERIODS.length - 1 ? scale(1.5) : 0,
                       borderRightColor: 'rgba(255, 255, 255, 0.6)',
@@ -91,18 +105,14 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                     {(() => {
                       const clinicSlots = cellSlots.filter(s => s.role === 'clinic' && s.clinicNumber > 0);
                       const delegatorSlots = cellSlots.filter(s => s.role === 'delegator');
-                      const maxClinic = Math.max(2, ...clinicSlots.map(s => s.clinicNumber));
+                      const maxClinic = clinicCount;
 
                       return (
                         <>
                           {/* Clinic mini cards */}
                           {Array.from({ length: maxClinic }, (_, i) => {
                             const clinicNum = i + 1;
-                            const slot = clinicSlots.find(s => s.clinicNumber === clinicNum);
-                            const isSpecial = slot && slot.status !== 'active';
-                            const nameColor = slot
-                              ? (isSpecial ? STATUS_CONFIG[slot.status].color : '#2D3748')
-                              : '#CBD5E0';
+                            const matchingSlots = clinicSlots.filter(s => s.clinicNumber === clinicNum);
                             return (
                               <View key={`c${clinicNum}`} style={{
                                 flexDirection: 'row',
@@ -113,17 +123,21 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                                 borderWidth: scale(1),
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
+                                minHeight: scale(6) + (maxDoctorsPerClinic[clinicNum] || 1) * lineH,
                               }}>
-                                {/* Name */}
-                                <Text style={{
-                                  flex: 1,
-                                  fontSize: scale(8),
-                                  fontWeight: '700',
-                                  color: slot ? '#3B5998' : '#CBD5E0',
-                                  paddingVertical: scale(3),
-                                  paddingHorizontal: scale(4),
-                                  textAlign: 'right',
-                                }} numberOfLines={1}>{slot ? slot.doctorName : '—'}</Text>
+                                {/* Name(s) */}
+                                <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(4), justifyContent: 'center' }}>
+                                  {matchingSlots.length > 0 ? matchingSlots.map(s => (
+                                    <Text key={s.id} style={{
+                                      fontSize: scale(8),
+                                      fontWeight: '700',
+                                      color: '#3B5998',
+                                      textAlign: 'right',
+                                    }} numberOfLines={1}>{s.doctorName}</Text>
+                                  )) : (
+                                    <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                                  )}
+                                </View>
                                 {/* Clinic number - right side */}
                                 <LinearGradient
                                   colors={['rgba(71,118,186,0.45)', 'rgba(120,160,210,0.3)', 'rgba(120,160,210,0.3)', 'rgba(71,118,186,0.45)']}
@@ -208,7 +222,8 @@ export function ScheduleGrid({ slots, onCellPress }: ScheduleGridProps) {
                     })()}
                   </TouchableOpacity>
                 );
-              })}
+              });
+              })()}
             </LinearGradient>
 
             {/* Day label - right side */}

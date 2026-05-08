@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { scale } from '../../lib/scale';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -121,39 +122,52 @@ export function WeekStrip({ selectedWeekStart, onSelectWeek }: WeekStripProps) {
                 <TouchableOpacity
                   key={weekIndex}
                   onPress={() => onSelectWeek(week)}
+                  activeOpacity={0.7}
                   style={{
                     flex: 1,
-                    paddingVertical: scale(8),
                     borderRadius: scale(12),
-                    backgroundColor: isSelected
-                      ? '#667EEA'
-                      : isCurrent
-                        ? 'rgba(102,126,234,0.12)'
-                        : 'rgba(255,255,255,0.4)',
-                    borderWidth: scale(1.5),
+                    overflow: 'hidden',
+                    borderWidth: isSelected ? scale(2) : scale(1.5),
                     borderColor: isSelected
-                      ? '#667EEA'
+                      ? 'rgba(50, 80, 140, 0.5)'
                       : isCurrent
-                        ? 'rgba(102,126,234,0.3)'
-                        : 'rgba(255,255,255,0.6)',
-                    alignItems: 'center',
+                        ? 'rgba(71,118,186,0.3)'
+                        : 'rgba(255,255,255,0.5)',
                   }}
                 >
-                  <Text style={{
-                    fontSize: scale(13),
-                    fontWeight: '700',
-                    color: isSelected ? '#FFFFFF' : '#4A5568',
-                  }}>
-                    {week.getDate()}
-                  </Text>
-                  <Text style={{
-                    fontSize: scale(9),
-                    fontWeight: '600',
-                    color: isSelected ? 'rgba(255,255,255,0.8)' : '#718096',
-                    marginTop: scale(1),
-                  }}>
-                    {MONTHS[week.getMonth()]}
-                  </Text>
+                  <LinearGradient
+                    colors={isSelected
+                      ? ['rgba(50,80,150,0.6)', 'rgba(90,130,200,0.4)', 'rgba(90,130,200,0.4)', 'rgba(50,80,150,0.6)']
+                      : isCurrent
+                        ? ['rgba(71,118,186,0.2)', 'rgba(120,160,210,0.12)', 'rgba(120,160,210,0.12)', 'rgba(71,118,186,0.2)']
+                        : ['rgba(71,118,186,0.1)', 'rgba(120,160,210,0.06)', 'rgba(120,160,210,0.06)', 'rgba(71,118,186,0.1)']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={{
+                      paddingVertical: scale(8),
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: scale(13),
+                      fontWeight: '700',
+                      color: isSelected ? '#FFFFFF' : '#3B5998',
+                      textShadowColor: isSelected ? 'rgba(30,50,100,0.5)' : 'transparent',
+                      textShadowOffset: { width: 0, height: scale(0.5) },
+                      textShadowRadius: scale(1),
+                    }}>
+                      {week.getDate()}
+                    </Text>
+                    <Text style={{
+                      fontSize: scale(9),
+                      fontWeight: '600',
+                      color: isSelected ? 'rgba(255,255,255,0.85)' : '#718096',
+                      marginTop: scale(1),
+                    }}>
+                      {MONTHS[week.getMonth()]}
+                    </Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               );
             })}
