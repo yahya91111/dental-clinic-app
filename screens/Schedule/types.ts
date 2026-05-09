@@ -2,7 +2,7 @@
 export type DayOfWeek = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
 
 export type DoctorRole = 'clinic' | 'delegator';
-export type DoctorStatus = 'active' | 'sick_leave' | 'permission' | 'vacation';
+export type DoctorStatus = 'active' | 'sick_leave' | 'permission_start' | 'permission_end' | 'vacation' | 'extra';
 
 export interface ScheduleSlot {
   id: string;
@@ -40,11 +40,13 @@ export const PERIODS: { id: number; label: string; icon: string; start: string; 
   { id: 1, label: 'Period 1', icon: '☀️', start: '7:00', end: '10:30' },
 ];
 
-export const STATUS_CONFIG: Record<DoctorStatus, { label: string; color: string; bgColor: string; borderColor: string; icon: string }> = {
-  active: { label: 'Active', color: '#2563EB', bgColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', icon: '🏥' },
-  sick_leave: { label: 'Sick Leave', color: '#DC2626', bgColor: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', icon: '🔴' },
-  permission: { label: 'Permission', color: '#D97706', bgColor: 'rgba(245,158,11,0.15)', borderColor: 'rgba(245,158,11,0.3)', icon: '🟡' },
-  vacation: { label: 'Vacation', color: '#6B7280', bgColor: 'rgba(107,114,128,0.15)', borderColor: 'rgba(107,114,128,0.3)', icon: '⚪' },
+export const STATUS_CONFIG: Record<DoctorStatus, { label: string; shortLabel: string; color: string; bgColor: string; borderColor: string; icon: string }> = {
+  active: { label: 'Active', shortLabel: '', color: '#2563EB', bgColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)', icon: '🏥' },
+  sick_leave: { label: 'Sick Leave', shortLabel: 'SL', color: '#DC2626', bgColor: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', icon: '🔴' },
+  permission_start: { label: 'Permission (Start)', shortLabel: 'PS', color: '#16A34A', bgColor: 'rgba(22,163,74,0.15)', borderColor: 'rgba(22,163,74,0.3)', icon: '🟢' },
+  permission_end: { label: 'Permission (End)', shortLabel: 'PE', color: '#16A34A', bgColor: 'rgba(22,163,74,0.15)', borderColor: 'rgba(22,163,74,0.3)', icon: '🟢' },
+  vacation: { label: 'Vacation', shortLabel: 'VC', color: '#EAB308', bgColor: 'rgba(234,179,8,0.15)', borderColor: 'rgba(234,179,8,0.3)', icon: '🟡' },
+  extra: { label: 'Extra', shortLabel: 'EX', color: '#7C3AED', bgColor: 'rgba(124,58,237,0.15)', borderColor: 'rgba(124,58,237,0.3)', icon: '🟣' },
 };
 
 export const ROLE_CONFIG: Record<DoctorRole, { label: string; color: string; bgColor: string; borderColor: string }> = {

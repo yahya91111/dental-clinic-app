@@ -305,36 +305,96 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                 <View style={{ flex: 1, height: scale(1.5), backgroundColor: 'rgba(255, 255, 255, 0.6)' }} />
                 <View style={{ width: scale(45), height: scale(1.5), backgroundColor: 'rgba(255, 255, 255, 0.5)' }} />
               </View>
-              <View style={{ flexDirection: 'row', minHeight: scale(50) }}>
+              <View style={{ flexDirection: 'row', minHeight: scale(40) }}>
+                {/* EX content - split into two tappable halves */}
                 <LinearGradient
                   colors={['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={{
-                    flex: 1,
-                    paddingVertical: scale(8),
-                    paddingHorizontal: scale(10),
-                    flexDirection: 'row',
-                    flexWrap: 'wrap',
-                    gap: scale(8),
-                    alignItems: 'center',
-                  }}>
+                  style={{ flex: 1, flexDirection: 'row' }}
+                >
                   {(() => {
                     const exSlots = slots.filter(s => s.day === day.key && s.period === 0);
-                    return exSlots.length > 0 ? exSlots.map(slot => {
+                    // clinicNumber 1 = right side, clinicNumber 2 = left side
+                    const rightSlots = exSlots.filter(s => s.clinicNumber === 1 || s.clinicNumber === 0);
+                    const leftSlots = exSlots.filter(s => s.clinicNumber === 2);
+
+                    const renderExCard = (slot: ScheduleSlot) => {
                       const config = STATUS_CONFIG[slot.status];
                       return (
-                        <Text key={slot.id} style={{
-                          fontSize: scale(9),
-                          fontWeight: '700',
-                          color: config.color,
-                        }}>{slot.doctorName}</Text>
+                        <View key={slot.id} style={{
+                          flexDirection: 'row',
+                          alignSelf: 'stretch',
+                          marginBottom: scale(3),
+                          borderRadius: scale(6),
+                          overflow: 'hidden',
+                          borderWidth: scale(1),
+                          borderColor: 'rgba(255,255,255,0.6)',
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                        }}>
+                          <Text style={{
+                            flex: 1,
+                            fontSize: scale(8),
+                            fontWeight: '700',
+                            color: config.color,
+                            paddingVertical: scale(3),
+                            paddingHorizontal: scale(4),
+                            textAlign: 'right',
+                          }} numberOfLines={1}>{slot.doctorName}</Text>
+                          <LinearGradient
+                            colors={[config.color + '90', config.color + '50', config.color + '50', config.color + '90']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={{
+                              paddingHorizontal: scale(4),
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              borderLeftWidth: scale(1),
+                              borderLeftColor: 'rgba(255,255,255,0.5)',
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: scale(6),
+                              fontWeight: '800',
+                              color: '#FFFFFF',
+                              textShadowColor: config.color + '80',
+                              textShadowOffset: { width: 0, height: scale(0.5) },
+                              textShadowRadius: scale(1),
+                            }}>{config.shortLabel}</Text>
+                          </LinearGradient>
+                        </View>
                       );
-                    }) : (
-                      <Text style={{ fontSize: scale(9), fontWeight: '600', color: '#9CA3AF' }}> </Text>
+                    };
+
+                    return (
+                      <>
+                        {/* Left half (P4-P3 side) - clinicNumber 2 */}
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => onCellPress(day.key, -2)}
+                          style={{ flex: 1, padding: scale(4), justifyContent: 'center' }}
+                        >
+                          {leftSlots.length > 0 ? leftSlots.map(renderExCard) : (
+                            <Text style={{ fontSize: scale(8), color: '#CBD5E0', textAlign: 'center' }}> </Text>
+                          )}
+                        </TouchableOpacity>
+                        {/* Center divider */}
+                        <View style={{ width: scale(1.5), backgroundColor: 'rgba(255,255,255,0.5)' }} />
+                        {/* Right half (P2-P1 side) - clinicNumber 1 */}
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => onCellPress(day.key, -1)}
+                          style={{ flex: 1, padding: scale(4), justifyContent: 'center' }}
+                        >
+                          {rightSlots.length > 0 ? rightSlots.map(renderExCard) : (
+                            <Text style={{ fontSize: scale(8), color: '#CBD5E0', textAlign: 'center' }}> </Text>
+                          )}
+                        </TouchableOpacity>
+                      </>
                     );
                   })()}
                 </LinearGradient>
+                {/* EX label */}
                 <LinearGradient
                   colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
                   start={{ x: 0, y: 0 }}
