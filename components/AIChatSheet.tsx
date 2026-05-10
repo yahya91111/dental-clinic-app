@@ -6,7 +6,7 @@ import {
 import { scale } from '../lib/scale';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getPromptTemplates, createPromptTemplate, deletePromptTemplate } from '../lib/database';
+import { getPromptTemplates, createPromptTemplate, updatePromptTemplate, deletePromptTemplate } from '../lib/database';
 
 export interface ChatMessage {
   id: string;
@@ -43,6 +43,7 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplatePrompt, setNewTemplatePrompt] = useState('');
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
 
   // Load templates
   useEffect(() => {
@@ -59,7 +60,12 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
 
   const handleCreateTemplate = async () => {
     if (!newTemplateName.trim() || !newTemplatePrompt.trim() || !clinicId) return;
-    await createPromptTemplate(clinicId, newTemplateName.trim(), newTemplatePrompt.trim());
+    if (editingTemplateId) {
+      await updatePromptTemplate(editingTemplateId, newTemplateName.trim(), newTemplatePrompt.trim());
+      setEditingTemplateId(null);
+    } else {
+      await createPromptTemplate(clinicId, newTemplateName.trim(), newTemplatePrompt.trim());
+    }
     setNewTemplateName('');
     setNewTemplatePrompt('');
     setShowNewTemplate(false);
@@ -80,13 +86,23 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
   const handleSelectTemplate = (t: PromptTemplate) => {
     setActiveTemplate(t);
     setShowTemplates(false);
-    // Send template prompt as first message
-    onSend(`[Rules]: ${t.prompt}`);
+    // Put template in input field for review/edit before sending
+    setInput(`[Rules]: ${t.prompt}`);
+  };
+
+  const handleEditTemplate = (t: PromptTemplate) => {
+    setShowTemplates(false);
+    setNewTemplateName(t.name);
+    setNewTemplatePrompt(t.prompt);
+    setEditingTemplateId(t.id);
+    setShowNewTemplate(true);
   };
 
   useEffect(() => {
     if (visible) {
       Animated.spring(slideAnim, { toValue: 1, useNativeDriver: true, tension: 65, friction: 12 }).start();
+      // Scroll to bottom when opening
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 200);
     } else {
       slideAnim.setValue(0);
     }
@@ -96,6 +112,14 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
     // Scroll to bottom on new messages
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages.length]);
+
+  // Scroll to bottom when keyboard opens
+  useEffect(() => {
+    const keyboardShow = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    });
+    return () => keyboardShow.remove();
+  }, []);
 
   const handleSend = () => {
     const text = input.trim();
@@ -113,20 +137,23 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
   return (
     <>
     <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' }}>
         {/* Tap backdrop to close */}
         <TouchableOpacity activeOpacity={1} onPress={onClose} style={{ height: '15%' }} />
 
-        <Animated.View style={{
+        <View style={{
           flex: 1,
-          backgroundColor: 'rgba(20, 16, 40, 0.92)',
+          backgroundColor: 'rgba(20, 16, 40, 0.95)',
           borderTopLeftRadius: scale(24),
           borderTopRightRadius: scale(24),
           borderTopWidth: scale(2),
           borderLeftWidth: scale(1),
           borderRightWidth: scale(1),
           borderColor: 'rgba(139,92,246,0.3)',
-          transform: [{ translateY }],
           overflow: 'hidden',
         }}>
           <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
@@ -340,10 +367,6 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
             </ScrollView>
 
             {/* Input */}
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={scale(10)}
-            >
               <View style={{
                 flexDirection: 'row',
                 alignItems: 'flex-end',
@@ -392,7 +415,6 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
                   />
                 </TouchableOpacity>
               </View>
-            </KeyboardAvoidingView>
           </SafeAreaView>
 
           {/* Template Selector Overlay */}
@@ -433,6 +455,9 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
                         {t.prompt}
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleEditTemplate(t)} style={{ padding: scale(6) }}>
+                      <Ionicons name="pencil-outline" size={scale(16)} color="rgba(200,180,255,0.5)" />
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => handleDeleteTemplate(t)} style={{ padding: scale(6) }}>
                       <Ionicons name="trash-outline" size={scale(16)} color="rgba(239,68,68,0.6)" />
                     </TouchableOpacity>
@@ -444,7 +469,7 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
 
           {/* Add new template button */}
           <TouchableOpacity
-            onPress={() => { setShowTemplates(false); setShowNewTemplate(true); }}
+            onPress={() => { setShowTemplates(false); setEditingTemplateId(null); setNewTemplateName(''); setNewTemplatePrompt(''); setShowNewTemplate(true); }}
             style={{
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               paddingVertical: scale(10), marginTop: scale(8),
@@ -476,7 +501,7 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
           borderColor: 'rgba(139,92,246,0.3)',
         }}>
           <Text style={{ fontSize: scale(16), fontWeight: '800', color: '#E8DEFF', textAlign: 'center', marginBottom: scale(14) }}>
-            New Template
+            {editingTemplateId ? 'Edit Template' : 'New Template'}
           </Text>
 
           {/* Name */}
@@ -515,7 +540,7 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
 
           <View style={{ flexDirection: 'row', gap: scale(10) }}>
             <TouchableOpacity
-              onPress={() => { setShowNewTemplate(false); setNewTemplateName(''); setNewTemplatePrompt(''); }}
+              onPress={() => { setShowNewTemplate(false); setNewTemplateName(''); setNewTemplatePrompt(''); setEditingTemplateId(null); }}
               style={{
                 flex: 1, paddingVertical: scale(11), borderRadius: scale(10),
                 backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center',
@@ -530,15 +555,16 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
                 backgroundColor: 'rgba(139,92,246,0.5)', alignItems: 'center',
               }}
             >
-              <Text style={{ fontSize: scale(13), fontWeight: '700', color: '#FFFFFF' }}>Save</Text>
+              <Text style={{ fontSize: scale(13), fontWeight: '700', color: '#FFFFFF' }}>{editingTemplateId ? 'Update' : 'Save'}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
           )}
 
-        </Animated.View>
+        </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
     </>
   );
