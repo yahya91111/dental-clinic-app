@@ -1,0 +1,571 @@
+// ═══════════════════════════════════════════════════════════════
+// AI Service Layer - Claude API Integration with Tool Use
+// ═══════════════════════════════════════════════════════════════
+
+import { supabase } from './supabase';
+
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
+
+export interface AIMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AIResponse {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+// Tools the AI can use
+const AI_TOOLS = [
+  // ═══ DAILY DUTY TOOLS ═══
+  {
+    name: 'assign_doctor',
+    description: 'Assign a doctor to a clinic for a specific day and period',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctor_name: { type: 'string' },
+        doctor_id: { type: 'string', description: 'UUID of the doctor' },
+        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+        period: { type: 'number', description: '1-4' },
+        clinic_number: { type: 'number', description: '1-10' },
+        role: { type: 'string', enum: ['clinic', 'delegator'] },
+      },
+      required: ['doctor_name', 'doctor_id', 'day', 'period', 'clinic_number', 'role'],
+    },
+  },
+  {
+    name: 'remove_doctor',
+    description: 'Remove a doctor from a specific slot',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctor_id: { type: 'string' },
+        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+        period: { type: 'number', description: '1-4 or 0 for EX' },
+      },
+      required: ['doctor_id', 'day', 'period'],
+    },
+  },
+  {
+    name: 'set_doctor_ex',
+    description: 'Set a doctor in EX section with a status. Auto-removes from clinics for SL/vacation/extra.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctor_name: { type: 'string' },
+        doctor_id: { type: 'string' },
+        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+        status: { type: 'string', enum: ['sick_leave', 'permission_start', 'permission_end', 'vacation', 'extra'] },
+        side: { type: 'number', enum: [1, 2], description: '1=right, 2=left' },
+      },
+      required: ['doctor_name', 'doctor_id', 'day', 'status', 'side'],
+    },
+  },
+  {
+    name: 'clear_day',
+    description: 'Clear all schedule slots for a day',
+    input_schema: {
+      type: 'object',
+      properties: {
+        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+      },
+      required: ['day'],
+    },
+  },
+  {
+    name: 'clear_week',
+    description: 'Clear all schedule slots for the entire week',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'swap_doctors',
+    description: 'Swap two doctors between their slots on the same day',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctor_a_id: { type: 'string' },
+        doctor_b_id: { type: 'string' },
+        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+      },
+      required: ['doctor_a_id', 'doctor_b_id', 'day'],
+    },
+  },
+  {
+    name: 'copy_day',
+    description: 'Copy schedule from one day to another',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from_day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+        to_day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
+      },
+      required: ['from_day', 'to_day'],
+    },
+  },
+  {
+    name: 'set_clinic_count',
+    description: 'Change the number of clinics',
+    input_schema: {
+      type: 'object',
+      properties: {
+        count: { type: 'number', description: '1-10' },
+      },
+      required: ['count'],
+    },
+  },
+  // ═══ DOCTOR GROUPS TOOLS ═══
+  {
+    name: 'create_group',
+    description: 'Create a new doctor group',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Group name' },
+        color_index: { type: 'number', description: '0=Blue, 1=Purple, 2=Green, 3=Orange, 4=Red, 5=Teal, 6=Pink, 7=Indigo' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'delete_group',
+    description: 'Delete a doctor group. Doctors become unassigned.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        group_id: { type: 'string', description: 'UUID of the group' },
+      },
+      required: ['group_id'],
+    },
+  },
+  {
+    name: 'rename_group',
+    description: 'Rename a doctor group',
+    input_schema: {
+      type: 'object',
+      properties: {
+        group_id: { type: 'string' },
+        new_name: { type: 'string' },
+      },
+      required: ['group_id', 'new_name'],
+    },
+  },
+  {
+    name: 'add_doctor_to_group',
+    description: 'Add a doctor to a group',
+    input_schema: {
+      type: 'object',
+      properties: {
+        group_id: { type: 'string' },
+        doctor_id: { type: 'string' },
+        doctor_name: { type: 'string' },
+      },
+      required: ['group_id', 'doctor_id', 'doctor_name'],
+    },
+  },
+  {
+    name: 'remove_doctor_from_group',
+    description: 'Remove a doctor from a group (becomes unassigned)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        group_id: { type: 'string' },
+        doctor_id: { type: 'string' },
+      },
+      required: ['group_id', 'doctor_id'],
+    },
+  },
+  {
+    name: 'move_doctor_between_groups',
+    description: 'Move a doctor from one group to another',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctor_id: { type: 'string' },
+        doctor_name: { type: 'string' },
+        from_group_id: { type: 'string', description: 'Source group UUID (empty string if unassigned)' },
+        to_group_id: { type: 'string', description: 'Target group UUID' },
+      },
+      required: ['doctor_id', 'doctor_name', 'from_group_id', 'to_group_id'],
+    },
+  },
+  {
+    name: 'set_doctor_work_status',
+    description: 'Change a doctor work status in their group (active, vacation, light_duty)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        group_id: { type: 'string' },
+        doctor_id: { type: 'string' },
+        work_status: { type: 'string', enum: ['active', 'vacation', 'light_duty'] },
+      },
+      required: ['group_id', 'doctor_id', 'work_status'],
+    },
+  },
+];
+
+const SYSTEM_PROMPT = `You are D.C.M Assistant, an AI helper for a dental clinic management app.
+
+You can EXECUTE actions directly. When the user asks - DO IT using tools. Don't just suggest.
+
+SCHEDULE STRUCTURE:
+- 5 days: Sunday-Thursday
+- 4 periods: P1 (7:00-10:30), P2 (10:30-14:00), P3 (14:00-17:30), P4 (17:30-21:00)
+- Multiple clinics (CL1, CL2, CL3...)
+- Delegator (DLG): one per period
+- EX section: sick_leave, permission_start, permission_end, vacation, extra
+
+YOUR CAPABILITIES:
+Daily Duty: assign/remove doctors, set EX status, clear day/week, swap doctors, copy day to day, change clinic count
+Doctor Groups: create/delete/rename groups, add/remove/move doctors between groups, change work status (active/vacation/light_duty)
+
+RULES:
+- Distribute doctors evenly across periods
+- P1+P2 = morning pair, P3+P4 = afternoon pair
+- Don't assign vacation/sick_leave doctors to clinics
+- Use doctor UUIDs from the context data (they are provided in [brackets])
+
+CRITICAL RULES:
+- ALWAYS complete the ENTIRE task. NEVER stop halfway. NEVER skip any day.
+- The work week is EXACTLY 5 days: sunday, monday, tuesday, wednesday, thursday. ALL FIVE.
+- If asked to distribute for "the week" or "all days", you MUST do sunday AND monday AND tuesday AND wednesday AND thursday. Missing even ONE day is a failure.
+- Execute ALL tool calls needed. Do not summarize what you "would do" - just DO IT.
+- If you run out of space in one response, continue in the next. Never say "I'll stop here".
+- After finishing, verify you covered all 5 days and all clinics.
+- Be concise in text responses but thorough in execution.
+- Respond in the same language the user uses (Arabic or English)
+- When using tools, execute ALL needed assignments in one response
+- After executing, summarize what you did`;
+
+/**
+ * Execute a tool call from the AI
+ */
+async function executeTool(
+  toolName: string,
+  input: any,
+  clinicId: string,
+  weekStart: string,
+): Promise<string> {
+  try {
+    switch (toolName) {
+      case 'assign_doctor': {
+        const { doctor_id, doctor_name, day, period, clinic_number, role } = input;
+        const clinicNum = role === 'delegator' ? 0 : clinic_number;
+
+        // For delegator: remove existing first
+        if (role === 'delegator') {
+          await supabase.from('schedule_slots').delete()
+            .eq('clinic_id', clinicId).eq('week_start', weekStart)
+            .eq('day_of_week', day).eq('period', period).eq('role', 'delegator');
+        }
+
+        const { error } = await supabase.from('schedule_slots').insert({
+          clinic_id: clinicId, week_start: weekStart,
+          day_of_week: day, period, clinic_number: clinicNum,
+          doctor_id, doctor_name, role, status: 'active',
+        });
+        if (error) return `Error assigning ${doctor_name}: ${error.message}`;
+        return `Assigned ${doctor_name} to ${role === 'delegator' ? 'DLG' : `CL${clinic_number}`} on ${day} P${period}`;
+      }
+
+      case 'remove_doctor': {
+        const { doctor_id, day, period } = input;
+        const { error } = await supabase.from('schedule_slots').delete()
+          .eq('clinic_id', clinicId).eq('week_start', weekStart)
+          .eq('day_of_week', day).eq('period', period).eq('doctor_id', doctor_id);
+        if (error) return `Error removing doctor: ${error.message}`;
+        return `Removed doctor from ${day} P${period}`;
+      }
+
+      case 'set_doctor_ex': {
+        const { doctor_id, doctor_name, day, status, side } = input;
+        // Remove from all clinic slots on this day
+        if (status === 'sick_leave' || status === 'vacation' || status === 'extra') {
+          await supabase.from('schedule_slots').delete()
+            .eq('clinic_id', clinicId).eq('week_start', weekStart)
+            .eq('day_of_week', day).eq('doctor_id', doctor_id).gt('period', 0);
+        }
+        // Add to EX
+        const { error } = await supabase.from('schedule_slots').insert({
+          clinic_id: clinicId, week_start: weekStart,
+          day_of_week: day, period: 0, clinic_number: side,
+          doctor_id, doctor_name, role: 'clinic', status,
+        });
+        if (error) return `Error setting EX: ${error.message}`;
+        return `Set ${doctor_name} as ${status} on ${day}`;
+      }
+
+      case 'clear_day': {
+        const { day } = input;
+        const { error } = await supabase.from('schedule_slots').delete()
+          .eq('clinic_id', clinicId).eq('week_start', weekStart)
+          .eq('day_of_week', day);
+        if (error) return `Error clearing ${day}: ${error.message}`;
+        return `Cleared all slots for ${day}`;
+      }
+
+      case 'distribute_doctors': {
+        return `Distribution requested for: ${input.days.join(', ')}. Use assign_doctor for each assignment.`;
+      }
+
+      case 'clear_week': {
+        const { error } = await supabase.from('schedule_slots').delete()
+          .eq('clinic_id', clinicId).eq('week_start', weekStart);
+        if (error) return `Error clearing week: ${error.message}`;
+        return `Cleared all slots for the entire week`;
+      }
+
+      case 'swap_doctors': {
+        const { doctor_a_id, doctor_b_id, day } = input;
+        // Get all slots for both doctors on this day
+        const { data: slotsA } = await supabase.from('schedule_slots').select('*')
+          .eq('clinic_id', clinicId).eq('week_start', weekStart)
+          .eq('day_of_week', day).eq('doctor_id', doctor_a_id).gt('period', 0);
+        const { data: slotsB } = await supabase.from('schedule_slots').select('*')
+          .eq('clinic_id', clinicId).eq('week_start', weekStart)
+          .eq('day_of_week', day).eq('doctor_id', doctor_b_id).gt('period', 0);
+        if (!slotsA?.length && !slotsB?.length) return 'Neither doctor has slots on this day';
+        // Swap: update A's slots to B, and B's slots to A
+        const nameA = slotsA?.[0]?.doctor_name || '';
+        const nameB = slotsB?.[0]?.doctor_name || '';
+        for (const s of (slotsA || [])) {
+          await supabase.from('schedule_slots').update({ doctor_id: doctor_b_id, doctor_name: nameB }).eq('id', s.id);
+        }
+        for (const s of (slotsB || [])) {
+          await supabase.from('schedule_slots').update({ doctor_id: doctor_a_id, doctor_name: nameA }).eq('id', s.id);
+        }
+        return `Swapped ${nameA} and ${nameB} on ${day}`;
+      }
+
+      case 'copy_day': {
+        const { from_day, to_day } = input;
+        // Get source slots
+        const { data: srcSlots } = await supabase.from('schedule_slots').select('*')
+          .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', from_day);
+        if (!srcSlots?.length) return `No slots found on ${from_day}`;
+        // Clear target day
+        await supabase.from('schedule_slots').delete()
+          .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', to_day);
+        // Copy slots
+        const newSlots = srcSlots.map(s => ({
+          clinic_id: clinicId, week_start: weekStart, day_of_week: to_day,
+          period: s.period, clinic_number: s.clinic_number,
+          doctor_id: s.doctor_id, doctor_name: s.doctor_name,
+          role: s.role, status: s.status,
+        }));
+        const { error } = await supabase.from('schedule_slots').insert(newSlots);
+        if (error) return `Error copying: ${error.message}`;
+        return `Copied ${srcSlots.length} slots from ${from_day} to ${to_day}`;
+      }
+
+      case 'set_clinic_count': {
+        const { count } = input;
+        if (count < 1 || count > 10) return 'Clinic count must be 1-10';
+        const { error } = await supabase.from('schedule_settings')
+          .upsert({ clinic_id: clinicId, clinic_count: count, updated_at: new Date().toISOString() }, { onConflict: 'clinic_id' });
+        if (error) return `Error: ${error.message}`;
+        return `Clinic count set to ${count}`;
+      }
+
+      // ═══ DOCTOR GROUPS ═══
+      case 'create_group': {
+        const { name, color_index } = input;
+        const { data: existing } = await supabase.from('doctor_groups').select('sort_order').eq('clinic_id', clinicId).order('sort_order', { ascending: false }).limit(1);
+        const sortOrder = (existing?.[0]?.sort_order || 0) + 1;
+        const { error } = await supabase.from('doctor_groups').insert({
+          clinic_id: clinicId, name, color_index: color_index || 0, sort_order: sortOrder,
+        });
+        if (error) return `Error creating group: ${error.message}`;
+        return `Created group "${name}"`;
+      }
+
+      case 'delete_group': {
+        const { group_id } = input;
+        const { error } = await supabase.from('doctor_groups').delete().eq('id', group_id);
+        if (error) return `Error deleting group: ${error.message}`;
+        return `Deleted group`;
+      }
+
+      case 'rename_group': {
+        const { group_id, new_name } = input;
+        const { error } = await supabase.from('doctor_groups').update({ name: new_name }).eq('id', group_id);
+        if (error) return `Error renaming: ${error.message}`;
+        return `Renamed group to "${new_name}"`;
+      }
+
+      case 'add_doctor_to_group': {
+        const { group_id, doctor_id, doctor_name } = input;
+        const { error } = await supabase.from('doctor_group_members').insert({
+          group_id, doctor_id, doctor_name, work_status: 'active',
+        });
+        if (error) return `Error adding doctor: ${error.message}`;
+        return `Added ${doctor_name} to group`;
+      }
+
+      case 'remove_doctor_from_group': {
+        const { group_id, doctor_id } = input;
+        const { error } = await supabase.from('doctor_group_members').delete()
+          .eq('group_id', group_id).eq('doctor_id', doctor_id);
+        if (error) return `Error removing: ${error.message}`;
+        return `Removed doctor from group`;
+      }
+
+      case 'move_doctor_between_groups': {
+        const { doctor_id, doctor_name, from_group_id, to_group_id } = input;
+        if (from_group_id) {
+          await supabase.from('doctor_group_members').delete()
+            .eq('group_id', from_group_id).eq('doctor_id', doctor_id);
+        }
+        const { error } = await supabase.from('doctor_group_members').insert({
+          group_id: to_group_id, doctor_id, doctor_name, work_status: 'active',
+        });
+        if (error) return `Error moving: ${error.message}`;
+        return `Moved ${doctor_name} to new group`;
+      }
+
+      case 'set_doctor_work_status': {
+        const { group_id, doctor_id, work_status } = input;
+        const { error } = await supabase.from('doctor_group_members').update({
+          work_status, updated_at: new Date().toISOString(),
+        }).eq('group_id', group_id).eq('doctor_id', doctor_id);
+        if (error) return `Error: ${error.message}`;
+        return `Set doctor status to ${work_status}`;
+      }
+
+      default:
+        return `Unknown tool: ${toolName}`;
+    }
+  } catch (error) {
+    return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+  }
+}
+
+/**
+ * Send a message to Claude API with tool use support
+ */
+export async function sendMessage(
+  messages: AIMessage[],
+  contextData?: string,
+  clinicId?: string,
+  weekStart?: string,
+): Promise<AIResponse> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return { success: false, message: '', error: 'API key not configured.' };
+  }
+
+  try {
+    let systemPrompt = SYSTEM_PROMPT;
+    if (contextData) {
+      systemPrompt += `\n\nCurrent data:\n${contextData}`;
+    }
+
+    // Build conversation messages
+    let conversationMessages: any[] = messages.map(m => ({ role: m.role, content: m.content }));
+    let allText = '';
+    const MAX_ROUNDS = 50; // Unlimited rounds until AI finishes
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const res = await fetch(ANTHROPIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 16000,
+          system: systemPrompt,
+          tools: AI_TOOLS,
+          messages: conversationMessages,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        return { success: false, message: '', error: `API Error: ${res.status} - ${errData.error?.message || 'Unknown'}` };
+      }
+
+      const data = await res.json();
+      const toolResults: any[] = [];
+
+      // Process content blocks
+      for (const block of data.content || []) {
+        if (block.type === 'text') {
+          allText += block.text;
+        } else if (block.type === 'tool_use' && clinicId && weekStart) {
+          const result = await executeTool(block.name, block.input, clinicId, weekStart);
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+        }
+      }
+
+      // If no more tool calls, we're done
+      if (data.stop_reason !== 'tool_use' || toolResults.length === 0) {
+        break;
+      }
+
+      // Add assistant response + tool results for next round
+      conversationMessages.push({ role: 'assistant', content: data.content });
+      conversationMessages.push({ role: 'user', content: toolResults });
+    }
+
+    return { success: true, message: allText || 'Done.' };
+  } catch (error) {
+    return { success: false, message: '', error: `Network error: ${error instanceof Error ? error.message : 'Unknown'}` };
+  }
+}
+
+/**
+ * Build context string from schedule data
+ */
+export function buildScheduleContext(data: {
+  clinicName?: string;
+  weekStart?: string;
+  clinicCount?: number;
+  slots?: any[];
+  groups?: any[];
+}): string {
+  let context = '';
+
+  if (data.clinicName) context += `Clinic: ${data.clinicName}\n`;
+  if (data.weekStart) context += `Week: ${data.weekStart}\n`;
+  if (data.clinicCount) context += `Number of clinics: ${data.clinicCount}\n`;
+
+  if (data.slots && data.slots.length > 0) {
+    context += `\nCurrent schedule slots:\n`;
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+    for (const day of days) {
+      const daySlots = data.slots.filter((s: any) => s.day === day || s.day_of_week === day);
+      if (daySlots.length > 0) {
+        context += `  ${day}:\n`;
+        for (const s of daySlots) {
+          const role = s.role === 'delegator' ? 'DLG' : `CL${s.clinicNumber || s.clinic_number}`;
+          const period = s.period === 0 ? 'EX' : `P${s.period}`;
+          context += `    ${period} - ${role}: ${s.doctorName || s.doctor_name} (${s.status})\n`;
+        }
+      }
+    }
+  } else {
+    context += `\nSchedule is currently empty.\n`;
+  }
+
+  if (data.groups && data.groups.length > 0) {
+    context += `\nDoctor groups:\n`;
+    for (const g of data.groups) {
+      const groupId = g.id || '';
+      const doctors = g.doctors?.map((d: any) => {
+        const status = d.workStatus || d.work_status || 'active';
+        const id = d.id || d.doctor_id || '';
+        const statusStr = status !== 'active' ? ` (${status})` : '';
+        return `${d.name}${statusStr} [${id}]`;
+      }).join(', ') || 'empty';
+      context += `  ${g.name} [group_id: ${groupId}]: ${doctors}\n`;
+    }
+  }
+
+  return context;
+}

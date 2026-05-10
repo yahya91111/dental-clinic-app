@@ -1648,3 +1648,67 @@ export async function updateScheduleSettings(
     return { data: null, error: error as Error };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AI Prompt Templates
+// ═══════════════════════════════════════════════════════════════
+
+export async function getPromptTemplates(clinicId: string): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('ai_prompt_templates')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .order('created_at');
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error fetching prompt templates:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function createPromptTemplate(
+  clinicId: string, name: string, prompt: string, createdBy?: string
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('ai_prompt_templates')
+      .insert({ clinic_id: clinicId, name, prompt, created_by: createdBy })
+      .select().single();
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error creating prompt template:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function updatePromptTemplate(
+  id: string, name: string, prompt: string
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('ai_prompt_templates')
+      .update({ name, prompt, updated_at: new Date().toISOString() })
+      .eq('id', id).select().single();
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error updating prompt template:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function deletePromptTemplate(id: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('ai_prompt_templates')
+      .delete().eq('id', id);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error deleting prompt template:', error);
+    return { data: null, error: error as Error };
+  }
+}
