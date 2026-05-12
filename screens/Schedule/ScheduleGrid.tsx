@@ -18,11 +18,11 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
   const getSlots = (day: DayOfWeek, period: number) =>
     slots.filter(s => s.day === day && s.period === period);
 
-  // Filter slots: show only current user + delegator, unless day is expanded
+  // Filter slots: show only current user's slots, unless expanded
   const getVisibleSlots = (day: DayOfWeek, period: number) => {
     const all = getSlots(day, period);
     if (!userId || expandAll) return all;
-    return all.filter(s => s.doctorId === userId || s.role === 'delegator');
+    return all.filter(s => s.doctorId === userId);
   };
 
   // Check if user has any assignment on this day
@@ -193,44 +193,25 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                         );
                       })}
 
-                      {/* Divider */}
-                      <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(2) }} />
-
-                      {/* Delegator - merged or split */}
+                      {/* Delegator - merged or split (hidden in personal view if user is not delegator) */}
                       {(() => {
                         const dlgA = getVisibleSlots(day.key, pA.id).filter(s => s.role === 'delegator');
                         const dlgB = getVisibleSlots(day.key, pB.id).filter(s => s.role === 'delegator');
+
+                        // In personal view, hide DLG section if user has no delegator assignment
+                        if (!expandAll && userId && dlgA.length === 0 && dlgB.length === 0) return null;
+
+                        const isPersonal = !expandAll && userId;
                         const dlgMerged = getDelegatorId(pA.id).length > 0 && getDelegatorId(pA.id) === getDelegatorId(pB.id);
 
-                        if (dlgMerged) {
-                          return (
-                            <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={{
-                              flexDirection: 'row',
-                              borderRadius: scale(6),
-                              overflow: 'hidden',
-                              borderWidth: scale(1),
-                              borderColor: 'rgba(255,255,255,0.6)',
-                              backgroundColor: 'rgba(255,255,255,0.2)',
-                            }}>
-                              <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(6), textAlign: 'right' }} numberOfLines={1}>
-                                {dlgA[0]?.doctorName || '—'}
-                              </Text>
-                              <LinearGradient
-                                colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
-                                start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-                                style={{ paddingHorizontal: scale(4), justifyContent: 'center', alignItems: 'center', borderLeftWidth: scale(1), borderLeftColor: 'rgba(255,255,255,0.5)' }}
-                              >
-                                <Text style={{ fontSize: scale(6), fontWeight: '800', color: '#FFFFFF' }}>DLG</Text>
-                              </LinearGradient>
-                            </TouchableOpacity>
-                          );
-                        }
+                        // Personal view: show like clinic cards - split with visible/invisible
+                        if (isPersonal) {
+                          const userInA = dlgA.length > 0;
+                          const userInB = dlgB.length > 0;
 
-                        return (
-                          <View style={{ flexDirection: 'row', gap: scale(2) }}>
-                            {[{ dl: dlgA, p: pA }, { dl: dlgB, p: pB }].map(({ dl, p }) => (
-                              <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={{
-                                flex: 1,
+                          if (dlgMerged) {
+                            return (
+                              <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={{
                                 flexDirection: 'row',
                                 borderRadius: scale(6),
                                 overflow: 'hidden',
@@ -238,19 +219,101 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
                               }}>
-                                <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: dl.length > 0 ? '#6B4C9A' : '#CBD5E0', paddingVertical: scale(3), paddingHorizontal: scale(3), textAlign: 'right' }} numberOfLines={1}>
-                                  {dl.length > 0 ? dl[0].doctorName : '—'}
+                                <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(6), textAlign: 'right' }} numberOfLines={1}>
+                                  {dlgA[0]?.doctorName || '—'}
                                 </Text>
                                 <LinearGradient
                                   colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
                                   start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-                                  style={{ paddingHorizontal: scale(3), justifyContent: 'center', alignItems: 'center', borderLeftWidth: scale(1), borderLeftColor: 'rgba(255,255,255,0.5)' }}
+                                  style={{ paddingHorizontal: scale(4), justifyContent: 'center', alignItems: 'center', borderLeftWidth: scale(1), borderLeftColor: 'rgba(255,255,255,0.5)' }}
                                 >
-                                  <Text style={{ fontSize: scale(5), fontWeight: '800', color: '#FFFFFF' }}>DLG</Text>
+                                  <Text style={{ fontSize: scale(6), fontWeight: '800', color: '#FFFFFF' }}>DLG</Text>
                                 </LinearGradient>
                               </TouchableOpacity>
-                            ))}
-                          </View>
+                            );
+                          }
+
+                          return (
+                            <View style={{ flexDirection: 'row', gap: scale(2) }}>
+                              {[{ dl: dlgA, p: pA, visible: userInA }, { dl: dlgB, p: pB, visible: userInB }].map(({ dl, p, visible }) => (
+                                <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={{
+                                  flex: 1,
+                                  flexDirection: 'row',
+                                  borderRadius: scale(6),
+                                  overflow: 'hidden',
+                                  borderWidth: scale(1),
+                                  borderColor: visible ? 'rgba(255,255,255,0.6)' : 'transparent',
+                                  backgroundColor: visible ? 'rgba(255,255,255,0.2)' : 'transparent',
+                                }}>
+                                  {visible ? (<>
+                                    <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(3), textAlign: 'right' }} numberOfLines={1}>
+                                      {dl[0].doctorName}
+                                    </Text>
+                                    <LinearGradient
+                                      colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                                      start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                                      style={{ paddingHorizontal: scale(3), justifyContent: 'center', alignItems: 'center', borderLeftWidth: scale(1), borderLeftColor: 'rgba(255,255,255,0.5)' }}
+                                    >
+                                      <Text style={{ fontSize: scale(5), fontWeight: '800', color: '#FFFFFF' }}>DLG</Text>
+                                    </LinearGradient>
+                                  </>) : null}
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          );
+                        }
+
+                        return (
+                          <>
+                            {/* Divider */}
+                            <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(2) }} />
+                            {dlgMerged ? (
+                              <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={{
+                                flexDirection: 'row',
+                                borderRadius: scale(6),
+                                overflow: 'hidden',
+                                borderWidth: scale(1),
+                                borderColor: 'rgba(255,255,255,0.6)',
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                              }}>
+                                <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(6), textAlign: 'right' }} numberOfLines={1}>
+                                  {dlgA[0]?.doctorName || '—'}
+                                </Text>
+                                <LinearGradient
+                                  colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                                  start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                                  style={{ paddingHorizontal: scale(4), justifyContent: 'center', alignItems: 'center', borderLeftWidth: scale(1), borderLeftColor: 'rgba(255,255,255,0.5)' }}
+                                >
+                                  <Text style={{ fontSize: scale(6), fontWeight: '800', color: '#FFFFFF' }}>DLG</Text>
+                                </LinearGradient>
+                              </TouchableOpacity>
+                            ) : (
+                              <View style={{ flexDirection: 'row', gap: scale(2) }}>
+                                {[{ dl: dlgA, p: pA }, { dl: dlgB, p: pB }].map(({ dl, p }) => (
+                                  <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={{
+                                    flex: 1,
+                                    flexDirection: 'row',
+                                    borderRadius: scale(6),
+                                    overflow: 'hidden',
+                                    borderWidth: scale(1),
+                                    borderColor: 'rgba(255,255,255,0.6)',
+                                    backgroundColor: 'rgba(255,255,255,0.2)',
+                                  }}>
+                                    <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: dl.length > 0 ? '#6B4C9A' : '#CBD5E0', paddingVertical: scale(3), paddingHorizontal: scale(3), textAlign: 'right' }} numberOfLines={1}>
+                                      {dl.length > 0 ? dl[0].doctorName : '—'}
+                                    </Text>
+                                    <LinearGradient
+                                      colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                                      start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                                      style={{ paddingHorizontal: scale(3), justifyContent: 'center', alignItems: 'center', borderLeftWidth: scale(1), borderLeftColor: 'rgba(255,255,255,0.5)' }}
+                                    >
+                                      <Text style={{ fontSize: scale(5), fontWeight: '800', color: '#FFFFFF' }}>DLG</Text>
+                                    </LinearGradient>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            )}
+                          </>
                         );
                       })()}
                     <View style={{ height: scale(6) }} />
