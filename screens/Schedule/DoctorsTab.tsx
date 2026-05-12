@@ -69,7 +69,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
   const [menuGroupId, setMenuGroupId] = useState<string | null>(null);
 
   // Unassigned section
-  const [unassignedExpanded, setUnassignedExpanded] = useState(true);
+  const [unassignedExpanded, setUnassignedExpanded] = useState(false);
 
   // Load clinic doctors from Supabase (filtered by clinic_id)
   const loadDoctors = useCallback(async () => {
@@ -134,7 +134,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
           name: g.name,
           colorIndex: g.color_index,
           doctors: groupDoctors,
-          isExpanded: prevExpanded[g.id] ?? idx === 0,
+          isExpanded: prevExpanded[g.id] ?? false,
         };
       });
       setGroups(loadedGroups);
@@ -238,9 +238,9 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
       <View key={group.id} style={{
         borderRadius: scale(16),
         overflow: 'hidden',
-        backgroundColor: 'rgba(255,255,255,0.35)',
-        borderWidth: scale(2),
-        borderColor: 'rgba(255,255,255,0.7)',
+        backgroundColor: 'rgba(255,255,255,0.55)',
+        borderWidth: scale(1),
+        borderColor: 'rgba(255,255,255,0.2)',
         marginBottom: scale(12),
       }}>
         {/* Group Header */}
@@ -249,10 +249,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
           onPress={() => toggleExpand(group.id)}
           style={{ flexDirection: 'row', alignItems: 'center' }}
         >
-          <LinearGradient
-            colors={[gc.border, gc.bg, gc.bg, gc.border]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
+          <View
             style={{
               flex: 1,
               flexDirection: 'row',
@@ -275,12 +272,9 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
               color: gc.color,
             }}>{group.name}</Text>
             <View style={{
-              backgroundColor: gc.bg,
               borderRadius: scale(10),
               paddingHorizontal: scale(8),
               paddingVertical: scale(2),
-              borderWidth: scale(1),
-              borderColor: gc.border,
               marginRight: scale(8),
             }}>
               <Text style={{ fontSize: scale(12), fontWeight: '700', color: gc.color }}>
@@ -293,7 +287,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
             >
               <Ionicons name="ellipsis-vertical" size={scale(18)} color={gc.color} />
             </TouchableOpacity>
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
 
         {/* Doctors List */}
@@ -661,25 +655,37 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
       {/* Doctor Action Modal */}
       <Modal transparent visible={selectedDoctor !== null} animationType="fade" onRequestClose={() => { setSelectedDoctor(null); setDoctorActionMode('menu'); }}>
         <TouchableWithoutFeedback onPress={() => { setSelectedDoctor(null); setDoctorActionMode('menu'); }}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }}>
             <TouchableWithoutFeedback>
               <View style={{
-                width: '80%',
-                backgroundColor: 'rgba(255,255,255,0.95)',
+                width: '85%',
+                backgroundColor: 'rgba(30, 25, 50, 0.55)',
                 borderRadius: scale(20),
-                padding: scale(20),
+                padding: scale(16),
                 borderWidth: scale(2),
-                borderColor: 'rgba(255,255,255,0.8)',
+                borderColor: 'rgba(255,255,255,0.35)',
+                shadowColor: 'rgba(255,255,255,0.4)',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.5,
+                shadowRadius: scale(15),
+                elevation: 10,
                 maxHeight: '70%',
               }}>
                 {/* Doctor Name Header */}
-                <Text style={{
-                  fontSize: scale(16),
-                  fontWeight: '700',
-                  color: '#1E3A8A',
-                  textAlign: 'center',
-                  marginBottom: scale(16),
-                }}>{selectedDoctor?.doctor.name}</Text>
+                <View style={{
+                  alignItems: 'center',
+                  marginBottom: scale(10),
+                  paddingBottom: scale(8),
+                  borderBottomWidth: scale(1),
+                  borderBottomColor: 'rgba(255,255,255,0.15)',
+                }}>
+                  <Text style={{
+                    fontSize: scale(16),
+                    fontWeight: '700',
+                    color: '#FFFFFF',
+                    textAlign: 'center',
+                  }}>{selectedDoctor?.doctor.name}</Text>
+                </View>
 
                 {/* Main Menu */}
                 {doctorActionMode === 'menu' && (
@@ -694,13 +700,11 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                         paddingVertical: scale(13),
                         paddingHorizontal: scale(14),
                         borderRadius: scale(12),
-                        backgroundColor: 'rgba(99,102,241,0.1)',
-                        borderWidth: scale(1),
-                        borderColor: 'rgba(99,102,241,0.2)',
+                        backgroundColor: 'rgba(255,255,255,0.06)',
                       }}
                     >
-                      <Ionicons name="swap-horizontal-outline" size={scale(20)} color="#6366F1" />
-                      <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#6366F1' }}>Move to Group</Text>
+                      <Ionicons name="swap-horizontal-outline" size={scale(20)} color="#A5B4FC" />
+                      <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF' }}>Move to Group</Text>
                     </TouchableOpacity>
                     {selectedDoctor?.fromGroupId && (
                       <TouchableOpacity
@@ -713,13 +717,11 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                           paddingVertical: scale(13),
                           paddingHorizontal: scale(14),
                           borderRadius: scale(12),
-                          backgroundColor: 'rgba(245,158,11,0.1)',
-                          borderWidth: scale(1),
-                          borderColor: 'rgba(245,158,11,0.2)',
+                          backgroundColor: 'rgba(255,255,255,0.06)',
                         }}
                       >
-                        <Ionicons name="flag-outline" size={scale(20)} color="#F59E0B" />
-                        <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#F59E0B' }}>Change Status</Text>
+                        <Ionicons name="flag-outline" size={scale(20)} color="#FCD34D" />
+                        <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF' }}>Change Status</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -732,8 +734,8 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                       onPress={() => setDoctorActionMode('menu')}
                       style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(12) }}
                     >
-                      <Ionicons name="arrow-back" size={scale(18)} color="#6B7280" />
-                      <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#6B7280', marginLeft: scale(6) }}>Back</Text>
+                      <Ionicons name="arrow-back" size={scale(18)} color="rgba(255,255,255,0.6)" />
+                      <Text style={{ fontSize: scale(13), fontWeight: '600', color: 'rgba(255,255,255,0.6)', marginLeft: scale(6) }}>Back</Text>
                     </TouchableOpacity>
                     {groups.map(group => {
                       const gc = GROUP_COLORS[group.colorIndex % GROUP_COLORS.length];
@@ -751,10 +753,8 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                             paddingHorizontal: scale(12),
                             borderRadius: scale(10),
                             marginBottom: scale(6),
-                            backgroundColor: isCurrentGroup ? 'rgba(0,0,0,0.04)' : gc.bg,
-                            borderWidth: scale(1),
-                            borderColor: isCurrentGroup ? 'rgba(0,0,0,0.06)' : gc.border,
-                            opacity: isCurrentGroup ? 0.5 : 1,
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                            opacity: isCurrentGroup ? 0.4 : 1,
                           }}
                         >
                           <View style={{
@@ -768,7 +768,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                             {group.name}
                           </Text>
                           {isCurrentGroup && (
-                            <Text style={{ fontSize: scale(10), color: '#9CA3AF' }}>Current</Text>
+                            <Text style={{ fontSize: scale(10), color: 'rgba(255,255,255,0.4)' }}>Current</Text>
                           )}
                         </TouchableOpacity>
                       );
@@ -784,9 +784,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                           paddingHorizontal: scale(12),
                           borderRadius: scale(10),
                           marginBottom: scale(6),
-                          backgroundColor: 'rgba(156,163,175,0.1)',
-                          borderWidth: scale(1),
-                          borderColor: 'rgba(156,163,175,0.3)',
+                          backgroundColor: 'rgba(255,255,255,0.06)',
                         }}
                       >
                         <View style={{
@@ -796,7 +794,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                           backgroundColor: '#9CA3AF',
                           marginRight: scale(10),
                         }} />
-                        <Text style={{ flex: 1, fontSize: scale(13), fontWeight: '600', color: '#6B7280' }}>Unassigned</Text>
+                        <Text style={{ flex: 1, fontSize: scale(13), fontWeight: '600', color: 'rgba(255,255,255,0.7)' }}>Unassigned</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -809,8 +807,8 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                       onPress={() => setDoctorActionMode('menu')}
                       style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(12) }}
                     >
-                      <Ionicons name="arrow-back" size={scale(18)} color="#6B7280" />
-                      <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#6B7280', marginLeft: scale(6) }}>Back</Text>
+                      <Ionicons name="arrow-back" size={scale(18)} color="rgba(255,255,255,0.6)" />
+                      <Text style={{ fontSize: scale(13), fontWeight: '600', color: 'rgba(255,255,255,0.6)', marginLeft: scale(6) }}>Back</Text>
                     </TouchableOpacity>
                     {(Object.keys(WORK_STATUS_CONFIG) as DoctorWorkStatus[]).map(statusKey => {
                       const cfg = WORK_STATUS_CONFIG[statusKey];
@@ -828,10 +826,8 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                             paddingHorizontal: scale(12),
                             borderRadius: scale(10),
                             marginBottom: scale(6),
-                            backgroundColor: isCurrent ? 'rgba(0,0,0,0.04)' : cfg.color + '15',
-                            borderWidth: scale(1),
-                            borderColor: isCurrent ? 'rgba(0,0,0,0.06)' : cfg.color + '30',
-                            opacity: isCurrent ? 0.5 : 1,
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                            opacity: isCurrent ? 0.4 : 1,
                           }}
                         >
                           <Ionicons name={cfg.icon as any} size={scale(18)} color={cfg.color} />
@@ -839,7 +835,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                             {cfg.label}
                           </Text>
                           {isCurrent && (
-                            <Text style={{ fontSize: scale(10), color: '#9CA3AF' }}>Current</Text>
+                            <Text style={{ fontSize: scale(10), color: 'rgba(255,255,255,0.4)' }}>Current</Text>
                           )}
                         </TouchableOpacity>
                       );
@@ -852,7 +848,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                   onPress={() => { setSelectedDoctor(null); setDoctorActionMode('menu'); }}
                   style={{ paddingVertical: scale(10), alignItems: 'center', marginTop: scale(10) }}
                 >
-                  <Text style={{ fontSize: scale(13), fontWeight: '600', color: '#9CA3AF' }}>Cancel</Text>
+                  <Text style={{ fontSize: scale(13), fontWeight: '600', color: 'rgba(255,255,255,0.5)' }}>Cancel</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
