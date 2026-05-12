@@ -106,28 +106,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
               action_status: 'pending',
             });
 
-            // Send push notification to target doctor
-            try {
-              const { data: tokens } = await supabase
-                .from('push_tokens')
-                .select('token')
-                .eq('user_id', targetSlot.doctorId);
-              if (tokens && tokens.length > 0) {
-                for (const t of tokens) {
-                  await fetch('https://exp.host/--/api/v2/push/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      to: t.token,
-                      sound: 'default',
-                      title: `${myName} wants to swap`,
-                      body: `${myName} wants to swap with you on ${day} P${period}`,
-                    }),
-                  });
-                }
-              }
-            } catch (e) { console.log('Push send error:', e); }
-
+            // Push notification is sent automatically by database trigger
             Alert.alert('Sent', `Swap request sent to ${targetSlot.doctorName}`);
           },
         },

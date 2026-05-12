@@ -2576,24 +2576,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                     body: `${d.to_doctor_name} accepted your swap request for ${d.day}`,
                                   });
 
-                                  // Send push to requester
-                                  try {
-                                    const { data: tokens } = await supabase
-                                      .from('push_tokens').select('token').eq('user_id', d.from_doctor_id);
-                                    if (tokens) {
-                                      for (const t of tokens) {
-                                        await fetch('https://exp.host/--/api/v2/push/send', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({
-                                            to: t.token, sound: 'default',
-                                            title: 'Swap Accepted',
-                                            body: `${d.to_doctor_name} accepted your swap request`,
-                                          }),
-                                        });
-                                      }
-                                    }
-                                  } catch (e) { console.log('Push error:', e); }
+                                  // Push notification sent automatically by database trigger
                                 }
 
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
@@ -2620,24 +2603,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                     body: `${d.to_doctor_name} rejected your swap request for ${d.day}`,
                                   });
 
-                                  // Send push to requester
-                                  try {
-                                    const { data: tokens } = await supabase
-                                      .from('push_tokens').select('token').eq('user_id', d.from_doctor_id);
-                                    if (tokens) {
-                                      for (const t of tokens) {
-                                        await fetch('https://exp.host/--/api/v2/push/send', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({
-                                            to: t.token, sound: 'default',
-                                            title: 'Swap Rejected',
-                                            body: `${d.to_doctor_name} rejected your swap request`,
-                                          }),
-                                        });
-                                      }
-                                    }
-                                  } catch (e) { console.log('Push error:', e); }
+                                  // Push notification sent automatically by database trigger
                                 }
 
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
