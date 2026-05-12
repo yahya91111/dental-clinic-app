@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, Animated, Dimensions, InteractionManager } from 'react-native';
 import { scaledStyleSheet, scale } from './lib/scale';
@@ -13,6 +13,8 @@ import ScheduleScreen from './screens/Schedule';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
+import { getUnreadCount, getNotifications as fetchNotifications, markAsRead, markAllAsRead, createNotification } from './lib/database';
+import { registerForPushNotifications, addNotificationResponseListener, addNotificationReceivedListener } from './lib/pushNotifications';
 
 //  Simple Badge Component - Text Only (No Background)
 const SimpleBadge: React.FC<{ number: number | string; label: string }> = ({ number, label }) => {
@@ -67,7 +69,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifTab, setNotifTab] = useState<'unread' | 'read' | 'announcements'>('unread');
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const notifFadeAnim = React.useRef(new Animated.Value(0)).current;
+
   // Real-time data from database
   const [waitingPatientsCount, setWaitingPatientsCount] = useState(0);
   const [doctorsCount, setDoctorsCount] = useState(0);
@@ -109,6 +118,38 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const blob3Anim = useState(new Animated.Value(0))[0];
 
   // Use values from Timeline (mirror Timeline data) - Only for Doctors Count
+  // Register push notifications & fetch unread count
+  useEffect(() => {
+    if (!user?.id || !user?.clinicId) return;
+
+    // Register push token
+    registerForPushNotifications(user.id, user.clinicId);
+
+    // Listen for incoming notifications (refresh count)
+    const notifSub = addNotificationReceivedListener(() => {
+      getUnreadCount(user.id).then(setUnreadNotifications);
+    });
+
+    // Listen for notification taps (open notifications page)
+    const responseSub = addNotificationResponseListener(() => {
+      openNotifications();
+    });
+
+    // Fetch unread count
+    const fetchUnread = async () => {
+      const count = await getUnreadCount(user.id);
+      setUnreadNotifications(count);
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+
+    return () => {
+      clearInterval(interval);
+      notifSub.remove();
+      responseSub.remove();
+    };
+  }, [user?.id, user?.clinicId]);
+
   React.useEffect(() => {
     //  Doctors Count: اجلب من قاعدة البيانات إذا لم يتم تمريره
     if (currentDoctorsCount !== undefined) {
@@ -708,6 +749,77 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   };
   
   // Swipe gesture removed
+
+  const getTimeAgo = (date: Date) => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  // Open notifications with card exit animation
+  const openNotifications = useCallback(async () => {
+    // Animate cards out: staggered, alternating left/right
+    const anims = [
+      { fade: fadeAnim1, slide: slideAnim1, dir: 300 },
+      { fade: fadeAnim2, slide: slideAnim2, dir: -300 },
+      { fade: fadeAnim3, slide: slideAnim3, dir: 300 },
+      { fade: fadeAnim4, slide: slideAnim4, dir: -300 },
+      { fade: fadeAnim5, slide: slideAnim5, dir: 300 },
+      { fade: fadeAnim6, slide: slideAnim6, dir: -300 },
+    ];
+
+    Animated.stagger(80, anims.map(a =>
+      Animated.parallel([
+        Animated.timing(a.fade, { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.timing(a.slide, { toValue: a.dir, duration: 300, useNativeDriver: true }),
+      ])
+    )).start(() => {
+      setNotificationsVisible(true);
+      notifFadeAnim.setValue(0);
+      Animated.timing(notifFadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    });
+
+    // Load notifications
+    if (user?.id) {
+      setLoadingNotifs(true);
+      const { data } = await fetchNotifications(user.id);
+      setNotifications(data || []);
+      setLoadingNotifs(false);
+    }
+    setShowNotifications(true);
+  }, [user?.id]);
+
+  // Close notifications with card enter animation
+  const closeNotifications = useCallback(() => {
+    Animated.timing(notifFadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+      setNotificationsVisible(false);
+      setShowNotifications(false);
+
+      // Reset card positions
+      const slideDefaults = [50, -50, 50, -50, 50, -50];
+      const slides = [slideAnim1, slideAnim2, slideAnim3, slideAnim4, slideAnim5, slideAnim6];
+      const fades = [fadeAnim1, fadeAnim2, fadeAnim3, fadeAnim4, fadeAnim5, fadeAnim6];
+
+      fades.forEach((f, i) => { f.setValue(0); slides[i].setValue(slideDefaults[i]); });
+
+      // Animate cards back in (reverse order)
+      Animated.stagger(80, fades.map((f, i) =>
+        Animated.parallel([
+          Animated.timing(f, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.spring(slides[i], { toValue: 0, useNativeDriver: true, friction: 8 }),
+        ])
+      )).start();
+    });
+
+    // Refresh unread count
+    if (user?.id) {
+      getUnreadCount(user.id).then(setUnreadNotifications);
+    }
+  }, [user?.id]);
 
   // Dental Departments screen
   if (currentScreen === 'departments') {
@@ -1347,6 +1459,42 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
             {/* Header Content */}
             <View style={styles.glassHeaderContent}>
+              {/* Notifications Bell / Home Button - Left */}
+              <TouchableOpacity
+                onPress={showNotifications ? closeNotifications : openNotifications}
+                style={[
+                  styles.glassHeaderEditButton,
+                  Platform.OS === 'android' && {
+                    shadowColor: 'transparent',
+                    shadowOffset: { width: scale(0), height: scale(0) },
+                    shadowOpacity: 0,
+                    shadowRadius: 0,
+                    elevation: 0,
+                  }
+                ]}
+              >
+                <Ionicons name={showNotifications ? "home-outline" : "notifications-outline"} size={scale(22)} color="#FFFFFF" />
+                {!showNotifications && unreadNotifications > 0 && (
+                  <View style={{
+                    position: 'absolute',
+                    top: scale(-2),
+                    right: scale(-2),
+                    backgroundColor: '#EF4444',
+                    borderRadius: scale(10),
+                    minWidth: scale(18),
+                    height: scale(18),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: scale(2),
+                    borderColor: 'rgba(255,255,255,0.3)',
+                  }}>
+                    <Text style={{ fontSize: scale(10), fontWeight: '800', color: '#FFFFFF' }}>
+                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
               {/* Info */}
               <View style={styles.glassHeaderInfo}>
                 <Text style={styles.glassHeaderDoctorName} numberOfLines={1}>{user?.name || 'Doctor'}</Text>
@@ -1356,7 +1504,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 </View>
               </View>
 
-              {/* Edit Button */}
+              {/* Edit Button - Right */}
               <TouchableOpacity
                 onPress={() => setShowEditModal(true)}
                 style={[
@@ -2208,6 +2356,227 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               </>
             )}
           </ScrollView>
+
+          {/* Notifications Overlay */}
+          {notificationsVisible && (
+            <Animated.View style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              opacity: notifFadeAnim,
+              paddingHorizontal: scale(16),
+              paddingTop: scale(8),
+            }}>
+              {/* Tabs */}
+              <View style={{
+                flexDirection: 'row',
+                borderRadius: scale(14),
+                backgroundColor: 'rgba(255,255,255,0.5)',
+                padding: scale(3),
+                marginBottom: scale(12),
+              }}>
+                {([
+                  { key: 'unread' as const, label: 'Unread', icon: 'mail-unread-outline' },
+                  { key: 'read' as const, label: 'Read', icon: 'mail-open-outline' },
+                  { key: 'announcements' as const, label: 'Announcements', icon: 'megaphone-outline' },
+                ] as const).map(tab => (
+                  <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => setNotifTab(tab.key)}
+                    activeOpacity={0.7}
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: scale(10),
+                      borderRadius: scale(12),
+                      backgroundColor: notifTab === tab.key ? 'rgba(255,255,255,0.9)' : 'transparent',
+                      gap: scale(4),
+                    }}
+                  >
+                    <Ionicons
+                      name={tab.icon as any}
+                      size={scale(14)}
+                      color={notifTab === tab.key ? '#6366F1' : '#9CA3AF'}
+                    />
+                    <Text style={{
+                      fontSize: scale(11),
+                      fontWeight: '700',
+                      color: notifTab === tab.key ? '#6366F1' : '#9CA3AF',
+                    }}>{tab.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* TEST: Add sample notifications */}
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!user?.id) return;
+                  const types = [
+                    { type: 'swap_request', title: 'طلب تبديل', body: 'د.أحمد يريد تبديل فترة P1 الأحد مع فترتك P2', action_type: 'accept_reject', action_status: 'pending' },
+                    { type: 'schedule_change', title: 'تغيير بالجدول', body: 'تم تغيير جدولك ليوم الثلاثاء - العيادة 2 بدل العيادة 3' },
+                    { type: 'ai_alert', title: 'تنبيه الذكاء', body: 'العيادة 3 فارغة يوم الأربعاء فترة P4' },
+                    { type: 'admin_message', title: 'تعميم إداري', body: 'اجتماع عام يوم الخميس الساعة 2 ظهراً في القاعة الرئيسية' },
+                    { type: 'general', title: 'تحديث النظام', body: 'تم تحديث نظام الجدولة - يرجى مراجعة جدولك' },
+                  ];
+                  const sample = types[Math.floor(Math.random() * types.length)];
+                  await createNotification({ recipient_id: user.id, clinic_id: user.clinicId, sender_name: 'د.أحمد', ...sample });
+                  const { data } = await fetchNotifications(user.id);
+                  setNotifications(data || []);
+                  const count = await getUnreadCount(user.id);
+                  setUnreadNotifications(count);
+                }}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: scale(6),
+                  paddingVertical: scale(10),
+                  marginBottom: scale(12),
+                  borderRadius: scale(12),
+                  backgroundColor: 'rgba(139,92,246,0.15)',
+                  borderWidth: scale(1),
+                  borderColor: 'rgba(139,92,246,0.3)',
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={scale(16)} color="#8B5CF6" />
+                <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#8B5CF6' }}>Add Test Notification</Text>
+              </TouchableOpacity>
+
+              {/* Notifications List */}
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(40) }}>
+                {loadingNotifs ? (
+                  <View style={{ alignItems: 'center', paddingTop: scale(40) }}>
+                    <Text style={{ fontSize: scale(13), color: '#9CA3AF' }}>Loading...</Text>
+                  </View>
+                ) : (() => {
+                  const filtered = notifications.filter(n => {
+                    if (notifTab === 'unread') return !n.is_read;
+                    if (notifTab === 'read') return n.is_read;
+                    if (notifTab === 'announcements') return n.type === 'admin_message' || n.type === 'general';
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <View style={{ alignItems: 'center', paddingTop: scale(60) }}>
+                        <Ionicons
+                          name={notifTab === 'unread' ? 'checkmark-circle-outline' : notifTab === 'announcements' ? 'megaphone-outline' : 'mail-open-outline'}
+                          size={scale(48)}
+                          color="rgba(156,163,175,0.4)"
+                        />
+                        <Text style={{ fontSize: scale(14), color: '#9CA3AF', marginTop: scale(12), fontWeight: '600' }}>
+                          {notifTab === 'unread' ? 'No unread notifications' : notifTab === 'announcements' ? 'No announcements' : 'No read notifications'}
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  return filtered.map((notif: any) => {
+                    const typeIcons: Record<string, { icon: string; color: string }> = {
+                      swap_request: { icon: 'swap-horizontal', color: '#6366F1' },
+                      schedule_change: { icon: 'calendar', color: '#3B82F6' },
+                      ai_alert: { icon: 'sparkles', color: '#8B5CF6' },
+                      admin_message: { icon: 'megaphone', color: '#F59E0B' },
+                      general: { icon: 'information-circle', color: '#10B981' },
+                    };
+                    const typeInfo = typeIcons[notif.type] || typeIcons.general;
+                    const timeAgo = getTimeAgo(new Date(notif.created_at));
+
+                    return (
+                      <TouchableOpacity
+                        key={notif.id}
+                        activeOpacity={0.7}
+                        onPress={async () => {
+                          if (!notif.is_read) {
+                            await markAsRead(notif.id);
+                            setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+                            setUnreadNotifications(prev => Math.max(0, prev - 1));
+                          }
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          backgroundColor: notif.is_read ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)',
+                          borderRadius: scale(14),
+                          padding: scale(14),
+                          marginBottom: scale(8),
+                          borderWidth: scale(1),
+                          borderColor: notif.is_read ? 'rgba(255,255,255,0.3)' : 'rgba(99,102,241,0.2)',
+                          borderLeftWidth: notif.is_read ? scale(1) : scale(3),
+                          borderLeftColor: notif.is_read ? 'rgba(255,255,255,0.3)' : typeInfo.color,
+                        }}
+                      >
+                        <View style={{
+                          width: scale(36),
+                          height: scale(36),
+                          borderRadius: scale(18),
+                          backgroundColor: typeInfo.color + '15',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginRight: scale(12),
+                        }}>
+                          <Ionicons name={typeInfo.icon as any} size={scale(18)} color={typeInfo.color} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{
+                            fontSize: scale(13),
+                            fontWeight: notif.is_read ? '600' : '700',
+                            color: '#1E293B',
+                            marginBottom: scale(3),
+                          }}>{notif.title}</Text>
+                          <Text style={{
+                            fontSize: scale(11),
+                            color: '#6B7280',
+                            lineHeight: scale(16),
+                          }} numberOfLines={2}>{notif.body}</Text>
+                          <Text style={{
+                            fontSize: scale(10),
+                            color: '#9CA3AF',
+                            marginTop: scale(4),
+                          }}>{timeAgo}</Text>
+                        </View>
+                        {notif.action_type === 'accept_reject' && notif.action_status === 'pending' && (
+                          <View style={{ justifyContent: 'center', gap: scale(6) }}>
+                            <TouchableOpacity
+                              onPress={async () => {
+                                const { updateNotificationAction } = await import('./lib/database');
+                                await updateNotificationAction(notif.id, 'accepted');
+                                setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
+                              }}
+                              style={{ backgroundColor: '#10B981', borderRadius: scale(8), paddingHorizontal: scale(10), paddingVertical: scale(6) }}
+                            >
+                              <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#FFF' }}>Accept</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={async () => {
+                                const { updateNotificationAction } = await import('./lib/database');
+                                await updateNotificationAction(notif.id, 'rejected');
+                                setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
+                              }}
+                              style={{ backgroundColor: '#EF4444', borderRadius: scale(8), paddingHorizontal: scale(10), paddingVertical: scale(6) }}
+                            >
+                              <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#FFF' }}>Reject</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        {notif.action_status === 'accepted' && (
+                          <View style={{ justifyContent: 'center' }}>
+                            <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#10B981' }}>Accepted</Text>
+                          </View>
+                        )}
+                        {notif.action_status === 'rejected' && (
+                          <View style={{ justifyContent: 'center' }}>
+                            <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#EF4444' }}>Rejected</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  });
+                })()}
+              </ScrollView>
+            </Animated.View>
+          )}
         </View>
         </View>
         </View>
@@ -3714,7 +4083,6 @@ const styles = scaledStyleSheet({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 30,
   },
   glassHeaderDoctorName: {
     fontSize: 20,

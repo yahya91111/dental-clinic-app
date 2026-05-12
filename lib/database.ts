@@ -1712,3 +1712,166 @@ export async function deletePromptTemplate(id: string): Promise<DatabaseResponse
     return { data: null, error: error as Error };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════
+
+export async function getNotifications(recipientId: string, limit = 50): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('recipient_id', recipientId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error loading notifications:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function getUnreadCount(recipientId: string): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('recipient_id', recipientId)
+      .eq('is_read', false);
+    if (error) throw error;
+    return count || 0;
+  } catch (error) {
+    console.error('Error getting unread count:', error);
+    return 0;
+  }
+}
+
+export async function createNotification(notification: {
+  clinic_id?: string;
+  recipient_id: string;
+  sender_id?: string;
+  sender_name?: string;
+  type: string;
+  title: string;
+  body: string;
+  data?: any;
+  action_type?: string;
+  action_status?: string;
+}): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert(notification)
+      .select()
+      .single();
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function markAsRead(notificationId: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function markAllAsRead(recipientId: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('recipient_id', recipientId)
+      .eq('is_read', false);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error marking all as read:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function updateNotificationAction(notificationId: string, actionStatus: 'accepted' | 'rejected'): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ action_status: actionStatus, is_read: true })
+      .eq('id', notificationId);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error updating notification action:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function deleteNotification(notificationId: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PUSH TOKENS
+// ═══════════════════════════════════════════════════════════════
+
+export async function savePushToken(userId: string, clinicId: string, token: string, platform: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('push_tokens')
+      .upsert({ user_id: userId, clinic_id: clinicId, token, platform }, { onConflict: 'user_id,token' });
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error saving push token:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function getPushTokens(userId: string): Promise<DatabaseResponse<any[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('push_tokens')
+      .select('*')
+      .eq('user_id', userId);
+    if (error) throw error;
+    return { data: data || [], error: null };
+  } catch (error) {
+    console.error('Error getting push tokens:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function removePushToken(token: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('push_tokens')
+      .delete()
+      .eq('token', token);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error removing push token:', error);
+    return { data: null, error: error as Error };
+  }
+}
