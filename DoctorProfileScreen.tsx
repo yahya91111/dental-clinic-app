@@ -815,9 +815,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       )).start();
     });
 
-    // Refresh unread count
+    // Mark all as read and reset count
     if (user?.id) {
-      getUnreadCount(user.id).then(setUnreadNotifications);
+      markAllAsRead(user.id).then(() => {
+        setUnreadNotifications(0);
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      });
     }
   }, [user?.id]);
 
@@ -2542,6 +2545,57 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                               onPress={async () => {
                                 const { updateNotificationAction } = await import('./lib/database');
                                 await updateNotificationAction(notif.id, 'accepted');
+
+                                // Perform swap if it's a swap_request
+                                if (notif.type === 'swap_request' && notif.data) {
+                                  const d = notif.data;
+                                  // Step 1: Update requester's slot → put target doctor there
+                                  await supabase.from('schedule_slots')
+                                    .update({ doctor_id: d.to_doctor_id, doctor_name: d.to_doctor_name })
+                                    .eq('clinic_id', d.clinic_id).eq('week_start', d.week_start)
+                                    .eq('day_of_week', d.day).eq('period', d.from_period)
+                                    .eq('clinic_number', d.from_clinic_number)
+                                    .eq('doctor_id', d.from_doctor_id);
+
+                                  // Step 2: Update target's slot → put requester there
+                                  await supabase.from('schedule_slots')
+                                    .update({ doctor_id: d.from_doctor_id, doctor_name: d.from_doctor_name })
+                                    .eq('clinic_id', d.clinic_id).eq('week_start', d.week_start)
+                                    .eq('day_of_week', d.day).eq('period', d.to_period)
+                                    .eq('clinic_number', d.to_clinic_number)
+                                    .eq('doctor_id', d.to_doctor_id);
+
+                                  // Notify the requester
+                                  await createNotification({
+                                    clinic_id: d.clinic_id,
+                                    recipient_id: d.from_doctor_id,
+                                    sender_id: d.to_doctor_id,
+                                    sender_name: d.to_doctor_name,
+                                    type: 'schedule_change',
+                                    title: 'Swap Accepted',
+                                    body: `${d.to_doctor_name} accepted your swap request for ${d.day}`,
+                                  });
+
+                                  // Send push to requester
+                                  try {
+                                    const { data: tokens } = await supabase
+                                      .from('push_tokens').select('token').eq('user_id', d.from_doctor_id);
+                                    if (tokens) {
+                                      for (const t of tokens) {
+                                        await fetch('https://exp.host/--/api/v2/push/send', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            to: t.token, sound: 'default',
+                                            title: 'Swap Accepted',
+                                            body: `${d.to_doctor_name} accepted your swap request`,
+                                          }),
+                                        });
+                                      }
+                                    }
+                                  } catch (e) { console.log('Push error:', e); }
+                                }
+
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
                               }}
                               style={{ backgroundColor: '#10B981', borderRadius: scale(8), paddingHorizontal: scale(10), paddingVertical: scale(6) }}
@@ -2552,6 +2606,40 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                               onPress={async () => {
                                 const { updateNotificationAction } = await import('./lib/database');
                                 await updateNotificationAction(notif.id, 'rejected');
+
+                                // Notify the requester about rejection
+                                if (notif.type === 'swap_request' && notif.data) {
+                                  const d = notif.data;
+                                  await createNotification({
+                                    clinic_id: d.clinic_id,
+                                    recipient_id: d.from_doctor_id,
+                                    sender_id: d.to_doctor_id,
+                                    sender_name: d.to_doctor_name,
+                                    type: 'schedule_change',
+                                    title: 'Swap Rejected',
+                                    body: `${d.to_doctor_name} rejected your swap request for ${d.day}`,
+                                  });
+
+                                  // Send push to requester
+                                  try {
+                                    const { data: tokens } = await supabase
+                                      .from('push_tokens').select('token').eq('user_id', d.from_doctor_id);
+                                    if (tokens) {
+                                      for (const t of tokens) {
+                                        await fetch('https://exp.host/--/api/v2/push/send', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            to: t.token, sound: 'default',
+                                            title: 'Swap Rejected',
+                                            body: `${d.to_doctor_name} rejected your swap request`,
+                                          }),
+                                        });
+                                      }
+                                    }
+                                  } catch (e) { console.log('Push error:', e); }
+                                }
+
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
                               }}
                               style={{ backgroundColor: '#EF4444', borderRadius: scale(8), paddingHorizontal: scale(10), paddingVertical: scale(6) }}

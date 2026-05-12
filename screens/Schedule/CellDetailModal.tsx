@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScheduleSlot, DayOfWeek, DoctorStatus, DAYS, STATUS_CONFIG } from './types';
 import { supabase } from '../../lib/supabase';
-import { upsertScheduleSlot, deleteScheduleSlot } from '../../lib/database';
+import { upsertScheduleSlot, deleteScheduleSlot, createNotification } from '../../lib/database';
 
 interface CellDetailModalProps {
   visible: boolean;
@@ -15,6 +15,7 @@ interface CellDetailModalProps {
   clinicCount: number;
   clinicId: string | null;
   weekStart: string;
+  userId?: string;
   onClose: () => void;
   onSaved: () => void;
   onChangePeriod?: (period: number) => void;
@@ -45,7 +46,7 @@ interface PickerGroup {
   isExpanded: boolean;
 }
 
-export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, onClose, onSaved, onChangePeriod }: CellDetailModalProps) {
+export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, onClose, onSaved, onChangePeriod }: CellDetailModalProps) {
   const [selectingFor, setSelectingFor] = useState<{ role: 'clinic' | 'delegator'; clinicNumber: number } | null>(null);
   const [pickerGroups, setPickerGroups] = useState<PickerGroup[]>([]);
   const [unassignedDoctors, setUnassignedDoctors] = useState<DoctorOption[]>([]);
@@ -54,6 +55,85 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   // EX mode: select doctor → select status
   const [exMode, setExMode] = useState<'list' | 'doctor' | 'status'>('list');
   const [exSelectedDoctor, setExSelectedDoctor] = useState<DoctorOption | null>(null);
+
+  // Swap request
+  const handleSwapRequest = (targetSlot: ScheduleSlot) => {
+    if (!userId || !clinicId) return;
+    // Find current user's slot on the same day (clinic or delegator, not EX)
+    const mySlot = slots.find(s => s.day === day && s.doctorId === userId && s.period > 0);
+    const myName = mySlot?.doctorName || slots.find(s => s.doctorId === userId)?.doctorName || 'Doctor';
+
+    if (!mySlot) {
+      Alert.alert('Cannot Swap', 'You have no assignment on this day to swap.');
+      return;
+    }
+
+    Alert.alert(
+      'Swap Request',
+      `Do you want to swap your schedule with ${targetSlot.doctorName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send Request',
+          onPress: async () => {
+            await createNotification({
+              clinic_id: clinicId,
+              recipient_id: targetSlot.doctorId,
+              sender_id: userId,
+              sender_name: myName,
+              type: 'swap_request',
+              title: `${myName} wants to swap`,
+              body: `${myName} wants to swap with you on ${day} P${period}`,
+              data: {
+                // Requester's current position
+                from_doctor_id: userId,
+                from_doctor_name: myName,
+                from_period: mySlot.period,
+                from_clinic_number: mySlot.clinicNumber,
+                from_role: mySlot.role,
+                // Target's current position
+                to_doctor_id: targetSlot.doctorId,
+                to_doctor_name: targetSlot.doctorName,
+                to_period: targetSlot.period,
+                to_clinic_number: targetSlot.clinicNumber,
+                to_role: targetSlot.role,
+                // Common
+                day,
+                week_start: weekStart,
+                clinic_id: clinicId,
+              },
+              action_type: 'accept_reject',
+              action_status: 'pending',
+            });
+
+            // Send push notification to target doctor
+            try {
+              const { data: tokens } = await supabase
+                .from('push_tokens')
+                .select('token')
+                .eq('user_id', targetSlot.doctorId);
+              if (tokens && tokens.length > 0) {
+                for (const t of tokens) {
+                  await fetch('https://exp.host/--/api/v2/push/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      to: t.token,
+                      sound: 'default',
+                      title: `${myName} wants to swap`,
+                      body: `${myName} wants to swap with you on ${day} P${period}`,
+                    }),
+                  });
+                }
+              }
+            } catch (e) { console.log('Push send error:', e); }
+
+            Alert.alert('Sent', `Swap request sent to ${targetSlot.doctorName}`);
+          },
+        },
+      ]
+    );
+  };
 
   if (!day || period === null || period === undefined) return null;
 
@@ -815,137 +895,184 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
             {Array.from({ length: clinicCount }, (_, i) => {
               const clinicNum = i + 1;
               const matchingSlots = clinicSlots.filter(s => s.clinicNumber === clinicNum);
+              const hasSwappable = userId && matchingSlots.some(s => s.doctorId !== userId);
               return (
-                <TouchableOpacity
-                  key={`c${clinicNum}`}
-                  activeOpacity={0.7}
-                  onPress={() => openDoctorPicker('clinic', clinicNum)}
-                  style={{
-                    flexDirection: 'row',
-                    alignSelf: 'stretch',
-                    marginBottom: scale(6),
-                    borderRadius: scale(8),
-                    overflow: 'hidden',
-                    borderWidth: scale(1),
-                    borderColor: 'rgba(255,255,255,0.6)',
-                    backgroundColor: 'rgba(255,255,255,0.3)',
-                  }}
-                >
-                  {/* Names - left side */}
-                  <View style={{ flex: 1, paddingVertical: scale(6), paddingHorizontal: scale(8), justifyContent: 'center' }}>
-                    {matchingSlots.length > 0 ? matchingSlots.map(slot => (
-                      <View key={slot.id} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: scale(1) }}>
-                        <TouchableOpacity
-                          onPress={() => handleRemoveSlot(slot)}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        >
-                          <Ionicons name="close-circle" size={scale(14)} color="rgba(239,68,68,0.6)" />
-                        </TouchableOpacity>
-                        <Text style={{
-                          flex: 1,
-                          fontSize: scale(12),
-                          fontWeight: '700',
-                          color: '#3B5998',
-                          textAlign: 'right',
-                          marginLeft: scale(4),
-                        }} numberOfLines={1}>{slot.doctorName}</Text>
-                      </View>
-                    )) : (
-                      <Text style={{ fontSize: scale(11), fontWeight: '600', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
-                    )}
-                  </View>
-                  {/* CL label - right side */}
-                  <LinearGradient
-                    colors={['rgba(71,118,186,0.45)', 'rgba(120,160,210,0.3)', 'rgba(120,160,210,0.3)', 'rgba(71,118,186,0.45)']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
+                <View key={`c${clinicNum}`} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(6) }}>
+                  {/* Swap icon - outside card */}
+                  {hasSwappable ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const target = matchingSlots.find(s => s.doctorId !== userId);
+                        if (target) handleSwapRequest(target);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{
+                        width: scale(28),
+                        height: scale(28),
+                        borderRadius: scale(14),
+                        backgroundColor: 'rgba(99,102,241,0.15)',
+                        borderWidth: scale(1),
+                        borderColor: 'rgba(99,102,241,0.3)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: scale(6),
+                      }}
+                    >
+                      <Ionicons name="swap-horizontal" size={scale(16)} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ width: scale(34) }} />
+                  )}
+                  {/* Card */}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => openDoctorPicker('clinic', clinicNum)}
                     style={{
-                      paddingHorizontal: scale(8),
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderLeftWidth: scale(1),
-                      borderLeftColor: 'rgba(255,255,255,0.5)',
+                      flex: 1,
+                      flexDirection: 'row',
+                      borderRadius: scale(8),
+                      overflow: 'hidden',
+                      borderWidth: scale(1),
+                      borderColor: 'rgba(255,255,255,0.6)',
+                      backgroundColor: 'rgba(255,255,255,0.3)',
                     }}
                   >
-                    <Text style={{
-                      fontSize: scale(9),
-                      fontWeight: '800',
-                      color: '#FFFFFF',
-                      textShadowColor: 'rgba(50, 80, 140, 0.5)',
-                      textShadowOffset: { width: 0, height: scale(0.5) },
-                      textShadowRadius: scale(1),
-                    }}>CL{clinicNum}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+                    <View style={{ flex: 1, paddingVertical: scale(6), paddingHorizontal: scale(8), justifyContent: 'center' }}>
+                      {matchingSlots.length > 0 ? matchingSlots.map(slot => (
+                        <View key={slot.id} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: scale(1) }}>
+                          <TouchableOpacity
+                            onPress={() => handleRemoveSlot(slot)}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          >
+                            <Ionicons name="close-circle" size={scale(14)} color="rgba(239,68,68,0.6)" />
+                          </TouchableOpacity>
+                          <Text style={{
+                            flex: 1,
+                            fontSize: scale(12),
+                            fontWeight: '700',
+                            color: '#3B5998',
+                            textAlign: 'right',
+                            marginLeft: scale(4),
+                          }} numberOfLines={1}>{slot.doctorName}</Text>
+                        </View>
+                      )) : (
+                        <Text style={{ fontSize: scale(11), fontWeight: '600', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                      )}
+                    </View>
+                    <LinearGradient
+                      colors={['rgba(71,118,186,0.45)', 'rgba(120,160,210,0.3)', 'rgba(120,160,210,0.3)', 'rgba(71,118,186,0.45)']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={{
+                        paddingHorizontal: scale(8),
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        borderLeftWidth: scale(1),
+                        borderLeftColor: 'rgba(255,255,255,0.5)',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: scale(9),
+                        fontWeight: '800',
+                        color: '#FFFFFF',
+                        textShadowColor: 'rgba(50, 80, 140, 0.5)',
+                        textShadowOffset: { width: 0, height: scale(0.5) },
+                        textShadowRadius: scale(1),
+                      }}>CL{clinicNum}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
               );
             })}
 
             {/* Divider */}
-            <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(4) }} />
+            <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(4), marginLeft: scale(34) }} />
 
             {/* Delegator Slot - matching grid card style */}
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => {
-                if (!delegatorSlot) openDoctorPicker('delegator', 0);
-              }}
-              style={{
-                flexDirection: 'row',
-                alignSelf: 'stretch',
-                marginBottom: scale(6),
-                borderRadius: scale(8),
-                overflow: 'hidden',
-                borderWidth: scale(1),
-                borderColor: 'rgba(255,255,255,0.6)',
-                backgroundColor: 'rgba(255,255,255,0.3)',
-              }}
-            >
-              {/* Name - left side */}
-              <View style={{ flex: 1, paddingVertical: scale(6), paddingHorizontal: scale(8), justifyContent: 'center' }}>
-                {delegatorSlot ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <TouchableOpacity
-                      onPress={() => handleRemoveSlot(delegatorSlot)}
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    >
-                      <Ionicons name="close-circle" size={scale(14)} color="rgba(239,68,68,0.6)" />
-                    </TouchableOpacity>
-                    <Text style={{
-                      flex: 1,
-                      fontSize: scale(12),
-                      fontWeight: '700',
-                      color: '#6B4C9A',
-                      textAlign: 'right',
-                      marginLeft: scale(4),
-                    }} numberOfLines={1}>{delegatorSlot.doctorName}</Text>
-                  </View>
-                ) : (
-                  <Text style={{ fontSize: scale(11), fontWeight: '600', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
-                )}
-              </View>
-              {/* DLG label - right side */}
-              <LinearGradient
-                colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(6) }}>
+              {/* Swap icon - outside card */}
+              {userId && delegatorSlot && delegatorSlot.doctorId !== userId ? (
+                <TouchableOpacity
+                  onPress={() => handleSwapRequest(delegatorSlot)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{
+                    width: scale(28),
+                    height: scale(28),
+                    borderRadius: scale(14),
+                    backgroundColor: 'rgba(99,102,241,0.35)',
+                    borderWidth: scale(1.5),
+                    borderColor: 'rgba(99,102,241,0.6)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: scale(6),
+                  }}
+                >
+                  <Ionicons name="swap-horizontal" size={scale(16)} color="#FFFFFF" />
+                </TouchableOpacity>
+              ) : (
+                <View style={{ width: scale(34) }} />
+              )}
+              {/* Card */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (!delegatorSlot) openDoctorPicker('delegator', 0);
+                }}
                 style={{
-                  paddingHorizontal: scale(8),
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  borderLeftWidth: scale(1),
-                  borderLeftColor: 'rgba(255,255,255,0.5)',
+                  flex: 1,
+                  flexDirection: 'row',
+                  borderRadius: scale(8),
+                  overflow: 'hidden',
+                  borderWidth: scale(1),
+                  borderColor: 'rgba(255,255,255,0.6)',
+                  backgroundColor: 'rgba(255,255,255,0.3)',
                 }}
               >
-                <Text style={{
-                  fontSize: scale(9),
-                  fontWeight: '800',
-                  color: '#FFFFFF',
-                  textShadowColor: 'rgba(88, 74, 126, 0.5)',
-                  textShadowOffset: { width: 0, height: scale(0.5) },
-                  textShadowRadius: scale(1),
-                }}>DLG</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <View style={{ flex: 1, paddingVertical: scale(6), paddingHorizontal: scale(8), justifyContent: 'center' }}>
+                  {delegatorSlot ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity
+                        onPress={() => handleRemoveSlot(delegatorSlot)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Ionicons name="close-circle" size={scale(14)} color="rgba(239,68,68,0.6)" />
+                      </TouchableOpacity>
+                      <Text style={{
+                        flex: 1,
+                        fontSize: scale(12),
+                        fontWeight: '700',
+                        color: '#6B4C9A',
+                        textAlign: 'right',
+                        marginLeft: scale(4),
+                      }} numberOfLines={1}>{delegatorSlot.doctorName}</Text>
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: scale(11), fontWeight: '600', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                  )}
+                </View>
+                <LinearGradient
+                  colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={{
+                    paddingHorizontal: scale(8),
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderLeftWidth: scale(1),
+                    borderLeftColor: 'rgba(255,255,255,0.5)',
+                  }}
+                >
+                  <Text style={{
+                    fontSize: scale(9),
+                    fontWeight: '800',
+                    color: '#FFFFFF',
+                    textShadowColor: 'rgba(88, 74, 126, 0.5)',
+                    textShadowOffset: { width: 0, height: scale(0.5) },
+                    textShadowRadius: scale(1),
+                  }}>DLG</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </TouchableOpacity>
       </TouchableOpacity>

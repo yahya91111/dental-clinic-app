@@ -611,6 +611,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         clinicCount={clinicCount}
         clinicId={clinicId || null}
         weekStart={formatWeekStart(selectedWeekStart)}
+        userId={userId}
         onClose={() => setSelectedCell(null)}
         onSaved={() => {
           loadSchedule();
