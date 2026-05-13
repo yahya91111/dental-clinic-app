@@ -815,11 +815,17 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       )).start();
     });
 
-    // Mark all as read and reset count
+    // Mark all as read except pending action notifications
     if (user?.id) {
-      markAllAsRead(user.id).then(() => {
-        setUnreadNotifications(0);
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      // Only mark non-action or already-actioned notifications as read
+      const toMark = notifications.filter(n => !n.is_read && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
+      Promise.all(toMark.map(n => markAsRead(n.id))).then(() => {
+        setNotifications(prev => prev.map(n => {
+          if (n.action_type === 'accept_reject' && n.action_status === 'pending') return n;
+          return { ...n, is_read: true };
+        }));
+        const pendingCount = notifications.filter(n => n.action_type === 'accept_reject' && n.action_status === 'pending' && !n.is_read).length;
+        setUnreadNotifications(pendingCount);
       });
     }
   }, [user?.id]);
@@ -2414,9 +2420,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               {/* TEST: Add sample notifications */}
               <TouchableOpacity
                 onPress={async () => {
-                  if (!user?.id) return;
+                  if (!user?.id) { Alert.alert('Error', 'User ID not found'); return; }
                   const types = [
-                    { type: 'swap_request', title: 'طلب تبديل', body: 'د.أحمد يريد تبديل فترة P1 الأحد مع فترتك P2', action_type: 'accept_reject', action_status: 'pending' },
+                    { type: 'swap_request', title: 'طلب تبديل', body: 'د.أحمد يريد تبديل فترة P1 يوم الأحد مع فترتك P2', action_type: 'accept_reject', action_status: 'pending' },
+                    { type: 'swap_request', title: 'طلب تبديل', body: 'د.خالد يريد تبديل فترة P3 يوم الثلاثاء مع فترتك P4', action_type: 'accept_reject', action_status: 'pending' },
                     { type: 'schedule_change', title: 'تغيير بالجدول', body: 'تم تغيير جدولك ليوم الثلاثاء - العيادة 2 بدل العيادة 3' },
                     { type: 'ai_alert', title: 'تنبيه الذكاء', body: 'العيادة 3 فارغة يوم الأربعاء فترة P4' },
                     { type: 'admin_message', title: 'تعميم إداري', body: 'اجتماع عام يوم الخميس الساعة 2 ظهراً في القاعة الرئيسية' },
@@ -2464,27 +2471,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   if (filtered.length === 0) {
                     return (
                       <View style={{ alignItems: 'center', paddingTop: scale(60) }}>
-                        <Ionicons
-                          name={notifTab === 'unread' ? 'checkmark-circle-outline' : notifTab === 'announcements' ? 'megaphone-outline' : 'mail-open-outline'}
-                          size={scale(48)}
-                          color="rgba(156,163,175,0.4)"
-                        />
-                        <Text style={{ fontSize: scale(14), color: '#9CA3AF', marginTop: scale(12), fontWeight: '600' }}>
-                          {notifTab === 'unread' ? 'No unread notifications' : notifTab === 'announcements' ? 'No announcements' : 'No read notifications'}
+                        <Text style={{ fontSize: scale(14), color: '#9CA3AF', fontWeight: '600' }}>
+                          {notifTab === 'unread' ? 'لا توجد إشعارات جديدة' : notifTab === 'announcements' ? 'لا توجد تعاميم' : 'لا توجد إشعارات مقروءة'}
                         </Text>
                       </View>
                     );
                   }
 
                   return filtered.map((notif: any) => {
-                    const typeIcons: Record<string, { icon: string; color: string }> = {
-                      swap_request: { icon: 'swap-horizontal', color: '#6366F1' },
-                      schedule_change: { icon: 'calendar', color: '#3B82F6' },
-                      ai_alert: { icon: 'sparkles', color: '#8B5CF6' },
-                      admin_message: { icon: 'megaphone', color: '#F59E0B' },
-                      general: { icon: 'information-circle', color: '#10B981' },
-                    };
-                    const typeInfo = typeIcons[notif.type] || typeIcons.general;
                     const timeAgo = getTimeAgo(new Date(notif.created_at));
 
                     return (
@@ -2492,55 +2486,56 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                         key={notif.id}
                         activeOpacity={0.7}
                         onPress={async () => {
-                          if (!notif.is_read) {
+                          // Don't mark as read if it has pending action
+                          if (!notif.is_read && !(notif.action_type === 'accept_reject' && notif.action_status === 'pending')) {
                             await markAsRead(notif.id);
                             setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
                             setUnreadNotifications(prev => Math.max(0, prev - 1));
                           }
                         }}
                         style={{
-                          flexDirection: 'row',
-                          backgroundColor: notif.is_read ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)',
+                          backgroundColor: 'rgba(30, 25, 50, 0.45)',
                           borderRadius: scale(14),
                           padding: scale(14),
                           marginBottom: scale(8),
-                          borderWidth: scale(1),
-                          borderColor: notif.is_read ? 'rgba(255,255,255,0.3)' : 'rgba(99,102,241,0.2)',
-                          borderLeftWidth: notif.is_read ? scale(1) : scale(3),
-                          borderLeftColor: notif.is_read ? 'rgba(255,255,255,0.3)' : typeInfo.color,
+                          borderWidth: scale(1.5),
+                          borderColor: notif.is_read ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.5)',
                         }}
                       >
-                        <View style={{
-                          width: scale(36),
-                          height: scale(36),
-                          borderRadius: scale(18),
-                          backgroundColor: typeInfo.color + '15',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          marginRight: scale(12),
-                        }}>
-                          <Ionicons name={typeInfo.icon as any} size={scale(18)} color={typeInfo.color} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{
-                            fontSize: scale(13),
-                            fontWeight: notif.is_read ? '600' : '700',
-                            color: '#1E293B',
-                            marginBottom: scale(3),
-                          }}>{notif.title}</Text>
-                          <Text style={{
-                            fontSize: scale(11),
-                            color: '#6B7280',
-                            lineHeight: scale(16),
-                          }} numberOfLines={2}>{notif.body}</Text>
+                        {/* Title + Time */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: scale(6) }}>
                           <Text style={{
                             fontSize: scale(10),
-                            color: '#9CA3AF',
-                            marginTop: scale(4),
+                            color: 'rgba(255,255,255,0.5)',
                           }}>{timeAgo}</Text>
+                          <Text style={{
+                            flex: 1,
+                            fontSize: scale(14),
+                            fontWeight: '700',
+                            color: '#FFFFFF',
+                            textAlign: 'right',
+                            marginLeft: scale(8),
+                          }}>{notif.title}</Text>
                         </View>
+                        {/* Body */}
+                        <Text style={{
+                          fontSize: scale(12),
+                          color: 'rgba(255,255,255,0.85)',
+                          lineHeight: scale(18),
+                          textAlign: 'right',
+                        }} numberOfLines={3}>{notif.body}</Text>
+                        {/* Sender */}
+                        {notif.sender_name && (
+                          <Text style={{
+                            fontSize: scale(10),
+                            color: 'rgba(255,255,255,0.4)',
+                            textAlign: 'right',
+                            marginTop: scale(6),
+                          }}>— {notif.sender_name}</Text>
+                        )}
+                        {/* Action buttons */}
                         {notif.action_type === 'accept_reject' && notif.action_status === 'pending' && (
-                          <View style={{ justifyContent: 'center', gap: scale(6) }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: scale(8), marginTop: scale(10) }}>
                             <TouchableOpacity
                               onPress={async () => {
                                 const { updateNotificationAction } = await import('./lib/database');
@@ -2581,9 +2576,9 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
                               }}
-                              style={{ backgroundColor: '#10B981', borderRadius: scale(8), paddingHorizontal: scale(10), paddingVertical: scale(6) }}
+                              style={{ backgroundColor: 'rgba(16,185,129,0.2)', borderRadius: scale(10), paddingHorizontal: scale(18), paddingVertical: scale(9), borderWidth: scale(1.5), borderColor: 'rgba(16,185,129,0.5)' }}
                             >
-                              <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#FFF' }}>Accept</Text>
+                              <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#FFFFFF' }}>موافق</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={async () => {
@@ -2608,20 +2603,20 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
                               }}
-                              style={{ backgroundColor: '#EF4444', borderRadius: scale(8), paddingHorizontal: scale(10), paddingVertical: scale(6) }}
+                              style={{ backgroundColor: 'rgba(239,68,68,0.2)', borderRadius: scale(10), paddingHorizontal: scale(18), paddingVertical: scale(9), borderWidth: scale(1.5), borderColor: 'rgba(239,68,68,0.5)' }}
                             >
-                              <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#FFF' }}>Reject</Text>
+                              <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#FFFFFF' }}>رفض</Text>
                             </TouchableOpacity>
                           </View>
                         )}
                         {notif.action_status === 'accepted' && (
-                          <View style={{ justifyContent: 'center' }}>
-                            <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#10B981' }}>Accepted</Text>
+                          <View style={{ alignItems: 'flex-end', marginTop: scale(8) }}>
+                            <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#10B981' }}>تمت الموافقة ✓</Text>
                           </View>
                         )}
                         {notif.action_status === 'rejected' && (
-                          <View style={{ justifyContent: 'center' }}>
-                            <Text style={{ fontSize: scale(10), fontWeight: '700', color: '#EF4444' }}>Rejected</Text>
+                          <View style={{ alignItems: 'flex-end', marginTop: scale(8) }}>
+                            <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#EF4444' }}>تم الرفض ✗</Text>
                           </View>
                         )}
                       </TouchableOpacity>
