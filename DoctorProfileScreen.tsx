@@ -817,15 +817,15 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
 
     // Mark all as read except pending action notifications
     if (user?.id) {
-      // Only mark non-action or already-actioned notifications as read
-      const toMark = notifications.filter(n => !n.is_read && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
-      Promise.all(toMark.map(n => markAsRead(n.id))).then(() => {
-        setNotifications(prev => prev.map(n => {
+      setNotifications(prev => {
+        const toMark = prev.filter(n => !n.is_read && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
+        toMark.forEach(n => markAsRead(n.id));
+        const pendingCount = prev.filter(n => n.action_type === 'accept_reject' && n.action_status === 'pending' && !n.is_read).length;
+        setUnreadNotifications(pendingCount);
+        return prev.map(n => {
           if (n.action_type === 'accept_reject' && n.action_status === 'pending') return n;
           return { ...n, is_read: true };
-        }));
-        const pendingCount = notifications.filter(n => n.action_type === 'accept_reject' && n.action_status === 'pending' && !n.is_read).length;
-        setUnreadNotifications(pendingCount);
+        });
       });
     }
   }, [user?.id]);
