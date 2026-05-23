@@ -13,6 +13,7 @@ import ScheduleScreen from './screens/Schedule';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
+import { getPermissions } from './permissions';
 import { getUnreadCount, getNotifications as fetchNotifications, markAsRead, markAllAsRead, createNotification } from './lib/database';
 import { registerForPushNotifications, addNotificationResponseListener, addNotificationReceivedListener } from './lib/pushNotifications';
 
@@ -2678,12 +2679,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 <View style={styles.formField}>
                   <Text style={styles.fieldLabel}>الاسم:</Text>
                   <TextInput
-                    style={[styles.textInput, (user?.role === 'team_leader' || user?.role === 'doctor' || user?.role === 'coordinator') && styles.disabledInput]}
+                    style={[styles.textInput, !(user && getPermissions(user.role).canEditAnyProfile) && styles.disabledInput]}
                     value={managerName}
                     onChangeText={setManagerName}
                     placeholder="أدخل الاسم"
                     placeholderTextColor="#9CA3AF"
-                    editable={user?.role !== 'team_leader' && user?.role !== 'doctor' && user?.role !== 'coordinator'}
+                    editable={!!(user && getPermissions(user.role).canEditAnyProfile)}
                   />
                 </View>
 
@@ -2691,14 +2692,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 <View style={styles.formField}>
                   <Text style={styles.fieldLabel}>الإيميل:</Text>
                   <TextInput
-                    style={[styles.textInput, (user?.role === 'team_leader' || user?.role === 'doctor' || user?.role === 'coordinator') && styles.disabledInput]}
+                    style={[styles.textInput, !(user && getPermissions(user.role).canEditAnyProfile) && styles.disabledInput]}
                     value={managerEmail}
                     onChangeText={setManagerEmail}
                     placeholder="أدخل الإيميل"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    editable={user?.role !== 'team_leader' && user?.role !== 'doctor' && user?.role !== 'coordinator'}
+                    editable={!!(user && getPermissions(user.role).canEditAnyProfile)}
                   />
                 </View>
 

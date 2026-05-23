@@ -28,6 +28,8 @@ export interface PermissionCheck {
   
   // Doctor management
   canAddDoctor: boolean;
+  canAddTeamLeader: boolean;
+  canAddCoordinator: boolean;
   canDeleteDoctor: boolean;
   canDeleteTeamLeader: boolean;
   canDeleteCoordinator: boolean;
@@ -63,9 +65,11 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canViewDoctors: true,
         canViewMyStatistics: true,
         canViewTimeline: false, // Super admin uses Dental Departments instead
-        
+
         // Doctor management
         canAddDoctor: true,
+        canAddTeamLeader: true,
+        canAddCoordinator: true,
         canDeleteDoctor: true,
         canDeleteTeamLeader: true,
         canDeleteCoordinator: true,
@@ -96,9 +100,11 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canViewDoctors: true,
         canViewMyStatistics: true,
         canViewTimeline: false, // Coordinator uses Dental Departments instead
-        
+
         // Doctor management
         canAddDoctor: true,
+        canAddTeamLeader: true,
+        canAddCoordinator: false,
         canDeleteDoctor: true,
         canDeleteTeamLeader: true,
         canDeleteCoordinator: false,
@@ -129,9 +135,11 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canViewDoctors: true,
         canViewMyStatistics: true,
         canViewTimeline: true,
-        
+
         // Doctor management
-        canAddDoctor: false,
+        canAddDoctor: true,
+        canAddTeamLeader: false,
+        canAddCoordinator: false,
         canDeleteDoctor: false,
         canDeleteTeamLeader: false,
         canDeleteCoordinator: false,
@@ -162,9 +170,11 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canViewDoctors: true,
         canViewMyStatistics: true,
         canViewTimeline: true,
-        
+
         // Doctor management
         canAddDoctor: false,
+        canAddTeamLeader: false,
+        canAddCoordinator: false,
         canDeleteDoctor: false,
         canDeleteTeamLeader: false,
         canDeleteCoordinator: false,
@@ -188,6 +198,21 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canViewArchive: false,
       };
   }
+}
+
+/**
+ * Check if user can add another user with a specific role
+ */
+export function canAddUserWithRole(
+  currentRole: UserRole,
+  targetRole: UserRole
+): boolean {
+  const permissions = getPermissions(currentRole);
+
+  if (targetRole === 'doctor') return permissions.canAddDoctor;
+  if (targetRole === 'team_leader') return permissions.canAddTeamLeader;
+  if (targetRole === 'coordinator') return permissions.canAddCoordinator;
+  return false;
 }
 
 /**

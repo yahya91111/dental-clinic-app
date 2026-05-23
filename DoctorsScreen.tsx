@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
+import { getPermissions } from './permissions';
 interface DoctorsScreenProps {
   onBack: () => void;
   clinicId?: string; // Optional: filter by clinic (UUID)
@@ -236,15 +237,17 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
     }
   }, [doctors.length]);
 
-  // Calculate permissions based on user role
+  // Calculate permissions based on user role (centralized in permissions.ts)
   const permissions = React.useMemo(() => {
     if (!user) return null;
-    
+    const perms = getPermissions(user.role);
     return {
-      canAddDoctor: user.role === 'super_admin' || user.role === 'coordinator' || user.role === 'team_leader',
-      canViewDoctorProfiles: user.role !== 'doctor',
-      canPromoteToCoordinator: user.role === 'super_admin',
-      canDeleteCoordinator: user.role === 'super_admin',
+      canAddDoctor: perms.canAddDoctor,
+      canAddTeamLeader: perms.canAddTeamLeader,
+      canAddCoordinator: perms.canAddCoordinator,
+      canViewDoctorProfiles: perms.canViewDoctorProfile,
+      canPromoteToCoordinator: perms.canPromoteToCoordinator,
+      canDeleteCoordinator: perms.canDeleteCoordinator,
     };
   }, [user]);
 
@@ -690,8 +693,8 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 </View>
                 )}
 
-                {/* Role Dropdown - Only Doctor for Team Leader */}
-                {user?.role === 'team_leader' ? (
+                {/* Role Dropdown - shows only roles user can add */}
+                {!permissions?.canAddTeamLeader && !permissions?.canAddCoordinator ? (
                   <View style={styles.formField}>
                     <Text style={styles.fieldLabel}>Role:</Text>
                     <View style={[styles.textInput, { backgroundColor: '#F3F4F6' }]}>
@@ -701,7 +704,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                 ) : (
                 <View style={styles.formField}>
                   <Text style={styles.fieldLabel}>Role:</Text>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.textInput}
                     onPress={() => setShowRoleDropdown(!showRoleDropdown)}
                   >
@@ -709,16 +712,17 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       <Text style={{ color: '#2D3748', fontSize: scale(16), flex: 1 }}>
                         {newDoctorRole === 'doctor' ? 'Doctor' : newDoctorRole === 'coordinator' ? 'Coordinator' : 'Team Leader'}
                       </Text>
-                      <Ionicons 
-                        name={showRoleDropdown ? "chevron-up" : "chevron-down"} 
-                        size={scale(20)} 
-                        color="#4A5568" 
+                      <Ionicons
+                        name={showRoleDropdown ? "chevron-up" : "chevron-down"}
+                        size={scale(20)}
+                        color="#4A5568"
                       />
                     </View>
                   </TouchableOpacity>
-                  
+
                   {showRoleDropdown && (
                     <View style={styles.clinicDropdownMenu}>
+                      {permissions?.canAddDoctor && (
                       <TouchableOpacity
                         style={styles.clinicDropdownItem}
                         onPress={() => {
@@ -731,8 +735,8 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                           <Ionicons name="checkmark" size={scale(20)} color="#3B82F6" />
                         )}
                       </TouchableOpacity>
-                      {/* Coordinator - Only for Super Admin */}
-                      {permissions?.canPromoteToCoordinator && (
+                      )}
+                      {permissions?.canAddCoordinator && (
                       <TouchableOpacity
                         style={styles.clinicDropdownItem}
                         onPress={() => {
@@ -746,6 +750,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                         )}
                       </TouchableOpacity>
                       )}
+                      {permissions?.canAddTeamLeader && (
                       <TouchableOpacity
                         style={styles.clinicDropdownItem}
                         onPress={() => {
@@ -758,6 +763,7 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                           <Ionicons name="checkmark" size={scale(20)} color="#3B82F6" />
                         )}
                       </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </View>
