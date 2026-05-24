@@ -20,12 +20,19 @@ Do NOT use this workflow for:
 
 ## Required tools
 
+- `get_clinic_info()` — returns the clinic's structure including
+  the number of rooms (clinics) configured for this clinic.
 - `get_clinic_doctors()` — returns the clinic's doctors with their
-  group_id, availability, and current status.
+  group_id, current status (active, SL, PS, PE, VC, EX), and
+  scheduled leaves.
 - `get_existing_schedule(week_start)` — returns the existing
   schedule for that week, or null if none exists.
-- `create_weekly_schedule(json)` — saves the full weekly schedule
-  in a single atomic call.
+- `draft_weekly_schedule(json)` — pushes the full schedule into
+  the Schedule UI as an editable draft. Not yet published. The
+  TL can edit slots directly in the UI after this call.
+- `confirm_weekly_schedule(week_start)` — publishes the current
+  draft as the final schedule.
+- `discard_draft(week_start)` — cancels the draft without saving.
 
 ---
 
@@ -38,11 +45,16 @@ Before drafting any schedule, run these checks in order:
      explicitly** whether to replace it.
    - Never silently overwrite an existing schedule.
 
-2. Call `get_clinic_doctors()`.
+2. Call `get_clinic_info()` to read the clinic's configured
+   number of rooms. Do not ask the user — it is already set.
+
+3. Call `get_clinic_doctors()`.
    - Confirm at least four active doctors are available
      (minimum for basic coverage).
-   - Note any doctor on long-term leave, vacation, or
-     permission so they are excluded from the draft.
+   - Read each doctor's status (SL, PS, PE, VC, EX) and any
+     scheduled leaves directly from the result. Do not ask the
+     user about leaves — they are stored in the system and
+     visible to the TL on the Groups/Leaves pages.
 
 ---
 
@@ -51,10 +63,14 @@ Before drafting any schedule, run these checks in order:
 1. Confirm the `week_start` date. Default is the next Sunday
    unless the user specifies otherwise.
 
-2. Ask the Team Leader for any constraints before drafting:
-   - Number of rooms operating this week (1-5).
-   - Doctors unavailable this week or on specific days.
-   - Any preferred distribution pattern (e.g., "same as last week").
+2. Use the data already in the system. Do not ask about:
+   - Number of rooms — it is part of the clinic configuration.
+   - Doctor absences and leaves — they are stored on each
+     doctor and visible to the TL on Groups/Leaves pages.
+
+   You may ask the TL only about choices not stored in the
+   system, such as a preferred distribution pattern
+   ("same as last week", "rotate groups").
 
 3. Retrieve the relevant rules from the knowledge base:
    - `rules/group_separation.md` — groups must not mix in a period
@@ -66,46 +82,48 @@ Before drafting any schedule, run these checks in order:
    - Distribute groups across periods, not concentrated in one
    - Assign one delegator per period from eligible doctors
 
-5. Present a SUMMARY to the user. Do not dump the full JSON.
-   Use a concise table format (see Presentation format below).
+5. Call `draft_weekly_schedule(json)` to push the distribution
+   into the Schedule UI as a draft. The TL can now see the
+   schedule visually and edit any slot directly in the app.
 
-6. Wait for the user's response. The user has three paths:
-   a) **Confirm as-is** — proceed to step 7.
-   b) **Request verbal changes** ("غيّر ديليقيتر الأحد إلى د.علي") —
-      adjust the draft, re-present, return to this step.
-   c) **Choose manual editing** ("أعدّله بنفسي بالتطبيق") —
-      acknowledge briefly, do NOT save. The user will edit
-      directly in the Schedule UI from here.
+6. Inform the TL briefly:
+   "وزّعت الأطباء بالجدول كمسوّده. عاينها وعدّل الي تبيه،
+   وقولي لما تبي تحفظ."
 
-7. Call `create_weekly_schedule(json)` to save (only on path 6a).
+7. Wait for the TL's response:
+   a) **Save** ("احفظ" / "ثبّت") — proceed to step 8.
+   b) **Quick verbal change** ("غيّر ديليقيتر الأحد إلى د.علي")
+      — adjust the draft, push again, return to step 7.
+   c) **Cancel** ("ألغي" / "ابدأ من جديد") — call
+      `discard_draft(week_start)` and stop.
 
-8. Report the result in one short line:
+   Note: the TL may edit slots directly in the UI between
+   turns. You do not see those edits, but they persist in
+   the draft.
+
+8. Call `confirm_weekly_schedule(week_start)` to publish
+   the draft (only on path 7a).
+
+9. Report the result in one short line:
    - On success: "تم. جدول أسبوع [date] جاهز."
    - On failure: state what blocked it and what remains.
-   - On manual editing: "تمام، عدّله بالتطبيق وأنا موجود لو احتجت."
+   - On cancel: "تم إلغاء المسوّده."
 
 ---
 
 ## Presentation format
 
-When showing the draft, summarize by day and period count.
-Show the SHAPE of the schedule, not the data behind it.
+The schedule itself is the presentation — once pushed via
+`draft_weekly_schedule`, the TL sees and interacts with it
+visually in the Schedule UI. Do not duplicate it in chat.
 
-Example:
-```
-الأحد:    P1(3)  P2(3)  P3(2)  P4(2)  —  DLG: د.أحمد
-الاثنين:  P1(3)  P2(3)  P3(2)  P4(2)  —  DLG: د.سامي
-الثلاثاء: P1(3)  P2(3)  P3(2)  P4(2)  —  DLG: د.علي
-الأربعاء: P1(3)  P2(3)  P3(2)  P4(2)  —  DLG: د.محمد
-الخميس:   P1(2)  P2(2)  P3(2)  P4(2)  —  DLG: د.أحمد
-
-مجموع: 56 خانه، كل طبيب 4-5 فترات بالأسبوع
-```
-
-If any period has no coverage, flag it explicitly:
-```
-⚠ الخميس P4: لا توجد تغطيه (لا أطباء متاحين)
-```
+In chat, keep the message short and only surface:
+- A one-line confirmation that the draft is in the UI
+- Any uncovered periods that need attention, e.g.:
+  ```
+  ⚠ الخميس P4: لا توجد تغطيه (لا أطباء متاحين)
+  ```
+- Any doctor excluded due to leave, in one line if relevant
 
 ---
 
@@ -150,31 +168,23 @@ If any period has no coverage, flag it explicitly:
 ```
 TL: أنشئ جدول الأسبوع
 
-AI: [calls get_existing_schedule(2026-05-24)]
-    لا يوجد جدول للأسبوع القادم بعد.
-    [calls get_clinic_doctors()]
-    عيادتك فيها 12 طبيب موزعين على 3 قروبات.
+AI: [calls get_existing_schedule(2026-05-24)] — لا يوجد جدول بعد
+    [calls get_clinic_info()] — 3 عيادات معيّنه
+    [calls get_clinic_doctors()] — 12 طبيب، د.أحمد بإجازه الأحد
+    [builds distribution respecting rules]
+    [calls draft_weekly_schedule(json)]
 
-AI: قبل ما أبني الجدول، أحتاج أعرف:
-    - كم عياده راح تشتغل هالأسبوع؟
-    - فيه أحد بإجازه أو استئذان؟
+    وزّعت الأطباء بالجدول كمسوّده. عاينها وعدّل الي تبيه،
+    وقولي لما تبي تحفظ.
 
-TL: 3 عيادات، د.أحمد بإجازه يوم الأحد فقط
+TL: [reviews in the UI, manually adjusts a couple of slots]
+    غيّر ديليقيتر الاثنين إلى د.علي بدل د.أحمد
 
-AI: [drafts schedule respecting rules]
-    إليك التوزيع المقترح:
+AI: [calls draft_weekly_schedule(updated json)]
+    تم التعديل. شي ثاني؟
 
-    الأحد:    P1(3) P2(3) P3(2) P4(2)  —  DLG: د.سامي
-    الاثنين:  P1(3) P2(3) P3(2) P4(2)  —  DLG: د.أحمد
-    الثلاثاء: P1(3) P2(3) P3(2) P4(2)  —  DLG: د.علي
-    الأربعاء: P1(3) P2(3) P3(2) P4(2)  —  DLG: د.محمد
-    الخميس:   P1(2) P2(2) P3(2) P4(2)  —  DLG: د.سامي
+TL: احفظ
 
-    مجموع: 56 خانه. د.أحمد مستبعد من الأحد كما طلبت.
-    هل أحفظ الجدول؟
-
-TL: نعم
-
-AI: [calls create_weekly_schedule(json)]
+AI: [calls confirm_weekly_schedule(2026-05-24)]
     تم. جدول أسبوع 24 مايو جاهز.
 ```
