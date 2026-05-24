@@ -462,12 +462,12 @@ export async function sendMessage(
   }
 
   try {
-    // Build system prompt with caching
+    // Build system prompt with caching (1-hour extended TTL)
     const systemBlocks: any[] = [
       {
         type: 'text',
         text: SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
+        cache_control: { type: 'ephemeral', ttl: '1h' },
       },
     ];
     if (contextData) {
@@ -493,6 +493,7 @@ export async function sendMessage(
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'extended-cache-ttl-2025-04-11',
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
