@@ -45,6 +45,8 @@ yarn-error.*
 # Documentation files (internal use only)
 *.md
 !README.md
+# DCM AI RAG knowledge base (required for AI assistants)
+!lib/ai/rag/**/*.md
 
 # SQL files (database schemas)
 *.sql
