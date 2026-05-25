@@ -276,16 +276,19 @@ For full rules, see `rules/coverage.md`. Key points:
   doctor for that day, or null if none.
 - `auto_replace_with_ex(slot_id)` — replaces the slot with
   the day's reserve EX doctor. Returns the new assignment.
-- `find_period_candidates(week_start, day, source_period, search_period, exclude_reduced_workload?)`
-  — returns doctors scheduled in `search_period` who could
-  be swap targets for `source_period`. Set
-  `exclude_reduced_workload=true` when searching for
-  candidates to take P2 or P4 (reduced-workload doctors
-  don't work those periods).
-- `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[])`
+- `find_swap_candidates(week_start, day, target_period, exclude_reduced_workload?)`
+  — returns doctors scheduled in `target_period` who could
+  be swap targets. Set `exclude_reduced_workload=true` when
+  the swap would move the candidate into P2 or P4
+  (reduced-workload doctors don't work end-of-shift
+  periods). Same tool used by `swap_broadcast`.
+- `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
   — sends a swap request to multiple candidates. First to
   accept triggers the atomic swap. Used at every cascade
-  step.
+  step. **For cascade steps, use a short `timeout_minutes`
+  (15-30) so a non-response moves the cascade forward
+  quickly. Do NOT use the 24-hour timeout meant for TL
+  open broadcasts.**
 - `assign_replacement(slot_id, replacement_doctor_id)` —
   assigns a different doctor to a vacated slot (used for
   manual TL choice).
@@ -374,18 +377,23 @@ The TL Assistant opens the conversation proactively.
 
 ### Branch PE/PS cascade — Source A only
 
-The TL's affected slot is empty. Run the cascading swap:
+The TL's affected slot is empty. Run the cascading swap.
+Each step uses a **short timeout (15 minutes)** so a
+non-response moves the cascade forward quickly — same-day
+permissions cannot wait 24 hours.
 
-1. **Step 1** — `find_period_candidates(day, source, closest_period)`
-   then `broadcast_swap_request(slot, candidates)`. Wait
-   for any acceptance.
+1. **Step 1** — `find_swap_candidates(week, day, closest_period, exclude_reduced_workload)`
+   then `broadcast_swap_request(slot, candidates, timeout_minutes=15)`.
+   Set `exclude_reduced_workload=true` when the candidate
+   would inherit P2 or P4.
 2. If step 1 returns no candidates or all decline within
    the timeout, present step 2 to the TL:
    "ما حد بـ [closest] قبل التبديل. أنتقل لـ [next period]؟"
-3. On TL confirmation, run `broadcast_swap_request` for
+3. On TL confirmation, run `find_swap_candidates` +
+   `broadcast_swap_request(..., timeout_minutes=15)` for
    the next cascade period. Pass `exclude_reduced_workload=true`
-   when the target is P2 or P4. Repeat for the third
-   cascade period if needed.
+   when the candidate would inherit P2 or P4. Repeat for
+   the third cascade period if needed.
 4. If all cascades fail, inform the TL that the
    permission cannot be granted and they will have to
    work the period.
@@ -513,10 +521,10 @@ AI: سجّلت استئذانك (PE) لـ P2 اليوم. P2 عياده [N] صا�
 
 TL: نعم
 
-AI: [internal: calls find_period_candidates(today,
-     source=P2, search=P1) → 5 candidates]
+AI: [internal: calls find_swap_candidates(today, P1,
+     exclude_reduced_workload=true) → 5 candidates]
     [internal: calls broadcast_swap_request(slot,
-     5 P1 candidates)]
+     5 P1 candidates, timeout_minutes=15)]
 
 AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. راح يصلك إشعار
     لما أحدهم يقبل.

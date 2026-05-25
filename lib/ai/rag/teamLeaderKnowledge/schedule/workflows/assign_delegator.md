@@ -21,7 +21,7 @@ Do NOT use this workflow for:
 
 ## Delegator rules (reference)
 
-For full rules, see `rules/delegator_rules.md`. Key points:
+For full rules, see `rules/delegator_and_ex.md`. Key points:
 
 - The delegator is a **separate role** from the regular
   clinic doctor. It is not a doctor working in the clinic

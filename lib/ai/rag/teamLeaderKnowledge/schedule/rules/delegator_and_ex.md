@@ -27,12 +27,28 @@ are not assigned to a specific clinic room.
 
 ### Scope
 
-The delegator role is scoped to a **full shift**. One
-delegator covers all the periods of one shift on one day.
+The delegator role is scoped to a **full shift by default**.
+One delegator covers all the periods of one shift on one day,
+and this is the normal case.
 
-There is no concept of "P1 delegator" separate from
-"P2 delegator" — the same person covers both periods of
-the morning shift, or both periods of the evening shift.
+Two exceptions allow per-period assignment:
+
+1. **Balanced shortage (D = S)** — see "Rotated delegator"
+   below. Two doctors split the shift: one is delegator in
+   P1 (or P3), the other in P2 (or P4). This is structural,
+   not a TL choice.
+
+2. **TL manual override** — the TL may explicitly assign
+   different delegators to different periods of the same
+   shift via the `assign_delegator` workflow. The workflow
+   exposes both scopes (per-shift and per-period) so the TL
+   can pick. Per-period assignment is uncommon outside the
+   shortage case but is allowed.
+
+When you draft a schedule with `create_weekly`, default to
+per-shift delegators. Only switch to per-period if the
+shortage scenario forces it or if the TL has previously set
+per-period delegators on a similar schedule.
 
 ### Dedicated vs rotated delegator
 

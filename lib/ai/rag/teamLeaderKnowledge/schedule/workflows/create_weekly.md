@@ -114,13 +114,21 @@ Before drafting any schedule, run these checks in order:
 
 3. Retrieve the relevant rules from the knowledge base:
    - `rules/group_separation.md` — groups must not mix in a period
-   - `rules/coverage.md` — every period requires coverage
-   - `rules/delegator_rules.md` — one delegator per period
+   - `rules/coverage.md` — every period requires coverage,
+     plus fairness rules (period variation, role rotation)
+   - `rules/delegator_and_ex.md` — delegator scope (per-shift
+     by default) and EX rotation
+   - `rules/special_groups.md` — Board and Trainee placement
 
 4. Draft the schedule JSON respecting all rules above and:
    - Balance load fairly across doctors
-   - Distribute groups across periods, not concentrated in one
-   - Assign one delegator per period from eligible doctors
+   - Distribute groups across shifts (not concentrated in one
+     shift across consecutive days)
+   - Assign one delegator per shift from eligible doctors
+   - **Place reduced-workload doctors ONLY in the first period
+     of their shift** (P1 if morning, P3 if evening). Never
+     assign them to P2 or P4. They are also excluded from
+     delegator and EX rotations.
 
 5. Push the distribution into the Schedule UI as a draft.
    Apply the tool-choice rule above:
@@ -200,6 +208,9 @@ In chat, keep the message short and only surface:
   attempt a partial save unless the user requests it.
 
 - **`draft_weekly_schedule` returns `max_tokens` or truncated JSON**
+  Detection: the tool response includes a `stop_reason` of
+  `max_tokens`, or the returned JSON is syntactically invalid
+  (truncated). Either signal triggers the fallback.
   Do NOT retry the same tool. Fall back to `draft_day_schedule`
   called 5 times (Sun → Thu). Inform the TL once before starting:
   "الجدول كبير، أبنيه يوم يوم." Then proceed silently per day.
@@ -208,6 +219,16 @@ In chat, keep the message short and only surface:
   The previous days remain in the draft. Report which day failed
   and ask whether to retry that day or rebuild from scratch.
   Never auto-discard the partial work.
+
+- **TL leaves the app without confirming the draft**
+  The draft persists until the TL returns. The next time the
+  TL opens the Schedule UI, the draft is still there and can
+  be reviewed, edited, or discarded. No auto-publish ever
+  happens — only an explicit `confirm_weekly_schedule` call
+  publishes the schedule. Drafts older than 7 days may be
+  auto-discarded by the system; if asked about an old draft
+  that no longer exists, treat it as not present and offer
+  to start fresh.
 
 ---
 

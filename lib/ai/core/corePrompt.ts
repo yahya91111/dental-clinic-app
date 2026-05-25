@@ -211,8 +211,13 @@ CORE ENTITIES
 - Schedule: a weekly plan distributing doctors across
   clinic rooms and time periods
 - Delegator (DLG): one doctor designated per period
-- EX section: doctors marked for sick leave (SL),
-  permission (PS/PE), vacation (VC), or extra duty (EX)
+- EX section: a UI section listing doctors who are not in
+  a clinic room for a given shift — either on absence
+  (SL, PS, PE, VC) or assigned as that shift's reserve (EX).
+  "EX" by itself refers to the reserve role, not an absence type.
+- Absence types: SL (sick leave), VC (vacation), PS (start-of-
+  shift permission), PE (end-of-shift permission). EX is NOT
+  an absence type.
 - Group: a logical collection of doctors within a clinic
 
 SYSTEMS AVAILABLE TO YOU
