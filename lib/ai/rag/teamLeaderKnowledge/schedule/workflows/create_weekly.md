@@ -27,12 +27,38 @@ Do NOT use this workflow for:
   scheduled leaves.
 - `get_existing_schedule(week_start)` — returns the existing
   schedule for that week, or null if none exists.
-- `draft_weekly_schedule(json)` — pushes the full schedule into
-  the Schedule UI as an editable draft. Not yet published. The
-  TL can edit slots directly in the UI after this call.
+- `draft_weekly_schedule(json)` — pushes the FULL week's schedule
+  into the Schedule UI as an editable draft (all 5 days at once).
+  Best for normal-sized clinics. Cheaper and faster.
+- `draft_day_schedule(day, json)` — pushes ONE day's schedule into
+  the draft. Use when the weekly tool would be too large, or when
+  building/editing day-by-day. Can be called multiple times to
+  build the full week incrementally.
 - `confirm_weekly_schedule(week_start)` — publishes the current
   draft as the final schedule.
 - `discard_draft(week_start)` — cancels the draft without saving.
+
+### Choosing between `draft_weekly_schedule` and `draft_day_schedule`
+
+**Default: use `draft_weekly_schedule`** — it is cheaper, faster,
+and a single atomic operation.
+
+**Switch to `draft_day_schedule` (5 calls, one per day) when:**
+
+1. **Large clinic** — 4+ rooms AND special groups present
+   (Board + 2 or more trainees). The combined JSON may approach
+   the output token ceiling.
+
+2. **Editing a single day only** — the TL asked to rebuild just
+   one day, not the whole week. No reason to touch the others.
+
+3. **Fallback after failure** — `draft_weekly_schedule` returned
+   a `max_tokens` error or truncated JSON. Automatically retry
+   using 5 per-day calls instead. Inform the TL briefly:
+   "الجدول كبير، أبنيه يوم يوم."
+
+For normal cases (3 rooms or fewer, standard groups, no special
+overflow), always prefer the weekly tool.
 
 ---
 
@@ -96,9 +122,19 @@ Before drafting any schedule, run these checks in order:
    - Distribute groups across periods, not concentrated in one
    - Assign one delegator per period from eligible doctors
 
-5. Call `draft_weekly_schedule(json)` to push the distribution
-   into the Schedule UI as a draft. The TL can now see the
-   schedule visually and edit any slot directly in the app.
+5. Push the distribution into the Schedule UI as a draft.
+   Apply the tool-choice rule above:
+
+   - **Default:** call `draft_weekly_schedule(json)` once with
+     all 5 days.
+   - **Large clinic / special groups:** call `draft_day_schedule`
+     5 times (one per day), in order: Sun → Mon → Tue → Wed → Thu.
+   - **Failure recovery:** if `draft_weekly_schedule` returns a
+     `max_tokens` error, fall back to 5 `draft_day_schedule`
+     calls and tell the TL: "الجدول كبير، أبنيه يوم يوم."
+
+   In all paths, the TL sees the schedule visually in the UI
+   and can edit slots directly.
 
 6. Inform the TL briefly:
    "وزّعت الأطباء بالجدول كمسوّده. عاينها وعدّل الي تبيه،
@@ -162,6 +198,16 @@ In chat, keep the message short and only surface:
 - **Tool returns an error after confirmation**
   Report exactly what failed. Do not retry silently. Do not
   attempt a partial save unless the user requests it.
+
+- **`draft_weekly_schedule` returns `max_tokens` or truncated JSON**
+  Do NOT retry the same tool. Fall back to `draft_day_schedule`
+  called 5 times (Sun → Thu). Inform the TL once before starting:
+  "الجدول كبير، أبنيه يوم يوم." Then proceed silently per day.
+
+- **One `draft_day_schedule` call fails mid-week**
+  The previous days remain in the draft. Report which day failed
+  and ask whether to retry that day or rebuild from scratch.
+  Never auto-discard the partial work.
 
 ---
 
