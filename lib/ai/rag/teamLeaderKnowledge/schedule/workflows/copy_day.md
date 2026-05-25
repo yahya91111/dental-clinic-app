@@ -69,7 +69,7 @@ Do NOT use this workflow for:
 5. Wait for the user's response. The user has three paths:
    a) **Confirm as-is** — proceed to step 6.
    b) **Request verbal adjustments** ("استبدل د.أحمد بـ د.سامي
-      بالخانات اللي صارت فاضيه") — adjust and re-present.
+      بالفترات اللي بدون طبيب") — adjust and re-present.
    c) **Choose manual editing** — acknowledge, do not save.
 
 6. Call `copy_day_schedule(source, target)` (only on path 5a).
@@ -87,11 +87,11 @@ Keep it brief — just the diff and any warnings.
 Example:
 ```
 نسخ الأحد إلى الاثنين:
-- 12 خانه (3 عيادات × 4 فترات)
+- 12 فتره (3 عيادات × 4 فترات)
 - نفس التوزيع، نفس الديليقيتر
 
 ⚠ ملاحظات:
-- د.أحمد على إجازه يوم الاثنين، خانتين راح يصيرون فاضيين
+- د.أحمد على إجازه يوم الاثنين، فترتين راح يصيرون بدون طبيب
 - جدول الاثنين الحالي راح يُستبدل بالكامل
 ```
 
@@ -139,16 +139,16 @@ AI: [calls get_existing_schedule(this_week, sunday)] — 12 slots found
     [calls get_clinic_doctors()] — checking availability
 
 AI: نسخ الأحد إلى الاثنين:
-    - 12 خانه (نفس التوزيع، نفس الديليقيتر)
+    - 12 فتره (نفس التوزيع، نفس الديليقيتر)
 
-    ⚠ د.أحمد على إجازه يوم الاثنين، خانتين راح يصيرون فاضيين.
+    ⚠ د.أحمد على إجازه يوم الاثنين، فترتين راح يصيرون بدون طبيب.
 
     هل أتابع؟
 
 TL: نعم، حط مكانه د.سامي
 
-AI: تم. د.سامي راح يأخذ خانات د.أحمد بالاثنين.
-    التوزيع النهائي: 12 خانه، الديليقيتر د.علي.
+AI: تم. د.سامي راح يأخذ فترات د.أحمد بالاثنين.
+    التوزيع النهائي: 12 فتره، الديليقيتر د.علي.
     هل أحفظ؟
 
 TL: نعم

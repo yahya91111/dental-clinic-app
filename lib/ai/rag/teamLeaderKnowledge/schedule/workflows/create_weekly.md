@@ -56,6 +56,20 @@ Before drafting any schedule, run these checks in order:
      user about leaves — they are stored in the system and
      visible to the TL on the Groups/Leaves pages.
 
+4. Read the **target week's EX section** (the absences
+   already submitted for this week before it was built):
+   - **SL or VC** entries → the doctor is unavailable that
+     day. Exclude them from distribution on those days.
+   - **PE entries** → the doctor cannot work the end-of-shift
+     period. Place them ONLY in periods they can work
+     (e.g., PE for P4 → place in P3 only that day; never P4).
+   - **PS entries** → mirror of PE. Place them ONLY in
+     periods they can work (e.g., PS for P1 → place in P2
+     only that day; never P1).
+   - Surface a one-line note in the draft summary so the TL
+     sees why a doctor's placement looks unusual:
+     "د.X بـ P3 الثلاثاء فقط (مستأذن P4)".
+
 ---
 
 ## Steps

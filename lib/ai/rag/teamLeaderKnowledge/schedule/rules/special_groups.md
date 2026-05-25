@@ -109,56 +109,74 @@ parent group's shift assignment exactly.
 
 ### Trainee states
 
-Every trainee has one of two states. The state determines
-how they are placed in the schedule.
+Every trainee has one of two states. The state defines
+what placements are **allowed**, but the actual placement
+for a given schedule is a TL decision (see next section).
 
-| State | Arabic | Placement |
-|-------|--------|-----------|
-| **Beginner** | غير متمكّن | Must be paired with a trainer in the same clinic and period. Does NOT count in the doctor total. |
-| **Competent** | متمكّن | Treated as a regular doctor. Counts in the doctor total. Can be alone in a slot or be the delegator. |
+| State | Arabic | Allowed placements |
+|-------|--------|--------------------|
+| **Beginner** | غير متمكّن | ONLY paired with a trainer in the same clinic and period. Cannot be alone. |
+| **Competent** | متمكّن | Either alone in a clinic slot OR paired with a trainer. The TL decides per schedule. |
 
 ### State is set per trainee, not per group
 
 A trainee group can have a mix of beginners and
-competents at the same time. The AI handles each
-trainee individually.
+competents at the same time. Each trainee is handled
+individually.
 
-### The AI must ask the TL about each trainee's state
+### The AI must ask about EVERY trainee before each schedule
 
-Before distributing a week, the AI asks the TL:
-- "What is the state of [trainee name]?"
-- For beginners: "Who is the trainer? Which clinic and
-  period?"
+Before distributing a week, the AI asks the TL about
+**every trainee** in the affected groups — including
+competent trainees. The state on file tells the AI which
+question to ask, but the placement decision is per
+schedule:
 
-If the TL has already provided this information in the
-session (or it is stored on the trainee), the AI uses
-that. Otherwise it asks.
+- **Beginner trainee** — "د.[X] (مبتدئ، Group [N]) — مع
+  أي مدرّب؟" The TL names a trainer from the parent group.
+- **Competent trainee** — "د.[Y] (متمكّن، Group [N]) —
+  يستلم فتره لوحده ولا مع طبيب؟" The TL chooses:
+  - **Alone** → the trainee counts as a regular doctor
+    in the distribution
+  - **With a trainer** → the trainee is paired (like a
+    beginner) and does NOT count as a regular doctor;
+    the TL also names the trainer
 
-### Beginner trainees: invisible to counts
+If the TL has already answered for a trainee in the same
+session, the AI does not ask again.
 
-A beginner trainee paired with a trainer occupies the
-**same clinic slot** as the trainer. They are not a
-separate slot. The trainer handles patients while the
-trainee observes and assists.
+### Placement determines the count
 
-Therefore:
-- Adding a beginner trainee does NOT increase the
-  doctor total used in `coverage.md` formulas
-- A beginner trainee does NOT trigger the addition of
-  delegator or EX slots
+A trainee's contribution to the doctor total depends on
+the placement chosen, not on the state alone:
 
-### Competent trainees: count as regular doctors
+| Placement | Counts in doctor total? | Notes |
+|-----------|------------------------|-------|
+| Paired with a trainer (any state) | No | Sits in the trainer's clinic and period |
+| Alone (competent only) | Yes | Treated as a regular doctor |
 
-A competent trainee is treated like any regular doctor
-of the parent group:
-- Counts in the doctor total
-- Can be assigned to a clinic slot alone
-- Can be the delegator
-- Can be EX
-- Subject to all fairness rules
+This means a competent trainee placed alone increases
+the effective group size by 1 in that shift. A competent
+trainee placed with a trainer does not.
 
-In effect, "promoting" a trainee from beginner to
-competent **increases the group's effective size by 1**.
+### Why ask about competent trainees too
+
+A trainee may be technically competent but the TL still
+prefers to keep them paired with a senior doctor on a
+given week — for continuity of care, mentorship, or a
+new procedure they are learning. The state defines what
+is possible; the TL decides what happens.
+
+### Trainee constraints (regardless of placement)
+
+- A trainee cannot be in a different shift than their
+  parent group's assignment that day.
+- A trainer for a paired trainee must come from the
+  trainee's linked regular group, not the Board.
+- A trainee paired with a trainer cannot be a delegator
+  or EX on that day.
+- A competent trainee placed alone can be a delegator
+  or EX, like any regular doctor.
 
 ### Trainee constraints
 
@@ -175,36 +193,43 @@ competent **increases the group's effective size by 1**.
 
 ### Example A — Sunday, Group 1 morning
 
-- Doctor Group 1: 7 doctors (6 active + 1 covering morning)
-- Trainee Group 1: 2 trainees (1 beginner, 1 competent)
+- Doctor Group 1: 7 doctors
+- Trainee Group 1: 2 trainees
+  - Beginner — TL named د.M as trainer
+  - Competent — TL chose "alone" this week
 - Board: 2 doctors, TL said "Board morning this week"
 
 Distribution math:
 - Effective morning doctor count =
-  Group 1 (7) + Board (2) + competent trainee (1) = **10**
-- Beginner trainee is paired with a trainer, not counted
+  Group 1 (7) + Board (2) + competent trainee placed alone (1)
+  = **10**
+- Beginner trainee paired with د.M, not counted
 
 With 3 clinics (S=6) and D=10:
 - 6 clinic slots filled
 - 1 dedicated delegator
 - 3 EX (rotation among eligible)
-- 2 Board doctors share clinic X (P1 and P2)
-- Beginner trainee paired with the trainer the TL named
+- 2 Board doctors share one clinic (P1 and P2)
+- Beginner trainee paired with د.M in his clinic and period
 
 ### Example B — Tuesday, Group 1 evening, no Board
 
 - Doctor Group 1: 7 doctors → covers evening Tuesday
 - Trainee Group 1: same 2 trainees, follow Group 1
+  - Beginner — TL named د.M as trainer
+  - Competent — TL chose "with د.N" this week
 - Board: TL said morning this week → not in this shift
 
 Distribution math:
 - Effective evening doctor count =
-  Group 1 (7) + competent trainee (1) = **8**
-- Beginner trainee paired with trainer
+  Group 1 (7) = **7**
+- Both trainees paired with a trainer, neither counts
 
-With 3 clinics (S=6) and D=8:
-- 6 clinic slots + 1 delegator + 1 EX
-- Beginner trainee paired with the trainer the TL named
+With 3 clinics (S=6) and D=7:
+- 6 clinic slots + 1 dedicated delegator
+- No EX
+- Beginner trainee paired with د.M
+- Competent trainee paired with د.N this week (TL choice)
 
 ---
 

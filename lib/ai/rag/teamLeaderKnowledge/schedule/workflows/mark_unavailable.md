@@ -1,20 +1,41 @@
-# Mark Doctor Unavailable
+# Handle Absence Event
 
 ## When to use
 
-The Team Leader wants to mark a doctor as absent or
-unavailable for one or more periods. This covers sick
-leave, vacation, and short permission.
+This workflow runs whenever the Team Leader's assistant
+becomes responsible for handling an absence (SL, VC, PS,
+or PE). There are exactly two paths into this workflow,
+depending on who submitted the absence:
 
-Trigger phrases (examples):
-- "د.أحمد على إجازه مرضيه يوم الأحد"
-- "د.سامي مستأذن نهاية دوام الصباحي يوم الاثنين"
-- "د.محمد بتفرّغ من الثلاثاء إلى الخميس"
-- "Dr. Ahmed sick leave Sunday"
+### Source A — The Team Leader submitting for themselves
 
-Do NOT use this workflow for:
+The TL says directly to their assistant:
+- "أنا مستأذن بكره P3"
+- "بدّي أسجّل تفرّغ من الثلاثاء إلى الخميس"
+- "اليوم عندي تقرير مرضي"
+
+The TL Assistant **executes the marking on the schedule**
+(places the TL in EX, vacates the TL's affected slot),
+then discusses coverage options with the TL.
+
+### Source B — A doctor submitted via their own assistant
+
+The Doctor Assistant (a separate AI for the doctor)
+processed the doctor's request and placed them in EX +
+vacated their slot. The TL Assistant **proactively
+initiates** a coverage conversation with the TL when
+it sees a slot has become empty because of an absence:
+- "د.أحمد بـ EX اليوم (SL). فيه 4 فترات بدون طبيب. الخيارات: ..."
+
+The TL does not need to ask. The assistant brings up the
+absence and the coverage options on its own.
+
+### Do NOT use this workflow for:
 - Marking a doctor as **EX (reserve)** → see `manage_groups`
   (EX is a status, not an absence)
+- Marking absences for other doctors **on behalf of them**
+  (the TL only marks for themselves; other doctors mark
+  through their own assistant)
 - Removing an absence after it has happened → use `edit_slot`
   for the specific day, or contact admin for historical records
 - Editing a single slot for any other reason → use `edit_slot`
@@ -52,36 +73,82 @@ P2 or P4, because they are not present during those periods.
 
 ---
 
-## Type-specific auto-handling
+## What the TL Assistant does in each source
 
-The AI does not ask the TL "how do you want to cover this?"
-for every absence. Each type has a default automatic flow.
-The TL is shown the result and can override if needed.
+The two sources require very different actions from the
+TL Assistant. The key principle: **each user's own
+assistant handles their own absence end-to-end**. The TL
+Assistant manages absences for the TL; the Doctor
+Assistant manages absences for doctors.
 
-### SL (Sick Leave) — automatic
+### In Source A (TL submits for themselves)
 
-1. Move the doctor's name to the **EX section** of the
-   schedule with the SL label for each affected day.
-2. Remove the doctor's name from every clinic slot on
-   those days.
-3. Auto-fill the vacated clinic slots with the day's
-   **reserve EX doctor** if one exists. If no reserve EX
-   exists, leave the slots empty and flag them.
-4. Send a notification to the Team Leader (handled by the
-   notifications system; the TL will receive a push).
-5. Confirm to the TL in chat:
-   "تم تسجيل تقرير د.[X] يوم [Y]. د.[reserve] غطّى الـ
-   [N] خانات. أُرسل إشعار."
+The TL Assistant performs the full workflow:
+1. Call `mark_doctor_absent(tl_id, type, dates, period?)`
+2. Place the TL in the EX section of the affected day(s)
+3. Vacate the TL's affected slot(s)
+4. Move into coverage handling:
+   - **SL or VC** → suggest reserve EX coverage to the TL
+   - **PE or PS in a working period** → run the cascading
+     swap below. **If the cascade fails at all steps, the
+     permission cannot be granted** — inform the TL that
+     they must work normally.
+   - **PE or PS in a non-working period** → just inform
+     the TL; no further action needed
 
-### VC (Vacation) — automatic
+### In Source B (Doctor submitted via Doctor Assistant)
 
-Same as SL: move to EX section, remove from clinic slots,
-auto-fill with reserve EX. Difference: VC usually spans
-multiple days and is planned, so the TL may have already
-arranged coverage. Check first; if coverage is already
-configured for those days, do not overwrite.
+The TL Assistant does **not** mark anything and does
+**not** run any cascade — the Doctor Assistant has
+already handled both.
 
-### PE (Permission End-of-shift) — cascading swap
+The TL Assistant's role is purely **informational and
+proactive**:
+- **SL or VC** → the Doctor is in EX and slots are
+  vacated. The TL Assistant proactively opens a coverage
+  conversation with the TL ("X is on SL, Y slots empty,
+  cover with reserve?").
+- **PE or PS, swap succeeded** → the Doctor Assistant
+  arranged a swap between the doctor and another doctor.
+  The schedule is already updated. The TL Assistant
+  proactively informs the TL: "د.X بدّل مع د.Y لاستئذان
+  [period] يوم [day]."
+- **PE or PS, swap failed** → the permission was not
+  granted. The doctor will work normally. The TL
+  Assistant does NOT need to inform the TL about a
+  permission that never happened.
+- **PE or PS in a non-working period** → the TL Assistant
+  proactively informs the TL for awareness only.
+
+The exact mechanism the TL Assistant uses to detect or
+be notified of these events is defined in the
+notifications RAG (to be built later). For now, assume
+that when the TL Assistant has a turn with the TL, it
+knows which events are pending and which actions have
+been completed by the Doctor Assistant.
+
+## Type-specific coverage handling
+
+The detail below applies to **Source A** (TL acting for
+themselves) and to **Source B SL/VC** (where the TL
+Assistant proposes coverage). The PE/PS cascade is
+**Source A only**.
+
+### SL / VC — propose reserve EX coverage
+
+1. Identify the affected days and the number of empty
+   slots per day.
+2. For each affected day, check whether a reserve EX
+   doctor exists (`get_ex_doctor`).
+3. Propose to fill the empty slots with the reserve EX:
+   "د.[X] بـ EX (SL/VC). فيه [N] فترات بدون طبيب. أغطّيها
+    بـ د.[reserve]؟"
+4. If no reserve EX exists, present alternatives: leave
+   empty, pick a specific doctor, or have a regular
+   doctor cover both periods of that room.
+5. On TL confirmation, call `assign_replacement` per slot.
+
+### PE (Permission End-of-shift) — cascading swap [Source A only]
 
 When the doctor's PE removes them from the **end of shift
 period** (P2 for morning, P4 for evening) and they are
@@ -118,13 +185,15 @@ candidates for P2 or P4 — they do not work those periods.
 
 Again exclude reduced-workload doctors as needed.
 
-**Step 4 — If all cascades fail**, present the situation
-to the TL: "ما حد قبل التبديل بأي فتره. الخانه راح تظل
-فاضيه ما لم تختار شي ثاني."
+**Step 4 — If all cascades fail**, the permission cannot
+be granted. Inform the TL plainly: "ما حد قبل التبديل
+بأي فتره. ما تقدر تستأذن اليوم — لازم تشتغل عادي."
+The TL will have to work the period or revise their
+request.
 
-### PS (Permission Start-of-shift) — cascading swap
+### PS (Permission Start-of-shift) — cascading swap [Source A only]
 
-When the doctor's PS removes them from the **start of shift
+When the TL's PS removes them from the **start of shift
 period** (P1 for morning, P3 for evening), follow the mirror
 cascade. Same swap mechanic in every step:
 
@@ -133,6 +202,47 @@ cascade. Same swap mechanic in every step:
 
 Closest period first, then expand outward. Exclude
 reduced-workload doctors from candidates for P2 or P4.
+
+If all cascades fail, the permission cannot be granted.
+Tell the TL plainly.
+
+---
+
+## Future-week absences (before schedule is built)
+
+When a doctor submits an absence for a **week that has
+not been built yet**, no cascading swap or empty-slot
+problem exists — there are no slots yet. Instead, the
+absence becomes a **distribution constraint** that the
+AI must respect when the TL later builds that week.
+
+The flow:
+
+1. The doctor submits the request (SL, VC, PS, or PE)
+   for a date in a future week.
+2. The system places the doctor in the **EX section** of
+   that future week's schedule, with the type label and
+   the affected day or period.
+3. When the TL later builds the schedule for that week
+   (via `create_weekly`), the AI reads the EX entries
+   and treats them as constraints:
+   - **SL or VC**: the doctor is not available at all
+     on the affected days. Distribute the rest of the
+     group as if the doctor does not exist for those
+     days.
+   - **PS or PE**: the doctor is available, but only
+     for periods they can actually work. For example,
+     if PE = P4 on Tuesday, the doctor is placed in
+     P3 on Tuesday (or in another usable period) and
+     never in P4.
+
+The AI does not need to ask the TL about these — the
+constraints are already on file. The AI should briefly
+mention them when surfacing the draft, so the TL
+understands why a doctor's distribution looks unusual:
+
+"ملاحظه: د.X مستأذن P4 الثلاثاء، حطّيته بـ P3 الثلاثاء.
+د.Y عنده تفرّغ الأربعاء، مستثنى من ذاك اليوم."
 
 ---
 
@@ -186,69 +296,111 @@ For full rules, see `rules/coverage.md`. Key points:
 
 ## Pre-flight checks
 
-1. Identify the **doctor**. If named ambiguously, ask.
-2. Identify the **absence type** (SL, VC, PS, PE). If
-   unclear from the request, ask.
-3. Identify the **date range**:
-   - For SL or VC: ask for start and end dates.
-   - For PS or PE: ask for the single day and confirm
-     the implied period (P1/P2/P3/P4).
-4. Confirm the date range is not entirely in the past.
-5. Call `get_doctor_slots(...)` to see what slots are
-   affected.
-6. For SL/VC: call `get_ex_doctor(...)` for each affected
-   day to confirm reserve availability.
+1. Identify the **doctor** and absence event. The TL
+   may name them directly, or you may need to read the
+   pending absence list to find what they are asking
+   about.
+2. Identify the **absence type** (SL, VC, PS, PE) from
+   the event record or from the TL's words.
+3. Identify the **date range and (for PS/PE) the affected
+   period**.
+4. Determine whether the event is in:
+   - **The current week** (slots already exist, may
+     already be vacated by the system)
+   - **A future week** (slots may not exist yet — this
+     becomes a distribution constraint, not a coverage
+     problem)
+5. For current-week SL/VC: call `get_ex_doctor(...)`
+   for each affected day to know whether a reserve is
+   available.
+6. For current-week PE/PS: confirm the affected period
+   was actually a working period for the doctor that
+   day.
 
 ---
 
 ## Steps
 
-The exact flow depends on the absence type. The branching
-is described in **Type-specific auto-handling** above.
+The flow depends on the source first, then on the type.
 
-### Common opening (all types)
+### Source A — TL submits for themselves
 
-1. Identify doctor, type, and scope. Ask for any missing
-   detail.
-2. Run the pre-flight checks.
-3. Show the TL a one-line summary of what will happen:
-   - SL: "تقرير د.[X] يوم [Y]. راح أنقله إلى قسم EX
-     وأغطّي خاناته بـ د.[reserve]."
-   - VC: same shape
-   - PE/PS: "استئذان د.[X] [type] فتره [P]. راح أبحث عن
-     بديل بـ [adjacent period] أولاً."
-4. Wait for confirmation that the plan is OK before
-   acting.
+#### Phase 1 — Mark
 
-### Branch A — SL or VC (full-day absence)
+1. Identify type and scope from what the TL said. Ask
+   for any missing detail (date, period for PS/PE,
+   range for SL/VC).
+2. Call `mark_doctor_absent(tl_id, type, dates, period?)`.
+3. Confirm in one short line: "سجّلت [type] لك يوم
+   [day]، وفترتك صارت بدون طبيب."
 
-5a. Call `mark_doctor_absent(doctor, type, dates)`.
-6a. For each affected slot, call `auto_replace_with_ex(slot)`
-    if a reserve EX exists for that day.
-7a. Call `notify_team_leader(...)` with the absence summary.
-8a. Report:
-    "تم. د.[X] بـ EX section. [N] خانات غطّاها د.[reserve].
-    [M] خانات بقيت فاضيه (لا يوجد EX يوم [day])."
+#### Phase 2 — Handle by type
 
-### Branch B — PE or PS (single-period permission)
+- **SL or VC, current week** → Branch SL/VC below.
+- **PE or PS in a working period, current week** →
+  Branch PE/PS cascade below.
+- **PE or PS in a non-working period, current week** →
+  No action needed. Inform: "الفتره مو فترة عملك،
+  ما فيه إجراء."
+- **Any type, future week** → Branch Future below.
 
-5b. Call `mark_doctor_absent(doctor, type, day, period)`.
-6b. Run the cascade. Every step is a swap:
-    - **Step 1** — `find_period_candidates(day, source, closest_period)`
-      then `broadcast_swap_request(slot, candidates)`.
-    - Wait for any acceptance (the database trigger handles
-      the atomic swap).
-7b. If step 1 returns no candidates or all decline within
-    the timeout, present **Step 2** to the TL:
-    "ما حد بـ [closest] قبل التبديل. أنتقل لـ [next period]؟"
-8b. On TL confirmation, call `broadcast_swap_request(...)`
-    for the next cascade period. Pass
-    `exclude_reduced_workload=true` when the target period
-    is P2 or P4. Repeat for the third cascade period if
-    needed.
-9b. Report the final state:
-    "تم. د.[X] استئذان [type] [period] يوم [day].
-    [outcome: swap accepted with Y at [period] / slot empty]."
+### Source B — Doctor submitted via their assistant
+
+The TL Assistant opens the conversation proactively.
+
+- **SL or VC, current week** → Branch SL/VC below
+  (TL Assistant proposes coverage).
+- **PE or PS, current week, swap succeeded** → Just
+  inform: "د.[X] بدّل مع د.[Y] لاستئذان [period] يوم
+  [day]." No further action.
+- **PE or PS, current week, swap failed** → Permission
+  was not granted; nothing to inform.
+- **PE or PS in a non-working period, current week** →
+  Inform: "د.[X] بـ EX [period] يوم [day] (PS/PE).
+  الفتره مو فترة عمله، أردت أعلمك فقط."
+- **Any type, future week** → Branch Future below.
+
+### Branch SL/VC — current week coverage
+
+1. For each affected day, look up the reserve EX with
+   `get_ex_doctor(week, day, shift)`.
+2. Propose coverage in one short message:
+   "[N] فترات بدون طبيب يوم [day]. أغطّيها بـ د.[reserve]؟"
+3. If no reserve EX exists for a day, present alternatives:
+   pick a specific doctor, leave empty, or have a regular
+   doctor cover both periods of that room.
+4. On TL confirmation, call `assign_replacement` per slot.
+5. Report briefly.
+
+### Branch PE/PS cascade — Source A only
+
+The TL's affected slot is empty. Run the cascading swap:
+
+1. **Step 1** — `find_period_candidates(day, source, closest_period)`
+   then `broadcast_swap_request(slot, candidates)`. Wait
+   for any acceptance.
+2. If step 1 returns no candidates or all decline within
+   the timeout, present step 2 to the TL:
+   "ما حد بـ [closest] قبل التبديل. أنتقل لـ [next period]؟"
+3. On TL confirmation, run `broadcast_swap_request` for
+   the next cascade period. Pass `exclude_reduced_workload=true`
+   when the target is P2 or P4. Repeat for the third
+   cascade period if needed.
+4. If all cascades fail, inform the TL that the
+   permission cannot be granted and they will have to
+   work the period.
+5. On any successful swap, report the result in one short
+   line.
+
+### Branch Future — future-week absence (any type)
+
+No slots exist yet, so no coverage action is needed now.
+
+1. Acknowledge the TL briefly: "[الشخص] مسجّل بـ EX
+   للأسبوع [next_week]. راح يأخذ بعين الاعتبار عند بناء
+   الجدول."
+2. When the TL later builds that week (via `create_weekly`),
+   the constraint is applied automatically.
 
 ---
 
@@ -273,7 +425,7 @@ Result:
 
 - **Doctor has no slots in the affected range**
   Still record the absence, but inform the TL: "لا توجد
-  خانات لـ د.[X] بهالأيام. تم تسجيل [type] فقط."
+  فترات لـ د.[X] بهالأيام. تم تسجيل [type] فقط."
 
 - **Doctor already has another absence overlapping**
   Reject: "د.[X] عنده [existing absence]. استبدلها أو
@@ -289,14 +441,14 @@ Result:
 - **SL/VC and no reserve EX exists for a day**
   Auto-fill cannot run for that day. Mark the slots empty
   and surface the gap to the TL: "ما فيه EX يوم [Y]. [N]
-  خانات فاضيه."
+  فترات بدون طبيب."
 
 - **PE/PS for a period the doctor is not scheduled**
   Inform: "د.[X] مو معيّن بـ [P] يوم [day]. سجّل [type]
   بدون أي تأثير على الجدول؟"
 
 - **Cascade exhausted (no one accepts at any period)**
-  Inform the TL: "ما حد قبل التبديل بأي فتره. الخانه راح
+  Inform the TL: "ما حد قبل التبديل بأي فتره. الفتره راح
   تظل فاضيه. تبي تختار طبيب يدوياً؟"
 
 - **Candidate is a reduced-workload doctor and target is
@@ -336,86 +488,110 @@ Result:
 
 ## Example conversations
 
-### SL — auto-flow
+The examples below cover both submission sources and all
+three timing scenarios (current day, future week, period
+not actually worked).
+
+### Source A — TL submits a permission for themselves
+
+The TL Assistant marks the TL, vacates the slot, then
+suggests coverage.
 
 ```
-TL: د.أحمد عنده تقرير طبي اليوم
+TL: اليوم عندي استئذان نهاية الصباحي
 
-AI: [calls get_doctor_slots(ahmed, today)] — 4 slots
-    [calls get_ex_doctor(this_week, today)] — Dr. Sami (reserve)
+AI: [internal: PE for the morning shift = P2 today]
+    [internal: calls mark_doctor_absent(tl_id, PE, today,
+     period=P2)]
+    [internal: TL is now in EX for P2, TL's P2 slot is
+     vacated]
+    [internal: looks at the vacated slot's clinic]
 
-AI: تقرير د.أحمد اليوم. راح أنقله إلى قسم EX وأغطّي
-    خاناته الأربع بـ د.سامي (EX). أتابع؟
-
-TL: نعم
-
-AI: [calls mark_doctor_absent(ahmed, SL, today)]
-    [calls auto_replace_with_ex for each of 4 slots]
-    [calls notify_team_leader(...)]
-
-    تم. د.أحمد بـ EX section. 4 خانات غطّاها د.سامي.
-    أُرسل إشعار.
-```
-
-### PE — cascade flow
-
-```
-TL: د.محمد مستأذن نهاية دوام المسائي اليوم
-
-AI: [calls get_doctor_slots(mohammed, today)] — Mohammed has P3 + P4
-    [identifies PE period = P4]
-
-AI: استئذان د.محمد PE (P4) اليوم. راح أبحث عن أطباء بـ
-    P3 للتبديل أولاً. أتابع؟
-
-TL: نعم
-
-AI: [calls mark_doctor_absent(mohammed, PE, today, period=P4)]
-    [calls find_period_candidates(today, source=P4, search=P3)]
-    وجدت 3 أطباء بـ P3 ممكن يبدّلون.
-
-    [calls broadcast_swap_request(slot, 3 P3 candidates)]
-    أرسلت طلب تبديل لـ 3 أطباء بـ P3. أول واحد يقبل،
-    يبدّل خانة P3 مع خانة د.محمد P4.
-
-    ⏳ [بعد فتره: لو حد قبل، الـ trigger يعدّل الجدول تلقائياً.
-       لو ما حد قبل خلال المهله، الذكاء يرجع للتيم ليدر]
-
-AI (لاحقاً): ما حد بـ P3 قبل التبديل. أنتقل لـ P2؟
-    (راح أستثني أطباء تخفيف العمل لأنهم ما يداومون P2)
-
-TL: نعم
-
-AI: [calls find_period_candidates(today, source=P4, search=P2, exclude_reduced_workload=true)]
-    [calls broadcast_swap_request(slot, P2_candidates)]
-    أرسلت طلب تبديل لـ 3 أطباء بـ P2. راح يصلك إشعار.
-
-AI (لاحقاً): د.خالد بـ P2 وافق على التبديل. تم.
-    د.خالد ياخذ خانة د.محمد بـ P4، ود.محمد ياخذ خانة
-    د.خالد بـ P2.
-```
-
-### VC — multi-day auto-flow
-
-```
-TL: د.علي بتفرّغ من الثلاثاء إلى الخميس
-
-AI: [pre-flight: gets slots, gets EX for each day]
-
-AI: تفرّغ د.علي من الثلاثاء إلى الخميس (3 أيام، 12 خانه).
-    راح أنقله لـ EX section وأغطّي الخانات بـ EX اليوم:
-    - الثلاثاء: د.سامي (EX) → 4 خانات
-    - الأربعاء: د.خالد (EX) → 4 خانات
-    - الخميس: ما فيه EX → 4 خانات فاضيه
-
+AI: سجّلت استئذانك (PE) لـ P2 اليوم. P2 عياده [N] صارت
+    بدون طبيب. راح أبحث عن أطباء بـ P1 للتبديل أولاً.
     أتابع؟
 
 TL: نعم
 
-AI: [calls mark_doctor_absent(ali, VC, tuesday, thursday)]
-    [auto-replaces 8 slots, leaves 4 empty]
-    [calls notify_team_leader(...)]
+AI: [internal: calls find_period_candidates(today,
+     source=P2, search=P1) → 5 candidates]
+    [internal: calls broadcast_swap_request(slot,
+     5 P1 candidates)]
 
-    تم. د.علي بـ EX section. 8 خانات مغطّاه، 4 خانات
-    الخميس فاضيه. أُرسل إشعار.
+AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. راح يصلك إشعار
+    لما أحدهم يقبل.
+```
+
+### Source B SL — Doctor submitted, AI proactively asks about coverage
+
+The Doctor Assistant has already marked د.أحمد and
+vacated his evening slots. The TL Assistant opens the
+conversation when the TL is active in the app.
+
+```
+AI (proactive): د.أحمد بـ EX اليوم (SL). 4 فترات بدون طبيب
+    بالمسائي. أغطّيها بـ د.خالد (EX المسائي)؟
+
+TL: نعم
+
+AI: [internal: calls assign_replacement for each of
+     the 4 slots with khaled_id]
+
+AI: تم. الـ 4 فترات غطّاها د.خالد.
+```
+
+### Source B PE — swap already done by Doctor Assistant
+
+When a doctor's PE is in a working period, the Doctor
+Assistant runs the cascade. By the time the TL Assistant
+gets involved, the swap is already complete. The TL
+Assistant just informs the TL — no action is needed.
+
+```
+AI (proactive): د.محمد قدّم استئذان نهاية المسائي اليوم
+    (PE = P4)، وبدّل مع د.خالد. د.خالد راح يداوم بـ P4
+    بدله، ود.محمد ياخذ فترة د.خالد بـ P3. علم فقط.
+```
+
+If the swap failed, the permission was not granted and
+the doctor will work normally — no message reaches the
+TL at all.
+
+### Source B — Doctor's PE in a period he doesn't work
+
+```
+AI (proactive): د.سامي بـ EX لـ P2 الثلاثاء (PE).
+    الفتره مو فترة عمله ذاك اليوم (قروبه مسائي
+    الثلاثاء)، فما فيه إجراء مطلوب. أردت أعلمك فقط.
+```
+
+### Source B — Future-week VC (constraint, no action now)
+
+```
+AI (proactive): د.علي مسجّل بـ EX للثلاثاء، الأربعاء،
+    الخميس الأسبوع القادم (تفرّغ). راح يأخذ بعين
+    الاعتبار لما تبني الجدول — الأطباء راح يتوزّعون
+    بدون احتسابه ذيك الأيام.
+
+[later, when the TL builds next week's schedule:]
+
+AI: [internal: draft_weekly_schedule respecting
+     ali's VC constraint]
+    وزّعت الجدول. ملاحظه: د.علي مستثنى من الثلاثاء،
+    الأربعاء، الخميس (VC مسبق).
+```
+
+### Source A — TL submits VC for a future week
+
+```
+TL: بدّي أسجّل تفرّغ من الأحد إلى الثلاثاء الأسبوع القادم
+
+AI: [internal: calls mark_doctor_absent(tl_id, VC,
+     next_sunday, next_tuesday)]
+    [internal: TL is now in EX for those days; no
+     slots exist yet to vacate]
+
+AI: سجّلت تفرّغك من الأحد إلى الثلاثاء الأسبوع القادم.
+    لما تبني الجدول، راح أوزّع الأطباء بدون احتسابك
+    ذيك الأيام.
 ```

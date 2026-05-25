@@ -9,7 +9,7 @@ their clinic's schedule.
 
 Trigger phrases (examples):
 - "بدّل بين د.أحمد و د.سامي"
-- "خذ خانة د.محمد الأحد P2 وبدّلها مع د.علي الاثنين P3"
+- "خذ فترة د.محمد الأحد P2 وبدّلها مع د.علي الاثنين P3"
 - "اعكس بين د.X و د.Y"
 - "swap Dr. Ahmed and Dr. Sami"
 
@@ -115,7 +115,7 @@ on its own two-line block.
 
 - **Doctor named but has multiple slots**
   Ask the user to specify which slot:
-  "د.أحمد عنده 4 خانات هالأسبوع، أي وحده تبي تبدّل؟"
+  "د.أحمد يداوم 4 فترات هالأسبوع، أي وحده تبي تبدّل؟"
 
 - **Same doctor in both slots**
   Meaningless swap. Inform and ask for a different pair.
@@ -155,8 +155,8 @@ TL: بدّل د.أحمد مع د.سامي يوم الأحد
 AI: [calls find_doctor_slot(ahmed, this_week)] — multiple slots
     [calls find_doctor_slot(sami, this_week)] — multiple slots
 
-AI: د.أحمد عنده 4 خانات و د.سامي عنده 5 خانات.
-    أي خانه تبي تبدّل بينهم بالأحد بالضبط؟
+AI: د.أحمد يداوم 4 فترات و د.سامي يداوم 5 فترات.
+    أي فتره تبي تبدّل بينهم بالأحد بالضبط؟
 
 TL: د.أحمد P2 عياده 1، د.سامي P3 عياده 2
 
