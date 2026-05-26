@@ -105,8 +105,9 @@ on the TL Assistant's side.)
 
 ### Part 3 — Source A PE (TL submits PE for themselves)
 
-The TL now talks about their own permission. The AI does
-the marking AND runs the cascade.
+The TL talks about their own permission. The AI marks the
+absence immediately and then presents coverage options.
+It does NOT auto-cascade and never refuses the permission.
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
@@ -114,30 +115,58 @@ TL: اليوم عندي استئذان نهاية الصباحي
 AI: [internal: PE for morning = P2 today]
     [internal: calls mark_doctor_absent(tl_id, PE,
      today, period=P2)]
+    [internal: TL was a clinic doctor in P2 — slot now empty]
 
-AI: سجّلت استئذانك (PE) لـ P2 اليوم. P2 عياده 1 صارت
-    بدون طبيب. راح أبحث عن أطباء بـ P1 للتبديل أولاً.
-    أتابع؟
+AI: سجّلت استئذانك. فترتك بـ P2 عياده 1 صارت بدون طبيب.
+    كيف تبي نتعامل؟
+    [أبدّل مع طبيب من فتره ثانيه]
+    [أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
+    [اتركها فاضيه]
 
-TL: نعم
+TL: [ينقر: أبدّل مع طبيب من فتره ثانيه]
+
+AI: أرسل طلب التبديل لأي فتره؟
+    [الفتره الثانيه من نفس الشفت]
+    [فتره من الشفت الثاني]
+    [فتره معيّنه — أنت تختار]
+
+TL: [ينقر: الفتره الثانيه من نفس الشفت]
 
 AI: [internal: calls find_swap_candidates(today, P1,
      exclude_reduced_workload=true) → 5 morning candidates]
     [internal: calls broadcast_swap_request(slot,
-     5 P1 candidates, timeout_minutes=15)]
+     5 P1 candidates, timeout_minutes=1440)]
 
-AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. راح يصلك إشعار
-    لما أحدهم يقبل.
+AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. مهله 24 ساعه.
+    راح يصلك إشعار لما أحدهم يقبل، أو لما تنتهي المهله.
 
-[later turn, after the trigger fires:]
+[later turn, after a doctor accepts:]
 
 AI: د.يوسف بـ P1 قبل التبديل. تم.
     د.يوسف ياخذ فترتك بـ P2، وأنت تاخذ فترة د.يوسف بـ P1.
 ```
 
-(If no one had accepted at any cascade step, the AI
-would say: "ما حد قبل التبديل بأي فتره. ما تقدر تستأذن
-اليوم — لازم تشتغل عادي.")
+If no one had accepted within 24 hours, the AI would
+re-offer the three options menu — it never refuses the
+permission. The TL could then try a different period, pick
+Option 2 (reassign), Option 3 (leave empty), or extend
+the request.
+
+**Variation — TL was the delegator that day:**
+
+```
+TL: اليوم عندي استئذان نهاية الصباحي
+
+AI: [internal: PE for morning = P2 today]
+    [internal: TL was delegator for the morning shift —
+     not a clinic slot]
+    [internal: calls mark_doctor_absent(tl_id, PE,
+     today, period=P2)]
+
+AI: سجّلت استئذانك. كنت ديليقيتر للصباحي اليوم، فما
+    فيه فتره عياده تتغطّى. حالتك بـ EX تغيّرت من
+    ديليقيتر إلى PE.
+```
 
 ### Part 4 — Source B future-week PE (proactive constraint notice)
 
@@ -190,27 +219,39 @@ AI: وزّعت الأطباء بالجدول كمسوّده. عاينها وعد
    Source B always opens proactively (Parts 1, 2, 4).
    Source A starts with the TL speaking (Part 3).
 
-4. **"Permission must succeed or it doesn't happen"** —
-   In Part 3, the AI mentioned the failure case
-   explicitly: if no one accepts, the TL cannot
-   take the permission. This is the system's rule;
-   the AI does not invent alternative coverage.
+4. **TL chooses coverage, AI doesn't decide** — In Part 3
+   the AI marked the PE immediately and then offered three
+   options. It did NOT auto-cascade through periods. It
+   does NOT refuse the permission when no swap is found.
+   The TL has authority to leave the slot empty if they
+   want. The AI suggests, the TL picks.
 
-5. **Future-week constraints flow into create_weekly** —
+5. **Delegator/EX permissions are just status changes** —
+   The variation at the end of Part 3 shows that if the
+   TL was the delegator (or on EX), the absence is just
+   a status update in the EX section. No coverage hunt,
+   no options menu, no empty clinic slot to worry about.
+
+6. **24-hour timeout is the standard** — All swap
+   requests originating from this workflow use 24 hours,
+   matching `swap_broadcast.md`. The previous short-timeout
+   cascade model has been retired.
+
+7. **Future-week constraints flow into create_weekly** —
    Part 4 was just a heads-up. The actual application
    happened in Part 5 when the TL built the schedule.
 
 ### Rules and workflows applied
 
-- `workflows/mark_unavailable.md` — Source A vs
-  Source B branching, cascade for Source A only,
-  inform-only for Source B PE/PS
+- `workflows/mark_unavailable.md` — Source A vs Source B
+  branching, options menu for Source A PE/PS, inform-only
+  for Source B PE/PS
 - `workflows/create_weekly.md` — applies future-week
   EX entries as placement constraints
 - `rules/coverage.md` — SL coverage by reserve EX
 - `rules/delegator_and_ex.md` — reserve EX activation
-- `rules/period_definitions.md` — adjacency for cascade
-  (P1 closest to P2)
+- `rules/period_definitions.md` — period semantics
+  (PE = end of shift = P2/P4)
 
 ### Anti-patterns avoided
 
@@ -218,8 +259,13 @@ AI: وزّعت الأطباء بالجدول كمسوّده. عاينها وعد
   د.محمد's PE — that was handled by the Doctor Assistant.
 - Did NOT call `mark_doctor_absent` for any doctor in
   Source B — they were already marked.
-- Did NOT run a cascade for د.محمد — only the TL's own
-  permission triggers a cascade in the TL Assistant.
+- Did NOT auto-cascade for the TL's PE in Part 3 —
+  offered the three options menu instead.
+- Did NOT refuse the TL's permission when no swap was
+  immediately available — the TL has authority to leave
+  the slot empty (Option 3).
+- Did NOT use the old 15-minute timeout. All swap
+  requests use 24 hours.
 - Did NOT mention "the system" as a separate actor —
   the work is done by a specific AI assistant (Doctor
   or TL), never by an abstract system.

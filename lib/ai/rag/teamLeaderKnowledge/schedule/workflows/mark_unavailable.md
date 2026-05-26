@@ -86,15 +86,23 @@ Assistant manages absences for doctors.
 The TL Assistant performs the full workflow:
 1. Call `mark_doctor_absent(tl_id, type, dates, period?)`
 2. Place the TL in the EX section of the affected day(s)
-3. Vacate the TL's affected slot(s)
+   with the appropriate status (SL/VC/PE/PS).
+3. If the TL had a clinic slot in the affected period,
+   vacate it (the slot becomes empty).
 4. Move into coverage handling:
-   - **SL or VC** → suggest reserve EX coverage to the TL
-   - **PE or PS in a working period** → run the cascading
-     swap below. **If the cascade fails at all steps, the
-     permission cannot be granted** — inform the TL that
-     they must work normally.
+   - **SL or VC** → suggest reserve EX coverage to the TL.
+   - **PE or PS, TL was a clinic doctor in that period** →
+     offer coverage options as a menu (see "PE/PS coverage
+     options" below). The TL picks. The AI does NOT decide,
+     does NOT refuse the permission, does NOT auto-run any
+     cascade. The TL has full authority over their clinic
+     and may even choose to accept the gap.
+   - **PE or PS, TL was the shift delegator or on EX** →
+     just update the status to PE/PS. No coverage hunt
+     needed because the TL did not have a specific clinic
+     slot to vacate. Inform the TL in one line.
    - **PE or PS in a non-working period** → just inform
-     the TL; no further action needed
+     the TL; no further action needed.
 
 ### In Source B (Doctor submitted via Doctor Assistant)
 
@@ -148,63 +156,70 @@ Assistant proposes coverage). The PE/PS cascade is
    doctor cover both periods of that room.
 5. On TL confirmation, call `assign_replacement` per slot.
 
-### PE (Permission End-of-shift) — cascading swap [Source A only]
+### PE/PS coverage options [Source A only]
 
-When the doctor's PE removes them from the **end of shift
-period** (P2 for morning, P4 for evening) and they are
-scheduled in that period, follow this cascade. **Every step
-is a swap** — the absent doctor exchanges their slot with
-a candidate's slot. The cascade only changes which period
-the candidate is taken from.
+When the TL's PE or PS removes them from a working period
+in which they had a clinic slot, the slot is now empty. The
+AI does NOT decide how to cover it. Instead, the AI presents
+the TL with options and lets the TL pick.
 
-**Step 1 — Swap with the closest period inside the same
-shift.**
+Use `ask_tl_choice` with these options:
 
-- For PE = P4 → search candidates in **P3**
-- For PE = P2 → search candidates in **P1**
+```
+"فترتك بـ [period] صارت بدون طبيب. كيف نتعامل؟"
+[أبدّل مع طبيب من فتره ثانيه]
+[أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
+[اتركها فاضيه]
+```
 
-The candidate swaps their slot with the absent doctor's
-end-of-shift slot. The absent doctor takes the candidate's
-earlier slot (which they can work, since their permission
-only excludes the end-of-shift period). The candidate
-moves into the end-of-shift slot.
+Each option leads to a different branch:
 
-**Step 2 — If no one in step 1 accepts, broaden to one
-period further.**
+**Option 1 — Swap with a doctor in another period**
 
-- For PE = P4 → try **P2**
-- For PE = P2 → try **P3**
+The AI then asks which period to target:
+```
+"أرسل طلب التبديل لأي فتره؟"
+[الفتره الثانيه من نفس الشفت]
+[فتره من الشفت الثاني]
+[فتره معيّنه — أنت تختار]
+```
 
-Same swap mechanic. Exclude reduced-workload doctors from
-candidates for P2 or P4 — they do not work those periods.
+Once a target period is chosen, the AI calls
+`find_swap_candidates` then `broadcast_swap_request` with a
+24-hour timeout. The first doctor to accept gets the swap
+automatically. The TL receives a push notification on
+acceptance, expiry, or no response.
 
-**Step 3 — If step 2 fails, cascade one period further.**
+**Option 2 — Reassign a doctor from another clinic**
 
-- For PE = P4 → try **P1**
-- For PE = P2 → try **P4**
+The AI lists doctors who could cover both their current
+slot and the TL's empty slot in the same period (i.e.,
+they would take two clinic rooms in that period). The TL
+picks one or asks the AI to suggest based on workload.
 
-Again exclude reduced-workload doctors as needed.
+**Option 3 — Leave the slot empty**
 
-**Step 4 — If all cascades fail**, the permission cannot
-be granted. Inform the TL plainly: "ما حد قبل التبديل
-بأي فتره. ما تقدر تستأذن اليوم — لازم تشتغل عادي."
-The TL will have to work the period or revise their
-request.
+The AI marks the slot as a known gap, surfaces it on the
+schedule view, and stops. The TL accepted the gap with
+their own authority.
 
-### PS (Permission Start-of-shift) — cascading swap [Source A only]
+### Important — the AI's role is to suggest, not to decide
 
-When the TL's PS removes them from the **start of shift
-period** (P1 for morning, P3 for evening), follow the mirror
-cascade. Same swap mechanic in every step:
+For PE/PS coverage:
+- The AI does NOT refuse the permission.
+- The AI does NOT pick the coverage approach.
+- The AI does NOT auto-run a cascade through multiple
+  periods.
+- The AI lists the options and waits.
 
-- For PS = P1 → try **P2**, then **P3**, then **P4**
-- For PS = P3 → try **P4**, then **P2**, then **P1**
+If the chosen swap (Option 1) does not receive a response
+within 24 hours, the AI tells the TL and re-offers the
+options. The TL can try another period, switch to Option 2
+or 3, or extend the request.
 
-Closest period first, then expand outward. Exclude
-reduced-workload doctors from candidates for P2 or P4.
-
-If all cascades fail, the permission cannot be granted.
-Tell the TL plainly.
+The 24-hour timeout applies to all swap requests
+originating from this workflow, matching the
+`swap_broadcast.md` standard.
 
 ---
 
@@ -284,11 +299,11 @@ For full rules, see `rules/coverage.md`. Key points:
   periods). Same tool used by `swap_broadcast`.
 - `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
   — sends a swap request to multiple candidates. First to
-  accept triggers the atomic swap. Used at every cascade
-  step. **For cascade steps, use a short `timeout_minutes`
-  (15-30) so a non-response moves the cascade forward
-  quickly. Do NOT use the 24-hour timeout meant for TL
-  open broadcasts.**
+  accept triggers the atomic swap. **Always use a 24-hour
+  timeout (`timeout_minutes=1440`)** matching the
+  `swap_broadcast` standard. The previous short-timeout
+  cascade model has been retired in favor of the
+  TL-driven options menu.
 - `assign_replacement(slot_id, replacement_doctor_id)` —
   assigns a different doctor to a vacated slot (used for
   manual TL choice).
@@ -340,8 +355,12 @@ The flow depends on the source first, then on the type.
 #### Phase 2 — Handle by type
 
 - **SL or VC, current week** → Branch SL/VC below.
-- **PE or PS in a working period, current week** →
-  Branch PE/PS cascade below.
+- **PE or PS, TL had a clinic slot in that period** →
+  Branch PE/PS coverage below (options menu, no cascade).
+- **PE or PS, TL was delegator or EX** → Just update the
+  status in the EX section. No coverage hunt. Inform in
+  one line: "سجّلت استئذانك. كنت ديليقيتر/احتياطي، فما
+  فيه فتره عياده تتغطّى."
 - **PE or PS in a non-working period, current week** →
   No action needed. Inform: "الفتره مو فترة عملك،
   ما فيه إجراء."
@@ -375,30 +394,49 @@ The TL Assistant opens the conversation proactively.
 4. On TL confirmation, call `assign_replacement` per slot.
 5. Report briefly.
 
-### Branch PE/PS cascade — Source A only
+### Branch PE/PS coverage — Source A only
 
-The TL's affected slot is empty. Run the cascading swap.
-Each step uses a **short timeout (15 minutes)** so a
-non-response moves the cascade forward quickly — same-day
-permissions cannot wait 24 hours.
+The TL's affected clinic slot is empty (this branch only
+applies when the TL had a clinic slot — delegator and EX
+cases are handled in Phase 2 above with a single line, no
+coverage hunt).
 
-1. **Step 1** — `find_swap_candidates(week, day, closest_period, exclude_reduced_workload)`
-   then `broadcast_swap_request(slot, candidates, timeout_minutes=15)`.
-   Set `exclude_reduced_workload=true` when the candidate
-   would inherit P2 or P4.
-2. If step 1 returns no candidates or all decline within
-   the timeout, present step 2 to the TL:
-   "ما حد بـ [closest] قبل التبديل. أنتقل لـ [next period]؟"
-3. On TL confirmation, run `find_swap_candidates` +
-   `broadcast_swap_request(..., timeout_minutes=15)` for
-   the next cascade period. Pass `exclude_reduced_workload=true`
-   when the candidate would inherit P2 or P4. Repeat for
-   the third cascade period if needed.
-4. If all cascades fail, inform the TL that the
-   permission cannot be granted and they will have to
-   work the period.
-5. On any successful swap, report the result in one short
-   line.
+1. Present the three options menu via `ask_tl_choice`:
+   "فترتك بـ [period] صارت بدون طبيب. كيف نتعامل؟"
+   [أبدّل مع طبيب من فتره ثانيه]
+   [أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
+   [اتركها فاضيه]
+
+2. **Option 1 chosen — swap with another period:**
+   - Ask: "أرسل طلب التبديل لأي فتره؟"
+     [الفتره الثانيه من نفس الشفت]
+     [فتره من الشفت الثاني]
+     [فتره معيّنه — أنت تختار]
+   - Call `find_swap_candidates(week, day, chosen_period, exclude_reduced_workload)`
+     with `exclude_reduced_workload=true` if the swap moves
+     the candidate into P2 or P4.
+   - Call `broadcast_swap_request(slot, candidates, timeout_minutes=1440)`.
+   - Inform the TL: "أرسلت طلب لـ [N] أطباء. مهله 24 ساعه."
+   - On acceptance, report. On expiry or no response,
+     re-offer the three options menu.
+
+3. **Option 2 chosen — reassign from another clinic:**
+   - List candidate doctors active in the same period in
+     other clinic rooms.
+   - Ask TL to pick one. Confirm the doctor will cover both
+     their current room and the TL's vacated room in that
+     period.
+   - Call the slot-update tool to add the second assignment.
+
+4. **Option 3 chosen — leave empty:**
+   - Mark the slot as a known gap (no doctor assigned).
+   - Report briefly: "الفتره راح تظل بدون طبيب. حفظت
+     استئذانك."
+
+5. The AI never refuses the permission and never decides
+   the approach. It surfaces options and executes the TL's
+   choice. If the TL never picks an option, the absence
+   stays marked but no coverage action is taken.
 
 ### Branch Future — future-week absence (any type)
 
@@ -470,22 +508,27 @@ Result:
   leave empty, etc.).
 
 - **Doctor on PE/PS has multiple slots in the same period**
-  Cover each slot independently using the cascade.
+  Surface each empty slot to the TL when presenting the
+  coverage options menu.
 
 ---
 
 ## Common mistakes to avoid
 
 - Do not ask the TL "how to cover?" for SL/VC. Use the
-  automatic flow; the TL can override after seeing the
-  result.
-- Do not skip the cascade order for PE/PS. Closest
-  period first, then further periods.
+  automatic reserve-EX flow; the TL can override after
+  seeing the result.
+- Do not auto-cascade through periods for PE/PS. Present
+  the three options menu and let the TL choose. The
+  cascade model has been retired.
+- Do not refuse the TL's permission because no swap was
+  found. The TL has authority to leave a slot empty
+  (Option 3).
 - Do not include reduced-workload doctors as candidates
   for swaps targeting P2 or P4.
-- Do not call `broadcast_swap_request` for two cascade
-  steps at the same time. The steps are sequential,
-  not parallel.
+- Do not use short timeouts (15-30 min) for swap requests.
+  All `broadcast_swap_request` calls use 24 hours
+  (`timeout_minutes=1440`).
 - Do not record an absence for a past date.
 - Do not invent doctor IDs.
 - Do not silently leave slots empty without telling the TL.
@@ -500,10 +543,10 @@ The examples below cover both submission sources and all
 three timing scenarios (current day, future week, period
 not actually worked).
 
-### Source A — TL submits a permission for themselves
+### Source A — TL submits a permission for themselves (clinic doctor)
 
 The TL Assistant marks the TL, vacates the slot, then
-suggests coverage.
+offers options. It does NOT auto-cascade.
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
@@ -512,22 +555,31 @@ AI: [internal: PE for the morning shift = P2 today]
     [internal: calls mark_doctor_absent(tl_id, PE, today,
      period=P2)]
     [internal: TL is now in EX for P2, TL's P2 slot is
-     vacated]
+     vacated, status = PE]
     [internal: looks at the vacated slot's clinic]
 
-AI: سجّلت استئذانك (PE) لـ P2 اليوم. P2 عياده [N] صارت
-    بدون طبيب. راح أبحث عن أطباء بـ P1 للتبديل أولاً.
-    أتابع؟
+AI: سجّلت استئذانك. فترتك بـ P2 عياده [N] صارت بدون طبيب.
+    كيف تبي نتعامل؟
+    [أبدّل مع طبيب من فتره ثانيه]
+    [أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
+    [اتركها فاضيه]
 
-TL: نعم
+TL: [ينقر: أبدّل مع طبيب من فتره ثانيه]
+
+AI: أرسل طلب التبديل لأي فتره؟
+    [الفتره الثانيه من نفس الشفت]
+    [فتره من الشفت الثاني]
+    [فتره معيّنه — أنت تختار]
+
+TL: [ينقر: الفتره الثانيه من نفس الشفت]
 
 AI: [internal: calls find_swap_candidates(today, P1,
      exclude_reduced_workload=true) → 5 candidates]
     [internal: calls broadcast_swap_request(slot,
-     5 P1 candidates, timeout_minutes=15)]
+     5 P1 candidates, timeout_minutes=1440)]
 
-AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. راح يصلك إشعار
-    لما أحدهم يقبل.
+AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. مهله 24 ساعه.
+    راح يصلك إشعار لما أحدهم يقبل، أو لما تنتهي المهله.
 ```
 
 ### Source B SL — Doctor submitted, AI proactively asks about coverage
