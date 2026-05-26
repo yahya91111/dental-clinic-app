@@ -134,6 +134,40 @@ They are also excluded from:
 - The EX rotation
 - Coverage of P2 or P4
 
+**Multiple reduced-workload doctors in one group:**
+
+When the same group contains 2+ doctors with reduced
+workload, they all work the same period (P1 if their group
+is on morning, P3 if on evening). They must each occupy
+a **different clinic room** in that period — you cannot
+place two doctors in the same room and same period.
+
+Example with 3 clinic rooms and 2 reduced-workload doctors
+on morning duty: د.A in Room 1 P1, د.B in Room 2 P1. The
+third room's P1 is covered by another group member. P2 of
+all three rooms is covered by other group members (the
+two reduced-workload doctors are off).
+
+**Overflow case — reduced-workload count > room count:**
+
+If the number of reduced-workload doctors in a group
+exceeds the number of clinic rooms, not all of them can
+be placed. The AI does NOT decide who works and who does
+not. Instead, it asks the TL:
+
+"عندنا [N] أطباء تخفيف عمل بقروب [X] لكن [M] عيادات فقط
+بالشفت. مين راح يداوم اليوم؟"
+
+The TL specifies which reduced-workload doctors are
+scheduled that day, room by room. The rest are off for
+that day (treated like an absence for distribution purposes,
+but not marked SL/VC since this is a structural shortage,
+not a request).
+
+The AI should also surface this to the TL as a recurring
+issue: "هالحاله تتكرّر — تبي أسجّل نفس التوزيع لباقي
+الأسبوع؟" so the TL can decide the pattern once.
+
 ---
 
 ## What "fair" looks like across the week

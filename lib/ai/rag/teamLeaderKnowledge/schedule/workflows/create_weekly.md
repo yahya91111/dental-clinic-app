@@ -233,6 +233,15 @@ Before drafting any schedule, run these checks in order:
      of their shift** (P1 if morning, P3 if evening). Never
      assign them to P2 or P4. They are also excluded from
      delegator and EX rotations.
+   - When a group has 2+ reduced-workload doctors, each must
+     occupy a **different clinic room** in their period.
+     Never place two of them in the same room.
+   - **Overflow** — if reduced-workload count > clinic rooms
+     for a shift, do NOT pick who works yourself. Ask the TL:
+     "عندنا [N] أطباء تخفيف عمل بقروب [X] لكن [M] عيادات فقط.
+     مين راح يداوم؟" Then follow up: "نفس التوزيع لباقي الأسبوع؟"
+     so the pattern is set once. See `coverage.md` Rule 5
+     for the full handling.
 
 6. Push the distribution into the Schedule UI as a draft.
    Apply the tool-choice rule above:
