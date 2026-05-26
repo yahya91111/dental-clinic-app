@@ -75,10 +75,12 @@ Anyone in the group covering the shift can be the
 delegator, **except**:
 - Reduced-workload doctors (locked to first period only,
   cannot cover full shift)
-- Trainees in the **beginner** state (they must be paired
-  with a trainer, see `special_groups.md`)
-- Board doctors (they have their own clinic role, see
-  `special_groups.md`)
+- Trainees deployed as **beginner** for this schedule
+  (they must be paired with a trainer, see `special_groups.md`)
+- Board doctors are eligible **only if the TL opted them
+  in for this schedule** (see Board roles in
+  `special_groups.md`). By default the TL is asked per
+  schedule whether Board joins the delegator rotation.
 
 ### Daily rotation
 
@@ -154,8 +156,13 @@ gets approximately the same number of EX days.
 
 Anyone in the group can be EX, **except**:
 - Reduced-workload doctors
-- Beginner trainees (must be paired with a trainer)
-- Board doctors with a fixed clinic position
+- Trainees deployed as beginner for this schedule (must
+  be paired with a trainer)
+- Board doctors are eligible **only if the TL opted them
+  in for this schedule** (see Board roles in
+  `special_groups.md`). The 2-per-clinic Board pair always
+  has fixed positions and is never EX regardless of the
+  TL's opt-in choice.
 - Anyone who is already the dedicated delegator that day
 
 ### EX behavior during the shift

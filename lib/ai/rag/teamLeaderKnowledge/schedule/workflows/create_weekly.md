@@ -27,6 +27,16 @@ Do NOT use this workflow for:
   scheduled leaves.
 - `get_existing_schedule(week_start)` — returns the existing
   schedule for that week, or null if none exists.
+- `get_clinic_ai_preferences(clinic_id)` — returns the stored
+  per-clinic policy JSON (Board delegator/EX participation,
+  trainee deployments, last Board shift). See
+  `rules/clinic_preferences.md`.
+- `update_clinic_ai_preferences(clinic_id, patch)` — saves
+  TL answers back to the JSON. Called per answer, not in batch.
+- `ask_tl_choice(question_text, options[])` — presents a
+  button question in the UI. Returns the selected value.
+  Used for Board and trainee questions, plus the
+  "same as last week?" smart-reminder card.
 - `draft_weekly_schedule(json)` — pushes the FULL week's schedule
   into the Schedule UI as an editable draft (all 5 days at once).
   Best for normal-sized clinics. Cheaper and faster.
@@ -82,7 +92,14 @@ Before drafting any schedule, run these checks in order:
      user about leaves — they are stored in the system and
      visible to the TL on the Groups/Leaves pages.
 
-4. Read the **target week's EX section** (the absences
+4. Call `get_clinic_ai_preferences(clinic_id)` to read the
+   stored per-clinic policies (see `rules/clinic_preferences.md`).
+   - If the clinic has no Board and no trainees, this read
+     is a no-op — skip the smart-reminder card.
+   - Otherwise, you'll use these preferences in Step 2 of
+     the main Steps section below.
+
+5. Read the **target week's EX section** (the absences
    already submitted for this week before it was built):
    - **SL or VC** entries → the doctor is unavailable that
      day. Exclude them from distribution on those days.
@@ -103,7 +120,39 @@ Before drafting any schedule, run these checks in order:
 1. Confirm the `week_start` date. Default is the next Sunday
    unless the user specifies otherwise.
 
-2. Use the data already in the system. Do not ask about:
+2. Resolve per-clinic policies via the smart-reminder card.
+   This step only runs if the clinic has Board doctors,
+   trainees, or both. Skip it otherwise.
+
+   Build a summary card from the values in `ai_preferences`
+   (Board shift, Board delegator/EX participation, each
+   trainee's deployment + trainer). Then call
+   `ask_tl_choice` with one question:
+
+   "نفس الأسبوع الماضي؟"
+   [نعم، نفس الشي] [غيّر]
+
+   - On **[نعم]** → proceed with stored values.
+   - On **[غيّر]** → ask each question individually via
+     `ask_tl_choice`, save each answer immediately via
+     `update_clinic_ai_preferences`, then proceed.
+
+   For a brand-new clinic (empty `ai_preferences`), skip the
+   summary card and ask each question directly the first time.
+
+   The exact questions to ask (when [غيّر] is clicked or when
+   no preferences exist yet):
+
+   For Board:
+   - "شفت البورد هالأسبوع؟" [صباحي] [مسائي] [مقسوم]
+   - "البورد يدخل دوران الديليقيتر؟" [نعم] [لا]
+   - "البورد يدخل دوران الـ EX؟" [نعم] [لا]
+
+   For each trainee in the clinic:
+   - "د.[name] (Group [N]) — هالأسبوع؟" [مستقل] [مبتدئ مع مدرّب]
+   - If beginner chosen: "المدرّب؟" [list of parent-group doctors]
+
+3. Use the data already in the system. Do not ask about:
    - Number of rooms — it is part of the clinic configuration.
    - Doctor absences and leaves — they are stored on each
      doctor and visible to the TL on Groups/Leaves pages.
@@ -112,7 +161,7 @@ Before drafting any schedule, run these checks in order:
    system, such as a preferred distribution pattern
    ("same as last week", "rotate groups").
 
-3. Retrieve the relevant rules from the knowledge base:
+4. Retrieve the relevant rules from the knowledge base:
    - `rules/group_separation.md` — groups must not mix in a period
    - `rules/coverage.md` — every period requires coverage,
      plus fairness rules (period variation, role rotation)
@@ -120,17 +169,24 @@ Before drafting any schedule, run these checks in order:
      by default) and EX rotation
    - `rules/special_groups.md` — Board and Trainee placement
 
-4. Draft the schedule JSON respecting all rules above and:
+5. Draft the schedule JSON respecting all rules above and:
    - Balance load fairly across doctors
    - Distribute groups across shifts (not concentrated in one
      shift across consecutive days)
-   - Assign one delegator per shift from eligible doctors
+   - Assign one delegator per shift from eligible doctors,
+     including or excluding Board doctors based on the
+     `board_in_delegator_rotation` preference
+   - Assign EX from eligible doctors, including or excluding
+     Board based on `board_in_ex_rotation`
+   - Place each trainee per `trainee_defaults[id].deployment`:
+     paired with their `trainer` (not counted in D) or
+     independent (counted in D)
    - **Place reduced-workload doctors ONLY in the first period
      of their shift** (P1 if morning, P3 if evening). Never
      assign them to P2 or P4. They are also excluded from
      delegator and EX rotations.
 
-5. Push the distribution into the Schedule UI as a draft.
+6. Push the distribution into the Schedule UI as a draft.
    Apply the tool-choice rule above:
 
    - **Default:** call `draft_weekly_schedule(json)` once with
@@ -144,25 +200,30 @@ Before drafting any schedule, run these checks in order:
    In all paths, the TL sees the schedule visually in the UI
    and can edit slots directly.
 
-6. Inform the TL briefly:
+7. Inform the TL briefly:
    "وزّعت الأطباء بالجدول كمسوّده. عاينها وعدّل الي تبيه،
    وقولي لما تبي تحفظ."
 
-7. Wait for the TL's response:
-   a) **Save** ("احفظ" / "ثبّت") — proceed to step 8.
+8. Wait for the TL's response:
+   a) **Save** ("احفظ" / "ثبّت") — proceed to step 9.
    b) **Quick verbal change** ("غيّر ديليقيتر الأحد إلى د.علي")
-      — adjust the draft, push again, return to step 7.
+      — adjust the draft, push again, return to step 8.
    c) **Cancel** ("ألغي" / "ابدأ من جديد") — call
       `discard_draft(week_start)` and stop.
 
    Note: the TL may edit slots directly in the UI between
    turns. You do not see those edits, but they persist in
-   the draft.
+   the draft. If a manual edit contradicts a stored
+   preference (e.g., made a Board doctor the delegator
+   while `board_in_delegator_rotation` is false), ask once
+   on confirmation: "تبي أحفظ هذا كالسياسه الجديده؟"
+   [نعم] [مره وحده فقط] and update `ai_preferences` only
+   on [نعم].
 
-8. Call `confirm_weekly_schedule(week_start)` to publish
-   the draft (only on path 7a).
+9. Call `confirm_weekly_schedule(week_start)` to publish
+   the draft (only on path 8a).
 
-9. Report the result in one short line:
+10. Report the result in one short line:
    - On success: "تم. جدول أسبوع [date] جاهز."
    - On failure: state what blocked it and what remains.
    - On cancel: "تم إلغاء المسوّده."

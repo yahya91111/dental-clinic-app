@@ -57,27 +57,56 @@ This affects the staffing scenario in `coverage.md`. With
 "surplus" (D = S + 2), so 1 dedicated delegator + 1 EX
 becomes possible.
 
-### Special distribution rule: 2 Board doctors → 1 clinic
+### Distribution rules by Board size
 
-When the Board has exactly **two doctors** on a given
-shift, they must be assigned to the **same clinic room**:
-- One Board doctor covers P1 of clinic X
-- The other Board doctor covers P2 of clinic X
+The 2-per-clinic placement rule applies only when there are
+exactly two Board doctors. Other sizes follow different rules:
 
-They act as a pair covering one clinic across the whole
-shift. They are NOT split into two different rooms.
+**Single Board doctor (1):**
+- Treated as a regular extra doctor for the shift the TL
+  assigns the Board to that week.
+- Counted in D (effective doctor count).
+- May fill any clinic slot.
+- Subject to the same fairness rules — period variation
+  (start vs end of shift) rotates across the week, like
+  any regular doctor.
+- The 2-per-clinic pair rule does NOT apply (no pair to
+  keep together).
 
-If the Board has 3 or more doctors, the AI should ask
-the TL how to distribute them (the 2-per-clinic pattern
-may extend, or the TL may prefer a different layout).
+**Two Board doctors (2):**
+- Must share the **same clinic room** for the entire shift.
+- One Board doctor covers P1 of clinic X.
+- The other Board doctor covers P2 of clinic X.
+- They act as a pair across the whole shift, never split
+  into different rooms.
 
-### Board and other roles
+**Three or more Board doctors (3+):**
+- The 2-per-clinic pattern does not extend automatically.
+- The AI asks the TL how to distribute them before drafting.
 
-- Board doctors **CAN** be the delegator (they are
-  eligible like any regular doctor).
-- Board doctors **CAN** be EX.
-- Board doctors are subject to the same fairness rules
-  (period variation, role rotation).
+### Board roles (delegator and EX) — TL decision per schedule
+
+Board doctors' participation in the **delegator** and **EX
+(reserve)** rotations is **not a fixed rule**. It is a
+per-schedule decision the TL makes when building the week.
+
+The AI asks the TL two yes/no questions (presented as
+buttons in the UI) before drafting:
+
+1. **"البورد يدخل دوران الديليقيتر؟"** [نعم] [لا]
+2. **"البورد يدخل دوران الـ EX؟"** [نعم] [لا]
+
+The answers are stored in `clinic.ai_preferences` (see
+`rules/clinic_preferences.md`) so the AI can offer
+"same as last week?" on subsequent schedules.
+
+Whichever way the TL chooses, the eligibility lists in
+`delegator_and_ex.md` still apply on top of the TL's choice
+(e.g., reduced-workload exclusions hold regardless).
+
+A Board doctor excluded from both rotations behaves as a
+clinic-only doctor for the shift, and still rotates through
+period variation like any regular doctor.
 
 ---
 
@@ -107,85 +136,59 @@ must be alongside their trainers).
 Trainees do NOT rotate independently. They follow their
 parent group's shift assignment exactly.
 
-### Trainee states
+### Deployment is a per-schedule TL decision (via buttons)
 
-Every trainee has one of two states. The state defines
-what placements are **allowed**, but the actual placement
-for a given schedule is a TL decision (see next section).
+The trainee's underlying competence (whether they are
+generally a beginner or competent) is background context.
+What matters for distribution is the **deployment mode**
+the TL picks for the trainee in **this specific schedule**.
 
-| State | Arabic | Allowed placements |
-|-------|--------|--------------------|
-| **Beginner** | غير متمكّن | ONLY paired with a trainer in the same clinic and period. Cannot be alone. |
-| **Competent** | متمكّن | Either alone in a clinic slot OR paired with a trainer. The TL decides per schedule. |
+The AI asks one button question per trainee before drafting:
 
-### State is set per trainee, not per group
+**"د.[X] (Group [N]) — هالأسبوع؟"** [مستقل] [مبتدئ مع مدرّب]
 
-A trainee group can have a mix of beginners and
-competents at the same time. Each trainee is handled
-individually.
+- **مستقل (Independent)** → the trainee counts as a regular
+  doctor in the distribution and fills a clinic slot like
+  any group member.
+- **مبتدئ مع مدرّب (Beginner, paired with trainer)** → the
+  trainee is paired and does NOT count as a regular doctor.
+  Follow-up button asks for the trainer from the parent
+  group: **"المدرّب؟"** [د.A] [د.B] [د.C] …
 
-### The AI must ask about EVERY trainee before each schedule
+The TL's choices are stored in `clinic.ai_preferences`
+under `trainee_defaults` (see `rules/clinic_preferences.md`).
+Subsequent schedules offer "نفس الأسبوع الماضي؟" instead of
+re-asking from scratch.
 
-Before distributing a week, the AI asks the TL about
-**every trainee** in the affected groups — including
-competent trainees. The state on file tells the AI which
-question to ask, but the placement decision is per
-schedule:
+### Mixed deployments in one trainee group are normal
 
-- **Beginner trainee** — "د.[X] (مبتدئ، Group [N]) — مع
-  أي مدرّب؟" The TL names a trainer from the parent group.
-- **Competent trainee** — "د.[Y] (متمكّن، Group [N]) —
-  يستلم فتره لوحده ولا مع طبيب؟" The TL chooses:
-  - **Alone** → the trainee counts as a regular doctor
-    in the distribution
-  - **With a trainer** → the trainee is paired (like a
-    beginner) and does NOT count as a regular doctor;
-    the TL also names the trainer
+A trainee group can have one trainee deployed independent
+and another paired in the same week. Each trainee is
+asked about individually.
 
-If the TL has already answered for a trainee in the same
-session, the AI does not ask again.
-
-### Placement determines the count
+### Deployment determines the count
 
 A trainee's contribution to the doctor total depends on
-the placement chosen, not on the state alone:
+the deployment chosen for this schedule:
 
-| Placement | Counts in doctor total? | Notes |
-|-----------|------------------------|-------|
-| Paired with a trainer (any state) | No | Sits in the trainer's clinic and period |
-| Alone (competent only) | Yes | Treated as a regular doctor |
+| Deployment | Counts in doctor total? | Notes |
+|------------|-------------------------|-------|
+| Beginner (paired with trainer) | No | Sits in the trainer's clinic and period |
+| Independent | Yes | Treated as a regular doctor |
 
-This means a competent trainee placed alone increases
-the effective group size by 1 in that shift. A competent
-trainee placed with a trainer does not.
-
-### Why ask about competent trainees too
-
-A trainee may be technically competent but the TL still
-prefers to keep them paired with a senior doctor on a
-given week — for continuity of care, mentorship, or a
-new procedure they are learning. The state defines what
-is possible; the TL decides what happens.
-
-### Trainee constraints (regardless of placement)
-
-- A trainee cannot be in a different shift than their
-  parent group's assignment that day.
-- A trainer for a paired trainee must come from the
-  trainee's linked regular group, not the Board.
-- A trainee paired with a trainer cannot be a delegator
-  or EX on that day.
-- A competent trainee placed alone can be a delegator
-  or EX, like any regular doctor.
+So an independent trainee increases the effective group
+size by 1 in that shift. A paired trainee does not.
 
 ### Trainee constraints
 
 - A trainee cannot be in a different shift than their
   parent group's assignment that day.
-- A beginner trainee cannot be paired with a Board
-  doctor as their "trainer" — trainers must come from
-  the trainee's linked regular group.
-- A beginner trainee cannot be a delegator or EX.
+- A trainer for a paired trainee must come from the
+  trainee's linked regular group, not the Board.
+- A trainee deployed as beginner cannot be the delegator
+  or EX that day.
+- A trainee deployed as independent can be the delegator
+  or EX, like any regular doctor.
 
 ---
 
@@ -195,29 +198,30 @@ is possible; the TL decides what happens.
 
 - Doctor Group 1: 7 doctors
 - Trainee Group 1: 2 trainees
-  - Beginner — TL named د.M as trainer
-  - Competent — TL chose "alone" this week
+  - Trainee 1 — TL chose "beginner" this week, picked د.M as trainer
+  - Trainee 2 — TL chose "independent" this week
 - Board: 2 doctors, TL said "Board morning this week"
+- TL opted Board OUT of delegator and EX rotation for this week
 
 Distribution math:
 - Effective morning doctor count =
-  Group 1 (7) + Board (2) + competent trainee placed alone (1)
+  Group 1 (7) + Board (2) + independent trainee (1)
   = **10**
-- Beginner trainee paired with د.M, not counted
+- Beginner-deployed trainee paired with د.M, not counted
 
 With 3 clinics (S=6) and D=10:
 - 6 clinic slots filled
-- 1 dedicated delegator
-- 3 EX (rotation among eligible)
+- 1 dedicated delegator (from Group 1, since Board opted out)
+- 3 EX (rotation among eligible Group 1 doctors)
 - 2 Board doctors share one clinic (P1 and P2)
-- Beginner trainee paired with د.M in his clinic and period
+- Beginner-deployed trainee paired with د.M in his clinic and period
 
 ### Example B — Tuesday, Group 1 evening, no Board
 
 - Doctor Group 1: 7 doctors → covers evening Tuesday
 - Trainee Group 1: same 2 trainees, follow Group 1
-  - Beginner — TL named د.M as trainer
-  - Competent — TL chose "with د.N" this week
+  - Trainee 1 — TL chose "beginner" with د.M
+  - Trainee 2 — TL chose "beginner" with د.N this week
 - Board: TL said morning this week → not in this shift
 
 Distribution math:
@@ -228,8 +232,8 @@ Distribution math:
 With 3 clinics (S=6) and D=7:
 - 6 clinic slots + 1 dedicated delegator
 - No EX
-- Beginner trainee paired with د.M
-- Competent trainee paired with د.N this week (TL choice)
+- Trainee 1 paired with د.M
+- Trainee 2 paired with د.N this week (TL choice)
 
 ---
 
@@ -239,3 +243,4 @@ With 3 clinics (S=6) and D=7:
 - For regular group rotation → `group_separation.md`
 - For staffing scenarios → `coverage.md`
 - For delegator and EX → `delegator_and_ex.md`
+- For ai_preferences storage → `clinic_preferences.md`
