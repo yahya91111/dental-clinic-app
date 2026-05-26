@@ -426,6 +426,22 @@ The flow depends on the source first, then on the type.
 3. Confirm in one short line: "سجّلت [type] لك يوم
    [day]، وفترتك صارت بدون طبيب."
 
+#### Phase 1b — Group notification (Source A only)
+
+After marking, apply the `tl_absence_recorded` event
+template (see `sharedKnowledge/notifications/clinical/event_templates.md`).
+Ask the TL:
+"أبعت إشعار لقروبك (والتريني المرتبط) بغيابك؟"
+[نعم] [لا]
+
+- On [نعم] → send the notification using the template
+  text. Recipients: `tl_group_with_trainees`.
+- On [لا] → skip silently.
+
+This is independent of the coverage handling in Phase 2 —
+the notification is about informing the group, the
+coverage handling is about filling the empty slot.
+
 #### Phase 2 — Handle by type
 
 - **SL or VC, current week** → Branch SL/VC below.

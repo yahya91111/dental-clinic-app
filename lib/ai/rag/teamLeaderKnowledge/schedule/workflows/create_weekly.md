@@ -277,13 +277,22 @@ Before drafting any schedule, run these checks in order:
    [نعم] [مره وحده فقط] and update `ai_preferences` only
    on [نعم].
 
-9. Call `confirm_weekly_schedule(week_start)` to publish
-   the draft (only on path 8a).
+9. **Before** calling `confirm_weekly_schedule`, apply the
+   `schedule_published` event-notification template (see
+   `sharedKnowledge/notifications/clinical/event_templates.md`).
+   Ask the TL: "أبعت إشعار للأطباء بنشر الجدول؟"
+   [نعم] [لا]
+   - On [نعم] → send the notification to `all_clinic_doctors`
+     using the template text.
+   - On [لا] → skip silently.
 
-10. Report the result in one short line:
-   - On success: "تم. جدول أسبوع [date] جاهز."
-   - On failure: state what blocked it and what remains.
-   - On cancel: "تم إلغاء المسوّده."
+10. Call `confirm_weekly_schedule(week_start)` to publish
+    the draft (only on path 8a).
+
+11. Report the result in one short line:
+    - On success: "تم. جدول أسبوع [date] جاهز."
+    - On failure: state what blocked it and what remains.
+    - On cancel: "تم إلغاء المسوّده."
 
 ---
 
