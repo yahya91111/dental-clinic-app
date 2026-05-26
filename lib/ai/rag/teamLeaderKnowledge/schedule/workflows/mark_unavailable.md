@@ -156,70 +156,80 @@ Assistant proposes coverage). The PE/PS cascade is
    doctor cover both periods of that room.
 5. On TL confirmation, call `assign_replacement` per slot.
 
-### PE/PS coverage options [Source A only]
+### PE/PS coverage — offer mediation, don't impose [Source A only]
 
-When the TL's PE or PS removes them from a working period
-in which they had a clinic slot, the slot is now empty. The
-AI does NOT decide how to cover it. Instead, the AI presents
-the TL with options and lets the TL pick.
+The AI's behavior depends on whether the permission leaves
+anything uncovered. The principle: if nothing is uncovered,
+just execute. If something is uncovered, offer to mediate.
+Never decide for the TL.
 
-Use `ask_tl_choice` with these options:
+**Case A — Permission leaves no gap**
+
+When the TL had no clinic slot to vacate (was on EX, was
+the delegator with the shift still covered by their rotation,
+or the period is outside their working hours), the AI just
+marks the absence in the EX section and reports in one line.
+No question, no menu, no mediation offer.
+
+Examples:
+- TL was EX morning → status changes from "extra" to "PE",
+  one-line confirmation.
+- TL has PE for P4 but their shift is morning that day →
+  not a working period, status update only.
+
+**Case B — Permission leaves a clinic slot empty**
+
+When the TL was a clinic doctor in the affected period,
+the slot becomes empty. The AI offers its mediation
+service with a single yes/no question:
 
 ```
-"فترتك بـ [period] صارت بدون طبيب. كيف نتعامل؟"
-[أبدّل مع طبيب من فتره ثانيه]
-[أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
-[اتركها فاضيه]
+"سجّلت استئذانك. فترتك بـ [period] عياده [N] صارت بدون
+طبيب. ممكن أكلم أطباء فتره ثانيه ونلقى تبديل. تبيني؟"
+[نعم] [لا، خلّيها]
 ```
 
-Each option leads to a different branch:
+- On **[نعم]** → ask which period to target, then call
+  `find_swap_candidates` and `broadcast_swap_request` with
+  24-hour timeout. Inform the TL the request is out and
+  report back on acceptance/expiry.
+- On **[لا، خلّيها]** → the slot stays empty. The TL has
+  authority to accept the gap. No further action.
 
-**Option 1 — Swap with a doctor in another period**
+**Case C — Permission removes the TL from delegator duty**
 
-The AI then asks which period to target:
+When the TL was the shift delegator and the permission
+removes them from part of the shift, the AI offers to find
+a substitute delegator for the affected period:
+
 ```
-"أرسل طلب التبديل لأي فتره؟"
-[الفتره الثانيه من نفس الشفت]
-[فتره من الشفت الثاني]
-[فتره معيّنه — أنت تختار]
+"سجّلت استئذانك. كنت ديليقيتر للشفت. ممكن أسأل أحد
+يستلم الديليقيتر بدلك بـ [period]. تبيني؟"
+[نعم] [لا، خلّيها]
 ```
 
-Once a target period is chosen, the AI calls
-`find_swap_candidates` then `broadcast_swap_request` with a
-24-hour timeout. The first doctor to accept gets the swap
-automatically. The TL receives a push notification on
-acceptance, expiry, or no response.
+- On **[نعم]** → ask candidate doctors in the same shift
+  (excluding those already in clinic slots in that period),
+  get acceptance, assign them as delegator for that period.
+- On **[لا، خلّيها]** → the delegator role is unfilled for
+  that period. The TL accepts the gap.
 
-**Option 2 — Reassign a doctor from another clinic**
-
-The AI lists doctors who could cover both their current
-slot and the TL's empty slot in the same period (i.e.,
-they would take two clinic rooms in that period). The TL
-picks one or asks the AI to suggest based on workload.
-
-**Option 3 — Leave the slot empty**
-
-The AI marks the slot as a known gap, surfaces it on the
-schedule view, and stops. The TL accepted the gap with
-their own authority.
-
-### Important — the AI's role is to suggest, not to decide
+### The AI never refuses, never decides, only mediates
 
 For PE/PS coverage:
-- The AI does NOT refuse the permission.
-- The AI does NOT pick the coverage approach.
-- The AI does NOT auto-run a cascade through multiple
-  periods.
-- The AI lists the options and waits.
+- The AI does NOT refuse the permission for any reason.
+- The AI does NOT pick the coverage approach itself.
+- The AI does NOT cascade through periods automatically.
+- The AI offers its mediation service with a yes/no
+  question. The TL decides.
 
-If the chosen swap (Option 1) does not receive a response
-within 24 hours, the AI tells the TL and re-offers the
-options. The TL can try another period, switch to Option 2
-or 3, or extend the request.
+If a mediation request (24-hour broadcast) gets no response
+by expiry, the AI tells the TL and re-offers the mediation:
+"ما حد قبل خلال 24 ساعه. أعيد المحاوله بفتره ثانيه؟ ولا
+نخلّيها فاضيه؟" The TL picks again.
 
-The 24-hour timeout applies to all swap requests
-originating from this workflow, matching the
-`swap_broadcast.md` standard.
+All swap requests originating from this workflow use the
+24-hour timeout, matching `swap_broadcast.md`.
 
 ---
 
@@ -394,49 +404,48 @@ The TL Assistant opens the conversation proactively.
 4. On TL confirmation, call `assign_replacement` per slot.
 5. Report briefly.
 
-### Branch PE/PS coverage — Source A only
+### Branch PE/PS — Source A only
 
-The TL's affected clinic slot is empty (this branch only
-applies when the TL had a clinic slot — delegator and EX
-cases are handled in Phase 2 above with a single line, no
-coverage hunt).
+1. Determine the impact of the permission:
+   - TL had a clinic slot in the affected period → Case B
+   - TL was the shift delegator → Case C
+   - TL was on EX, off, or the period is non-working → Case A
 
-1. Present the three options menu via `ask_tl_choice`:
-   "فترتك بـ [period] صارت بدون طبيب. كيف نتعامل؟"
-   [أبدّل مع طبيب من فتره ثانيه]
-   [أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
-   [اتركها فاضيه]
+2. **Case A — no gap, just mark:**
+   - The absence is recorded in the EX section. No further
+     action.
+   - Report in one line: "سجّلت استئذانك."
 
-2. **Option 1 chosen — swap with another period:**
-   - Ask: "أرسل طلب التبديل لأي فتره؟"
-     [الفتره الثانيه من نفس الشفت]
-     [فتره من الشفت الثاني]
-     [فتره معيّنه — أنت تختار]
-   - Call `find_swap_candidates(week, day, chosen_period, exclude_reduced_workload)`
-     with `exclude_reduced_workload=true` if the swap moves
-     the candidate into P2 or P4.
-   - Call `broadcast_swap_request(slot, candidates, timeout_minutes=1440)`.
-   - Inform the TL: "أرسلت طلب لـ [N] أطباء. مهله 24 ساعه."
-   - On acceptance, report. On expiry or no response,
-     re-offer the three options menu.
+3. **Case B — clinic slot empty, offer mediation:**
+   - Ask via `ask_tl_choice`:
+     "سجّلت استئذانك. فترتك بـ [period] عياده [N] صارت
+     بدون طبيب. ممكن أكلم أطباء فتره ثانيه ونلقى تبديل.
+     تبيني؟"
+     [نعم] [لا، خلّيها]
+   - On **[نعم]** → ask which period to target with a
+     second button question, then call `find_swap_candidates`
+     and `broadcast_swap_request(..., timeout_minutes=1440)`.
+     Report request out. On acceptance, report. On expiry,
+     re-offer mediation with a different period.
+   - On **[لا، خلّيها]** → the slot stays empty. Confirm:
+     "تمام. الفتره راح تظل بدون طبيب."
 
-3. **Option 2 chosen — reassign from another clinic:**
-   - List candidate doctors active in the same period in
-     other clinic rooms.
-   - Ask TL to pick one. Confirm the doctor will cover both
-     their current room and the TL's vacated room in that
-     period.
-   - Call the slot-update tool to add the second assignment.
+4. **Case C — delegator role gap, offer mediation:**
+   - Ask via `ask_tl_choice`:
+     "سجّلت استئذانك. كنت ديليقيتر للشفت. ممكن أسأل أحد
+     يستلم الديليقيتر بدلك بـ [period]. تبيني؟"
+     [نعم] [لا، خلّيها]
+   - On **[نعم]** → find eligible candidates (doctors in
+     the same shift who are not already in clinic slots in
+     that period), broadcast the request, return with the
+     acceptance.
+   - On **[لا، خلّيها]** → the delegator role is unfilled
+     for the period. Confirm: "تمام. الديليقيتر راح يكون
+     بدون بديل."
 
-4. **Option 3 chosen — leave empty:**
-   - Mark the slot as a known gap (no doctor assigned).
-   - Report briefly: "الفتره راح تظل بدون طبيب. حفظت
-     استئذانك."
-
-5. The AI never refuses the permission and never decides
-   the approach. It surfaces options and executes the TL's
-   choice. If the TL never picks an option, the absence
-   stays marked but no coverage action is taken.
+5. The AI never refuses the permission. The AI never picks
+   the coverage approach. It offers mediation with a single
+   yes/no question. The TL decides.
 
 ### Branch Future — future-week absence (any type)
 
@@ -546,7 +555,7 @@ not actually worked).
 ### Source A — TL submits a permission for themselves (clinic doctor)
 
 The TL Assistant marks the TL, vacates the slot, then
-offers options. It does NOT auto-cascade.
+offers mediation with a single yes/no question.
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
@@ -554,32 +563,26 @@ TL: اليوم عندي استئذان نهاية الصباحي
 AI: [internal: PE for the morning shift = P2 today]
     [internal: calls mark_doctor_absent(tl_id, PE, today,
      period=P2)]
-    [internal: TL is now in EX for P2, TL's P2 slot is
-     vacated, status = PE]
-    [internal: looks at the vacated slot's clinic]
+    [internal: TL was a clinic doctor in P2, slot now empty]
 
-AI: سجّلت استئذانك. فترتك بـ P2 عياده [N] صارت بدون طبيب.
-    كيف تبي نتعامل؟
-    [أبدّل مع طبيب من فتره ثانيه]
-    [أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
-    [اتركها فاضيه]
+AI: سجّلت استئذانك. فترتك بـ P2 عياده 1 صارت بدون طبيب.
+    ممكن أكلم أطباء فتره ثانيه ونلقى تبديل. تبيني؟
+    [نعم] [لا، خلّيها]
 
-TL: [ينقر: أبدّل مع طبيب من فتره ثانيه]
+TL: [ينقر: نعم]
 
-AI: أرسل طلب التبديل لأي فتره؟
-    [الفتره الثانيه من نفس الشفت]
-    [فتره من الشفت الثاني]
-    [فتره معيّنه — أنت تختار]
+AI: أكلم أطباء أي فتره؟
+    [نفس الشفت — P1] [الشفت الثاني — المسائي] [فتره معيّنه]
 
-TL: [ينقر: الفتره الثانيه من نفس الشفت]
+TL: [ينقر: نفس الشفت — P1]
 
 AI: [internal: calls find_swap_candidates(today, P1,
      exclude_reduced_workload=true) → 5 candidates]
     [internal: calls broadcast_swap_request(slot,
      5 P1 candidates, timeout_minutes=1440)]
 
-AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. مهله 24 ساعه.
-    راح يصلك إشعار لما أحدهم يقبل، أو لما تنتهي المهله.
+AI: أرسلت طلب لـ 5 أطباء بـ P1. مهله 24 ساعه. راح أرجعلك
+    لما يقبل أحد أو لما تنتهي المهله.
 ```
 
 ### Source B SL — Doctor submitted, AI proactively asks about coverage

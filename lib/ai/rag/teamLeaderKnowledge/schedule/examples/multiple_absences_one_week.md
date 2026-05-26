@@ -106,8 +106,8 @@ on the TL Assistant's side.)
 ### Part 3 — Source A PE (TL submits PE for themselves)
 
 The TL talks about their own permission. The AI marks the
-absence immediately and then presents coverage options.
-It does NOT auto-cascade and never refuses the permission.
+absence immediately, then offers mediation as a yes/no
+question. It never refuses the permission.
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
@@ -118,27 +118,23 @@ AI: [internal: PE for morning = P2 today]
     [internal: TL was a clinic doctor in P2 — slot now empty]
 
 AI: سجّلت استئذانك. فترتك بـ P2 عياده 1 صارت بدون طبيب.
-    كيف تبي نتعامل؟
-    [أبدّل مع طبيب من فتره ثانيه]
-    [أعيد توزيع طبيب من عياده ثانيه يغطي فترتك]
-    [اتركها فاضيه]
+    ممكن أكلم أطباء فتره ثانيه ونلقى تبديل. تبيني؟
+    [نعم] [لا، خلّيها]
 
-TL: [ينقر: أبدّل مع طبيب من فتره ثانيه]
+TL: [ينقر: نعم]
 
-AI: أرسل طلب التبديل لأي فتره؟
-    [الفتره الثانيه من نفس الشفت]
-    [فتره من الشفت الثاني]
-    [فتره معيّنه — أنت تختار]
+AI: أكلم أطباء أي فتره؟
+    [نفس الشفت — P1] [الشفت الثاني — المسائي] [فتره معيّنه]
 
-TL: [ينقر: الفتره الثانيه من نفس الشفت]
+TL: [ينقر: نفس الشفت — P1]
 
 AI: [internal: calls find_swap_candidates(today, P1,
      exclude_reduced_workload=true) → 5 morning candidates]
     [internal: calls broadcast_swap_request(slot,
      5 P1 candidates, timeout_minutes=1440)]
 
-AI: أرسلت طلب تبديل لـ 5 أطباء بـ P1. مهله 24 ساعه.
-    راح يصلك إشعار لما أحدهم يقبل، أو لما تنتهي المهله.
+AI: أرسلت طلب لـ 5 أطباء بـ P1. مهله 24 ساعه. راح أرجعلك
+    لما يقبل أحد أو لما تنتهي المهله.
 
 [later turn, after a doctor accepts:]
 
@@ -147,25 +143,41 @@ AI: د.يوسف بـ P1 قبل التبديل. تم.
 ```
 
 If no one had accepted within 24 hours, the AI would
-re-offer the three options menu — it never refuses the
-permission. The TL could then try a different period, pick
-Option 2 (reassign), Option 3 (leave empty), or extend
-the request.
+re-offer mediation with a different period — it never
+refuses the permission. The TL could also have replied
+[لا، خلّيها] from the start, in which case the slot stays
+empty and the permission is fully recorded.
 
-**Variation — TL was the delegator that day:**
+**Variation A — TL was the delegator that day:**
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
 
 AI: [internal: PE for morning = P2 today]
-    [internal: TL was delegator for the morning shift —
-     not a clinic slot]
+    [internal: TL was delegator for the morning shift]
     [internal: calls mark_doctor_absent(tl_id, PE,
      today, period=P2)]
 
-AI: سجّلت استئذانك. كنت ديليقيتر للصباحي اليوم، فما
-    فيه فتره عياده تتغطّى. حالتك بـ EX تغيّرت من
-    ديليقيتر إلى PE.
+AI: سجّلت استئذانك. كنت ديليقيتر للشفت. ممكن أسأل أحد
+    يستلم الديليقيتر بدلك بـ P2. تبيني؟
+    [نعم] [لا، خلّيها]
+
+TL: [ينقر: لا، خلّيها]
+
+AI: تمام. الديليقيتر راح يكون بدون بديل بـ P2.
+```
+
+**Variation B — Permission leaves no gap (TL was on EX):**
+
+```
+TL: اليوم عندي استئذان نهاية الصباحي
+
+AI: [internal: PE for morning = P2 today]
+    [internal: TL was on EX (reserve) — no clinic slot]
+    [internal: calls mark_doctor_absent(tl_id, PE,
+     today, period=P2)]
+
+AI: سجّلت استئذانك. حالتك بـ EX تغيّرت من احتياطي إلى PE.
 ```
 
 ### Part 4 — Source B future-week PE (proactive constraint notice)
