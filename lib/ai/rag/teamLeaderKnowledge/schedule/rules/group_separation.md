@@ -13,15 +13,23 @@ Those have their own rules in `special_groups.md`.
 
 ## The core principle
 
-**Regular groups are separated by shift, not by period.**
+**Primary groups are separated by shift, not by period.**
+
+"Primary groups" are the clinical groups listed under
+`ai_preferences.group_classification.primary_groups`. The
+clinic has **at most two primary groups** because there are
+exactly two shifts (morning and evening). Other groups
+(Board, trainee groups, excluded groups) follow their own
+rules from `special_groups.md` and `clinic_preferences.md`.
 
 On any given day:
-- One group covers the **morning shift** (P1 + P2)
-- Another group covers the **evening shift** (P3 + P4)
+- One primary group covers the **morning shift** (P1 + P2)
+- The other primary group covers the **evening shift** (P3 + P4)
 
-The two groups never share a shift on the same day. A
-doctor from Group 1 and a doctor from Group 2 are not in
-the clinic together during the same period.
+The two primary groups never share a shift on the same day.
+A doctor from primary group A and a doctor from primary
+group B are not in the clinic together during the same
+period.
 
 ---
 
@@ -100,27 +108,36 @@ even if that would balance numbers.
 
 ## Edge cases
 
-- **Single group only**
-  No separation possible. The single group covers both
-  shifts of every day. Surface this to the TL as a
-  staffing concern: rotation cannot balance workload
-  with only one group.
+- **Single primary group only**
+  No separation possible. The single primary group covers
+  both shifts of every day. Surface this to the TL as a
+  staffing concern: rotation cannot balance workload with
+  only one primary group.
 
-- **Three or more regular groups**
-  Rotation becomes ambiguous. The TL must explicitly
-  define the weekly pattern. The AI does not invent a
-  rotation for three or more groups.
+- **Three or more primary groups in classification**
+  Not allowed. The classification step in
+  `clinic_preferences.md` enforces a maximum of 2 primary
+  groups. If the TL tries to mark a 3rd as primary, the AI
+  refuses and asks them to reclassify one of the existing
+  two first. Extra clinical groups should either be merged
+  into one of the two primaries, or marked `excluded` from
+  scheduling.
 
-- **Uneven group sizes**
-  The smaller group will be more loaded on its shift
-  days. Inform the TL of the imbalance during
+- **Uneven primary group sizes**
+  The smaller primary group will be more loaded on its
+  shift days. Inform the TL of the imbalance during
   distribution.
 
-- **A group has no doctors available (all on leave)**
-  That group cannot cover its assigned shift. Inform
-  the TL; coverage may need to fall back to the other
-  group taking both shifts that day, or to special
-  groups (Board) carrying more load.
+- **A primary group has no doctors available (all on leave)**
+  That group cannot cover its assigned shift. Inform the TL;
+  coverage may need to fall back to the other primary group
+  taking both shifts that day, or to the Board carrying
+  more load.
+
+- **A group exists in the clinic but is not classified**
+  The schedule build pauses and the AI asks the TL to
+  classify it (see `clinic_preferences.md` incremental flow).
+  Never schedule against an unclassified group.
 
 ---
 
@@ -130,3 +147,4 @@ even if that would balance numbers.
 - For per-shift distribution scenarios → `coverage.md`
 - For delegator and EX role rotation → `delegator_and_ex.md`
 - For Board and Trainee groups → `special_groups.md`
+- For group classification (which groups are primary) → `clinic_preferences.md`

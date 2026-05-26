@@ -2,11 +2,30 @@
 
 ## Purpose
 
-Defines the two groups that do not follow the regular
-group rotation: **Board doctors (البورد)** and **Trainees
-(التريني)**. Each has its own rules that override or
-supplement the rules in `group_separation.md` and
+Defines the two group categories that do not follow the
+primary-group rotation: **Board doctors (البورد)** and
+**Trainees (التريني)**. Each has its own rules that override
+or supplement the rules in `group_separation.md` and
 `coverage.md`.
+
+### How the AI identifies Board and Trainee groups
+
+The AI does NOT identify these by name (a group called
+"البورد" is not automatically the Board). Instead, the AI
+reads `ai_preferences.group_classification`:
+
+- The Board group is the single group whose id matches
+  `board_group_id`. There is at most one.
+- Trainee groups are listed in `trainee_groups[]`, each
+  with a `parent_group_id` pointing to one of the primary
+  groups.
+
+If a clinic has a group named "البورد" but it is classified
+as `excluded` or `primary`, it is **not** treated as the
+Board. Classification is the source of truth, not naming.
+
+See `clinic_preferences.md` for the classification schema
+and the setup flow that establishes it.
 
 ---
 
@@ -22,9 +41,10 @@ the shift's doctor total.
 
 ### The Board group is a separate group
 
-The Board is its own group, parallel to the regular
-groups (Group 1, Group 2, etc.). Members of the Board
-are NOT members of any regular group.
+The Board is its own group, parallel to the primary groups.
+Members of the Board are NOT members of any primary group.
+The group's id is stored in
+`ai_preferences.group_classification.board_group_id`.
 
 ### Shift assignment is TL-defined per week
 
@@ -118,23 +138,27 @@ Trainees are doctors in training who spend a fixed
 period (months) at the clinic before moving on. They
 require supervision until they are deemed competent.
 
-### Trainee groups are attached to regular groups
+### Trainee groups are attached to primary groups
 
-Each trainee group is linked to a regular doctor group:
-- **Trainee Group 1 → Doctor Group 1**
-- **Trainee Group 2 → Doctor Group 2**
+Each trainee group is linked to a primary group via
+`trainee_groups[].parent_group_id` in
+`ai_preferences.group_classification`. Example:
+- Trainee Group A → parent: primary group "Group 1"
+- Trainee Group B → parent: primary group "Group 2"
 
-The link defines who the trainers are: the trainers for
-Trainee Group 1 are the doctors of Group 1.
+The link defines who the trainers are: the trainers for a
+trainee group are the doctors of its parent primary group.
+Multiple trainee groups can share the same parent.
 
 ### Trainees rotate with their parent group
 
-When Doctor Group 1 covers morning Sunday, Trainee
-Group 1 also covers morning Sunday (because the trainees
-must be alongside their trainers).
+When the parent primary group covers morning Sunday, the
+linked trainee group also covers morning Sunday (because
+the trainees must be alongside their trainers).
 
 Trainees do NOT rotate independently. They follow their
-parent group's shift assignment exactly.
+parent group's shift assignment exactly, as determined by
+`group_separation.md` and the TL's weekly rotation input.
 
 ### Deployment is a per-schedule TL decision (via buttons)
 

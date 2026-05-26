@@ -94,10 +94,24 @@ Before drafting any schedule, run these checks in order:
 
 4. Call `get_clinic_ai_preferences(clinic_id)` to read the
    stored per-clinic policies (see `rules/clinic_preferences.md`).
-   - If the clinic has no Board and no trainees, this read
-     is a no-op — skip the smart-reminder card.
-   - Otherwise, you'll use these preferences in Step 2 of
-     the main Steps section below.
+   - **Check `group_classification` first.** If it is missing,
+     empty, or incomplete (no `primary_groups`, or trainee
+     groups without a parent, or a group exists in the clinic
+     that has no classification entry), run the first-time
+     group classification flow defined in
+     `clinic_preferences.md` BEFORE anything else. The schedule
+     cannot be built without a valid classification.
+   - After classification is valid, use `group_classification`
+     to know:
+     - Which groups rotate (the up-to-2 in `primary_groups`)
+     - Which group is the Board (`board_group_id`)
+     - Which groups are trainee groups and their parent
+       (`trainee_groups`)
+     - Which groups to ignore entirely (`excluded_groups`)
+   - If the clinic has no Board and no trainees and no
+     excluded groups, the read is largely a no-op for the
+     smart-reminder card — but the classification itself is
+     still required so the AI knows the primary group IDs.
 
 5. Read the **target week's EX section** (the absences
    already submitted for this week before it was built):

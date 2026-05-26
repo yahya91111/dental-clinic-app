@@ -26,18 +26,25 @@ Do NOT use this workflow for:
 
 ## Group rules (reference)
 
-For full rules, see `rules/group_separation.md`. Key points:
+For full rules, see `rules/group_separation.md` and
+`rules/clinic_preferences.md`. Key points:
 
 - A doctor belongs to **exactly one group** at a time. No
   shared membership.
 
 - Group size is **variable**, set indirectly by Regional
   Manager hiring decisions. The **minimum healthy size is
-  6 doctors**; fewer than 6 indicates a staffing shortage
-  in that group and should be flagged.
+  6 doctors** for a primary clinical group; fewer than 6
+  indicates a staffing shortage and should be flagged.
 
 - Groups do not mix in the same period (see
   `rules/group_separation.md`).
+
+- Every group has a **classification** in `ai_preferences`:
+  `primary` (clinical, rotates between shifts — max 2),
+  `trainee` (linked to a parent primary group), `board`
+  (single Board group), or `excluded` (administrative,
+  not scheduled). See `rules/clinic_preferences.md`.
 
 - **EX (reserve)** is assigned **per shift, per day**, not
   per group. Each shift (morning or evening) on a given day
@@ -118,8 +125,32 @@ For full rules, see `rules/group_separation.md`. Key points:
 
 5. Call the relevant tool.
 
-6. Report the result in one short line:
-   - "تم إنشاء قروب [X]."
+6. **For `create_group` only**: immediately after the create
+   succeeds, ask the TL to classify the new group using
+   `ask_tl_choice`:
+
+   "قروب '[name]' — ما نوعه؟"
+   [أساسي للعمل] [تريني] [بورد] [مستثنى من التوزيع]
+
+   - If "أساسي" and `primary_groups` already has 2 → refuse
+     and explain: "فيه قروبين أساسيين بالفعل. لازم تغيّر
+     تصنيف وحد منهم أولاً."
+   - If "تريني" → follow-up: "مع أي قروب أساسي مرتبط؟"
+     [list primary group names]
+   - If "بورد" and `board_group_id` is already set → ask
+     "تبدّل قروب البورد الحالي؟" [نعم] [لا]
+   - Save the classification via
+     `update_clinic_ai_preferences` immediately.
+
+   See `rules/clinic_preferences.md` for the full
+   classification rules.
+
+   **For `delete_group`**: also remove the group's id from
+   `group_classification` (whichever field it was in), then
+   inform the TL: "حذفت تصنيفه أيضاً."
+
+7. Report the result in one short line:
+   - "تم إنشاء قروب [X] (مصنّف: [نوع])."
    - "تم نقل د.[name] إلى قروب [Y]."
 
 ### EX operations

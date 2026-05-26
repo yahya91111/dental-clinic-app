@@ -38,6 +38,14 @@ write when a preference changes.
 
 ```json
 {
+  "group_classification": {
+    "primary_groups": ["<group_id>", "<group_id>"],
+    "trainee_groups": [
+      { "group_id": "<group_id>", "parent_group_id": "<group_id>" }
+    ],
+    "board_group_id": "<group_id>",
+    "excluded_groups": ["<group_id>"]
+  },
   "board_in_delegator_rotation": false,
   "board_in_ex_rotation": false,
   "last_board_shift": "morning",
@@ -54,6 +62,34 @@ write when a preference changes.
   "updated_at": "2026-05-26"
 }
 ```
+
+### Group classification (set ONCE per clinic, updated on group changes)
+
+This is the foundation. The AI cannot build a schedule for a
+clinic without it, because the AI must know which groups are
+clinical (rotate across shifts), which are trainee groups
+(follow a parent group), which is the Board, and which to
+ignore entirely.
+
+| Field | Type | Cardinality | Meaning |
+|-------|------|-------------|---------|
+| `primary_groups` | `string[]` | **0–2** | Clinical groups that rotate between morning and evening across the week. At most 2 because there are exactly 2 shifts. |
+| `trainee_groups` | `array<{group_id, parent_group_id}>` | 0+ | Trainee groups. `parent_group_id` MUST be one of the `primary_groups`. |
+| `board_group_id` | `string \| null` | 0–1 | The Board group, if any. |
+| `excluded_groups` | `string[]` | 0+ | Groups that exist in the clinic but do not participate in scheduling (administrative, sandbox, ungrouped doctors, etc.). |
+
+### Hard constraints
+
+- A group_id appears in **exactly one** of `primary_groups`,
+  `trainee_groups[].group_id`, `board_group_id`, or
+  `excluded_groups`. Never in two at once.
+- `primary_groups.length ≤ 2`. If the TL tries to mark a 3rd
+  as primary, the AI refuses and asks them to reclassify one
+  of the existing two first.
+- Every `trainee_groups[].parent_group_id` MUST be present in
+  `primary_groups`.
+- A clinic with **zero** `primary_groups` cannot run a schedule.
+  The AI tells the TL and stops.
 
 ### Field meanings
 
@@ -90,6 +126,66 @@ trainees has no `trainee_defaults`. The schema grows organically.
   button question in the UI. Returns the selected `value`.
   Each option is `{ label: string, value: string }`. Used
   for the Board and trainee questions.
+
+---
+
+## First-time group classification flow
+
+When the AI is asked to build a schedule and
+`group_classification` is missing or incomplete, it MUST
+run this setup before anything else. The setup is sequential
+and uses `ask_tl_choice` (buttons), one question at a time.
+
+```
+AI: قبل أول جدول، خلّيني أفهم بنية القروبات.
+    شفت في عيادتك [N] قروب، خلّينا نصنّفها وحده وحده.
+
+[for each group in the clinic, in order:]
+
+AI: قروب "[name]" ([N] أطباء) — ما نوعه؟
+    [أساسي للعمل] [تريني] [بورد] [مستثنى من التوزيع]
+
+[after the click:]
+  - If "أساسي للعمل":
+      • If primary_groups already has 2 → refuse, explain
+        only 2 are allowed (one per shift), ask to demote
+        an existing one first.
+      • Else: add to primary_groups, save, continue.
+  - If "تريني":
+      • Ask follow-up: "مع أي قروب أساسي مرتبط؟"
+        [قروب 1] [قروب 2] (use the names of the primary
+        groups already classified)
+      • If no primary group exists yet, defer this trainee
+        until a primary is set, then come back to it.
+      • Save and continue.
+  - If "بورد":
+      • If board_group_id already set → ask: "فيه بورد
+        مصنّف مسبقاً. تبدّله؟" [نعم] [لا]
+      • Save and continue.
+  - If "مستثنى":
+      • Add to excluded_groups, save, continue.
+```
+
+After every group is classified, run a sanity check:
+- At least one primary group exists. If zero, prompt the TL
+  to designate at least one before proceeding.
+- Each trainee_group has a valid parent_group_id.
+- No group_id appears in two classifications.
+
+Only after the sanity check passes does the schedule build
+continue.
+
+### Incremental classification (after the first setup)
+
+The full setup runs ONCE. After that, if a new group is
+created (via `manage_groups`), the AI asks ONLY about that
+one new group, not the whole clinic again. The
+`manage_groups` workflow triggers this incremental ask
+immediately after `create_group` succeeds.
+
+If a classified group is deleted, the AI removes its entry
+from `group_classification` automatically (no question
+asked) and informs the TL.
 
 ---
 
