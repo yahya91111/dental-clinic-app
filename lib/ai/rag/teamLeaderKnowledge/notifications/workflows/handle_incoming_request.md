@@ -84,15 +84,21 @@ the TL can return to any of them later.
      `broadcast_swap_request(..., timeout_minutes=1440)`.
    - Leave empty → mark gap, no assignment.
 
-3. Auto-notify the affected doctor (no approval needed)
-   per the `coverage_assignment` template in
-   `event_templates.md`.
-
-4. Call `dismiss_request_card(request_id)` to clear the
+3. Call `dismiss_request_card(request_id)` to clear the
    card from the TL's screen.
 
-5. Confirm briefly to the TL: "تم. د.{covering_doctor}
-   بفترة د.{absent_doctor}." or equivalent.
+4. Apply the unified `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the `coverage_assignment` template text for the
+   `المعنيّ` option:
+   ```
+   تم. د.{covering_doctor} بفترة د.{absent_doctor}.
+   أعلِم أحد؟
+   [المعنيّ (د.{covering_doctor})] [أفراد محددين]
+   [القروب] [كل المركز] [لا داعي]
+   ```
+   Hide `المعنيّ` for the "leave empty" option (no one
+   was assigned).
 
 ### When the TL asks about a request in chat
 
@@ -197,10 +203,16 @@ AI (chat entry):
 TL: [يضغط زر على كرت د.أحمد: د.خالد احتياطي يأخذها]
 
 AI: [internal: assigns د.خالد to د.أحمد's slots]
-    [internal: notifies د.خالد per coverage_assignment template]
     [internal: dismisses the card]
 
 AI: تم. د.خالد بفترات د.أحمد الخميس.
+    أعلِم أحد؟
+    [المعنيّ (د.خالد)] [أفراد محددين]
+    [القروب] [كل المركز] [لا داعي]
+
+TL: [المعنيّ (د.خالد)]
+
+AI: أُرسل لـ د.خالد.
 ```
 
 ---

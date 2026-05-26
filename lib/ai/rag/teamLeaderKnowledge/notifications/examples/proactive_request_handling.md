@@ -72,11 +72,16 @@ AI: [internal: looks up د.أحمد's slots for Thursday
      → P3 و P4 عياده 2 المسائي]
     [internal: calls assign_replacement for both slots
      with khaled_id]
-    [internal: applies coverage_assignment template to
-     notify د.خالد automatically]
     [internal: calls dismiss_request_card(request_1_id)]
 
 AI: تم. د.خالد بفترتي د.أحمد الخميس المسائي.
+    أعلِم أحد؟
+    [المعنيّ (د.خالد)] [أفراد محددين]
+    [القروب] [كل المركز] [لا داعي]
+
+TL: [المعنيّ (د.خالد)]
+
+AI: أُرسل لـ د.خالد.
 
 [The first card disappears. Badge updates to "1".]
 
@@ -131,11 +136,13 @@ AI: تم. تفرّغ د.سامي مسجّل. راح يأخذ بعين الاعت
    - Broadcast
    - Leave empty
 
-5. **Card button action = immediate execution.** When
-   the TL tapped "د.خالد احتياطي يأخذها", the AI
-   executed the assignment, notified د.خالد, and
-   dismissed the card. No additional confirmation
-   needed — the button click WAS the confirmation.
+5. **Card button action = immediate execution +
+   notify prompt.** When the TL tapped "د.خالد
+   احتياطي يأخذها", the AI executed the assignment and
+   dismissed the card. The unified `notify_prompt`
+   followed, asking the TL who to inform. The button
+   click was confirmation for the assignment, not for
+   the notification — the TL still chooses recipients.
 
 6. **Chat is for deferred handling.** The TL didn't
    tap د.سامي's card immediately; they asked in chat.
@@ -160,9 +167,9 @@ AI: تم. تفرّغ د.سامي مسجّل. راح يأخذ بعين الاعت
 
 - Did NOT auto-process any request (TL always decides).
 - Did NOT bundle the requests into one summary card.
-- Did NOT ask the TL for approval before notifying
-  د.خالد about the new slot (auto-notification per
-  template).
+- Did NOT auto-fire the coverage notification — even for
+  a card-button action, the TL was asked who to inform
+  via the unified `notify_prompt`.
 - Did NOT re-surface events that were marked surfaced
   (cards do not re-appear on the next conversation).
 - Did NOT block the TL's flow — even with 2 cards on

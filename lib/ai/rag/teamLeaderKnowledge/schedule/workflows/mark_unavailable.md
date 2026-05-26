@@ -426,21 +426,29 @@ The flow depends on the source first, then on the type.
 3. Confirm in one short line: "سجّلت [type] لك يوم
    [day]، وفترتك صارت بدون طبيب."
 
-#### Phase 1b — Group notification (Source A only)
+#### Phase 1b — Notify prompt (after Phase 2 coverage)
 
-After marking, apply the `tl_absence_recorded` event
-template (see `sharedKnowledge/notifications/clinical/event_templates.md`).
-Ask the TL:
-"أبعت إشعار لقروبك (والتريني المرتبط) بغيابك؟"
-[نعم] [لا]
+The notify prompt for this action runs **after Phase 2
+coverage** finishes (so the prompt knows whether there
+is a `المعنيّ` to suggest — the covering doctor).
 
-- On [نعم] → send the notification using the template
-  text. Recipients: `tl_group_with_trainees`.
-- On [لا] → skip silently.
+Apply the unified `notify_prompt` (see
+`sharedKnowledge/notifications/universal/notify_prompt.md`)
+using the `tl_absence_recorded` template text for the
+group/clinic options, and the `coverage_assignment`
+template text for the `المعنيّ` option:
 
-This is independent of the coverage handling in Phase 2 —
-the notification is about informing the group, the
-coverage handling is about filling the empty slot.
+```
+تم. أعلِم أحد؟
+[المعنيّ (د.{covering_doctor})]   ← if coverage was assigned
+[أفراد محددين]
+[القروب (+ التريني)]
+[كل المركز]
+[لا داعي]
+```
+
+Hide `المعنيّ` if no coverage was assigned (TL picked
+`اتركها فاضيه`).
 
 #### Phase 2 — Handle by type
 

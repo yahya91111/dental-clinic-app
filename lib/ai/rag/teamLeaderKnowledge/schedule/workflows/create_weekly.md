@@ -277,17 +277,20 @@ Before drafting any schedule, run these checks in order:
    [نعم] [مره وحده فقط] and update `ai_preferences` only
    on [نعم].
 
-9. **Before** calling `confirm_weekly_schedule`, apply the
-   `schedule_published` event-notification template (see
-   `sharedKnowledge/notifications/clinical/event_templates.md`).
-   Ask the TL: "أبعت إشعار للأطباء بنشر الجدول؟"
-   [نعم] [لا]
-   - On [نعم] → send the notification to `all_clinic_doctors`
-     using the template text.
-   - On [لا] → skip silently.
+9. Call `confirm_weekly_schedule(week_start)` to publish
+   the draft (only on path 8a).
 
-10. Call `confirm_weekly_schedule(week_start)` to publish
-    the draft (only on path 8a).
+10. After publish, apply the unified `notify_prompt` (see
+    `sharedKnowledge/notifications/universal/notify_prompt.md`)
+    using the `schedule_published` template text:
+    ```
+    تم نشر جدول أسبوع {week_start}. أعلِم أحد؟
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+    ```
+    Note: `المعنيّين` is hidden here (no specific affected
+    individuals — the whole clinic is the audience). Pick
+    `كل المركز` is the typical choice for first-time
+    publish.
 
 11. Report the result in one short line:
     - On success: "تم. جدول أسبوع [date] جاهز."

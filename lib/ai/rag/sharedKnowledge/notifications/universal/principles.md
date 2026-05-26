@@ -13,22 +13,42 @@ folder. Tier-specific templates live in `clinical/` or
 
 ---
 
-## The Golden Rule applies to notifications
+## All notifications are user-chosen
 
-Every outgoing notification is a **write action** and falls
-under the Golden Rule from the Core Prompt:
+The current Phase 1 architecture treats every awareness
+notification as **optional and user-chosen** via the
+unified `notify_prompt` (see `notify_prompt.md`):
 
-1. The AI states what it intends to send and to whom.
-2. The AI waits for the user's explicit confirmation.
-3. Only then does it call the send tool.
+```
+تم [إجراء]. أعلِم أحد؟
+[المعنيّين فقط] [أفراد محددين]
+[القروب] [كل المركز] [لا داعي]
+```
 
-This holds even when the notification "looks routine"
-(e.g., schedule published). The user always confirms first.
+The user picks one. The AI never auto-fires an awareness
+notification.
 
-The only exception is **AI-driven reactive cards** that
-surface incoming events to the user. These are READ-only
-presentations — the AI is not sending anything outward,
-just showing what the system already produced.
+Rationale: clinical actions happen in person — the
+notification is a record-keeping aid, not the channel
+through which information actually travels. The user
+judges whether it adds value in context.
+
+The only exceptions:
+- **Reactive cards** that surface incoming events to the
+  user are READ-only; the AI is presenting, not sending.
+- **`send_announcement`** workflow has its own audience
+  selection (the announcement IS the notification).
+- **Future Requests page** introduces mandatory
+  notifications for formal approval/rejection — that
+  flow is separate and not yet built.
+
+## The Golden Rule still applies
+
+Even with the unified prompt, every notification send is
+a write action. The prompt itself IS the confirmation
+step. The AI never sends before the user picks an
+option; `لا داعي` is a valid pick that means "do not
+send".
 
 ---
 
@@ -102,7 +122,9 @@ preserve the structure).
 
 ## Related references
 
+- For the unified question pattern → `notify_prompt.md`
+- For database-triggered events → `system_events.md`
 - For the formal tone → `tone.md`
-- For event templates (action-triggered) → `clinical/event_templates.md` or `management/event_templates.md`
+- For event templates (text patterns) → `clinical/event_templates.md` or `management/event_templates.md`
 - For reactive templates (system-detected) → `clinical/reactive_templates.md`
 - For recipient resolution → `clinical/recipients.md`

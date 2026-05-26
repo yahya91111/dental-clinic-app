@@ -19,6 +19,18 @@ This is the umbrella workflow for **proactive openings**:
 the TL did not ask, but the AI sees something worth
 surfacing.
 
+Events come from three sources (see
+`sharedKnowledge/notifications/universal/system_events.md`
+for the full mechanism):
+- **Source A** — the AI did the action itself.
+- **Source B** — another assistant did the action.
+- **Source C** — manual UI action, captured by a
+  database trigger.
+
+This workflow treats all three sources uniformly: it
+reads `system_events`, classifies each event, and decides
+how (or whether) to surface it.
+
 The closely-related workflow `handle_incoming_request`
 covers the specific case where the event is a doctor's
 absence request that needs a coverage decision. This
@@ -113,6 +125,63 @@ doctor's PE.
 2. Card only if the TL is one of the two doctors or
    if the swap altered the TL's clinic in a notable way.
 3. Mark surfaced.
+
+### Manual UI events (general pattern)
+
+For every manual UI event the database trigger captured
+(`manual_swap`, `manual_absence`, `manual_tl_absence`,
+`manual_ex_assignment`, `manual_schedule_edit`,
+`schedule_published_manual`), the reaction is the same
+**unified** pattern:
+
+1. Confirm awareness with the TL in one line:
+   "لاحظت إنك [وصف الإجراء بإيجاز]."
+2. Apply the unified `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the template text that pairs with the event
+   type (see the mapping table in
+   `sharedKnowledge/notifications/universal/system_events.md`).
+3. Mark the event surfaced.
+
+**Examples:**
+
+```
+[event: manual_swap, actor: TL, doctors: د.أحمد, د.خالد]
+
+AI: لاحظت إنك بدّلت د.أحمد ود.خالد بـ P3 الأحد.
+    أعلِم أحد؟
+    [المعنيّين فقط] [أفراد محددين]
+    [القروب] [كل المركز] [لا داعي]
+```
+
+```
+[event: manual_ex_assignment, actor: TL, doctor: د.سامي]
+
+AI: لاحظت إنك عيّنت د.سامي EX لـ P4 الخميس.
+    أعلِم أحد؟
+    [المعنيّ (د.سامي)] [أفراد محددين]
+    [القروب] [كل المركز] [لا داعي]
+```
+
+```
+[event: manual_tl_absence, actor: TL, type: PE]
+
+AI: لاحظت إنك سجّلت استئذان P4 الأحد على نفسك.
+    أعلِم أحد؟
+    [أفراد محددين] [القروب (+ التريني)]
+    [كل المركز] [لا داعي]
+
+[If the absence created empty slots:]
++ أو تبيني أرتّب التغطيه؟
+  [رتّب التغطيه]
+```
+
+**Special case — actor is NOT the TL** (e.g., a doctor
+made a manual edit; rare but possible):
+- Show as a card with `doctor_absence_submitted` for
+  absences, or a brief chat entry for swaps/edits.
+- Hand off to `handle_incoming_request.md` for absence
+  coverage decisions.
 
 ---
 
@@ -221,3 +290,4 @@ TL: [يضغط: د.خالد احتياطي يأخذها]
 - For handling absence requests specifically → `handle_incoming_request.md`
 - For the underlying coverage actions → `../../schedule/workflows/mark_unavailable.md`
 - For sending notifications back out (event-driven) → `sharedKnowledge/notifications/clinical/event_templates.md`
+- For the database-trigger mechanism and event type list → `sharedKnowledge/notifications/universal/system_events.md`
