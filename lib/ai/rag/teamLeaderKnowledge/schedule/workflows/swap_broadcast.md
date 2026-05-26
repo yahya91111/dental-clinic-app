@@ -52,10 +52,9 @@ preserved automatically.
 - `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
   — sends the swap request to all candidates atomically.
   `timeout_minutes` controls how long the request stays
-  open: use **1440** (24 hours) for a TL-initiated open
-  broadcast like this one. Same-day urgent swaps (from the
-  PE/PS cascade) use a much shorter timeout — see
-  `mark_unavailable.md`.
+  open. **Always use 1440 (24 hours)** — this matches the
+  standard across the whole schedule system, including
+  the PE/PS coverage flow in `mark_unavailable.md`.
 - `cancel_swap_request(request_id)` — cancels a pending
   broadcast before any doctor accepts.
 

@@ -72,9 +72,11 @@ This is why:
 
 ## Adjacency
 
-The cascade logic in `mark_unavailable` and similar
-workflows depends on which period is "closest" to an
-absent period. Closeness is defined as follows:
+When the AI offers broadcast coverage in `mark_unavailable`
+or `swap_broadcast`, it asks the TL which period to target.
+This adjacency table defines which period is "closest" to
+an absent or source period, useful for offering the most
+natural option first:
 
 | Absent period | 1st choice | 2nd choice | 3rd choice |
 |---------------|------------|------------|------------|

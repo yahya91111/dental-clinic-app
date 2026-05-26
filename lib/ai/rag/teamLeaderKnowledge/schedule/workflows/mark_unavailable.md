@@ -59,7 +59,7 @@ They always work only the **first period of their shift**:
 - Evening reduced workload → works P3 only (not P4)
 
 This is a property on the doctor, not an absence event. It
-affects scheduling and cascade candidate selection: a
+affects scheduling and swap-candidate selection: a
 reduced-workload doctor cannot be a candidate for covering
 P2 or P4, because they are not present during those periods.
 
@@ -139,8 +139,8 @@ been completed by the Doctor Assistant.
 
 The detail below applies to **Source A** (TL acting for
 themselves) and to **Source B SL/VC** (where the TL
-Assistant proposes coverage). The PE/PS cascade is
-**Source A only**.
+Assistant proposes coverage). The PE/PS coverage options
+menu is **Source A only**.
 
 ### SL / VC — present full coverage options
 
@@ -690,9 +690,9 @@ AI: تم. الـ 4 فترات غطّاها د.خالد.
 ### Source B PE — swap already done by Doctor Assistant
 
 When a doctor's PE is in a working period, the Doctor
-Assistant runs the cascade. By the time the TL Assistant
-gets involved, the swap is already complete. The TL
-Assistant just informs the TL — no action is needed.
+Assistant handles coverage on its side. By the time the
+TL Assistant gets involved, the swap is already complete.
+The TL Assistant just informs the TL — no action is needed.
 
 ```
 AI (proactive): د.محمد قدّم استئذان نهاية المسائي اليوم

@@ -30,10 +30,15 @@ The clinic has:
 - **Board** — 2 doctors (د.A and د.B), no shift
   assignment yet for this week
 - **Trainee Group 1** (linked to Group 1) — 2 trainees:
-  - د.X — beginner (state on file)
-  - د.Y — competent (state on file)
+  - د.X (underlying competence: beginner)
+  - د.Y (underlying competence: competent)
 - **Trainee Group 2** (linked to Group 2) — 1 trainee:
-  - د.Z — competent (state on file)
+  - د.Z (underlying competence: competent)
+
+(Underlying competence is background only — it does not
+change how the AI asks. The AI asks the same deployment
+question for every trainee via buttons. The TL picks
+the deployment for this specific week.)
 
 No absences are pending. The TL wants to build next
 week's schedule.
