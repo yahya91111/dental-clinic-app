@@ -57,36 +57,65 @@ Four absence events touch this week:
 
 ## The conversation
 
-### Part 1 — Source B SL (proactive coverage decision)
+### Part 1 — Source B SL (proactive coverage with full options)
 
 The TL opens the app. The TL Assistant sees that
-د.أحمد's slots are empty and starts the conversation:
+د.أحمد's slots are empty and starts the conversation
+with the context-aware suggestions menu:
 
 ```
 AI (proactive): د.أحمد بـ EX اليوم (SL). 4 فترات
-    بالمسائي بدون طبيب. أغطّيها بـ د.خالد (EX المسائي)؟
+    بالمسائي بدون طبيب. الاقتراحات:
+    [د.خالد احتياطي المسائي يأخذها كاملاً]
+    [د.سامي (بـ P3 نفس العياده) يستمر إلى P4 — يحلّ فتره وحده]
+    [أكلم أطباء فتره ثانيه]
+    [اتركها فاضيه]
 
-TL: نعم
+TL: [د.خالد احتياطي]
 
 AI: [internal: calls assign_replacement for each of the
      4 evening slots with khaled_id]
+    [internal: notifies د.خالد automatically — no
+     approval requested, TL has authority]
 
 AI: تم. الـ 4 فترات غطّاها د.خالد.
 ```
 
-**Variation — no reserve EX available:**
+**Variation A — no reserve, AI suggests adjacent extend:**
 
 ```
-AI (proactive): د.أحمد بـ EX اليوم (SL). 4 فترات
-    بالمسائي بدون طبيب، وما فيه EX احتياطي اليوم.
-    الخيارات:
-    1. د.سامي يأخذ عياده 1 كاملاً (P3+P4)
-    2. أحدّد طبيب لكل فتره
-    3. أتركها بدون تغطيه
+AI (proactive): د.أحمد بـ EX اليوم (SL). فترته بـ P4
+    عياده 2 بدون طبيب. الاقتراحات:
+    [د.سامي (بـ P3 نفس العياده) يستلم الفترتين]
+    [أكلم أطباء فتره ثانيه]
+    [اتركها فاضيه]
 
-TL: 1
+TL: [د.سامي يستلم الفترتين]
 
-AI: تم. د.سامي بعياده 1 المسائي.
+AI: [internal: extends د.سامي's slot to cover P4 too]
+    [internal: notifies د.سامي automatically]
+
+AI: تم. د.سامي بعياده 2 من P3 إلى P4.
+```
+
+**Variation B — absent doctor was alone in their clinic, AI suggests neighbor-clinic relay:**
+
+```
+AI (proactive): د.أحمد بـ EX اليوم (SL). عياده 1
+    المسائي فاضيه كاملاً (P3 + P4 كان لوحده).
+    الاقتراحات:
+    [د.A من عياده 2 يأخذ عياده 1 طول الشفت، د.B يكمّل عياده 2]
+    [د.خالد احتياطي يأخذ عياده 1 كاملاً]
+    [أكلم أطباء فتره ثانيه]
+    [اتركها فاضيه]
+
+TL: [د.A يأخذ عياده 1، د.B يكمّل عياده 2]
+
+AI: [internal: moves د.A to clinic 1 P3+P4]
+    [internal: extends د.B in clinic 2 to cover both P3+P4]
+    [internal: notifies both doctors automatically]
+
+AI: تم. د.A بعياده 1 طول المسائي، د.B بعياده 2 طول المسائي.
 ```
 
 ### Part 2 — Source B PE (proactive info, swap already done)
@@ -106,8 +135,8 @@ on the TL Assistant's side.)
 ### Part 3 — Source A PE (TL submits PE for themselves)
 
 The TL talks about their own permission. The AI marks the
-absence immediately, then offers mediation as a yes/no
-question. It never refuses the permission.
+absence immediately, then presents the context-aware
+suggestions. It never refuses the permission.
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
@@ -115,38 +144,50 @@ TL: اليوم عندي استئذان نهاية الصباحي
 AI: [internal: PE for morning = P2 today]
     [internal: calls mark_doctor_absent(tl_id, PE,
      today, period=P2)]
-    [internal: TL was a clinic doctor in P2 — slot now empty]
+    [internal: TL was a clinic doctor in P2, slot now empty]
+    [internal: checks who is in P1 same clinic → د.أحمد]
+    [internal: checks reserve EX → none today]
 
 AI: سجّلت استئذانك. فترتك بـ P2 عياده 1 صارت بدون طبيب.
-    ممكن أكلم أطباء فتره ثانيه ونلقى تبديل. تبيني؟
-    [نعم] [لا، خلّيها]
+    الاقتراحات:
+    [د.أحمد (بـ P1 نفس العياده) يستلم الفترتين]
+    [أكلم أطباء فتره ثانيه]
+    [اتركها فاضيه]
 
-TL: [ينقر: نعم]
+TL: [د.أحمد يستلم الفترتين]
+
+AI: [internal: extends د.أحمد's slot to cover P2 of clinic 1]
+    [internal: notifies د.أحمد automatically]
+
+AI: تم. د.أحمد بعياده 1 من P1 إلى P2.
+```
+
+**Variation — TL picks broadcast instead:**
+
+```
+TL: [أكلم أطباء فتره ثانيه]
 
 AI: أكلم أطباء أي فتره؟
     [نفس الشفت — P1] [الشفت الثاني — المسائي] [فتره معيّنه]
 
-TL: [ينقر: نفس الشفت — P1]
+TL: [نفس الشفت — P1]
 
 AI: [internal: calls find_swap_candidates(today, P1,
-     exclude_reduced_workload=true) → 5 morning candidates]
+     exclude_reduced_workload=true) → 5 candidates]
     [internal: calls broadcast_swap_request(slot,
      5 P1 candidates, timeout_minutes=1440)]
 
-AI: أرسلت طلب لـ 5 أطباء بـ P1. مهله 24 ساعه. راح أرجعلك
-    لما يقبل أحد أو لما تنتهي المهله.
+AI: أرسلت طلب لـ 5 أطباء بـ P1. مهله 24 ساعه.
 
-[later turn, after a doctor accepts:]
+[later, after a doctor accepts:]
 
 AI: د.يوسف بـ P1 قبل التبديل. تم.
     د.يوسف ياخذ فترتك بـ P2، وأنت تاخذ فترة د.يوسف بـ P1.
 ```
 
-If no one had accepted within 24 hours, the AI would
-re-offer mediation with a different period — it never
-refuses the permission. The TL could also have replied
-[لا، خلّيها] from the start, in which case the slot stays
-empty and the permission is fully recorded.
+If no doctor accepted within 24 hours, the AI re-offers
+mediation — it never refuses the permission. The TL could
+also have picked [اتركها فاضيه] from the start.
 
 **Variation A — TL was the delegator that day:**
 
