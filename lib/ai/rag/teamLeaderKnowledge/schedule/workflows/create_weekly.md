@@ -138,24 +138,53 @@ Before drafting any schedule, run these checks in order:
    This step only runs if the clinic has Board doctors,
    trainees, or both. Skip it otherwise.
 
-   Build a summary card from the values in `ai_preferences`
-   (Board shift, Board delegator/EX participation, each
-   trainee's deployment + trainer). Then call
-   `ask_tl_choice` with one question:
+   **Before asking any question, parse the TL's initial
+   message for information that already answers it.** The
+   TL often packs multiple decisions into one sentence:
+
+   - "البورد صباحي" → `last_board_shift: "morning"`
+   - "البورد مسائي عدا الأحد" → split shift; record the
+     pattern in the schedule rotation, not just one value
+   - "د.X مع د.M" → trainee X deployed beginner, trainer M
+   - "د.Y لوحده" / "د.Y مستقل" → trainee Y deployed independent
+   - "نفس الأسبوع الماضي" / "زي العاده" → confirm stored
+     preferences with one click
+
+   For every piece of information the TL already provided,
+   save it to `ai_preferences` directly and **skip the
+   corresponding button question**. Only ask about what is
+   still unspecified or ambiguous.
+
+   Examples:
+   - TL message covers Board shift + all trainees but says
+     nothing about Board delegator/EX → ask only the two
+     Board rotation questions, nothing else.
+   - TL message covers everything → no button questions at
+     all; proceed straight to rotation pattern.
+   - TL message is just "ابني الجدول" → fall back to the
+     full flow below.
+
+   **Smart-reminder card (for what is still unspecified):**
+
+   Build a summary from `ai_preferences` of the missing
+   values only, then call `ask_tl_choice` with one question:
 
    "نفس الأسبوع الماضي؟"
    [نعم، نفس الشي] [غيّر]
 
-   - On **[نعم]** → proceed with stored values.
-   - On **[غيّر]** → ask each question individually via
-     `ask_tl_choice`, save each answer immediately via
+   - On **[نعم]** → proceed with stored values for the
+     missing pieces.
+   - On **[غيّر]** → ask each missing question individually
+     via `ask_tl_choice`, save each answer immediately via
      `update_clinic_ai_preferences`, then proceed.
 
-   For a brand-new clinic (empty `ai_preferences`), skip the
-   summary card and ask each question directly the first time.
+   For a brand-new clinic (empty `ai_preferences`), there is
+   nothing to remind from. Ask each unspecified question
+   directly.
 
-   The exact questions to ask (when [غيّر] is clicked or when
-   no preferences exist yet):
+   The exact questions to ask (when [غيّر] is clicked, when
+   no preferences exist yet, or when an answer is genuinely
+   missing from the TL's message):
 
    For Board:
    - "شفت البورد هالأسبوع؟" [صباحي] [مسائي] [مقسوم]
@@ -165,6 +194,11 @@ Before drafting any schedule, run these checks in order:
    For each trainee in the clinic:
    - "د.[name] (Group [N]) — هالأسبوع؟" [مستقل] [مبتدئ مع مدرّب]
    - If beginner chosen: "المدرّب؟" [list of parent-group doctors]
+
+   **Never re-ask a question the TL already answered in
+   their initial message, even with buttons.** Doing so
+   wastes the TL's time and signals the AI did not read
+   the request carefully.
 
 3. Use the data already in the system. Do not ask about:
    - Number of rooms — it is part of the clinic configuration.
