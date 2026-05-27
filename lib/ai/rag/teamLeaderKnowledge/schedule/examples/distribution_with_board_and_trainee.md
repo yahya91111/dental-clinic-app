@@ -138,6 +138,14 @@ TL: تمام، احفظ
 
 AI: [internal: calls confirm_weekly_schedule(next_sunday)]
     تم. جدول الأسبوع جاهز.
+
+AI: أعلِم أحد؟
+    [أفراد محددين] [القروب (+ التريني)]
+    [كل المركز] [لا داعي]
+
+TL: [كل المركز]
+
+AI: أُرسل لـ {count} طبيب.
 ```
 
 ### Week 2 — Smart reminder card
@@ -175,6 +183,14 @@ TL: احفظ
 
 AI: [calls confirm_weekly_schedule(next_sunday)]
     تم.
+
+AI: أعلِم أحد؟
+    [أفراد محددين] [القروب (+ التريني)]
+    [كل المركز] [لا داعي]
+
+TL: [كل المركز]
+
+AI: أُرسل لـ {count} طبيب.
 ```
 
 The full pre-flight in Week 2 took the TL exactly one click

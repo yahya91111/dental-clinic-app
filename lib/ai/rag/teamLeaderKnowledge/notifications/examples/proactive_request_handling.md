@@ -158,8 +158,10 @@ AI: تم. تفرّغ د.سامي مسجّل. راح يأخذ بعين الاعت
   classification
 - `handle_incoming_request.md` — the per-card flow
 - `reactive_templates.md` — card structures
-- `event_templates.md → coverage_assignment` — auto-
-  notification when د.خالد was assigned
+- `event_templates.md → coverage_assignment` — template
+  text used by the unified notify_prompt when د.خالد
+  was assigned (notification is user-chosen, never
+  auto-fired)
 - `recipients.md` — `affected_doctor` resolution for the
   notification to د.خالد
 
