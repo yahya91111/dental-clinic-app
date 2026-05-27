@@ -363,9 +363,10 @@ AI: وزّعت الأطباء بالجدول كمسوّده. عاينها وعد
   to receive an acceptance.
 - The acceptance fires as a separate event, and the AI
   reports it in a later turn (Part 3 demonstrates this).
-- The notifications RAG (to be built later) will define
-  how the proactive openings in Parts 1, 2, and 4 are
-  triggered.
+- The proactive openings in Parts 1, 2, and 4 are
+  triggered by the notifications RAG — see
+  `../../notifications/workflows/react_to_system_event.md`
+  for the fetch + classify + surface mechanism.
 
 ---
 
