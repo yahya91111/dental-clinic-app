@@ -1,37 +1,34 @@
 // ═══════════════════════════════════════════════════════════════
-// AI Service Layer — Phase 3: Core + TL assistant + RAG
+// AI Service Layer — Phase 4-A: Core + TL + RAG + read tools
 // ═══════════════════════════════════════════════════════════════
-// Third deployment of the new DCM AI. Wires up:
+// Fourth deployment of the new DCM AI. Wires up:
 //   - Core prompt           (lib/ai/core/corePrompt.ts)
 //   - Team Leader prompt    (lib/ai/assistants/teamLeaderAssistant.ts)
 //   - Shared knowledge RAG  (notifications principles + templates)
 //   - Team Leader RAG       (workflows + rules + examples)
+//   - Read tools            (lib/ai/tools/index.ts)
 //
-// The RAG is auto-generated from .md files by
-// scripts/build-rag.js. Re-run that script whenever any file
-// under lib/ai/rag/ changes.
+// The AI can now query the live database to answer questions:
+// list doctors, list groups, show the current schedule, look up
+// a specific doctor's slots, etc. Read tools are safe (no
+// modifications, no confirmation needed).
 //
-// No tools yet — the AI can now reason with full workflow
-// knowledge but cannot execute actions. Tools come in the next
-// phase.
+// Write tools come in the next phase (4-B onwards) and will be
+// wrapped with permission checks.
 //
 // Routing note: the Team Leader assistant + TL RAG are loaded
 // unconditionally for now. When the Doctor assistant is wired
 // in, a router will pick the right prompt + RAG stack based on
 // the signed-in user's role.
 //
-// Public surface kept unchanged so the Schedule page works
-// without modification:
-//   - sendMessage(messages, contextData?, clinicId?, weekStart?)
-//   - buildScheduleContext(data)
-//
-// `clinicId` and `weekStart` are accepted but unused for now;
-// they will be needed when tools are introduced.
+// Public surface (sendMessage, buildScheduleContext, AIMessage)
+// is unchanged; the Schedule page works without modification.
 // ═══════════════════════════════════════════════════════════════
 
 import { CORE_PROMPT } from './ai/core/corePrompt';
 import { TEAM_LEADER_PROMPT } from './ai/assistants/teamLeaderAssistant';
 import { SHARED_KNOWLEDGE_RAG, TEAM_LEADER_RAG } from './ai/rag/_compiled';
+import { READ_TOOLS, executeReadTool } from './ai/tools';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
@@ -48,14 +45,19 @@ export interface AIResponse {
 }
 
 /**
- * Send a message to Claude with the Core prompt as system.
- * No tool use in this phase — the AI is conversational only.
+ * Send a message to Claude with the full system stack
+ * (Core + TL assistant + RAG) and the read tools wired in.
+ *
+ * Loops on tool_use: when Claude calls a read tool, we execute
+ * it against Supabase, feed the result back, and continue until
+ * Claude stops calling tools. MAX_ROUNDS guards against runaway
+ * loops.
  */
 export async function sendMessage(
   messages: AIMessage[],
   contextData?: string,
-  _clinicId?: string,
-  _weekStart?: string,
+  clinicId?: string,
+  weekStart?: string,
 ): Promise<AIResponse> {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -102,7 +104,7 @@ export async function sendMessage(
     }
 
     // Keep the last 10 messages (5 exchanges) to bound token cost.
-    let conversation = messages.map((m) => ({
+    let conversation: Array<Record<string, unknown>> = messages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -110,40 +112,70 @@ export async function sendMessage(
       conversation = conversation.slice(-10);
     }
 
-    const res = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'extended-cache-ttl-2025-04-11',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
-        system: systemBlocks,
-        messages: conversation,
-      }),
-    });
+    // Tools require clinicId + weekStart to query Supabase. If
+    // either is missing we still run, but tool calls will fail
+    // gracefully.
+    const toolsEnabled = Boolean(clinicId && weekStart);
+    const toolCtx = { clinicId: clinicId || '', weekStart: weekStart || '' };
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      return {
-        success: false,
-        message: '',
-        error: `API Error: ${res.status} - ${errData.error?.message || 'Unknown'}`,
-      };
-    }
+    let allText = '';
+    const MAX_ROUNDS = 10;
 
-    const data = await res.json();
-    let text = '';
-    for (const block of data.content || []) {
-      if (block.type === 'text') {
-        text += block.text;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const res = await fetch(ANTHROPIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'extended-cache-ttl-2025-04-11',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4000,
+          system: systemBlocks,
+          tools: toolsEnabled ? READ_TOOLS : undefined,
+          messages: conversation,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          message: '',
+          error: `API Error: ${res.status} - ${errData.error?.message || 'Unknown'}`,
+        };
       }
+
+      const data = await res.json();
+      const toolResults: Array<Record<string, unknown>> = [];
+
+      for (const block of data.content || []) {
+        if (block.type === 'text') {
+          allText += block.text;
+        } else if (block.type === 'tool_use' && toolsEnabled) {
+          const result = await executeReadTool(block.name, block.input, toolCtx);
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: result,
+          });
+        }
+      }
+
+      // If the model is done (no tool calls) we exit the loop.
+      if (data.stop_reason !== 'tool_use' || toolResults.length === 0) {
+        break;
+      }
+
+      // Feed the assistant's tool calls back into the next round
+      // along with the tool results.
+      conversation.push({ role: 'assistant', content: data.content });
+      conversation.push({ role: 'user', content: toolResults });
     }
 
-    return { success: true, message: text || '...' };
+    return { success: true, message: allText || '...' };
   } catch (error) {
     return {
       success: false,
