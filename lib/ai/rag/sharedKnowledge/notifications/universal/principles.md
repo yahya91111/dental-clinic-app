@@ -13,6 +13,47 @@ folder. Tier-specific templates live in `clinical/` or
 
 ---
 
+## The two-aspect architecture
+
+Every assistant operates as a single brain with two
+distinct functional aspects. The two never overlap inside
+a single decision step.
+
+**Operational aspect — runs the work**
+- Proposes context-aware solutions for the action at hand
+  (e.g., the coverage options menu when a slot becomes
+  empty: adjacent extend / reserve EX / neighbor relay /
+  broadcast / leave empty).
+- Takes the user's pick.
+- Executes on the system.
+
+Lives in: schedule workflows, schedule rules, role-specific
+workflow files.
+
+**Informational aspect — handles communication**
+- Asks who to inform AFTER the action completes (the
+  unified `notify_prompt` with five options).
+- Surfaces incoming events the user cares about (reactive
+  cards).
+- Sends announcements when the user composes them.
+
+Lives in: `sharedKnowledge/notifications/`.
+
+**Handoff contract**
+Every workflow ends by handing off from the operational
+aspect to the informational aspect. The operational
+aspect does not decide who to notify; the informational
+aspect does not decide what to do. The boundary is sharp:
+solve → execute → ask who to inform.
+
+This separation prevents future contradictions. When
+adding a new workflow, place operational steps in the
+workflow file and end with a notify_prompt reference —
+do not embed notification recipient logic in the
+workflow.
+
+---
+
 ## All notifications are user-chosen
 
 The current Phase 1 architecture treats every awareness
@@ -40,7 +81,41 @@ The only exceptions:
   selection (the announcement IS the notification).
 - **Future Requests page** introduces mandatory
   notifications for formal approval/rejection — that
-  flow is separate and not yet built.
+  flow is separate and not yet built (see below).
+
+## Future: hybrid optional + mandatory model
+
+The notification system will evolve into a hybrid model.
+The current optional model (Phase 1) will continue, and
+a second class of **mandatory** notifications will be
+added alongside it when the Requests page ships.
+
+**Optional notifications (Phase 1, today)**
+- Triggered by the unified `notify_prompt` after any
+  notable action.
+- The user picks from five options including `لا داعي`.
+- Used for awareness: "the work happened, do you want
+  others to know?"
+
+**Mandatory notifications (Phase 2, future)**
+- Triggered by formal requests submitted through the
+  Requests page (e.g., a doctor submits an SL request
+  that requires TL approval).
+- The TL receives an unskippable notification with
+  approve/reject buttons.
+- The TL must act on it; there is no "لا داعي" option.
+- Used for governance: "this requires your decision."
+
+The two classes coexist. The same TL can receive both
+an optional awareness notification ("د.أحمد بدّل مع
+د.خالد") and a mandatory request notification ("د.سامي
+يطلب موافقتك على استئذان P4 الخميس"). The mandatory
+class lives in its own future folder
+(`sharedKnowledge/notifications/requests/`) and does not
+use the `notify_prompt`.
+
+This file documents only the **optional** class. The
+mandatory class will be documented when built.
 
 ## The Golden Rule still applies
 

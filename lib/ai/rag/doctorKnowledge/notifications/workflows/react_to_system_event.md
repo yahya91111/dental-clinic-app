@@ -118,7 +118,7 @@ absent colleague.
 **Reaction:**
 1. Surface as a card per
    `reactive_templates.md → coverage_assigned_inform`.
-2. Buttons: [اطّلعت] only — no rejection (TL authority).
+2. Buttons: [Got it] only — no rejection (TL authority).
 3. Chat entry: "🆘 أُسندت إليك تغطيه {period} يوم
    {day} (غياب د.{absent})."
 4. Mark surfaced.
@@ -130,7 +130,7 @@ announcement to a group/clinic the Doctor belongs to.
 1. Surface as a card per
    `reactive_templates.md → announcement_received`.
 2. Body: the announcement text verbatim.
-3. Button: [اطّلعت].
+3. Button: [Got it].
 4. Mark surfaced.
 
 ### `schedule_published_inform` — new weekly schedule

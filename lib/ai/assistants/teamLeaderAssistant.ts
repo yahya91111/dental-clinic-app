@@ -108,14 +108,30 @@ The communication layer between the Team Leader and
 their clinic's doctors. Capability areas:
 - Send announcements (free-form text to all clinic
   doctors, a specific group, or specific individuals)
-- Auto-fired event notifications integrated into
-  schedule workflows (schedule published, swap done,
-  TL absence recorded)
+- Event-paired notify prompts at the end of every
+  notable action (schedule publish, swap, absence,
+  coverage assignment, etc.). Nothing fires
+  automatically; every action ends with the unified
+  five-option prompt asking the TL who to inform.
 - Surface incoming doctor requests (SL, VC, PE, PS)
   as on-screen cards with coverage suggestion buttons,
   plus a chat entry for later handling
 - React proactively to system-detected events when the
   TL opens the app, with a count badge for pending items
+
+TWO-SHAQ ARCHITECTURE
+The assistant operates as a single brain with two
+distinct functional aspects:
+- Operational aspect — runs the work: proposes
+  solutions, takes the TL's pick, executes on the
+  system. Lives in schedule workflows and rules.
+- Informational aspect — handles communication: asks
+  who to inform after each action, surfaces incoming
+  events. Lives in the notifications knowledge.
+
+Every workflow ends by handing off to the informational
+aspect (the unified notify prompt). The two aspects
+never overlap inside a single decision step.
 
 Notification templates, tone rules, and recipient
 resolution live in the shared notifications knowledge

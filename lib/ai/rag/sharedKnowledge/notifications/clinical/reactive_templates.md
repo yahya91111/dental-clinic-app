@@ -61,7 +61,7 @@ Each template defines:
 - **Buttons:** Context-aware coverage suggestions, plus
   "افتح المحادثه للتفاصيل":
   - For SL/VC: [د.{reserve} يأخذها] [د.{adjacent} يستمر] [أكلم أطباء فتره ثانيه] [اتركها فاضيه]
-  - For PE/PS: usually [اطّلعت] only (the Doctor Assistant
+  - For PE/PS: usually [Got it] only (the Doctor Assistant
     handled coverage on its side)
 - **Chat entry:**
   ```
@@ -109,7 +109,7 @@ Each template defines:
   دوامك الجديد: {new_slot}.
   بدّلت مع د.{other_doctor}.
   ```
-- **Buttons:** [اطّلعت]
+- **Buttons:** [Got it]
 - **Chat entry:**
   ```
   ✅ تم تبديل دوامك مع د.{other_doctor}.
@@ -133,7 +133,7 @@ Each template defines:
   {period} عياده {room} يوم {day}.
   تغطيه غياب د.{absent_doctor}.
   ```
-- **Buttons:** [اطّلعت]
+- **Buttons:** [Got it]
 - **Chat entry:**
   ```
   ➕ أضيفت إليك فتره {period} عياده {room} يوم {day}
@@ -141,6 +141,56 @@ Each template defines:
   ```
 - **Recipient assistant:** Doctor Assistant of the
   assigned doctor.
+
+---
+
+## schedule_changed_inform
+
+- **Trigger:** A doctor's schedule slot is modified after
+  publication — by a TL manual UI edit, an `edit_slot`
+  workflow, a `copy_day` overwrite, or any other
+  non-swap schedule change that affects the doctor.
+  (Swaps use `swap_completed_inform` instead.)
+- **Card title:** "تم تعديل دوامك"
+- **Card body:**
+  ```
+  الفتره القديمه: {old_slot}.
+  الفتره الجديده: {new_slot}.
+  ```
+  If the slot was removed entirely without a replacement,
+  show:
+  ```
+  أُلغيت فترتك بـ {old_slot}.
+  ```
+- **Buttons:** [Got it]
+- **Chat entry:**
+  ```
+  📅 جدولك اتغيّر. {old_slot} → {new_slot}.
+  ```
+- **Recipient assistant:** Doctor Assistant of the
+  affected doctor.
+
+---
+
+## announcement_received
+
+- **Trigger:** A TL (or higher role in the future) sends
+  an announcement to a group or clinic that includes the
+  doctor.
+- **Card title:** "تعميم جديد"
+- **Card body:**
+  ```
+  {announcement_text}
+  ```
+  (The full text of the announcement, verbatim.)
+- **Buttons:** [Got it]
+- **Chat entry:**
+  ```
+  📢 تعميم من د.{sender_name}:
+     {announcement_text}
+  ```
+- **Recipient assistant:** Doctor Assistant of each
+  recipient in the resolved audience.
 
 ---
 
@@ -156,7 +206,7 @@ Each template defines:
   جدول أسبوع {week_start_date} منشور.
   للاطلاع، افتح صفحه الجدول.
   ```
-- **Buttons:** [افتح الجدول] [اطّلعت]
+- **Buttons:** [افتح الجدول] [Got it]
 - **Chat entry:**
   ```
   📅 جدول أسبوع {week_start_date} جاهز.

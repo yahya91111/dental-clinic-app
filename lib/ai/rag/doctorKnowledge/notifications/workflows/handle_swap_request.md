@@ -43,17 +43,17 @@ Built from
 ```
 ┌──────────────────────────────────────────────┐
 │ طلب تبديل من د.{from_name}                  │
-│ {from_period} يوم {from_day}                │
-│ مقابل فترتك {target_period} يوم {target_day}│
-│                                              │
-│ [اقبل] [ارفض] [افتح المحادثه]               │
+│ يبي يبدّل فترته بـ {requester_slot}          │
+│ مع فترتك بـ {candidate_slot}                 │
 │ المهله: {hours_remaining} ساعه               │
+│                                              │
+│ [قبول] [رفض]                                 │
 └──────────────────────────────────────────────┘
 ```
 
 If the request is a **broadcast** (one of many), the
-card shows the same content but the "اقبل" button is
-labeled "اقبل (أول من يقبل ياخذ التبديل)".
+card shows the same content but the "قبول" button is
+labeled "قبول (أول من يقبل يأخذ التبديل)".
 
 A count badge above the card stack shows pending swap
 requests. If multiple requests target the same slot,
@@ -64,7 +64,7 @@ independently.
 
 ## Steps
 
-### When the Doctor taps [اقبل]
+### When the Doctor taps [قبول]
 
 1. Re-check eligibility via
    `get_doctor_schedule(self, both_dates)` — make sure
@@ -96,7 +96,7 @@ of the Doctor's notify_prompt choice — that is part of
 the swap mechanism (`swap_completed` event), not the
 awareness layer.
 
-### When the Doctor taps [ارفض]
+### When the Doctor taps [رفض]
 
 1. Optionally ask for a one-line reason (skip if the
    Doctor doesn't want to give one).
@@ -196,7 +196,7 @@ badge keeps the count visible.
 
 [Doctor opens app, sees badge "1" and the card.]
 
-Doctor: [يضغط: اقبل]
+Doctor: [يضغط: قبول]
 
 AI: [internal: get_doctor_schedule(self, [Sunday, Monday])
      → confirms availability]

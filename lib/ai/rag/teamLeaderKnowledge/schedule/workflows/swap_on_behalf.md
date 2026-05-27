@@ -43,9 +43,10 @@ TL explicitly requests it.
 - `find_doctor_slot(doctor_id, week_start)` — find a specific
   doctor's slot(s) when the user names doctors instead of
   precise slot coordinates.
-- `swap_slots(slot_a_id, slot_b_id, notify: boolean)` —
-  atomic exchange of two slots. `notify` controls whether
-  the affected doctors receive a notification.
+- `swap_slots(slot_a_id, slot_b_id)` — atomic exchange
+  of two slots. Notification handling is separate: the
+  unified `notify_prompt` runs after the swap completes
+  (see step 6).
 
 ---
 
@@ -80,18 +81,31 @@ TL explicitly requests it.
    د.سامي: الاثنين P3 عياده 2 → الأحد P2 عياده 1
    ```
 
-4. Ask the TL: "هل تبي ترسل إشعار للطبيبين بالتبديل؟"
+4. Wait for explicit confirmation on the swap itself
+   (e.g., "نعم" or "أكّد التبديل"). The notification
+   decision is handled separately in step 6 via the
+   unified notify prompt — do NOT fold it into this
+   confirmation.
 
-5. Wait for explicit confirmation on both:
-   - The swap itself
-   - The notification choice (yes / no)
+5. Call `swap_slots(slot_a_id, slot_b_id)`.
 
-6. Call `swap_slots(slot_a_id, slot_b_id, notify)` with the
-   chosen notify flag.
+6. After the swap executes, apply the unified
+   `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the `schedule_changed` template (swap variant)
+   text:
+   ```
+   تم التبديل. أعلِم أحد؟
+   [المعنيّين فقط (د.{a}، د.{b})] [أفراد محددين]
+   [القروب (+ التريني)] [كل المركز] [لا داعي]
+   ```
+   Send the notification per the TL's pick. The two
+   doctors are the natural `المعنيّين`; the TL may also
+   widen to the group or clinic.
 
 7. Report the result in one short line:
-   - With notification: "تم التبديل. أُرسل إشعار للطبيبين."
-   - Without notification: "تم التبديل."
+   - "تم التبديل. أُرسل لـ {count} {طبيب|أطباء}."
+   - On `لا داعي`: "تم التبديل."
 
 ---
 
@@ -136,9 +150,10 @@ on its own two-line block.
 
 ## Common mistakes to avoid
 
-- Do not skip the notification question. Always ask.
-- Do not assume the TL wants to notify. Default is the
-  TL's explicit choice.
+- Do not skip the notify prompt after the swap. Always
+  apply it.
+- Do not fold the notify decision into the swap
+  confirmation question. They are two separate steps.
 - Do not invent doctor IDs or slot IDs.
 - Do not call `swap_slots` if either side is in a locked
   past week.
@@ -164,26 +179,43 @@ AI: التبديل المقترح:
     د.أحمد: الأحد P2 عياده 1 → الأحد P3 عياده 2
     د.سامي: الأحد P3 عياده 2 → الأحد P2 عياده 1
 
-    هل تبي ترسل إشعار للطبيبين بالتبديل؟
+    أكّد التبديل؟ [نعم] [لا]
 
 TL: نعم
 
-AI: [calls swap_slots(slot_a, slot_b, notify=true)]
-    تم التبديل. أُرسل إشعار للطبيبين.
+AI: [calls swap_slots(slot_a, slot_b)]
+
+AI: تم التبديل. أعلِم أحد؟
+    [المعنيّين فقط (د.أحمد، د.سامي)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [المعنيّين فقط]
+
+AI: [internal: send_notification(2 ids,
+     schedule_changed swap-variant text)]
+
+AI: أُرسل لـ 2 أطباء.
 ```
 
 **Without notification:**
 ```
-TL: بدّل د.محمد P2 الاثنين مع د.علي P4 الاثنين، بدون إشعار
+TL: بدّل د.محمد P2 الاثنين مع د.علي P4 الاثنين
 
 AI: التبديل المقترح:
     د.محمد: الاثنين P2 → الاثنين P4
     د.علي:  الاثنين P4 → الاثنين P2
 
-    بدون إشعار، صح؟
+    أكّد التبديل؟ [نعم] [لا]
 
 TL: نعم
 
-AI: [calls swap_slots(slot_a, slot_b, notify=false)]
-    تم التبديل.
+AI: [calls swap_slots(slot_a, slot_b)]
+
+AI: تم التبديل. أعلِم أحد؟
+    [المعنيّين فقط (د.محمد، د.علي)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [لا داعي]
+
+AI: تم.
 ```

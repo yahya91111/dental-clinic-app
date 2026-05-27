@@ -128,12 +128,11 @@ proactive**:
 - **PE or PS in a non-working period** → the TL Assistant
   proactively informs the TL for awareness only.
 
-The exact mechanism the TL Assistant uses to detect or
-be notified of these events is defined in the
-notifications RAG (to be built later). For now, assume
-that when the TL Assistant has a turn with the TL, it
-knows which events are pending and which actions have
-been completed by the Doctor Assistant.
+Detection runs via
+`teamLeaderKnowledge/notifications/workflows/react_to_system_event.md`.
+On the TL's first turn, `get_pending_system_events`
+returns any new absence event. This workflow's Source B
+branch executes when the TL acts on a surfaced card.
 
 ## Type-specific coverage handling
 
@@ -184,8 +183,10 @@ menu is **Source A only**.
 4. On the TL's pick:
    - **Direct assignment (a, b, or c)** → execute via
      `assign_replacement` (or chain calls for the relay
-     case). Notify affected doctors automatically. No
-     approval requested.
+     case). The TL's pick is the authority — the
+     covering doctor is assigned without a separate
+     approval step from them. After execution, the
+     unified `notify_prompt` (Phase 3) handles informing.
    - **Broadcast (d)** → ask which period to target, send
      the request, return with the result.
    - **Leave empty (e)** → mark gap, done.
@@ -253,8 +254,8 @@ Present whichever suggestions apply via `ask_tl_choice`:
 
 - On any of the first two → execute directly. **Do NOT
   ask the affected doctor for approval** — the TL has
-  authority over the schedule. Notify the doctor
-  automatically when the assignment is added.
+  authority over the schedule. The unified `notify_prompt`
+  (Phase 3) handles informing the covering doctor.
 - On "أكلم أطباء" → ask which period to target, then
   call `find_swap_candidates` + `broadcast_swap_request`
   with 24-hour timeout.
@@ -274,7 +275,8 @@ not already in clinic slots in that period) as buttons:
 ```
 
 - On a doctor pick → assign them as delegator directly.
-  Notify them automatically. No approval request.
+  TL authority — no separate approval from the new
+  delegator. Notification handled in Phase 3.
 - On "اتركها بدون ديليقيتر" → the delegator role is
   unfilled for that period.
 
@@ -284,8 +286,8 @@ For PE/PS coverage:
 - The AI does NOT refuse the permission for any reason.
 - The AI does NOT pick the coverage approach itself.
 - The AI does NOT cascade through periods automatically.
-- The AI offers its mediation service with a yes/no
-  question. The TL decides.
+- The AI surfaces the full options menu and executes
+  the TL's pick. The TL decides.
 
 If a mediation request (24-hour broadcast) gets no response
 by expiry, the AI tells the TL and re-offers the mediation:
@@ -361,10 +363,9 @@ For full rules, see `rules/coverage.md`. Key points:
 - `mark_doctor_absent(doctor_id, type, start_date, end_date, period?)`
   — atomic absence marker. `period` is required for PS/PE,
   ignored for SL/VC.
-- `get_ex_doctor(week_start, day)` — returns the reserve EX
-  doctor for that day, or null if none.
-- `auto_replace_with_ex(slot_id)` — replaces the slot with
-  the day's reserve EX doctor. Returns the new assignment.
+- `get_ex_doctor(week_start, day, shift)` — returns the
+  reserve EX doctor for that day and shift (morning or
+  evening), or null if none.
 - `find_swap_candidates(week_start, day, target_period, exclude_reduced_workload?)`
   — returns doctors scheduled in `target_period` who could
   be swap targets. Set `exclude_reduced_workload=true` when
@@ -375,14 +376,13 @@ For full rules, see `rules/coverage.md`. Key points:
   — sends a swap request to multiple candidates. First to
   accept triggers the atomic swap. **Always use a 24-hour
   timeout (`timeout_minutes=1440`)** matching the
-  `swap_broadcast` standard. The previous short-timeout
-  cascade model has been retired in favor of the
-  TL-driven options menu.
+  `swap_broadcast` standard.
 - `assign_replacement(slot_id, replacement_doctor_id)` —
-  assigns a different doctor to a vacated slot (used for
-  manual TL choice).
-- `notify_team_leader(message, context)` — sends a push
-  notification to the TL.
+  assigns a different doctor to a vacated slot. Used for
+  every coverage option the TL picks (reserve EX,
+  adjacent extend, neighbor relay).
+- `ask_tl_choice(question, options[])` — presents the
+  coverage options menu to the TL and returns the pick.
 
 ---
 
@@ -502,8 +502,9 @@ The TL Assistant opens the conversation proactively.
 
 4. On the TL's pick:
    - Direct-assignment options → call `assign_replacement`
-     (or chain calls for the relay case). Notify
-     automatically. No approval requested.
+     (or chain calls for the relay case). The TL's pick
+     is the authority; no separate approval from the
+     covering doctor. Notification handled in Phase 3.
    - Broadcast → ask which period, call
      `broadcast_swap_request(..., 1440)`.
    - Leave empty → mark gap.
@@ -535,8 +536,9 @@ The TL Assistant opens the conversation proactively.
    - Present via `ask_tl_choice` with one button per
      suggestion + "اتركها فاضيه".
    - On a direct-assignment pick (adjacent doctor / reserve)
-     → execute immediately via the slot-update tool. Notify
-     the affected doctor automatically. No approval request.
+     → execute immediately via the slot-update tool. The
+     covering doctor is assigned by TL authority; no
+     separate approval. Notification handled in Phase 3.
    - On "أكلم أطباء" → ask which period, then call
      `find_swap_candidates` + `broadcast_swap_request(..., 1440)`.
    - On "اتركها فاضيه" → slot stays empty.
@@ -546,7 +548,7 @@ The TL Assistant opens the conversation proactively.
      slot that period) as buttons via `ask_tl_choice`.
      Include "اتركها بدون ديليقيتر" as the last option.
    - On a doctor pick → assign them as delegator directly.
-     Notify automatically.
+     Notification handled in Phase 3.
    - On "اتركها بدون ديليقيتر" → the period stays without
      a delegator.
 
@@ -576,8 +578,8 @@ Absence summary (one line):
 ```
 
 Plan summary (one line):
-- SL/VC: "نقل إلى EX + تغطيه تلقائيه بـ د.[reserve]"
-- PE/PS: "تبديل مع أطباء [closest period] أولاً"
+- SL/VC: "نقل إلى EX + قائمه خيارات للتغطيه"
+- PE/PS: "نقل إلى EX + قائمه خيارات للتغطيه"
 
 Result:
 - "تم. [what happened in one or two short lines]"
@@ -602,9 +604,10 @@ Result:
   which days were skipped.
 
 - **SL/VC and no reserve EX exists for a day**
-  Auto-fill cannot run for that day. Mark the slots empty
-  and surface the gap to the TL: "ما فيه EX يوم [Y]. [N]
-  فترات بدون طبيب."
+  The `Reserve EX` option is omitted from the menu for
+  that day. The remaining options (adjacent extend,
+  neighbor relay if applicable, broadcast, leave empty)
+  are still presented to the TL.
 
 - **PE/PS for a period the doctor is not scheduled**
   Inform: "د.[X] مو معيّن بـ [P] يوم [day]. سجّل [type]
@@ -632,12 +635,14 @@ Result:
 
 ## Common mistakes to avoid
 
-- Do not ask the TL "how to cover?" for SL/VC. Use the
-  automatic reserve-EX flow; the TL can override after
-  seeing the result.
-- Do not auto-cascade through periods for PE/PS. Present
-  the three options menu and let the TL choose. The
-  cascade model has been retired.
+- Do present the full options menu to the TL for SL/VC
+  AND PE/PS. The two absence families share the same
+  five-option coverage menu (adjacent extend, reserve
+  EX, neighbor relay, broadcast, leave empty). Never
+  auto-assign reserve EX without the TL picking it.
+- Do not auto-cascade through periods. The cascade model
+  has been retired in favor of the TL-driven options
+  menu.
 - Do not refuse the TL's permission because no swap was
   found. The TL has authority to leave a slot empty
   (Option 3).
@@ -663,7 +668,8 @@ not actually worked).
 ### Source A — TL submits a permission for themselves (clinic doctor)
 
 The TL Assistant marks the TL, vacates the slot, then
-offers mediation with a single yes/no question.
+presents the full coverage options menu. After the TL
+picks, the unified notify prompt asks who to inform.
 
 ```
 TL: اليوم عندي استئذان نهاية الصباحي
@@ -672,43 +678,62 @@ AI: [internal: PE for the morning shift = P2 today]
     [internal: calls mark_doctor_absent(tl_id, PE, today,
      period=P2)]
     [internal: TL was a clinic doctor in P2, slot now empty]
+    [internal: builds context-aware options:
+     - د.سامي بـ P1 نفس العياده يقدر يمدّد
+     - د.خالد احتياطي الصباحي
+     - broadcast
+     - فاضي]
 
-AI: سجّلت استئذانك. فترتك بـ P2 عياده 1 صارت بدون طبيب.
-    ممكن أكلم أطباء فتره ثانيه ونلقى تبديل. تبيني؟
-    [نعم] [لا، خلّيها]
+AI: سجّلت استئذانك P2. فترتك بـ P2 عياده 1 صارت بدون طبيب.
+    كيف تبي تغطّيها؟
+    [د.سامي (P1 نفس العياده) يمدّد لـ P2]
+    [د.خالد (احتياطي الصباحي) يأخذها]
+    [أكلم أطباء فتره ثانيه]
+    [اتركها فاضيه]
 
-TL: [ينقر: نعم]
+TL: [ينقر: د.سامي يمدّد لـ P2]
 
-AI: أكلم أطباء أي فتره؟
-    [نفس الشفت — P1] [الشفت الثاني — المسائي] [فتره معيّنه]
+AI: [internal: calls assign_replacement(P2_slot, sami_id)]
 
-TL: [ينقر: نفس الشفت — P1]
+AI: تم. د.سامي بـ P2 عياده 1.
+    أعلِم أحد؟
+    [المعنيّ (د.سامي)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
 
-AI: [internal: calls find_swap_candidates(today, P1,
-     exclude_reduced_workload=true) → 5 candidates]
-    [internal: calls broadcast_swap_request(slot,
-     5 P1 candidates, timeout_minutes=1440)]
+TL: [ينقر: المعنيّ]
 
-AI: أرسلت طلب لـ 5 أطباء بـ P1. مهله 24 ساعه. راح أرجعلك
-    لما يقبل أحد أو لما تنتهي المهله.
+AI: أُرسل لـ د.سامي.
 ```
 
-### Source B SL — Doctor submitted, AI proactively asks about coverage
+### Source B SL — Doctor submitted, TL Assistant offers full options menu
 
 The Doctor Assistant has already marked د.أحمد and
 vacated his evening slots. The TL Assistant opens the
-conversation when the TL is active in the app.
+conversation when the TL is active in the app, presents
+the full coverage menu, executes the TL's pick, then
+runs the notify prompt.
 
 ```
-AI (proactive): د.أحمد بـ EX اليوم (SL). 4 فترات بدون طبيب
-    بالمسائي. أغطّيها بـ د.خالد (EX المسائي)؟
+AI (proactive): د.أحمد بـ EX اليوم (SL). 4 فترات بدون
+    طبيب بالمسائي. كيف تبي تغطّيها؟
+    [د.خالد (احتياطي المسائي) يأخذ الـ 4 فترات]
+    [د.سامي (بعياده 2 المسائي) يمدّد لعياده د.أحمد طول الشفت]
+    [أكلم أطباء فتره ثانيه]
+    [اتركها فاضيه]
 
-TL: نعم
+TL: [ينقر: د.خالد احتياطي يأخذها]
 
 AI: [internal: calls assign_replacement for each of
      the 4 slots with khaled_id]
 
 AI: تم. الـ 4 فترات غطّاها د.خالد.
+    أعلِم أحد؟
+    [المعنيّ (د.خالد)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [ينقر: القروب]
+
+AI: أُرسل لـ 6 أطباء.
 ```
 
 ### Source B PE — swap already done by Doctor Assistant

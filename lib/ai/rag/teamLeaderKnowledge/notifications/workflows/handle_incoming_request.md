@@ -152,7 +152,7 @@ request.
   schedule is built for that week.** Show a simplified
   card: "د.{name} مسجّل غياب يوم {date}. لما تبني جدول
   الأسبوع، راح يأخذ بعين الاعتبار." Only button:
-  [اطّلعت].
+  [Got it].
 
 - **Two requests collide on the same period (two doctors
   asking for PE on the same period).** The cards remain
