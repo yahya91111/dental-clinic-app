@@ -51,10 +51,50 @@ Doctor takes an action that might trigger a new event
 
 ## Event types and how to react
 
-### `schedule_changed` — affecting the Doctor
+### `manual_absence` — Doctor logged own absence via UI
 
-The Doctor's slot was edited (by the TL, via swap, via
-manual UI edit). The Doctor needs to know.
+The Doctor used the manual UI to record their own
+absence (PE/PS/SL/VC) without going through the Doctor
+Assistant. Source C event from the DB trigger.
+
+**Reaction:**
+1. State what was detected:
+   "لاحظت إنك سجّلت {type_arabic} يوم {day} {date}
+   {period?} على الجدول."
+
+2. **If the absence leaves an empty slot (PE/PS only),**
+   offer the cascade — every stage gated by approval,
+   same rule as `submit_absence.md` Phase 3:
+   ```
+   تبيني أدوّر بديل بـ {stage_1_period}
+   (نفس الشفت، الفتره المجاوره)؟
+   [نعم، دوّر] [لا، خلّيها فاضيه]
+   ```
+   - On `نعم` → hand off to `submit_absence.md`,
+     passing type/date/period from the event so it
+     enters Phase 3 directly. Phases 1–2 are skipped
+     (the absence already exists).
+   - On `لا` → skip cascade. The TL sees a coverage
+     card on their side.
+
+3. **Always** apply the unified `notify_prompt`:
+   ```
+   أعلِم أحد؟
+   [أفراد محددين] [القروب (+ التريني)]
+   [كل المركز] [لا داعي]
+   ```
+   `المعنيّين فقط` is hidden until coverage is arranged
+   (no covering doctor to inform yet — per the canonical
+   rule in `notify_prompt.md`).
+
+4. Mark surfaced.
+
+### `schedule_changed` — by someone else, affecting the Doctor
+
+The Doctor's slot was edited by the TL, by an accepted
+swap with another doctor, or by another actor with edit
+access. (When the Doctor themselves makes a manual UI
+absence, see `manual_absence` above.)
 
 **Reaction:**
 1. Surface as a card per
