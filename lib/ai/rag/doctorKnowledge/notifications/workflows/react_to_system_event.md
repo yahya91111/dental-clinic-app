@@ -71,7 +71,7 @@ Another doctor wants to swap with the Doctor.
 **Reaction:**
 1. Build the card per
    `reactive_templates.md → swap_request_received`.
-2. Surface on screen with [اقبل] [ارفض] buttons.
+2. Surface on screen with [قبول] [رفض] buttons.
 3. Hand off to `handle_swap_request.md` when the Doctor
    acts.
 4. Mark surfaced when acted on (or on next session if
@@ -243,10 +243,10 @@ AI (proactive):
   [Card on screen:]
   📨 طلب تبديل من د.أحمد
       P3 الأحد مقابل فترتك P3 الإثنين
-      [اقبل] [ارفض] [افتح المحادثه]
+      [قبول] [رفض]
       المهله: 23 ساعه
 
-Doctor: [يضغط: اقبل]
+Doctor: [يضغط: قبول]
 
 [Hands off to handle_swap_request.md flow...]
 ```
