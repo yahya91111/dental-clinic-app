@@ -74,9 +74,28 @@ Do NOT use this workflow for:
 
 6. Call `copy_day_schedule(source, target)` (only on path 5a).
 
-7. Report the result in one short line:
-   - On success: "تم نسخ [source] إلى [target]."
-   - On partial copy: state which slots were skipped and why.
+7. Apply the unified `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the `schedule_changed` template text:
+   ```
+   تم نسخ [source] إلى [target]. أعلِم أحد؟
+   [المعنيّين فقط]
+   [أفراد محددين]
+   [القروب (+ التريني)]
+   [كل المركز]
+   [لا داعي]
+   ```
+   `المعنيّين فقط` resolves to all doctors whose schedule
+   on the target day actually changed (added, removed,
+   or moved). When a full day is overwritten and most of
+   the clinic is affected, `كل المركز` is often the more
+   practical pick.
+
+8. Report the result per the TL's pick:
+   - On `المعنيّين فقط` / others → "أُرسل لـ {count} {طبيب|أطباء}."
+   - On `لا داعي` → "تم."
+   - On partial copy: state which slots were skipped and
+     why before the notify_prompt step.
 
 ---
 

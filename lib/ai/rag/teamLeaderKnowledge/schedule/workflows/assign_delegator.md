@@ -105,9 +105,24 @@ For full rules, see `rules/delegator_and_ex.md`. Key points:
 5. Call `assign_delegator(...)` (or `remove_delegator(...)`
    for removal).
 
-6. Report the result in one short line:
-   - "تم. د.أحمد ديليقيتر الأحد P2."
-   - On removal: "تم. لا يوجد ديليقيتر للأحد P2."
+6. Apply the unified `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the `coverage_assignment` template text:
+   ```
+   تم. د.أحمد ديليقيتر الأحد P2. أعلِم أحد؟
+   [المعنيّين فقط (د.أحمد، د.سامي إن كان فيه بديل)]
+   [أفراد محددين]
+   [القروب (+ التريني)]
+   [كل المركز]
+   [لا داعي]
+   ```
+   On removal, the `المعنيّين فقط` option resolves to the
+   removed delegator only (د.سامي).
+
+7. Report the result in one short line per the TL's pick:
+   - On `المعنيّين فقط` / others → "أُرسل لـ {count} {طبيب|أطباء}."
+   - On `لا داعي` → "تم." (the action itself was already
+     confirmed in step 6's preamble).
 
 ---
 

@@ -168,7 +168,24 @@ For full rules, see `rules/group_separation.md` and
 
 5. Call `assign_ex(...)` or `remove_ex(...)`.
 
-6. Report the result.
+6. Apply the unified `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the `coverage_assignment` template text:
+   ```
+   تم. د.[name] EX للشفت [morning/evening] يوم [day].
+   أعلِم أحد؟
+   [المعنيّين فقط (د.[name], plus د.[old] if replacing)]
+   [أفراد محددين]
+   [القروب (+ التريني)]
+   [كل المركز]
+   [لا داعي]
+   ```
+   On removal, `المعنيّين فقط` resolves to the removed EX
+   doctor only.
+
+7. Report the result per the TL's pick:
+   - On `المعنيّين فقط` / others → "أُرسل لـ {count} {طبيب|أطباء}."
+   - On `لا داعي` → "تم."
 
 ---
 

@@ -77,9 +77,27 @@ Do NOT use this workflow for:
 
 6. Call `update_slot(slot_id, changes)` (only on path 5a).
 
-7. Report the result in one short line:
-   - On success: "تم. الأحد P2 عياده 1: د.علي."
-   - On conflict: state the conflict and ask how to resolve.
+7. Apply the unified `notify_prompt` (see
+   `sharedKnowledge/notifications/universal/notify_prompt.md`)
+   using the `schedule_changed` template (single-slot
+   variant) text:
+   ```
+   تم. الأحد P2 عياده 1: د.علي. أعلِم أحد؟
+   [المعنيّين فقط (د.علي، د.محمد إن كان فيه بديل)]
+   [أفراد محددين]
+   [القروب (+ التريني)]
+   [كل المركز]
+   [لا داعي]
+   ```
+   `المعنيّين فقط` resolves to the new occupant plus the
+   displaced one (if any). For a role change with no
+   doctor swap, it resolves to the single doctor only.
+
+8. Report the result per the TL's pick:
+   - On `المعنيّين فقط` / others → "أُرسل لـ {count} {طبيب|أطباء}."
+   - On `لا داعي` → "تم."
+   - On conflict: state the conflict and ask how to resolve
+     (skip the notify step).
 
 ---
 
