@@ -2,9 +2,9 @@
 
 ## When to use
 
-Another doctor (or the auto-broadcast from a PE/PS
-absence) sent a swap request to the Doctor. The request
-appears as a **card on screen** plus a **chat entry**.
+Another doctor (or the staged PE/PS cascade broadcast)
+sent a swap request to the Doctor. The request appears
+as a **card on screen** plus a **chat entry**.
 
 This workflow covers:
 - How the card appears
@@ -239,6 +239,6 @@ AI: تم الرفض. د.أحمد راح يستلم إشعار.
 
 - For the card template → `sharedKnowledge/notifications/clinical/reactive_templates.md`
 - For sending swap requests → `../../schedule/workflows/request_swap.md`
-- For PE/PS that triggered the auto-broadcast (the upstream side) → `../../schedule/workflows/submit_absence.md`
+- For PE/PS that triggered the staged cascade (the upstream side) → `../../schedule/workflows/submit_absence.md`
 - For the unified prompt → `sharedKnowledge/notifications/universal/notify_prompt.md`
 - For reacting to other proactive events → `react_to_system_event.md`

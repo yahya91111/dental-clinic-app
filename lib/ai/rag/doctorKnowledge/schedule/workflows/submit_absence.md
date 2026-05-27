@@ -211,12 +211,13 @@ Use the `doctor_absence_recorded` template text for the
 notification body when the Doctor picks any non-`لا داعي`
 option.
 
-**Note on overlap with the auto-broadcast:** for PE/PS,
-the broadcast already implicitly informs the eligible
-group. The notify_prompt here is for a separate
-*awareness* notification ("د.{name} مستأذن"). The
-Doctor can pick `لا داعي` if they feel the broadcast
-already covered awareness.
+**Note on overlap with the cascade broadcast:** for
+PE/PS, the cascade broadcast (when the Doctor approved
+it) already implicitly informs the eligible group. The
+notify_prompt here is for a separate *awareness*
+notification ("د.{name} مستأذن"). The Doctor can pick
+`لا داعي` if they feel the broadcast already covered
+awareness.
 
 ---
 
@@ -440,4 +441,4 @@ AI: أُرسل لـ 6 أطباء.
 - For the text templates → `sharedKnowledge/notifications/clinical/event_templates.md`
 - For recipient resolution → `sharedKnowledge/notifications/clinical/recipients.md`
 - For how the TL sees this absence (Source B card) → `teamLeaderKnowledge/notifications/workflows/react_to_system_event.md`
-- For requesting a swap manually (not auto-broadcast) → `request_swap.md`
+- For a Doctor-initiated named-target swap (no cascade) → `request_swap.md`

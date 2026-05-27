@@ -18,9 +18,10 @@ within 24 hours.
 
 - If the Doctor wants to leave a period and the AI
   should find someone → use `submit_absence.md`
-  (PE/PS auto-cascade).
+  (PE/PS staged cascade — every stage gated by
+  Doctor approval).
 - If the Doctor wants to broadcast without naming a
-  target → that is the auto-cascade flow in
+  target → that is the staged cascade flow in
   `submit_absence.md`, not here.
 
 This workflow exists for the direct case: "بدّلني مع
@@ -243,7 +244,11 @@ AI: لو تبي بحث تلقائي على أطباء فترات ثانيه، ا
 
 Doctor: [نعم، قدّم استئذان]
 
-AI: [hands off to submit_absence.md flow with type=PE]
+AI: [hands off to submit_absence.md, passing
+     type=PE, date=Thursday, period=P4 from this
+     context. submit_absence enters Phase 2 directly
+     (confirms the absence) and does not re-ask for
+     date or period.]
 ```
 
 ---
@@ -252,5 +257,5 @@ AI: [hands off to submit_absence.md flow with type=PE]
 
 - For the unified prompt → `sharedKnowledge/notifications/universal/notify_prompt.md`
 - For incoming swap responses → `../../notifications/workflows/handle_swap_request.md`
-- For the auto-cascade flow (broadcast without naming) → `submit_absence.md`
+- For the staged cascade flow (broadcast without naming a target) → `submit_absence.md`
 - For how the TL handles swap-on-behalf → `teamLeaderKnowledge/schedule/workflows/swap_on_behalf.md`

@@ -288,9 +288,12 @@ Before drafting any schedule, run these checks in order:
     [أفراد محددين] [القروب (+ التريني)]
     [كل المركز] [لا داعي]
     ```
-    Note: `المعنيّين فقط` is hidden here (no specific
-    affected individuals — the whole clinic is the
-    audience). `كل المركز` is the typical pick for a
+    Note: `المعنيّين فقط` is hidden here per the
+    canonical rule in
+    `sharedKnowledge/notifications/universal/notify_prompt.md`
+    (a weekly publish's audience is the whole clinic by
+    design, so the narrower option would just duplicate
+    `كل المركز`). `كل المركز` is the typical pick for a
     first-time publish.
 
 11. Report the result in one short line:

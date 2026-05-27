@@ -178,6 +178,14 @@ arranged via "رتّب التغطيه" below.]
 [If the absence created empty slots:]
 + أو تبيني أرتّب التغطيه؟
   [رتّب التغطيه]
+
+[On رتّب التغطيه: hand off to mark_unavailable.md
+Source A (TL's own absence). Pass the absence type
+(PE/PS/SL/VC), date(s), and period so mark_unavailable
+enters its matching branch directly without re-asking.
+The notify_prompt above remains usable in parallel —
+the TL may pick a notification option before or after
+arranging coverage.]
 ```
 
 **Special case — actor is NOT the TL** (e.g., a doctor

@@ -68,11 +68,25 @@ Examples per action type:
 - **Absence with coverage** → the covering doctor
 - **EX assignment** → the assigned doctor
 - **Slot edit** → the old + new occupants
+- **Cascade broadcast (PE/PS)** → the doctor whose
+  acceptance completed the swap (the absent doctor is
+  the actor, not a recipient)
+- **Copy day** → every doctor whose target-day slots
+  actually changed (added, removed, or moved)
+- **Weekly schedule publish** → not applicable; the
+  audience is the whole clinic by design (see hide rule)
 
-**Hide this option** if the action has no "other parties"
-(e.g., TL marking own absence with no coverage assigned
-yet — the only "affected" person is the TL themselves,
-which is meaningless).
+**Hide this option** when any of these is true:
+- The action has no "other parties" (e.g., TL marking
+  own absence with no coverage assigned yet — only the
+  TL themselves is "affected", which is meaningless).
+- The resolved list equals the whole clinic. In that
+  case `المعنيّين فقط` would silently duplicate
+  `كل المركز`, so hide the narrower option and let the
+  user pick `كل المركز` explicitly.
+- The action's audience is the whole clinic by design
+  (e.g., weekly schedule publish), so the targeted
+  variant is meaningless.
 
 ### `أفراد محددين`
 A free pick from the clinic's doctor list. The assistant
