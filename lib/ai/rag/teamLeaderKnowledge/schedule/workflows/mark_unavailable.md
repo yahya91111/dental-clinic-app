@@ -155,7 +155,7 @@ menu is **Source A only**.
    can take both periods. Applies the same way as in PE
    coverage (any direction: P1↔P2 or P3↔P4).
 
-   **(b) Reserve EX** — if `get_ex_doctor(day, shift)`
+   **(b) Reserve EX** — if `get_ex(week_start, day, shift)`
    returns a doctor, they can cover the empty slot(s).
 
    **(c) Neighbor-clinic relay** — only relevant when the
@@ -363,15 +363,16 @@ For full rules, see `rules/coverage.md`. Key points:
 - `mark_doctor_absent(doctor_id, type, start_date, end_date, period?)`
   — atomic absence marker. `period` is required for PS/PE,
   ignored for SL/VC.
-- `get_ex_doctor(week_start, day, shift)` — returns the
+- `get_ex(week_start, day, shift)` — returns the
   reserve EX doctor for that day and shift (morning or
   evening), or null if none.
-- `find_swap_candidates(week_start, day, target_period, exclude_reduced_workload?)`
-  — returns doctors scheduled in `target_period` who could
-  be swap targets. Set `exclude_reduced_workload=true` when
-  the swap would move the candidate into P2 or P4
-  (reduced-workload doctors don't work end-of-shift
-  periods). Same tool used by `swap_broadcast`.
+- `find_swap_candidates(slot_id, target_period)`
+  — returns doctors scheduled in `target_period` on the
+  SAME DAY as `slot_id` who could be swap targets.
+  Reduced-workload exclusion is handled internally based
+  on the source slot's period (P2/P4 → reduced-workload
+  doctors excluded automatically). Same tool used by
+  `swap_broadcast`.
 - `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
   — sends a swap request to multiple candidates. First to
   accept triggers the atomic swap. **Always use a 24-hour
@@ -402,7 +403,7 @@ For full rules, see `rules/coverage.md`. Key points:
    - **A future week** (slots may not exist yet — this
      becomes a distribution constraint, not a coverage
      problem)
-5. For current-week SL/VC: call `get_ex_doctor(...)`
+5. For current-week SL/VC: call `get_ex(...)`
    for each affected day to know whether a reserve is
    available.
 6. For current-week PE/PS: confirm the affected period
@@ -573,10 +574,19 @@ Hide `المعنيّين فقط` if no coverage was assigned (TL
 picked `اتركها فاضيه` or the absence was a non-working
 period with nothing to cover).
 
-For Branch Future, skip the prompt entirely — the
-absence has no immediate effect on doctors today, and
-`notify_prompt.md` says to skip when zero recipients
-would be affected.
+For Branch Future, apply `notify_prompt` but hide
+`المعنيّين فقط` (no coverage has been assigned yet —
+recipients are heads-up only). The TL may still want to
+inform the group/clinic that they will be unavailable
+next week.
+
+```
+تم. أعلِم أحد؟
+[أفراد محددين]
+[القروب (+ التريني)]
+[كل المركز]
+[لا داعي]
+```
 
 ---
 

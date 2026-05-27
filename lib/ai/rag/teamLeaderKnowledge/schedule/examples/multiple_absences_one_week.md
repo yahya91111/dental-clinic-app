@@ -172,8 +172,9 @@ AI: أكلم أطباء أي فتره؟
 
 TL: [نفس الشفت — P1]
 
-AI: [internal: calls find_swap_candidates(today, P1,
-     exclude_reduced_workload=true) → 5 candidates]
+AI: [internal: calls find_swap_candidates(source_slot_id, 'P1')
+     → 5 candidates (source is P2/P4, reduced-workload
+     doctors excluded automatically)]
     [internal: calls broadcast_swap_request(slot,
      5 P1 candidates, timeout_minutes=1440)]
 

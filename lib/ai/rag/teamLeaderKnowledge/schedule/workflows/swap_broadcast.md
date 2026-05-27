@@ -42,13 +42,14 @@ preserved automatically.
 
 - `get_slot(week_start, day, period, room)` — read the TL's
   current slot.
-- `find_swap_candidates(week_start, day, target_period, exclude_reduced_workload?)`
-  — returns eligible doctors scheduled in the target period
-  (filters out doctors on leave, permission, vacation, or
-  with an active competing broadcast). Set
-  `exclude_reduced_workload=true` when the target period is
-  P2 or P4 and the swap would move the candidate into an
-  end-of-shift period they cannot work.
+- `find_swap_candidates(slot_id, target_period)`
+  — returns eligible doctors scheduled in `target_period`
+  on the SAME DAY as `slot_id` (filters out doctors on
+  leave, permission, vacation, or with an active
+  competing broadcast). Reduced-workload exclusion is
+  handled internally based on the source slot's period
+  (P2/P4 → reduced-workload doctors excluded
+  automatically).
 - `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
   — sends the swap request to all candidates atomically.
   `timeout_minutes` controls how long the request stays
@@ -68,10 +69,14 @@ preserved automatically.
 2. Identify the **target** (day + period). The TL wants any
    slot in this target.
 
-3. Call `find_swap_candidates(week_start, target_day, target_period, exclude_reduced_workload)`.
-   Set `exclude_reduced_workload=true` if the TL's source
-   slot is in P2 or P4 (the candidate would inherit a
-   period a reduced-workload doctor cannot work).
+3. Call `find_swap_candidates(slot_id, target_period)`,
+   where `slot_id` is the TL's source slot from step 1
+   and `target_period` is the period to look in on the
+   SAME DAY. The function internally handles
+   reduced-workload exclusion based on the source slot's
+   period (if P2 or P4, reduced-workload candidates are
+   excluded automatically — they cannot work those
+   periods).
    - If empty: inform the TL there are no eligible candidates.
    - If only one candidate: still use this workflow, but note
      to the user that there is just one possible match.
@@ -179,9 +184,9 @@ about status or to cancel.
 ```
 TL: ابي أبدّل دوامي الأحد P2 إلى P1
 
-AI: [calls get_slot(this_week, sunday, P2, ...)] — TL has Sunday P2 room 1
-    [calls find_swap_candidates(this_week, sunday, P1, exclude_reduced_workload=false)] — returns 3 candidates
-    (no exclude flag needed: target P1 is start-of-shift, fine for everyone)
+AI: [calls get_slot(this_week, sunday, P2, ...)] — TL has Sunday P2 room 1 → slot_id
+    [calls find_swap_candidates(slot_id, 'P1')] — returns 3 candidates
+    (source is P2 so reduced-workload doctors would be excluded — but target is P1 start-of-shift, irrelevant here)
 
 AI: وجدت 3 أطباء بـ P1 الأحد: د.أحمد، د.سامي، د.علي.
     راح أرسل طلب تبديل لكلهم. أول واحد يوافق ياخذ دوامك
@@ -209,7 +214,7 @@ AI: [calls cancel_swap_request(...)]
 ```
 TL: بدّل الخميس P4 مع أي طبيب بـ P3
 
-AI: [calls find_swap_candidates(this_week, thursday, P3, exclude_reduced_workload=false)] — empty
+AI: [calls find_swap_candidates(thursday_p4_slot_id, 'P3')] — empty
 
 AI: ما فيه أطباء مؤهلين بـ P3 الخميس (الكل بإجازه أو
     عندهم طلبات تبديل أخرى). ما قدرت أرسل الطلب.

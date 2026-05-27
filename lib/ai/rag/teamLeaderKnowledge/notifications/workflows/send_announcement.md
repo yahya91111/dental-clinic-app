@@ -5,8 +5,10 @@
 The Team Leader wants to send a free-form announcement to
 all clinic doctors, a specific group, or specific
 individuals. This is the manual "تعميم" path — distinct
-from the auto-fired event notifications that come out of
-other workflows (schedule published, swap done, etc.).
+from the template-based event notifications driven by
+other workflows (which use prewritten templates plus the
+unified notify_prompt — e.g., schedule published, swap
+done, absence recorded).
 
 Trigger phrases (examples):
 - "ابعت تعميم لكل الأطباء"

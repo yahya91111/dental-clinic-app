@@ -101,9 +101,10 @@ Each template defines:
 
 ## swap_completed_inform
 
-- **Trigger:** A swap completes (any source — Doctor
-  Assistant auto-broadcast for PE/PS, TL on-behalf swap,
-  explicit peer-to-peer swap, or open broadcast).
+- **Trigger:** A swap completes (any source — Doctor's
+  PE/PS cascade (after Doctor approval at each stage),
+  TL on-behalf swap, explicit peer-to-peer swap, or open
+  broadcast).
 - **Card title:** "تم تبديل دوامك"
 - **Card body:**
   ```
@@ -244,5 +245,5 @@ acted on.
 - For event-driven (action-triggered) templates → `event_templates.md`
 - For recipient resolution → `recipients.md`
 - For tone → `../universal/tone.md`
-- For the workflow that handles incoming requests → `teamLeaderKnowledge/notifications/workflows/handle_incoming_request.md`
-- For the workflow that reacts to detected events → `teamLeaderKnowledge/notifications/workflows/react_to_system_event.md`
+- For the workflow that handles incoming requests → `../../../teamLeaderKnowledge/notifications/workflows/handle_incoming_request.md`
+- For the workflow that reacts to detected events → `../../../teamLeaderKnowledge/notifications/workflows/react_to_system_event.md`

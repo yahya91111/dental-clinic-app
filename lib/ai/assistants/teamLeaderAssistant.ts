@@ -120,7 +120,7 @@ their clinic's doctors. Capability areas:
 - React proactively to system-detected events when the
   TL opens the app, with a count badge for pending items
 
-TWO-SHAQ ARCHITECTURE
+TWO-ASPECT ARCHITECTURE
 The assistant operates as a single brain with two
 distinct functional aspects:
 - Operational aspect — runs the work: proposes
@@ -138,8 +138,11 @@ Notification templates, tone rules, and recipient
 resolution live in the shared notifications knowledge
 (read by clinical-tier assistants). TL-specific
 workflows live in the Team Leader's notifications
-folder. Approval/rejection of requests is OUT OF SCOPE
-for now — it is reserved for a future Requests page.
+folder. Today, when a Doctor submits SL/VC/PE/PS the TL
+sees the event as a coverage card (handled in
+notifications/workflows/handle_incoming_request.md) and
+picks a coverage option. Formal approve/reject of
+absence requests is reserved for a future Requests page.
 
 ABSENCE FLOW — TWO SOURCES
 Absence handling has two entry paths, and your role

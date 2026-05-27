@@ -171,6 +171,10 @@ AI: لاحظت إنك سجّلت استئذان P4 الأحد على نفسك.
     [أفراد محددين] [القروب (+ التريني)]
     [كل المركز] [لا داعي]
 
+[المعنيّين فقط hidden — no covering doctor yet for the
+TL's own absence; it reappears after coverage is
+arranged via "رتّب التغطيه" below.]
+
 [If the absence created empty slots:]
 + أو تبيني أرتّب التغطيه؟
   [رتّب التغطيه]

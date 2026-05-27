@@ -32,7 +32,7 @@ through whether or not the TL acts.
   suggestions.
 - `ask_tl_choice(question, options[])` — for option menus.
 - Coverage tools from `mark_unavailable.md`:
-  `get_ex_doctor`, `find_swap_candidates`,
+  `get_ex`, `find_swap_candidates`,
   `broadcast_swap_request`, `assign_replacement`,
   slot-update tools.
 - `dismiss_request_card(request_id)` — clears the card
