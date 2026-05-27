@@ -1,8 +1,37 @@
 // ═══════════════════════════════════════════════════════════════
-// AI Service Layer - Claude API Integration with Tool Use
+// AI Service Layer — Phase 3: Core + TL assistant + RAG
+// ═══════════════════════════════════════════════════════════════
+// Third deployment of the new DCM AI. Wires up:
+//   - Core prompt           (lib/ai/core/corePrompt.ts)
+//   - Team Leader prompt    (lib/ai/assistants/teamLeaderAssistant.ts)
+//   - Shared knowledge RAG  (notifications principles + templates)
+//   - Team Leader RAG       (workflows + rules + examples)
+//
+// The RAG is auto-generated from .md files by
+// scripts/build-rag.js. Re-run that script whenever any file
+// under lib/ai/rag/ changes.
+//
+// No tools yet — the AI can now reason with full workflow
+// knowledge but cannot execute actions. Tools come in the next
+// phase.
+//
+// Routing note: the Team Leader assistant + TL RAG are loaded
+// unconditionally for now. When the Doctor assistant is wired
+// in, a router will pick the right prompt + RAG stack based on
+// the signed-in user's role.
+//
+// Public surface kept unchanged so the Schedule page works
+// without modification:
+//   - sendMessage(messages, contextData?, clinicId?, weekStart?)
+//   - buildScheduleContext(data)
+//
+// `clinicId` and `weekStart` are accepted but unused for now;
+// they will be needed when tools are introduced.
 // ═══════════════════════════════════════════════════════════════
 
-import { supabase } from './supabase';
+import { CORE_PROMPT } from './ai/core/corePrompt';
+import { TEAM_LEADER_PROMPT } from './ai/assistants/teamLeaderAssistant';
+import { SHARED_KNOWLEDGE_RAG, TEAM_LEADER_RAG } from './ai/rag/_compiled';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
@@ -18,535 +47,125 @@ export interface AIResponse {
   error?: string;
 }
 
-// Tools the AI can use
-const AI_TOOLS = [
-  // ═══ DAILY DUTY TOOLS ═══
-  {
-    name: 'assign_doctor',
-    description: 'Assign a doctor to a clinic for a specific day and period',
-    input_schema: {
-      type: 'object',
-      properties: {
-        doctor_name: { type: 'string' },
-        doctor_id: { type: 'string', description: 'UUID of the doctor' },
-        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-        period: { type: 'number', description: '1-4' },
-        clinic_number: { type: 'number', description: '1-10' },
-        role: { type: 'string', enum: ['clinic', 'delegator'] },
-      },
-      required: ['doctor_name', 'doctor_id', 'day', 'period', 'clinic_number', 'role'],
-    },
-  },
-  {
-    name: 'remove_doctor',
-    description: 'Remove a doctor from a specific slot',
-    input_schema: {
-      type: 'object',
-      properties: {
-        doctor_id: { type: 'string' },
-        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-        period: { type: 'number', description: '1-4 or 0 for EX' },
-      },
-      required: ['doctor_id', 'day', 'period'],
-    },
-  },
-  {
-    name: 'set_doctor_ex',
-    description: 'Set a doctor in EX section with a status. Auto-removes from clinics for SL/vacation/extra.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        doctor_name: { type: 'string' },
-        doctor_id: { type: 'string' },
-        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-        status: { type: 'string', enum: ['sick_leave', 'permission_start', 'permission_end', 'vacation', 'extra'] },
-        side: { type: 'number', enum: [1, 2], description: '1=right, 2=left' },
-      },
-      required: ['doctor_name', 'doctor_id', 'day', 'status', 'side'],
-    },
-  },
-  {
-    name: 'clear_day',
-    description: 'Clear all schedule slots for a day',
-    input_schema: {
-      type: 'object',
-      properties: {
-        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-      },
-      required: ['day'],
-    },
-  },
-  {
-    name: 'clear_week',
-    description: 'Clear all schedule slots for the entire week',
-    input_schema: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'swap_doctors',
-    description: 'Swap two doctors between their slots on the same day',
-    input_schema: {
-      type: 'object',
-      properties: {
-        doctor_a_id: { type: 'string' },
-        doctor_b_id: { type: 'string' },
-        day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-      },
-      required: ['doctor_a_id', 'doctor_b_id', 'day'],
-    },
-  },
-  {
-    name: 'copy_day',
-    description: 'Copy schedule from one day to another',
-    input_schema: {
-      type: 'object',
-      properties: {
-        from_day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-        to_day: { type: 'string', enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] },
-      },
-      required: ['from_day', 'to_day'],
-    },
-  },
-  {
-    name: 'set_clinic_count',
-    description: 'Change the number of clinics',
-    input_schema: {
-      type: 'object',
-      properties: {
-        count: { type: 'number', description: '1-10' },
-      },
-      required: ['count'],
-    },
-  },
-  // ═══ DOCTOR GROUPS TOOLS ═══
-  {
-    name: 'create_group',
-    description: 'Create a new doctor group',
-    input_schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Group name' },
-        color_index: { type: 'number', description: '0=Blue, 1=Purple, 2=Green, 3=Orange, 4=Red, 5=Teal, 6=Pink, 7=Indigo' },
-      },
-      required: ['name'],
-    },
-  },
-  {
-    name: 'delete_group',
-    description: 'Delete a doctor group. Doctors become unassigned.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        group_id: { type: 'string', description: 'UUID of the group' },
-      },
-      required: ['group_id'],
-    },
-  },
-  {
-    name: 'rename_group',
-    description: 'Rename a doctor group',
-    input_schema: {
-      type: 'object',
-      properties: {
-        group_id: { type: 'string' },
-        new_name: { type: 'string' },
-      },
-      required: ['group_id', 'new_name'],
-    },
-  },
-  {
-    name: 'add_doctor_to_group',
-    description: 'Add a doctor to a group',
-    input_schema: {
-      type: 'object',
-      properties: {
-        group_id: { type: 'string' },
-        doctor_id: { type: 'string' },
-        doctor_name: { type: 'string' },
-      },
-      required: ['group_id', 'doctor_id', 'doctor_name'],
-    },
-  },
-  {
-    name: 'remove_doctor_from_group',
-    description: 'Remove a doctor from a group (becomes unassigned)',
-    input_schema: {
-      type: 'object',
-      properties: {
-        group_id: { type: 'string' },
-        doctor_id: { type: 'string' },
-      },
-      required: ['group_id', 'doctor_id'],
-    },
-  },
-  {
-    name: 'move_doctor_between_groups',
-    description: 'Move a doctor from one group to another',
-    input_schema: {
-      type: 'object',
-      properties: {
-        doctor_id: { type: 'string' },
-        doctor_name: { type: 'string' },
-        from_group_id: { type: 'string', description: 'Source group UUID (empty string if unassigned)' },
-        to_group_id: { type: 'string', description: 'Target group UUID' },
-      },
-      required: ['doctor_id', 'doctor_name', 'from_group_id', 'to_group_id'],
-    },
-  },
-  {
-    name: 'set_doctor_work_status',
-    description: 'Change a doctor work status in their group (active, vacation, light_duty)',
-    input_schema: {
-      type: 'object',
-      properties: {
-        group_id: { type: 'string' },
-        doctor_id: { type: 'string' },
-        work_status: { type: 'string', enum: ['active', 'vacation', 'light_duty'] },
-      },
-      required: ['group_id', 'doctor_id', 'work_status'],
-    },
-  },
-];
-
-const SYSTEM_PROMPT = `You are D.C.M Assistant - the AI brain of the D.C.M dental clinic management app.
-
-YOUR IDENTITY:
-You are 4 roles simultaneously - always active, always aware:
-
-1. MANAGER (مدير مدبر): You make decisions, distribute schedules, organize groups, plan ahead. When action is needed - you act decisively.
-
-2. MEDIATOR (وسيط): You balance workload fairly between doctors, resolve scheduling conflicts, handle swap requests diplomatically. You see both sides.
-
-3. SUPERVISOR (مراقب): You monitor everything - empty clinics, missing delegators, overloaded doctors, rule violations. You alert proactively. Nothing escapes you.
-
-4. ASSISTANT DOCTOR (طبيب مساعد): You help with clinical context when needed - patient history, treatment suggestions, workflow optimization.
-
-CORE BEHAVIOR:
-- You EXECUTE actions directly using tools. When asked to do something - DO IT. Don't just suggest.
-- ALWAYS complete the ENTIRE task. NEVER stop halfway. NEVER skip anything.
-- If you run out of space, continue in the next round. Never say "I'll stop here".
-- Be concise in text but thorough in execution.
-- Respond in the same language the user uses (Arabic or English).
-- Use doctor UUIDs from the context data (provided in [brackets]).
-- After executing, give a brief summary of what you did.
-
-YOUR TOOLS:
-Daily Duty: assign/remove doctors, set EX status, clear day/week, swap doctors, copy day to day, change clinic count
-Doctor Groups: create/delete/rename groups, add/remove/move doctors between groups, change work status
-
-SCHEDULE STRUCTURE:
-- 5 work days: sunday, monday, tuesday, wednesday, thursday
-- 4 periods: P1 (7:00-10:30), P2 (10:30-14:00), P3 (14:00-17:30), P4 (17:30-21:00)
-- Multiple clinics (CL1, CL2, CL3...)
-- Delegator (DLG): one per period
-- EX section: sick_leave (SL), permission_start (PS), permission_end (PE), vacation (VC), extra (EX)
-
-SCHEDULE RULES:
-(Specific rules and preferences are defined by the team leader via prompt templates in the app. Follow them when provided.)
-`;
-
 /**
- * Execute a tool call from the AI
- */
-async function executeTool(
-  toolName: string,
-  input: any,
-  clinicId: string,
-  weekStart: string,
-): Promise<string> {
-  try {
-    switch (toolName) {
-      case 'assign_doctor': {
-        const { doctor_id, doctor_name, day, period, clinic_number, role } = input;
-        const clinicNum = role === 'delegator' ? 0 : clinic_number;
-
-        // For delegator: remove existing first
-        if (role === 'delegator') {
-          await supabase.from('schedule_slots').delete()
-            .eq('clinic_id', clinicId).eq('week_start', weekStart)
-            .eq('day_of_week', day).eq('period', period).eq('role', 'delegator');
-        }
-
-        const { error } = await supabase.from('schedule_slots').insert({
-          clinic_id: clinicId, week_start: weekStart,
-          day_of_week: day, period, clinic_number: clinicNum,
-          doctor_id, doctor_name, role, status: 'active',
-        });
-        if (error) return `Error assigning ${doctor_name}: ${error.message}`;
-        return `Assigned ${doctor_name} to ${role === 'delegator' ? 'DLG' : `CL${clinic_number}`} on ${day} P${period}`;
-      }
-
-      case 'remove_doctor': {
-        const { doctor_id, day, period } = input;
-        const { error } = await supabase.from('schedule_slots').delete()
-          .eq('clinic_id', clinicId).eq('week_start', weekStart)
-          .eq('day_of_week', day).eq('period', period).eq('doctor_id', doctor_id);
-        if (error) return `Error removing doctor: ${error.message}`;
-        return `Removed doctor from ${day} P${period}`;
-      }
-
-      case 'set_doctor_ex': {
-        const { doctor_id, doctor_name, day, status, side } = input;
-        // Remove from all clinic slots on this day
-        if (status === 'sick_leave' || status === 'vacation' || status === 'extra') {
-          await supabase.from('schedule_slots').delete()
-            .eq('clinic_id', clinicId).eq('week_start', weekStart)
-            .eq('day_of_week', day).eq('doctor_id', doctor_id).gt('period', 0);
-        }
-        // Add to EX
-        const { error } = await supabase.from('schedule_slots').insert({
-          clinic_id: clinicId, week_start: weekStart,
-          day_of_week: day, period: 0, clinic_number: side,
-          doctor_id, doctor_name, role: 'clinic', status,
-        });
-        if (error) return `Error setting EX: ${error.message}`;
-        return `Set ${doctor_name} as ${status} on ${day}`;
-      }
-
-      case 'clear_day': {
-        const { day } = input;
-        const { error } = await supabase.from('schedule_slots').delete()
-          .eq('clinic_id', clinicId).eq('week_start', weekStart)
-          .eq('day_of_week', day);
-        if (error) return `Error clearing ${day}: ${error.message}`;
-        return `Cleared all slots for ${day}`;
-      }
-
-      case 'distribute_doctors': {
-        return `Distribution requested for: ${input.days.join(', ')}. Use assign_doctor for each assignment.`;
-      }
-
-      case 'clear_week': {
-        const { error } = await supabase.from('schedule_slots').delete()
-          .eq('clinic_id', clinicId).eq('week_start', weekStart);
-        if (error) return `Error clearing week: ${error.message}`;
-        return `Cleared all slots for the entire week`;
-      }
-
-      case 'swap_doctors': {
-        const { doctor_a_id, doctor_b_id, day } = input;
-        // Get all slots for both doctors on this day
-        const { data: slotsA } = await supabase.from('schedule_slots').select('*')
-          .eq('clinic_id', clinicId).eq('week_start', weekStart)
-          .eq('day_of_week', day).eq('doctor_id', doctor_a_id).gt('period', 0);
-        const { data: slotsB } = await supabase.from('schedule_slots').select('*')
-          .eq('clinic_id', clinicId).eq('week_start', weekStart)
-          .eq('day_of_week', day).eq('doctor_id', doctor_b_id).gt('period', 0);
-        if (!slotsA?.length && !slotsB?.length) return 'Neither doctor has slots on this day';
-        // Swap: update A's slots to B, and B's slots to A
-        const nameA = slotsA?.[0]?.doctor_name || '';
-        const nameB = slotsB?.[0]?.doctor_name || '';
-        for (const s of (slotsA || [])) {
-          await supabase.from('schedule_slots').update({ doctor_id: doctor_b_id, doctor_name: nameB }).eq('id', s.id);
-        }
-        for (const s of (slotsB || [])) {
-          await supabase.from('schedule_slots').update({ doctor_id: doctor_a_id, doctor_name: nameA }).eq('id', s.id);
-        }
-        return `Swapped ${nameA} and ${nameB} on ${day}`;
-      }
-
-      case 'copy_day': {
-        const { from_day, to_day } = input;
-        // Get source slots
-        const { data: srcSlots } = await supabase.from('schedule_slots').select('*')
-          .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', from_day);
-        if (!srcSlots?.length) return `No slots found on ${from_day}`;
-        // Clear target day
-        await supabase.from('schedule_slots').delete()
-          .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', to_day);
-        // Copy slots
-        const newSlots = srcSlots.map(s => ({
-          clinic_id: clinicId, week_start: weekStart, day_of_week: to_day,
-          period: s.period, clinic_number: s.clinic_number,
-          doctor_id: s.doctor_id, doctor_name: s.doctor_name,
-          role: s.role, status: s.status,
-        }));
-        const { error } = await supabase.from('schedule_slots').insert(newSlots);
-        if (error) return `Error copying: ${error.message}`;
-        return `Copied ${srcSlots.length} slots from ${from_day} to ${to_day}`;
-      }
-
-      case 'set_clinic_count': {
-        const { count } = input;
-        if (count < 1 || count > 10) return 'Clinic count must be 1-10';
-        const { error } = await supabase.from('schedule_settings')
-          .upsert({ clinic_id: clinicId, clinic_count: count, updated_at: new Date().toISOString() }, { onConflict: 'clinic_id' });
-        if (error) return `Error: ${error.message}`;
-        return `Clinic count set to ${count}`;
-      }
-
-      // ═══ DOCTOR GROUPS ═══
-      case 'create_group': {
-        const { name, color_index } = input;
-        const { data: existing } = await supabase.from('doctor_groups').select('sort_order').eq('clinic_id', clinicId).order('sort_order', { ascending: false }).limit(1);
-        const sortOrder = (existing?.[0]?.sort_order || 0) + 1;
-        const { error } = await supabase.from('doctor_groups').insert({
-          clinic_id: clinicId, name, color_index: color_index || 0, sort_order: sortOrder,
-        });
-        if (error) return `Error creating group: ${error.message}`;
-        return `Created group "${name}"`;
-      }
-
-      case 'delete_group': {
-        const { group_id } = input;
-        const { error } = await supabase.from('doctor_groups').delete().eq('id', group_id);
-        if (error) return `Error deleting group: ${error.message}`;
-        return `Deleted group`;
-      }
-
-      case 'rename_group': {
-        const { group_id, new_name } = input;
-        const { error } = await supabase.from('doctor_groups').update({ name: new_name }).eq('id', group_id);
-        if (error) return `Error renaming: ${error.message}`;
-        return `Renamed group to "${new_name}"`;
-      }
-
-      case 'add_doctor_to_group': {
-        const { group_id, doctor_id, doctor_name } = input;
-        const { error } = await supabase.from('doctor_group_members').insert({
-          group_id, doctor_id, doctor_name, work_status: 'active',
-        });
-        if (error) return `Error adding doctor: ${error.message}`;
-        return `Added ${doctor_name} to group`;
-      }
-
-      case 'remove_doctor_from_group': {
-        const { group_id, doctor_id } = input;
-        const { error } = await supabase.from('doctor_group_members').delete()
-          .eq('group_id', group_id).eq('doctor_id', doctor_id);
-        if (error) return `Error removing: ${error.message}`;
-        return `Removed doctor from group`;
-      }
-
-      case 'move_doctor_between_groups': {
-        const { doctor_id, doctor_name, from_group_id, to_group_id } = input;
-        if (from_group_id) {
-          await supabase.from('doctor_group_members').delete()
-            .eq('group_id', from_group_id).eq('doctor_id', doctor_id);
-        }
-        const { error } = await supabase.from('doctor_group_members').insert({
-          group_id: to_group_id, doctor_id, doctor_name, work_status: 'active',
-        });
-        if (error) return `Error moving: ${error.message}`;
-        return `Moved ${doctor_name} to new group`;
-      }
-
-      case 'set_doctor_work_status': {
-        const { group_id, doctor_id, work_status } = input;
-        const { error } = await supabase.from('doctor_group_members').update({
-          work_status, updated_at: new Date().toISOString(),
-        }).eq('group_id', group_id).eq('doctor_id', doctor_id);
-        if (error) return `Error: ${error.message}`;
-        return `Set doctor status to ${work_status}`;
-      }
-
-      default:
-        return `Unknown tool: ${toolName}`;
-    }
-  } catch (error) {
-    return `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-  }
-}
-
-/**
- * Send a message to Claude API with tool use support
+ * Send a message to Claude with the Core prompt as system.
+ * No tool use in this phase — the AI is conversational only.
  */
 export async function sendMessage(
   messages: AIMessage[],
   contextData?: string,
-  clinicId?: string,
-  weekStart?: string,
+  _clinicId?: string,
+  _weekStart?: string,
 ): Promise<AIResponse> {
   const apiKey = getApiKey();
   if (!apiKey) {
-    return { success: false, message: '', error: 'API key not configured.' };
+    return {
+      success: false,
+      message: '',
+      error: 'API key not configured.',
+    };
   }
 
   try {
-    // Build system prompt with caching (1-hour extended TTL)
-    const systemBlocks: any[] = [
+    // System prompt: Core + TL assistant + shared knowledge + TL RAG.
+    // The whole stack is cached for 1 hour — the first request in
+    // a session pays the full token cost, every subsequent request
+    // in the same hour pays the cache rate (~10% of full).
+    const systemBlocks: Array<Record<string, unknown>> = [
       {
         type: 'text',
-        text: SYSTEM_PROMPT,
+        text: CORE_PROMPT,
+        cache_control: { type: 'ephemeral', ttl: '1h' },
+      },
+      {
+        type: 'text',
+        text: TEAM_LEADER_PROMPT,
+        cache_control: { type: 'ephemeral', ttl: '1h' },
+      },
+      {
+        type: 'text',
+        text: SHARED_KNOWLEDGE_RAG,
+        cache_control: { type: 'ephemeral', ttl: '1h' },
+      },
+      {
+        type: 'text',
+        text: TEAM_LEADER_RAG,
         cache_control: { type: 'ephemeral', ttl: '1h' },
       },
     ];
+
     if (contextData) {
       systemBlocks.push({
         type: 'text',
-        text: `\nCurrent data:\n${contextData}`,
+        text: `\nCurrent runtime context (filtered by user permissions):\n${contextData}`,
       });
     }
 
-    // Limit conversation to last 5 exchanges (10 messages) to save tokens
-    let conversationMessages: any[] = messages.map(m => ({ role: m.role, content: m.content }));
-    if (conversationMessages.length > 10) {
-      conversationMessages = conversationMessages.slice(-10);
+    // Keep the last 10 messages (5 exchanges) to bound token cost.
+    let conversation = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    if (conversation.length > 10) {
+      conversation = conversation.slice(-10);
     }
 
-    let allText = '';
-    const MAX_ROUNDS = 50;
+    const res = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'extended-cache-ttl-2025-04-11',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4000,
+        system: systemBlocks,
+        messages: conversation,
+      }),
+    });
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
-      const res = await fetch(ANTHROPIC_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'extended-cache-ttl-2025-04-11',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 16000,
-          system: systemBlocks,
-          tools: AI_TOOLS,
-          messages: conversationMessages,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        return { success: false, message: '', error: `API Error: ${res.status} - ${errData.error?.message || 'Unknown'}` };
-      }
-
-      const data = await res.json();
-      const toolResults: any[] = [];
-
-      // Process content blocks
-      for (const block of data.content || []) {
-        if (block.type === 'text') {
-          allText += block.text;
-        } else if (block.type === 'tool_use' && clinicId && weekStart) {
-          const result = await executeTool(block.name, block.input, clinicId, weekStart);
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
-        }
-      }
-
-      // If no more tool calls, we're done
-      if (data.stop_reason !== 'tool_use' || toolResults.length === 0) {
-        break;
-      }
-
-      // Add assistant response + tool results for next round
-      conversationMessages.push({ role: 'assistant', content: data.content });
-      conversationMessages.push({ role: 'user', content: toolResults });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        message: '',
+        error: `API Error: ${res.status} - ${errData.error?.message || 'Unknown'}`,
+      };
     }
 
-    return { success: true, message: allText || 'Done.' };
+    const data = await res.json();
+    let text = '';
+    for (const block of data.content || []) {
+      if (block.type === 'text') {
+        text += block.text;
+      }
+    }
+
+    return { success: true, message: text || '...' };
   } catch (error) {
-    return { success: false, message: '', error: `Network error: ${error instanceof Error ? error.message : 'Unknown'}` };
+    return {
+      success: false,
+      message: '',
+      error: `Network error: ${error instanceof Error ? error.message : 'Unknown'}`,
+    };
   }
 }
 
 /**
- * Build context string from schedule data
+ * Build a plain-text context summary from the current schedule
+ * data, to be appended to the system prompt as runtime context.
+ *
+ * This is read-only data shown to the AI so it can answer
+ * questions about the current schedule without guessing.
  */
 export function buildScheduleContext(data: {
   clinicName?: string;
   weekStart?: string;
   clinicCount?: number;
-  slots?: any[];
-  groups?: any[];
+  slots?: Array<Record<string, unknown>>;
+  groups?: Array<Record<string, unknown>>;
 }): string {
   let context = '';
 
@@ -558,13 +177,18 @@ export function buildScheduleContext(data: {
     context += `\nCurrent schedule slots:\n`;
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
     for (const day of days) {
-      const daySlots = data.slots.filter((s: any) => s.day === day || s.day_of_week === day);
+      const daySlots = data.slots.filter(
+        (s) => s.day === day || s.day_of_week === day,
+      );
       if (daySlots.length > 0) {
         context += `  ${day}:\n`;
         for (const s of daySlots) {
-          const role = s.role === 'delegator' ? 'DLG' : `CL${s.clinicNumber || s.clinic_number}`;
-          const period = s.period === 0 ? 'EX' : `P${s.period}`;
-          context += `    ${period} - ${role}: ${s.doctorName || s.doctor_name} (${s.status})\n`;
+          const roleLabel =
+            s.role === 'delegator'
+              ? 'DLG'
+              : `CL${s.clinicNumber || s.clinic_number}`;
+          const periodLabel = s.period === 0 ? 'EX' : `P${s.period}`;
+          context += `    ${periodLabel} - ${roleLabel}: ${s.doctorName || s.doctor_name} (${s.status})\n`;
         }
       }
     }
@@ -576,13 +200,17 @@ export function buildScheduleContext(data: {
     context += `\nDoctor groups:\n`;
     for (const g of data.groups) {
       const groupId = g.id || '';
-      const doctors = g.doctors?.map((d: any) => {
-        const status = d.workStatus || d.work_status || 'active';
-        const id = d.id || d.doctor_id || '';
-        const statusStr = status !== 'active' ? ` (${status})` : '';
-        return `${d.name}${statusStr} [${id}]`;
-      }).join(', ') || 'empty';
-      context += `  ${g.name} [group_id: ${groupId}]: ${doctors}\n`;
+      const groupDoctors = (g.doctors as Array<Record<string, unknown>>) || [];
+      const doctorList =
+        groupDoctors
+          .map((d) => {
+            const status = d.workStatus || d.work_status || 'active';
+            const id = d.id || d.doctor_id || '';
+            const statusStr = status !== 'active' ? ` (${status})` : '';
+            return `${d.name}${statusStr} [${id}]`;
+          })
+          .join(', ') || 'empty';
+      context += `  ${g.name} [group_id: ${groupId}]: ${doctorList}\n`;
     }
   }
 
