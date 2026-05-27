@@ -90,14 +90,14 @@ the TL can return to any of them later.
 4. Apply the unified `notify_prompt` (see
    `sharedKnowledge/notifications/universal/notify_prompt.md`)
    using the `coverage_assignment` template text for the
-   `المعنيّ` option:
+   `المعنيّين فقط` option:
    ```
    تم. د.{covering_doctor} بفترة د.{absent_doctor}.
    أعلِم أحد؟
-   [المعنيّ (د.{covering_doctor})] [أفراد محددين]
+   [المعنيّين فقط (د.{covering_doctor})] [أفراد محددين]
    [القروب] [كل المركز] [لا داعي]
    ```
-   Hide `المعنيّ` for the "leave empty" option (no one
+   Hide `المعنيّين فقط` for the "leave empty" option (no one
    was assigned).
 
 ### When the TL asks about a request in chat
@@ -207,10 +207,10 @@ AI: [internal: assigns د.خالد to د.أحمد's slots]
 
 AI: تم. د.خالد بفترات د.أحمد الخميس.
     أعلِم أحد؟
-    [المعنيّ (د.خالد)] [أفراد محددين]
+    [المعنيّين فقط (د.خالد)] [أفراد محددين]
     [القروب] [كل المركز] [لا داعي]
 
-TL: [المعنيّ (د.خالد)]
+TL: [المعنيّين فقط (د.خالد)]
 
 AI: أُرسل لـ د.خالد.
 ```

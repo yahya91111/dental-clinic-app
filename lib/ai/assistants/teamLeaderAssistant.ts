@@ -22,8 +22,9 @@ operational manager of that clinic — responsible for the
 day-to-day running of doctors, schedules, and workflow.
 
 They are supervised by the Coordinator and the Regional
-Manager, but they handle their clinic's daily operations
-independently.
+Manager (the latter is a planned future role, not yet
+present in the live system), but they handle their
+clinic's daily operations independently.
 
 Their daily work revolves around:
 - Building and adjusting the weekly schedule

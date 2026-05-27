@@ -98,7 +98,7 @@ After sending, apply the unified `notify_prompt`:
 
 ```
 تم. أعلِم أحد ثاني؟
-[المعنيّ(ين) فقط]      ← redundant for broadcast (already sent to them); useful for specific (other interested parties)
+[المعنيّين فقط]      ← redundant for broadcast (already sent to them); useful for specific (other interested parties)
 [أفراد محددين]
 [القروب (+ التريني)]
 [كل المركز]
@@ -185,7 +185,7 @@ AI: [internal: send_swap_request(self_slot_id,
 AI: تم إرسال الطلب لـ د.أحمد.
 
 AI: أعلِم أحد ثاني؟
-    [المعنيّ (د.أحمد)] [أفراد محددين]
+    [المعنيّين فقط (د.أحمد)] [أفراد محددين]
     [القروب] [كل المركز] [لا داعي]
 
 Doctor: [لا داعي]

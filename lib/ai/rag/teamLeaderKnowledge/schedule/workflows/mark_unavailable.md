@@ -430,24 +430,24 @@ The flow depends on the source first, then on the type.
 
 The notify prompt for this action runs **after Phase 2
 coverage** finishes (so the prompt knows whether there
-is a `المعنيّ` to suggest — the covering doctor).
+is a `المعنيّين فقط` to suggest — the covering doctor).
 
 Apply the unified `notify_prompt` (see
 `sharedKnowledge/notifications/universal/notify_prompt.md`)
 using the `tl_absence_recorded` template text for the
 group/clinic options, and the `coverage_assignment`
-template text for the `المعنيّ` option:
+template text for the `المعنيّين فقط` option:
 
 ```
 تم. أعلِم أحد؟
-[المعنيّ (د.{covering_doctor})]   ← if coverage was assigned
+[المعنيّين فقط (د.{covering_doctor})]   ← if coverage was assigned
 [أفراد محددين]
 [القروب (+ التريني)]
 [كل المركز]
 [لا داعي]
 ```
 
-Hide `المعنيّ` if no coverage was assigned (TL picked
+Hide `المعنيّين فقط` if no coverage was assigned (TL picked
 `اتركها فاضيه`).
 
 #### Phase 2 — Handle by type
@@ -697,10 +697,10 @@ AI: [internal: calls assign_replacement(P2_slot, sami_id)]
 
 AI: تم. د.سامي بـ P2 عياده 1.
     أعلِم أحد؟
-    [المعنيّ (د.سامي)] [أفراد محددين]
+    [المعنيّين فقط (د.سامي)] [أفراد محددين]
     [القروب (+ التريني)] [كل المركز] [لا داعي]
 
-TL: [ينقر: المعنيّ]
+TL: [ينقر: المعنيّين فقط]
 
 AI: أُرسل لـ د.سامي.
 ```
@@ -728,7 +728,7 @@ AI: [internal: calls assign_replacement for each of
 
 AI: تم. الـ 4 فترات غطّاها د.خالد.
     أعلِم أحد؟
-    [المعنيّ (د.خالد)] [أفراد محددين]
+    [المعنيّين فقط (د.خالد)] [أفراد محددين]
     [القروب (+ التريني)] [كل المركز] [لا داعي]
 
 TL: [ينقر: القروب]

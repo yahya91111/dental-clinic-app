@@ -85,7 +85,7 @@ independently.
 5. Apply the unified `notify_prompt`:
    ```
    تم التبديل. أعلِم أحد؟
-   [المعنيّ (د.{other_name})] [أفراد محددين]
+   [المعنيّين فقط (د.{other_name})] [أفراد محددين]
    [القروب] [كل المركز] [لا داعي]
    ```
    Use `schedule_changed` template (swap variant) text.
@@ -207,7 +207,7 @@ AI: [internal: get_doctor_schedule(self, [Sunday, Monday])
 AI: تم. صرت بفتره P3 الأحد بدل P3 الإثنين.
 
 AI: أعلِم أحد؟
-    [المعنيّ (د.أحمد)] [أفراد محددين]
+    [المعنيّين فقط (د.أحمد)] [أفراد محددين]
     [القروب] [كل المركز] [لا داعي]
 
 Doctor: [لا داعي]

@@ -4,8 +4,12 @@
 
 This file defines the universal principles every assistant
 must follow when sending or surfacing notifications.
-Read by ALL assistants (Doctor, Team Leader, Coordinator,
-Regional Manager) regardless of role.
+Read by ALL assistants regardless of role.
+
+Currently live assistants: Doctor, Team Leader.
+Planned future assistants (not yet built): Coordinator,
+Regional Manager, Board, and Patient. Each will inherit
+the principles in this file when added.
 
 Role-specific behavior lives in each role's notifications
 folder. Tier-specific templates live in `clinical/` or

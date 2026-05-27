@@ -16,9 +16,14 @@ are **optional and user-chosen** via the unified
 This file does NOT define when a notification fires; it
 defines what the text looks like when one does.
 
-This file is read by clinical-tier assistants: Doctor,
-Team Leader, Board. Management-tier templates live in
-`management/event_templates.md`.
+This file is read by clinical-tier assistants. Currently
+live: Doctor, Team Leader. Planned future (not yet
+built): Board. The Board assistant will inherit these
+templates when added.
+
+Management-tier templates live in
+`management/event_templates.md` (planned future, not yet
+built).
 
 ---
 
@@ -144,7 +149,7 @@ Team Leader, Board. Management-tier templates live in
   neighbor relay), or `manual_ex_assignment` event
   (Source C).
 - **Suggested via:** `notify_prompt`. Typical pick:
-  `المعنيّ فقط` (the doctor being assigned).
+  `المعنيّين فقط` (the doctor being assigned).
 - **Text:**
   ```
   أُسندت إليك تغطيه فتره {period} عياده {room} يوم

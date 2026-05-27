@@ -91,7 +91,7 @@ Apply the unified `notify_prompt`:
 
 ```
 تم. أعلِم أحد؟
-[المعنيّ(ين) فقط]      ← hidden for SL/VC with no coverage; for PE/PS, refers to the broadcast recipients (which is the whole eligible group anyway → also typically hidden)
+[المعنيّين فقط]      ← hidden for SL/VC with no coverage; for PE/PS, refers to the broadcast recipients (which is the whole eligible group anyway → also typically hidden)
 [أفراد محددين]
 [القروب (+ التريني)]
 [كل المركز]

@@ -20,8 +20,10 @@ in the recipient's UI plus a chat entry. The TL or doctor
 sees the card on screen and can act on it from the chat
 later.
 
-This file is read by clinical-tier assistants: Doctor,
-Team Leader, Board.
+This file is read by clinical-tier assistants. Currently
+live: Doctor, Team Leader. Planned future (not yet
+built): Board. The Board assistant will inherit these
+templates when added.
 
 ---
 
@@ -93,16 +95,15 @@ Each template defines:
      [قبول] [رفض]
   ```
 - **Recipient assistant:** Doctor Assistant of each
-  candidate (the Doctor Assistant has not been built
-  yet; this template is the contract for when it is).
+  candidate.
 
 ---
 
 ## swap_completed_inform
 
 - **Trigger:** A swap completes (any source — Doctor
-  Assistant cascade, TL on-behalf swap, or open
-  broadcast).
+  Assistant auto-broadcast for PE/PS, TL on-behalf swap,
+  explicit peer-to-peer swap, or open broadcast).
 - **Card title:** "تم تبديل دوامك"
 - **Card body:**
   ```
