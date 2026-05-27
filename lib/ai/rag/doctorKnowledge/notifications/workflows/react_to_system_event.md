@@ -119,7 +119,7 @@ absent colleague.
 1. Surface as a card per
    `reactive_templates.md → coverage_assigned_inform`.
 2. Buttons: [Got it] only — no rejection (TL authority).
-3. Chat entry: "🆘 أُسندت إليك تغطيه {period} يوم
+3. Chat entry: "➕ أُسندت إليك تغطيه {period} يوم
    {day} (غياب د.{absent})."
 4. Mark surfaced.
 

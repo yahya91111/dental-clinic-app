@@ -75,11 +75,16 @@ Assistant prompt.
    not absent that period, not already in another slot
    at the same time.
 
-2. Call `broadcast_swap_request(slot_id, candidate_ids,
-   timeout_minutes=1440)`.
+2. **If `candidate_ids` is empty**, skip the broadcast
+   call entirely and follow the "no eligible candidates"
+   edge case at the bottom of this file:
+   inform the Doctor and proceed to Phase 4.
 
-3. Inform the Doctor in one line:
-   "أبدأت broadcast للتبديل. إذا قبل أحد بـ24 ساعه،
+3. Otherwise, call `broadcast_swap_request(slot_id,
+   candidate_ids, timeout_minutes=1440)`.
+
+4. Inform the Doctor in one line:
+   "أبدأت طلب عام للتبديل. إذا قبل أحد خلال 24 ساعه،
    يصير تبديل تلقائي. إذا ما قبل أحد، الاستئذان يبقى
    والفتره فاضيه (التيم ليدر بيشوفها)."
 
@@ -188,7 +193,7 @@ AI: [internal: find_swap_candidates(slot_id, 'clinic')
     [internal: broadcast_swap_request(slot_id,
      candidate_ids, 1440)]
 
-AI: أبدأت broadcast للتبديل. إذا قبل أحد بـ24 ساعه،
+AI: أبدأت طلب عام للتبديل. إذا قبل أحد خلال 24 ساعه،
     يصير تبديل تلقائي.
 
 AI: أعلِم أحد؟
@@ -221,7 +226,7 @@ AI: أعلِم أحد؟
     [أفراد محددين] [القروب (+ التريني)]
     [كل المركز] [لا داعي]
 
-Doctor: [القروب]
+Doctor: [القروب (+ التريني)]
 
 AI: [internal: send_notification(group_ids,
      "د.{name} على إجازه مرضيه يوم {day} {date}.")]

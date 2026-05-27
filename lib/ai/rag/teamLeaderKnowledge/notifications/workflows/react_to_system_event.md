@@ -151,7 +151,7 @@ For every manual UI event the database trigger captured
 AI: لاحظت إنك بدّلت د.أحمد ود.خالد بـ P3 الأحد.
     أعلِم أحد؟
     [المعنيّين فقط] [أفراد محددين]
-    [القروب] [كل المركز] [لا داعي]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
 ```
 
 ```
@@ -160,7 +160,7 @@ AI: لاحظت إنك بدّلت د.أحمد ود.خالد بـ P3 الأحد.
 AI: لاحظت إنك عيّنت د.سامي EX لـ P4 الخميس.
     أعلِم أحد؟
     [المعنيّين فقط (د.سامي)] [أفراد محددين]
-    [القروب] [كل المركز] [لا داعي]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
 ```
 
 ```
@@ -265,7 +265,11 @@ AI: [internal: calls get_pending_system_events()]
     [internal: builds card for د.أحمد SL]
     [internal: builds chat entry for د.محمد PE
      (no card — TL not involved)]
-    [internal: marks all 3 as surfaced]
+    [internal: mark_event_surfaced(ahmed_sl_event_id)]
+    [internal: mark_event_surfaced(mohammed_pe_event_id)]
+    [internal: mark_event_surfaced(routine_swap_event_id)
+     — filtered events are also marked surfaced so they
+     don't reappear next session]
 
 AI (proactive):
   📨 د.أحمد قدّم إجازه مرضيه يوم الخميس.

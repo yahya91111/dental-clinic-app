@@ -98,6 +98,7 @@ ignore entirely.
 | `board_in_delegator_rotation` | bool | true / false | `create_weekly` when distributing delegator role |
 | `board_in_ex_rotation` | bool | true / false | `create_weekly` when distributing EX role |
 | `last_board_shift` | string | `"morning"`, `"evening"`, `"split"` | `create_weekly` for the rotation pattern |
+| `board_shift_pattern` | `object \| null` | per-day map: `{sunday: "morning"\|"evening", monday: ...}` | Optional override of `last_board_shift` when the Board's shift varies by day. Set when the TL says things like "البورد مسائي عدا الأحد". If `null` or absent, the AI uses `last_board_shift` for every working day. |
 | `trainee_defaults` | object | keyed by `doctor_id` | `create_weekly` and `special_groups` rules |
 | `trainee_defaults[id].deployment` | string | `"independent"`, `"beginner"` | Per-trainee handling |
 | `trainee_defaults[id].trainer` | string \| null | trainer's `doctor_id` or `null` if independent | Required only when deployment is `"beginner"` |

@@ -119,7 +119,13 @@ The TL retains full control after the request is sent:
   removed when one accepts. No message is sent to the losers.
 - **24-hour expiry** — if no one accepts within 24 hours,
   the request is auto-cancelled. The TL gets a push
-  notification: "انتهى وقت طلب التبديل، ما حد قبل."
+  notification with a retry offer to keep the UX
+  consistent with `mark_unavailable`:
+  "انتهى وقت طلب التبديل، ما حد قبل. أعيد المحاوله؟"
+  [نعم، أعد المحاوله] [لا، خلّيها]
+  - On `أعد` → ask the TL which period to target, then
+    re-issue `broadcast_swap_request` (24-hour timeout).
+  - On `خلّيها` → close the request silently.
 
 Your role ends after step 6 unless the TL returns to ask
 about status or to cancel.

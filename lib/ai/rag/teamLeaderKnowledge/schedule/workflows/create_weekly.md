@@ -285,12 +285,13 @@ Before drafting any schedule, run these checks in order:
     using the `schedule_published` template text:
     ```
     تم نشر جدول أسبوع {week_start}. أعلِم أحد؟
-    [القروب (+ التريني)] [كل المركز] [لا داعي]
+    [أفراد محددين] [القروب (+ التريني)]
+    [كل المركز] [لا داعي]
     ```
-    Note: `المعنيّين` is hidden here (no specific affected
-    individuals — the whole clinic is the audience). Pick
-    `كل المركز` is the typical choice for first-time
-    publish.
+    Note: `المعنيّين فقط` is hidden here (no specific
+    affected individuals — the whole clinic is the
+    audience). `كل المركز` is the typical pick for a
+    first-time publish.
 
 11. Report the result in one short line:
     - On success: "تم. جدول أسبوع [date] جاهز."

@@ -29,11 +29,21 @@ here.
   read the Doctor's slots.
 - `get_clinic_doctors(clinic_id)` — list candidates.
 - `find_swap_candidates(slot_id, scope)` — filter
-  eligible doctors. `scope` can be `'same_period'`,
-  `'all_periods'`, or `'all_shifts'`.
-- `send_swap_request(from_slot, to_doctor_id,
+  eligible doctors. `scope` can be:
+  - `'same_period'` — doctors working the same period
+    on another day.
+  - `'all_periods'` — doctors working any period in the
+    same shift.
+  - `'all_shifts'` — doctors working any period in any
+    shift (the widest scoped search the Doctor's
+    workflow uses).
+  - `'clinic'` — every eligible doctor in the clinic
+    regardless of period or shift. Used by the PE/PS
+    auto-broadcast in `submit_absence.md` to cast the
+    widest possible net for a quick swap.
+- `send_swap_request(slot_id, to_doctor_id,
   timeout_minutes=1440)` — 1-to-1 request.
-- `broadcast_swap_request(from_slot, candidate_ids,
+- `broadcast_swap_request(slot_id, candidate_ids,
   timeout_minutes=1440)` — 1-to-many request.
 - The unified prompt: `sharedKnowledge/notifications/universal/notify_prompt.md`.
 
@@ -51,7 +61,7 @@ here.
 2. If any of these is missing, ask. Default questions:
    - "أي فتره تبي تبدّلها؟ [P1] [P2] [P3] [P4]"
    - "أي يوم؟ [الأحد] [الإثنين] ..."
-   - "مع مين؟ [طبيب معيّن] [broadcast لكل المؤهلين]"
+   - "مع مين؟ [طبيب معيّن] [طلب عام لكل المؤهلين]"
 
 3. Read the slot with `get_doctor_schedule` and confirm
    the Doctor actually has it. If not: "ما عندك فتره
@@ -69,7 +79,7 @@ here.
 
 **If broadcast:**
 1. Ask the Doctor the scope:
-   "broadcast لمين؟
+   "طلب عام لمين؟
     [نفس الفتره فقط] [كل الفترات] [كل الشفتات]"
 2. Call `find_swap_candidates(slot_id, scope)` to get
    the candidate list.
@@ -118,7 +128,7 @@ whole group, `لا داعي` is the most common pick.
 
 - **Doctor names a colleague on leave that day.** Inform:
   "د.{name} على {leave_type} يوم {day}. اختر طبيب
-  ثاني أو broadcast." Do NOT proceed.
+  ثاني أو طلب عام." Do NOT proceed.
 
 - **Doctor names themselves.** Decline with humor-free
   brevity: "ما يصير تبديل مع نفسك."
@@ -186,7 +196,7 @@ AI: تم إرسال الطلب لـ د.أحمد.
 
 AI: أعلِم أحد ثاني؟
     [المعنيّين فقط (د.أحمد)] [أفراد محددين]
-    [القروب] [كل المركز] [لا داعي]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
 
 Doctor: [لا داعي]
 
@@ -203,7 +213,7 @@ Doctor: بدّلوني P4 الخميس مع أي أحد
 AI: [internal: get_doctor_schedule(self, Thursday)
      → confirms P4 Thursday]
 
-AI: broadcast لمين؟
+AI: طلب عام لمين؟
     [نفس الفتره فقط] [كل الفترات] [كل الشفتات]
 
 Doctor: [كل الشفتات]
@@ -224,7 +234,7 @@ AI: [internal: broadcast_swap_request(slot_id,
 AI: تم إرسال الطلب لـ 9 أطباء.
 
 AI: أعلِم أحد ثاني؟
-    [أفراد محددين] [القروب] [كل المركز] [لا داعي]
+    [أفراد محددين] [القروب (+ التريني)] [كل المركز] [لا داعي]
 
 Doctor: [لا داعي]
 

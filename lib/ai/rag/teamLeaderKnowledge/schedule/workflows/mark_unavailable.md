@@ -426,30 +426,6 @@ The flow depends on the source first, then on the type.
 3. Confirm in one short line: "سجّلت [type] لك يوم
    [day]، وفترتك صارت بدون طبيب."
 
-#### Phase 1b — Notify prompt (after Phase 2 coverage)
-
-The notify prompt for this action runs **after Phase 2
-coverage** finishes (so the prompt knows whether there
-is a `المعنيّين فقط` to suggest — the covering doctor).
-
-Apply the unified `notify_prompt` (see
-`sharedKnowledge/notifications/universal/notify_prompt.md`)
-using the `tl_absence_recorded` template text for the
-group/clinic options, and the `coverage_assignment`
-template text for the `المعنيّين فقط` option:
-
-```
-تم. أعلِم أحد؟
-[المعنيّين فقط (د.{covering_doctor})]   ← if coverage was assigned
-[أفراد محددين]
-[القروب (+ التريني)]
-[كل المركز]
-[لا داعي]
-```
-
-Hide `المعنيّين فقط` if no coverage was assigned (TL picked
-`اتركها فاضيه`).
-
 #### Phase 2 — Handle by type
 
 - **SL or VC, current week** → Branch SL/VC below.
@@ -566,6 +542,41 @@ No slots exist yet, so no coverage action is needed now.
    الجدول."
 2. When the TL later builds that week (via `create_weekly`),
    the constraint is applied automatically.
+
+### Phase 3 — Notify prompt (runs after Phase 2 for every branch)
+
+After Phase 2 finishes (whichever branch handled the
+coverage), apply the unified `notify_prompt` (see
+`sharedKnowledge/notifications/universal/notify_prompt.md`)
+using the matching template text:
+
+- **Source A (TL's own absence):** use the
+  `tl_absence_recorded` template for the
+  group/clinic/specific-doctors options. If coverage was
+  assigned, also enable `المعنيّين فقط` referring to the
+  covering doctor (using `coverage_assignment` text).
+- **Source B (other doctor's absence surfaced):** use
+  `coverage_assignment` text for `المعنيّين فقط` (the
+  covering doctor) and `doctor_absence_recorded` text
+  for the group/clinic options.
+
+```
+تم. أعلِم أحد؟
+[المعنيّين فقط (د.{covering_doctor})]   ← if coverage was assigned
+[أفراد محددين]
+[القروب (+ التريني)]
+[كل المركز]
+[لا داعي]
+```
+
+Hide `المعنيّين فقط` if no coverage was assigned (TL
+picked `اتركها فاضيه` or the absence was a non-working
+period with nothing to cover).
+
+For Branch Future, skip the prompt entirely — the
+absence has no immediate effect on doctors today, and
+`notify_prompt.md` says to skip when zero recipients
+would be affected.
 
 ---
 

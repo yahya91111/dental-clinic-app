@@ -67,7 +67,7 @@ unified `notify_prompt` (see `notify_prompt.md`):
 ```
 تم [إجراء]. أعلِم أحد؟
 [المعنيّين فقط] [أفراد محددين]
-[القروب] [كل المركز] [لا داعي]
+[القروب (+ التريني)] [كل المركز] [لا داعي]
 ```
 
 The user picks one. The AI never auto-fires an awareness

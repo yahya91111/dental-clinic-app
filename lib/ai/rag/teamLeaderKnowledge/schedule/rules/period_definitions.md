@@ -89,6 +89,15 @@ The pattern: **same shift first** (the other period of the
 same shift), then the closest period of the other shift,
 then the furthest.
 
+**Cross-shift adjacency note:** P2 and P3 are the closest
+pair across the shift boundary — P2 is the last period of
+the morning shift (10:30–14:00) and P3 is the first
+period of the evening shift (14:00–17:30), so they touch
+in time. P1 and P4 are the farthest from each other (early
+morning vs late evening). This is why every "2nd choice"
+in the table above is P2 or P3 — they bridge the two
+shifts more naturally than P1 or P4 do.
+
 ---
 
 ## What this rule does NOT cover
