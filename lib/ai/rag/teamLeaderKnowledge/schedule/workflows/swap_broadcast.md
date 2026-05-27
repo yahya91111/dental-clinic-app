@@ -50,8 +50,11 @@ preserved automatically.
   handled internally based on the source slot's period
   (P2/P4 → reduced-workload doctors excluded
   automatically).
-- `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
-  — sends the swap request to all candidates atomically.
+- `broadcast_swap_request(slot_id, candidate_ids[], timeout_minutes)`
+  — sends the swap request to every candidate atomically.
+  `target_day` is derived from `slot_id`; `target_period`
+  is implicit in `candidate_ids` (which was already
+  filtered for it by `find_swap_candidates`).
   `timeout_minutes` controls how long the request stays
   open. **Always use 1440 (24 hours)** — this matches the
   standard across the whole schedule system, including

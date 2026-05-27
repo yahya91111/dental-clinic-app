@@ -373,11 +373,13 @@ For full rules, see `rules/coverage.md`. Key points:
   on the source slot's period (P2/P4 → reduced-workload
   doctors excluded automatically). Same tool used by
   `swap_broadcast`.
-- `broadcast_swap_request(from_slot_id, target_day, target_period, candidate_ids[], timeout_minutes)`
+- `broadcast_swap_request(slot_id, candidate_ids[], timeout_minutes)`
   — sends a swap request to multiple candidates. First to
-  accept triggers the atomic swap. **Always use a 24-hour
-  timeout (`timeout_minutes=1440`)** matching the
-  `swap_broadcast` standard.
+  accept triggers the atomic swap. `target_day` is derived
+  from `slot_id`; `target_period` is implicit in
+  `candidate_ids`. **Always use a 24-hour timeout
+  (`timeout_minutes=1440`)** matching the `swap_broadcast`
+  standard.
 - `assign_replacement(slot_id, replacement_doctor_id)` —
   assigns a different doctor to a vacated slot. Used for
   every coverage option the TL picks (reserve EX,
