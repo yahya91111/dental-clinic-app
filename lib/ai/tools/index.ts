@@ -14,14 +14,52 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { supabase } from '../../supabase';
+import {
+  User,
+  PermissionCheck,
+  getPermissions,
+  canActOnClinic,
+} from '../../../permissions';
 
 /**
  * Context every tool receives. Filled in by the AI service from
  * the signed-in user's session.
+ *
+ * `user` is required for any write tool. Read tools work even
+ * without it (they're scoped to clinicId anyway).
  */
 export interface ToolContext {
   clinicId: string;
   weekStart: string;
+  user: User | null;
+}
+
+/**
+ * Gate a write tool by a boolean permission and the clinic scope.
+ * Returns an error string if the check fails (the AI will read
+ * it and decide what to tell the user); returns null on success.
+ *
+ * Per the AI permission inheritance principle in permissions.ts:
+ * the AI runs on the user's account, inherits exactly the user's
+ * permissions, and must wrap every write with these same checks
+ * a button click would face.
+ */
+function requirePermission(
+  ctx: ToolContext,
+  flag: keyof PermissionCheck,
+  description: string,
+): string | null {
+  if (!ctx.user) {
+    return `Refused: no signed-in user; cannot ${description}.`;
+  }
+  const perms = getPermissions(ctx.user.role);
+  if (!perms[flag]) {
+    return `Refused: your role (${ctx.user.role}) does not have permission to ${description}.`;
+  }
+  if (!canActOnClinic(ctx.user, ctx.clinicId)) {
+    return `Refused: you cannot act on this clinic (out of your scope).`;
+  }
+  return null;
 }
 
 // ─── Tool definitions for the Claude API ─────────────────────────
@@ -90,22 +128,121 @@ export const READ_TOOLS = [
   },
 ];
 
+// ─── Write tool definitions ──────────────────────────────────────
+
+export const WRITE_TOOLS = [
+  {
+    name: 'edit_slot',
+    description:
+      'Add or replace a single schedule slot. Use period 0 to write into the EX section (clinic_number then means the EX side, 1 or 2). For delegator role, only one delegator can exist per period — calling this with role=delegator replaces the existing one. ALWAYS propose this to the TL and get explicit confirmation before calling.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        day: {
+          type: 'string',
+          enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'],
+        },
+        period: {
+          type: 'number',
+          description: '1-4 for clinic periods, 0 for EX section.',
+        },
+        clinic_number: {
+          type: 'number',
+          description: '1-10 for clinic rooms, 1-2 for EX side.',
+        },
+        doctor_id: { type: 'string', description: 'UUID of the doctor.' },
+        doctor_name: {
+          type: 'string',
+          description: 'Display name (use the exact name from get_clinic_doctors).',
+        },
+        role: { type: 'string', enum: ['clinic', 'delegator'] },
+        status: {
+          type: 'string',
+          enum: [
+            'active',
+            'sick_leave',
+            'permission_start',
+            'permission_end',
+            'vacation',
+            'extra',
+          ],
+          description: 'Defaults to "active" if omitted.',
+        },
+      },
+      required: ['day', 'period', 'clinic_number', 'doctor_id', 'doctor_name', 'role'],
+    },
+  },
+  {
+    name: 'delete_slot',
+    description:
+      'Remove a single schedule slot. Identify it by day + period + clinic_number + role. ALWAYS propose this to the TL and get explicit confirmation before calling.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        day: {
+          type: 'string',
+          enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'],
+        },
+        period: { type: 'number', description: '0-4' },
+        clinic_number: { type: 'number' },
+        role: { type: 'string', enum: ['clinic', 'delegator'] },
+      },
+      required: ['day', 'period', 'clinic_number', 'role'],
+    },
+  },
+  {
+    name: 'mark_doctor_absent',
+    description:
+      'Record an absence for a doctor (PE, PS, SL, or VC). SL and VC automatically remove the doctor from all clinic slots on that day; PE/PS only affect their specific period. ALWAYS propose this and get explicit confirmation before calling (per submit_absence.md / mark_unavailable.md).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctor_id: { type: 'string', description: 'UUID of the doctor.' },
+        doctor_name: { type: 'string' },
+        absence_type: {
+          type: 'string',
+          enum: ['PE', 'PS', 'SL', 'VC'],
+          description:
+            'PE = end-of-shift permission, PS = start-of-shift permission, SL = sick leave, VC = vacation.',
+        },
+        day: {
+          type: 'string',
+          enum: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'],
+        },
+        period: {
+          type: 'number',
+          description: 'Required for PE/PS (1-4). Ignored for SL/VC.',
+        },
+        ex_side: {
+          type: 'number',
+          enum: [1, 2],
+          description: 'Which side of the EX section to place the entry (1 = right, 2 = left). Defaults to 1.',
+        },
+      },
+      required: ['doctor_id', 'doctor_name', 'absence_type', 'day'],
+    },
+  },
+];
+
+export const ALL_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS];
+
 // ─── Execution handler ────────────────────────────────────────────
 
 /**
- * Execute a read tool by name. Returns a plain-text string that
- * is fed back to the AI as the tool_result content.
+ * Execute a tool (read or write) by name. Returns a plain-text
+ * string that is fed back to the AI as the tool_result content.
  *
  * Errors are returned as strings (not thrown) so the AI can read
  * them and decide how to respond.
  */
-export async function executeReadTool(
+export async function executeTool(
   name: string,
   input: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<string> {
   try {
     switch (name) {
+      // ─── Read tools ──────────────────────────────────────────
       case 'get_clinic_info':
         return await getClinicInfo(ctx);
       case 'get_clinic_doctors':
@@ -116,13 +253,26 @@ export async function executeReadTool(
         return await getExistingSchedule(ctx, input.day as string | undefined);
       case 'get_doctor_schedule':
         return await getDoctorScheduleForWeek(ctx, input.doctor_id as string);
+
+      // ─── Write tools ─────────────────────────────────────────
+      case 'edit_slot':
+        return await editSlot(ctx, input);
+      case 'delete_slot':
+        return await deleteSlot(ctx, input);
+      case 'mark_doctor_absent':
+        return await markDoctorAbsent(ctx, input);
+
       default:
-        return `Unknown read tool: ${name}`;
+        return `Unknown tool: ${name}`;
     }
   } catch (error) {
     return `Tool error (${name}): ${error instanceof Error ? error.message : 'Unknown'}`;
   }
 }
+
+/** Backwards-compatible alias kept while the read-only callers
+ * are still around. New code should use `executeTool`. */
+export const executeReadTool = executeTool;
 
 // ─── Individual tool implementations ─────────────────────────────
 
@@ -272,4 +422,164 @@ async function getDoctorScheduleForWeek(
     );
   }
   return lines.join('\n');
+}
+
+// ─── Write tool implementations ──────────────────────────────────
+
+async function editSlot(
+  ctx: ToolContext,
+  input: Record<string, unknown>,
+): Promise<string> {
+  const denied = requirePermission(ctx, 'canEditScheduleSlot', 'edit a schedule slot');
+  if (denied) return denied;
+
+  const day = input.day as string;
+  const period = input.period as number;
+  const clinicNumber = input.clinic_number as number;
+  const doctorId = input.doctor_id as string;
+  const doctorName = input.doctor_name as string;
+  const role = input.role as string;
+  const status = (input.status as string) || 'active';
+
+  // Delegator: only one per period — remove any existing one first.
+  if (role === 'delegator') {
+    await supabase
+      .from('schedule_slots')
+      .delete()
+      .eq('clinic_id', ctx.clinicId)
+      .eq('week_start', ctx.weekStart)
+      .eq('day_of_week', day)
+      .eq('period', period)
+      .eq('role', 'delegator');
+  }
+
+  // Also replace any existing slot at the exact (day, period, clinic_number, role) coordinate.
+  await supabase
+    .from('schedule_slots')
+    .delete()
+    .eq('clinic_id', ctx.clinicId)
+    .eq('week_start', ctx.weekStart)
+    .eq('day_of_week', day)
+    .eq('period', period)
+    .eq('clinic_number', clinicNumber)
+    .eq('role', role);
+
+  const { error } = await supabase.from('schedule_slots').insert({
+    clinic_id: ctx.clinicId,
+    week_start: ctx.weekStart,
+    day_of_week: day,
+    period,
+    clinic_number: clinicNumber,
+    doctor_id: doctorId,
+    doctor_name: doctorName,
+    role,
+    status,
+  });
+  if (error) return `Error inserting slot: ${error.message}`;
+
+  const periodLabel = period === 0 ? 'EX' : `P${period}`;
+  const roleLabel = role === 'delegator' ? 'DLG' : `CL${clinicNumber}`;
+  return `OK — ${doctorName} placed at ${day} ${periodLabel} ${roleLabel} (status: ${status}).`;
+}
+
+async function deleteSlot(
+  ctx: ToolContext,
+  input: Record<string, unknown>,
+): Promise<string> {
+  const denied = requirePermission(ctx, 'canEditScheduleSlot', 'delete a schedule slot');
+  if (denied) return denied;
+
+  const day = input.day as string;
+  const period = input.period as number;
+  const clinicNumber = input.clinic_number as number;
+  const role = input.role as string;
+
+  const { error, count } = await supabase
+    .from('schedule_slots')
+    .delete({ count: 'exact' })
+    .eq('clinic_id', ctx.clinicId)
+    .eq('week_start', ctx.weekStart)
+    .eq('day_of_week', day)
+    .eq('period', period)
+    .eq('clinic_number', clinicNumber)
+    .eq('role', role);
+
+  if (error) return `Error deleting slot: ${error.message}`;
+  if (!count) {
+    return `No slot found at ${day} period=${period} clinic=${clinicNumber} role=${role}. Nothing to delete.`;
+  }
+  const periodLabel = period === 0 ? 'EX' : `P${period}`;
+  const roleLabel = role === 'delegator' ? 'DLG' : `CL${clinicNumber}`;
+  return `OK — slot at ${day} ${periodLabel} ${roleLabel} deleted.`;
+}
+
+async function markDoctorAbsent(
+  ctx: ToolContext,
+  input: Record<string, unknown>,
+): Promise<string> {
+  // Permission depends on whose absence this is.
+  const doctorId = input.doctor_id as string;
+  const isSelf = ctx.user?.id === doctorId;
+  const flag = isSelf ? 'canSubmitOwnAbsence' : 'canMarkOtherDoctorAbsence';
+  const denied = requirePermission(
+    ctx,
+    flag,
+    isSelf ? 'submit your own absence' : "mark another doctor's absence",
+  );
+  if (denied) return denied;
+
+  const doctorName = input.doctor_name as string;
+  const absenceType = input.absence_type as 'PE' | 'PS' | 'SL' | 'VC';
+  const day = input.day as string;
+  const period = input.period as number | undefined;
+  const exSide = (input.ex_side as number) || 1;
+
+  const statusMap: Record<string, string> = {
+    PE: 'permission_end',
+    PS: 'permission_start',
+    SL: 'sick_leave',
+    VC: 'vacation',
+  };
+  const status = statusMap[absenceType];
+
+  // SL / VC: remove the doctor from every clinic slot on that day.
+  if (absenceType === 'SL' || absenceType === 'VC') {
+    await supabase
+      .from('schedule_slots')
+      .delete()
+      .eq('clinic_id', ctx.clinicId)
+      .eq('week_start', ctx.weekStart)
+      .eq('day_of_week', day)
+      .eq('doctor_id', doctorId)
+      .gt('period', 0);
+  } else if (absenceType === 'PE' || absenceType === 'PS') {
+    // PE / PS: remove only the specific period the doctor was in.
+    if (!period) {
+      return `Error: period is required for ${absenceType}.`;
+    }
+    await supabase
+      .from('schedule_slots')
+      .delete()
+      .eq('clinic_id', ctx.clinicId)
+      .eq('week_start', ctx.weekStart)
+      .eq('day_of_week', day)
+      .eq('doctor_id', doctorId)
+      .eq('period', period);
+  }
+
+  // Add the EX-section entry that records the absence.
+  const { error } = await supabase.from('schedule_slots').insert({
+    clinic_id: ctx.clinicId,
+    week_start: ctx.weekStart,
+    day_of_week: day,
+    period: 0,
+    clinic_number: exSide,
+    doctor_id: doctorId,
+    doctor_name: doctorName,
+    role: 'clinic',
+    status,
+  });
+  if (error) return `Error recording absence: ${error.message}`;
+
+  return `OK — ${absenceType} recorded for ${doctorName} on ${day}${period ? ` period P${period}` : ''}.`;
 }

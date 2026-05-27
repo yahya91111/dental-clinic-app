@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { AIOrb, AIState } from '../../components/AIOrb';
 import { AIChatSheet, ChatMessage } from '../../components/AIChatSheet';
 import { sendMessage, buildScheduleContext, AIMessage } from '../../lib/ai';
+import { useAuth } from '../../AuthContext';
 
 interface ScheduleScreenProps {
   onBack: () => void;
@@ -31,6 +32,8 @@ const TABS: { key: ScheduleTab; label: string; icon: string }[] = [
 ];
 
 export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScreenProps) {
+  const { user } = useAuth();
+
   // Blob animations (matching DoctorProfileScreen)
   const blob1Anim = useRef(new Animated.Value(0)).current;
   const blob2Anim = useRef(new Animated.Value(0)).current;
@@ -126,7 +129,13 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       : '')
       + `\nUser is currently viewing: ${activeTab === 'daily_duty' ? 'Daily Duty (schedule grid)' : activeTab === 'doctors' ? 'Doctors (group management)' : activeTab === 'vacation' ? 'Vacation' : 'Weekend Duty'}\n`;
 
-    const response = await sendMessage(aiHistoryRef.current, context, clinicId || undefined, formatWeekStart(selectedWeekStart));
+    const response = await sendMessage(
+      aiHistoryRef.current,
+      context,
+      clinicId || undefined,
+      formatWeekStart(selectedWeekStart),
+      user,
+    );
 
     setAiLoading(false);
 

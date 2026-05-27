@@ -28,7 +28,8 @@
 import { CORE_PROMPT } from './ai/core/corePrompt';
 import { TEAM_LEADER_PROMPT } from './ai/assistants/teamLeaderAssistant';
 import { SHARED_KNOWLEDGE_RAG, TEAM_LEADER_RAG } from './ai/rag/_compiled';
-import { READ_TOOLS, executeReadTool } from './ai/tools';
+import { ALL_TOOLS, executeTool } from './ai/tools';
+import { User } from '../permissions';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
@@ -58,6 +59,7 @@ export async function sendMessage(
   contextData?: string,
   clinicId?: string,
   weekStart?: string,
+  user?: User | null,
 ): Promise<AIResponse> {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -116,7 +118,11 @@ export async function sendMessage(
     // either is missing we still run, but tool calls will fail
     // gracefully.
     const toolsEnabled = Boolean(clinicId && weekStart);
-    const toolCtx = { clinicId: clinicId || '', weekStart: weekStart || '' };
+    const toolCtx = {
+      clinicId: clinicId || '',
+      weekStart: weekStart || '',
+      user: user || null,
+    };
 
     let allText = '';
     const MAX_ROUNDS = 10;
@@ -134,7 +140,7 @@ export async function sendMessage(
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 4000,
           system: systemBlocks,
-          tools: toolsEnabled ? READ_TOOLS : undefined,
+          tools: toolsEnabled ? ALL_TOOLS : undefined,
           messages: conversation,
         }),
       });
@@ -155,7 +161,7 @@ export async function sendMessage(
         if (block.type === 'text') {
           allText += block.text;
         } else if (block.type === 'tool_use' && toolsEnabled) {
-          const result = await executeReadTool(block.name, block.input, toolCtx);
+          const result = await executeTool(block.name, block.input, toolCtx);
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -196,8 +202,8 @@ export function buildScheduleContext(data: {
   clinicName?: string;
   weekStart?: string;
   clinicCount?: number;
-  slots?: Array<Record<string, unknown>>;
-  groups?: Array<Record<string, unknown>>;
+  slots?: any[];
+  groups?: any[];
 }): string {
   let context = '';
 
@@ -214,7 +220,7 @@ export function buildScheduleContext(data: {
       );
       if (daySlots.length > 0) {
         context += `  ${day}:\n`;
-        for (const s of daySlots) {
+        for (const s of daySlots as any[]) {
           const roleLabel =
             s.role === 'delegator'
               ? 'DLG'
@@ -230,9 +236,9 @@ export function buildScheduleContext(data: {
 
   if (data.groups && data.groups.length > 0) {
     context += `\nDoctor groups:\n`;
-    for (const g of data.groups) {
+    for (const g of data.groups as any[]) {
       const groupId = g.id || '';
-      const groupDoctors = (g.doctors as Array<Record<string, unknown>>) || [];
+      const groupDoctors: any[] = g.doctors || [];
       const doctorList =
         groupDoctors
           .map((d) => {
