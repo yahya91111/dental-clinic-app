@@ -41,8 +41,10 @@ Do NOT use this workflow for:
 ## Pre-flight checks
 
 1. Confirm the user is asking for a manual announcement
-   (not one of the auto-fire flows). The trigger phrases
-   are usually clear.
+   (not a template-driven flow like `swap_on_behalf` or
+   `create_weekly`, where the notification is built from
+   a prewritten template plus the unified notify_prompt).
+   The trigger phrases are usually clear.
 2. Read the TL's initial message for any details they
    already provided (audience, text). Skip the
    corresponding question if already answered.
@@ -193,4 +195,4 @@ AI: [internal: calls send_notification(12 doctor_ids, text)]
 - For the text style → `sharedKnowledge/notifications/universal/tone.md`
 - For the principles (Golden Rule, scope) → `sharedKnowledge/notifications/universal/principles.md`
 - For audience resolution → `sharedKnowledge/notifications/clinical/recipients.md`
-- For auto-fire notifications (schedule, swap, etc.) → `sharedKnowledge/notifications/clinical/event_templates.md`
+- For template-driven notifications used by other workflows (schedule publish, swap, absence) → `sharedKnowledge/notifications/clinical/event_templates.md`

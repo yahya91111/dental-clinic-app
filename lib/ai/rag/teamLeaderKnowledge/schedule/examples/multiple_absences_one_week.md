@@ -75,10 +75,16 @@ TL: [د.خالد احتياطي]
 
 AI: [internal: calls assign_replacement for each of the
      4 evening slots with khaled_id]
-    [internal: notifies د.خالد automatically — no
-     approval requested, TL has authority]
 
 AI: تم. الـ 4 فترات غطّاها د.خالد.
+
+AI: أعلِم أحد؟
+    [المعنيّين فقط (د.خالد)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [المعنيّين فقط (د.خالد)]
+
+AI: أُرسل لـ د.خالد.
 ```
 
 **Variation A — no reserve, AI suggests adjacent extend:**
@@ -93,9 +99,16 @@ AI (proactive): د.أحمد بـ EX اليوم (SL). فترته بـ P4
 TL: [د.سامي يستلم الفترتين]
 
 AI: [internal: extends د.سامي's slot to cover P4 too]
-    [internal: notifies د.سامي automatically]
 
 AI: تم. د.سامي بعياده 2 من P3 إلى P4.
+
+AI: أعلِم أحد؟
+    [المعنيّين فقط (د.سامي)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [المعنيّين فقط (د.سامي)]
+
+AI: أُرسل لـ د.سامي.
 ```
 
 **Variation B — absent doctor was alone in their clinic, AI suggests neighbor-clinic relay:**
@@ -113,9 +126,16 @@ TL: [د.A يأخذ عياده 1، د.B يكمّل عياده 2]
 
 AI: [internal: moves د.A to clinic 1 P3+P4]
     [internal: extends د.B in clinic 2 to cover both P3+P4]
-    [internal: notifies both doctors automatically]
 
 AI: تم. د.A بعياده 1 طول المسائي، د.B بعياده 2 طول المسائي.
+
+AI: أعلِم أحد؟
+    [المعنيّين فقط (د.A، د.B)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [المعنيّين فقط (د.A، د.B)]
+
+AI: أُرسل لـ 2 أطباء.
 ```
 
 ### Part 2 — Source B PE (proactive info, swap already done)
@@ -157,9 +177,16 @@ AI: سجّلت استئذانك. فترتك بـ P2 عياده 1 صارت بدو
 TL: [د.أحمد يستلم الفترتين]
 
 AI: [internal: extends د.أحمد's slot to cover P2 of clinic 1]
-    [internal: notifies د.أحمد automatically]
 
 AI: تم. د.أحمد بعياده 1 من P1 إلى P2.
+
+AI: أعلِم أحد؟
+    [المعنيّين فقط (د.أحمد)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+TL: [المعنيّين فقط (د.أحمد)]
+
+AI: أُرسل لـ د.أحمد.
 ```
 
 **Variation — TL picks broadcast instead:**
