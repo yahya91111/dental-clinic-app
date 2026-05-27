@@ -66,9 +66,21 @@ coordinates the approval.
 
 ### Phase 2 — Verify the target
 
-1. Verify the target is in the same clinic via
-   `get_clinic_doctors`. If not in clinic, decline:
-   "د.{name} مو بنفس المركز، ما يصير تبديل."
+1. Resolve the name via `get_clinic_doctors`. Three
+   outcomes:
+   - **No match at all** (typo, made-up name, doctor
+     not in the system) → ask the Doctor to clarify,
+     don't decline outright:
+     "ما لقيت طبيب باسم 'د.{name}' بالمركز. تأكّد من
+     الاسم أو اكتبه كامل."
+     If `get_clinic_doctors` returns close-by names,
+     offer them: "تقصد د.{suggestion_1} أو
+     د.{suggestion_2}؟" Wait for the Doctor to pick.
+   - **Multiple matches** (e.g., اسم أول يكرّر) → ask
+     the Doctor to disambiguate: "عندي أكثر من د.{name}
+     بالمركز — أيهم؟ [د.{name_1}] [د.{name_2}]"
+   - **Match found but in another clinic** → decline:
+     "د.{name} مو بنفس المركز، ما يصير تبديل."
 
 2. Verify the target holds the named period on the
    SAME DAY via
@@ -116,8 +128,14 @@ the group or clinic if context warrants.
 
 ## Edge cases
 
-- **Doctor names a colleague who doesn't exist or is
-  in another clinic.** Decline as in Phase 2.
+- **Doctor names a colleague who doesn't exist in the
+  system.** Don't decline — ask for clarification per
+  Phase 2 step 1 (typo? full name? close matches?).
+  Only after the Doctor has had a chance to correct
+  the name should the workflow stop.
+
+- **Doctor names a colleague in another clinic.**
+  Decline as in Phase 2.
 
 - **Doctor names a colleague on leave that day.**
   Decline as in Phase 2.

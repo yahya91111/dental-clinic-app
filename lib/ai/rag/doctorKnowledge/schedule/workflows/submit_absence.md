@@ -71,18 +71,31 @@ database/policy layer.
 2. Confirm in one short line: "سجّلت {type_arabic}
    يوم {day}."
 
-### Phase 3 — Auto-cascade broadcast (PE/PS only)
+### Phase 3 — Offer cascade broadcast (PE/PS only)
 
-For PE or PS, immediately start a **staged cascade** to
-find a doctor on the SAME DAY who will take the empty
-period. Coverage is always same-day — no cross-day
-swaps exist in this system.
+For PE or PS, after the absence is marked the AI
+**offers** to find a doctor on the SAME DAY who will
+take the empty period. Coverage is always same-day —
+no cross-day swaps exist in this system.
 
 The cascade asks one period at a time, following the
 adjacency order from
 `teamLeaderKnowledge/schedule/rules/period_definitions.md`.
-The doctor MUST approve each escalation; the AI never
-auto-advances.
+The Doctor MUST approve **every** stage — including
+Stage 1. The AI never starts or escalates the cascade
+on its own.
+
+**Opening the cascade**
+
+After Phase 2 confirms the absence is recorded, ask:
+"الفتره راح تكون فاضيه. تبيني أدوّر بديل بـ
+{stage_1_period} (نفس الشفت، الفتره المجاوره)؟"
+[نعم، دوّر] [لا، خلّيها فاضيه]
+
+- On `نعم` → start Stage 1 (see per-stage flow below).
+- On `لا` → skip the cascade entirely. The permission
+  stands and the period is empty; the TL will see it as
+  a coverage card on their side. Go to Phase 4.
 
 **The cascade stages**
 
@@ -103,7 +116,11 @@ that table.
 
 For each stage:
 
-1. **Inform the Doctor before sending:**
+1. **Confirm with the Doctor before sending** (Stage 1
+   is reached only after the opener above said `نعم`;
+   for Stage 2 and Stage 3 the escalation prompt below
+   takes the place of this confirmation). The AI states
+   what it is about to do in one line:
    "بسأل أطباء {target_period} الحين."
 
 2. Call `find_swap_candidates(slot_id, target_period)`.
@@ -243,10 +260,11 @@ already covered awareness.
 
 ## Common mistakes to avoid
 
-- Do NOT ask the Doctor to confirm starting Stage 1 —
-  Stage 1 fires automatically per the prompt.
-- Do ALWAYS ask the Doctor before escalating to Stage
-  2 or Stage 3. Escalation requires explicit approval.
+- Do ALWAYS ask the Doctor before starting the cascade
+  at all (the opener question in Phase 3), and again
+  before escalating to Stage 2 or Stage 3. Every stage
+  requires explicit approval — the AI never starts or
+  advances the cascade on its own.
 - Do NOT broadcast across days. Coverage is always
   same-day.
 - Do NOT broadcast for SL/VC — those are not
@@ -281,7 +299,13 @@ AI: [internal: mark_doctor_absent(self, 'PE',
 
 AI: سجّلت استئذانك P4 الخميس.
 
-AI: بسأل أطباء P3 الخميس (نفس الشفت) الحين.
+AI: الفتره راح تكون فاضيه. تبيني أدوّر بديل بـ P3
+    (نفس الشفت، الفتره المجاوره)؟
+    [نعم، دوّر] [لا، خلّيها فاضيه]
+
+Doctor: [نعم، دوّر]
+
+AI: بسأل أطباء P3 الخميس الحين.
     [internal: find_swap_candidates(slot_id, 'P3')
      → 3 candidates]
     [internal: broadcast_swap_request(slot_id,
@@ -312,7 +336,13 @@ AI: [marks the absence as in the example above]
 
 AI: سجّلت استئذانك P4 الأحد.
 
-AI: بسأل أطباء P3 الأحد (نفس الشفت) الحين.
+AI: الفتره راح تكون فاضيه. تبيني أدوّر بديل بـ P3
+    (نفس الشفت، الفتره المجاوره)؟
+    [نعم، دوّر] [لا، خلّيها فاضيه]
+
+Doctor: [نعم، دوّر]
+
+AI: بسأل أطباء P3 الأحد الحين.
     [internal: broadcast to 3 P3 candidates]
 
 [3 hours later, all 3 reject]
