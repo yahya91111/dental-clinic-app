@@ -1,25 +1,31 @@
-# Request Swap (Doctor)
+# Request Swap (Doctor) — Named Target Only
 
 ## When to use
 
-The Doctor wants to swap one of their own slots with
-another doctor in the same clinic. Two modes:
+The Doctor wants to swap one of their slots with a
+**specific named colleague** in the same clinic. The
+request goes 1-to-1; that colleague accepts or rejects
+within 24 hours.
 
-- **Specific** — the Doctor names the target colleague.
-  The request goes 1-to-1, that colleague accepts or
-  rejects within 24 hours.
-- **Broadcast** — the Doctor doesn't name anyone. The
-  request fires to all eligible colleagues; the first
-  to accept wins.
+**Scope of this workflow**
 
-The Doctor can swap across periods or across shifts
-(morning/evening), not only within the same period.
-The AI helps identify candidates accordingly.
+- Same-day swap only — both slots must be on the same
+  day. Cross-day swaps do not exist in this system.
+- Named target only — the Doctor names exactly one
+  colleague.
 
-This workflow is for **explicit swap requests**. The
-implicit PE/PS broadcast from `submit_absence.md` is a
-separate flow that runs automatically without entering
-here.
+**When NOT to use this workflow**
+
+- If the Doctor wants to leave a period and the AI
+  should find someone → use `submit_absence.md`
+  (PE/PS auto-cascade).
+- If the Doctor wants to broadcast without naming a
+  target → that is the auto-cascade flow in
+  `submit_absence.md`, not here.
+
+This workflow exists for the direct case: "بدّلني مع
+د.أحمد" — the Doctor knows who they want, the AI
+coordinates the approval.
 
 ---
 
@@ -27,164 +33,166 @@ here.
 
 - `get_doctor_schedule(doctor_id, date_or_range)` —
   read the Doctor's slots.
-- `get_clinic_doctors(clinic_id)` — list candidates.
-- `find_swap_candidates(slot_id, scope)` — filter
-  eligible doctors. `scope` can be:
-  - `'same_period'` — doctors working the same period
-    on another day.
-  - `'all_periods'` — doctors working any period in the
-    same shift.
-  - `'all_shifts'` — doctors working any period in any
-    shift (the widest scoped search the Doctor's
-    workflow uses).
-  - `'clinic'` — every eligible doctor in the clinic
-    regardless of period or shift. Used by the PE/PS
-    auto-broadcast in `submit_absence.md` to cast the
-    widest possible net for a quick swap.
+- `get_clinic_doctors(clinic_id)` — verify the named
+  target is in the same clinic.
+- `find_swap_candidates(slot_id, target_period)` —
+  confirm the named target holds a swappable slot on
+  the same day.
 - `send_swap_request(slot_id, to_doctor_id,
   timeout_minutes=1440)` — 1-to-1 request.
-- `broadcast_swap_request(slot_id, candidate_ids,
-  timeout_minutes=1440)` — 1-to-many request.
 - The unified prompt: `sharedKnowledge/notifications/universal/notify_prompt.md`.
 
 ---
 
 ## Steps
 
-### Phase 1 — Identify the slot to swap
+### Phase 1 — Identify the source slot and target
 
 1. Parse the Doctor's message for:
    - The slot they want to give up (day + period)
-   - The target doctor (named, or "broadcast")
-   - Optional: a specific slot they want in return
+   - The named target colleague
+   - The target's slot on the SAME DAY (the period
+     they will receive in exchange)
 
 2. If any of these is missing, ask. Default questions:
    - "أي فتره تبي تبدّلها؟ [P1] [P2] [P3] [P4]"
    - "أي يوم؟ [الأحد] [الإثنين] ..."
-   - "مع مين؟ [طبيب معيّن] [طلب عام لكل المؤهلين]"
+   - "مع مين؟" (Doctor types the name.)
+   - "مع أي فتره من د.{name} نفس اليوم؟ [P1] [P2] [P3] [P4]"
 
-3. Read the slot with `get_doctor_schedule` and confirm
-   the Doctor actually has it. If not: "ما عندك فتره
-   {period} يوم {day}، تأكّد من الجدول."
+3. Read the source slot with `get_doctor_schedule` and
+   confirm the Doctor actually has it. If not: "ما
+   عندك فتره {period} يوم {day}، تأكّد من الجدول."
 
-### Phase 2 — Resolve the target
+### Phase 2 — Verify the target
 
-**If specific doctor:**
 1. Verify the target is in the same clinic via
    `get_clinic_doctors`. If not in clinic, decline:
    "د.{name} مو بنفس المركز، ما يصير تبديل."
-2. Verify the target has a swappable slot or is free
-   to take the slot. Use `find_swap_candidates` filtered
-   by name to confirm eligibility.
 
-**If broadcast:**
-1. Ask the Doctor the scope:
-   "طلب عام لمين؟
-    [نفس الفتره فقط] [كل الفترات] [كل الشفتات]"
-2. Call `find_swap_candidates(slot_id, scope)` to get
-   the candidate list.
-3. Show the count: "لقيت {N} طبيب مؤهل."
+2. Verify the target holds the named period on the
+   SAME DAY via
+   `find_swap_candidates(slot_id, target_period)`.
+   If the target is not in the returned list, decline:
+   "د.{name} ما عنده فتره {target_period} يوم {day}.
+   اختر فتره ثانيه أو طبيب ثاني."
+
+3. If the target is on leave that day, inform:
+   "د.{name} على {leave_type} يوم {day}. اختر طبيب
+   ثاني." Do not proceed.
 
 ### Phase 3 — Confirm and send
 
-1. State the plan clearly:
-   - Specific: "أبعت طلب تبديل لـ د.{name} على فتره
-     {day} {period}. عنده 24 ساعه يقبل أو يرفض. أكمل؟"
-   - Broadcast: "أبعت طلب لـ {N} أطباء على فتره
-     {day} {period}. أول واحد يقبل، يصير التبديل.
-     المهله 24 ساعه. أكمل؟"
+1. State the plan as a clear two-line diff:
+   ```
+   أنت: {your_period} يوم {day} → {target_period}
+   د.{name}: {target_period} يوم {day} → {your_period}
+   ```
+   Then: "أبعت الطلب لـ د.{name}. عنده 24 ساعه يقبل
+   أو يرفض. أكمل؟"
+   [نعم] [لا]
 
-2. On confirmation:
-   - Specific → `send_swap_request(...)`
-   - Broadcast → `broadcast_swap_request(...)`
+2. On confirmation, call `send_swap_request(slot_id,
+   target_id, 1440)`.
 
-3. Confirm in one short line:
-   - "تم إرسال الطلب لـ د.{name}."
-   - "تم إرسال الطلب لـ {N} أطباء."
+3. Confirm: "تم إرسال الطلب لـ د.{name}. راح أعلمك
+   لما يرد أو لما تنتهي المهله."
 
 ### Phase 4 — Apply notify_prompt
 
 After sending, apply the unified `notify_prompt`:
 
 ```
-تم. أعلِم أحد ثاني؟
-[المعنيّين فقط]      ← redundant for broadcast (already sent to them); useful for specific (other interested parties)
-[أفراد محددين]
-[القروب (+ التريني)]
-[كل المركز]
-[لا داعي]
+تم إرسال الطلب. أعلِم أحد ثاني؟
+[المعنيّين فقط (د.{name})] [أفراد محددين]
+[القروب (+ التريني)] [كل المركز] [لا داعي]
 ```
 
-**Note:** for a broadcast that already reached the
-whole group, `لا داعي` is the most common pick.
+For an explicit 1-to-1 request, the target is the
+sole `المعنيّين فقط`. The Doctor may also widen to
+the group or clinic if context warrants.
 
 ---
 
 ## Edge cases
 
-- **Doctor names a colleague who doesn't exist or is in
-  another clinic.** Decline with the same message as in
-  Phase 2.
+- **Doctor names a colleague who doesn't exist or is
+  in another clinic.** Decline as in Phase 2.
 
-- **Doctor names a colleague on leave that day.** Inform:
-  "د.{name} على {leave_type} يوم {day}. اختر طبيب
-  ثاني أو طلب عام." Do NOT proceed.
+- **Doctor names a colleague on leave that day.**
+  Decline as in Phase 2.
 
-- **Doctor names themselves.** Decline with humor-free
-  brevity: "ما يصير تبديل مع نفسك."
+- **Doctor names themselves.** Decline briefly: "ما
+  يصير تبديل مع نفسك."
 
-- **Broadcast returns zero candidates.** Inform: "ما
-  فيه أطباء مؤهلين للتبديل بهالفتره. جرّب فتره ثانيه
-  أو كلّم التيم ليدر."
+- **Doctor names a target but doesn't say which period
+  to receive.** Ask explicitly: "مع أي فتره من
+  د.{name}؟"
+
+- **The target's slot is on a different day.** Decline:
+  "التبديل يكون بنفس اليوم فقط. د.{name} عنده
+  {target_period} يوم {other_day}، مو يوم {day}."
 
 - **Doctor has multiple outstanding requests for the
   same slot.** Inform: "عندك طلب مفتوح على فتره
   {day} {period}. ألغي القديم قبل ما أبعت جديد؟"
   [نعم، ألغِ] [لا، احتفظ].
 
-- **Slot already past.** Decline: "تاريخ ماضي، ما يصير
-  تبديل."
+- **Source slot already past.** Decline: "تاريخ ماضي،
+  ما يصير تبديل."
 
 - **Doctor wants to cancel an outstanding request.**
   Not part of this workflow — direct them: "إلغاء
   الطلب من شاشه الطلبات المفتوحه."
 
 - **Auto-swap on accept.** When the target accepts (in
-  `handle_swap_request.md`), the slots swap automatically
-  without further confirmation from either side. The
-  Doctor sees this as a completed event next time they
-  open the app.
+  `handle_swap_request.md`), the slots swap atomically
+  with no further confirmation from either side. The
+  Doctor sees the result on next interaction.
+
+- **Doctor wants to swap but doesn't know with whom.**
+  This is not this workflow. Direct them: "لو ما تعرف
+  مع مين، قدّم استئذان وأنا أتولّى البحث."
 
 ---
 
 ## Common mistakes to avoid
 
-- Do NOT swap silently. Always confirm before sending.
-- Do NOT broadcast without asking the scope (same
-  period / all periods / all shifts).
-- Do NOT include the Doctor themselves in the
-  candidate list.
+- Do NOT broadcast in this workflow. Broadcasting (and
+  the cascade) lives in `submit_absence.md`. If the
+  Doctor doesn't name a target, send them to
+  `submit_absence.md`.
+- Do NOT swap across days. Refuse if the source and
+  target slots are on different days.
+- Do NOT include the Doctor themselves in any candidate
+  list.
 - Do NOT include doctors from other clinics, even if
   the Doctor knows them.
 - Do NOT promise the swap will succeed — only that the
   request was sent.
-- Do NOT chain swap requests automatically if the first
-  is rejected. The Doctor decides what to try next.
+- Do NOT chain another swap request automatically if
+  the target rejects. The Doctor decides what to try
+  next (e.g., name a different colleague, or fall back
+  to `submit_absence.md`).
 
 ---
 
-## Example conversation — specific swap
+## Example conversation — named-target swap
 
 ```
-Doctor: بدّلني P3 الأحد مع د.أحمد
+Doctor: بدّلني P3 الأحد مع د.أحمد على P4
 
 AI: [internal: get_doctor_schedule(self, Sunday)
      → confirms P3 Sunday is the Doctor's slot]
-    [internal: find_swap_candidates(slot_id, by name
-     'أحمد') → confirms د.أحمد is eligible]
+    [internal: find_swap_candidates(slot_id, 'P4')
+     → confirms د.أحمد holds P4 Sunday and is eligible]
 
-AI: أبعت طلب تبديل لـ د.أحمد على فتره الأحد P3.
-    عنده 24 ساعه يقبل أو يرفض. أكمل؟
+AI: التبديل المقترح:
+    أنت: P3 الأحد → P4
+    د.أحمد: P4 الأحد → P3
+
+    أبعت الطلب لـ د.أحمد. عنده 24 ساعه يقبل أو يرفض.
+    أكمل؟
     [نعم] [لا]
 
 Doctor: [نعم]
@@ -205,40 +213,19 @@ AI: تم.
 
 ---
 
-## Example conversation — broadcast
+## Example conversation — Doctor doesn't know who
 
 ```
-Doctor: بدّلوني P4 الخميس مع أي أحد
+Doctor: بدّلني P4 الخميس مع أي أحد
 
-AI: [internal: get_doctor_schedule(self, Thursday)
-     → confirms P4 Thursday]
+AI: لو تبي بحث تلقائي على أطباء فترات ثانيه، الأفضل
+    تقدّم استئذان وأنا أتولّى البحث بنمط التسلسل
+    (P3 → P2 → P1). تبي أحوّل لتقديم استئذان؟
+    [نعم، قدّم استئذان] [لا، خلّيها]
 
-AI: طلب عام لمين؟
-    [نفس الفتره فقط] [كل الفترات] [كل الشفتات]
+Doctor: [نعم، قدّم استئذان]
 
-Doctor: [كل الشفتات]
-
-AI: [internal: find_swap_candidates(slot_id,
-     'all_shifts') → 9 candidates]
-
-AI: لقيت 9 أطباء مؤهلين. أبعت طلب لهم على فتره
-    الخميس P4. أول واحد يقبل، يصير التبديل. المهله
-    24 ساعه. أكمل؟
-    [نعم] [لا]
-
-Doctor: [نعم]
-
-AI: [internal: broadcast_swap_request(slot_id,
-     candidate_ids, 1440)]
-
-AI: تم إرسال الطلب لـ 9 أطباء.
-
-AI: أعلِم أحد ثاني؟
-    [أفراد محددين] [القروب (+ التريني)] [كل المركز] [لا داعي]
-
-Doctor: [لا داعي]
-
-AI: تم.
+AI: [hands off to submit_absence.md flow with type=PE]
 ```
 
 ---
@@ -247,5 +234,5 @@ AI: تم.
 
 - For the unified prompt → `sharedKnowledge/notifications/universal/notify_prompt.md`
 - For incoming swap responses → `../../notifications/workflows/handle_swap_request.md`
-- For PE/PS auto-broadcast (different flow) → `submit_absence.md`
-- For how the TL sees swaps on behalf → `teamLeaderKnowledge/schedule/workflows/swap_on_behalf.md`
+- For the auto-cascade flow (broadcast without naming) → `submit_absence.md`
+- For how the TL handles swap-on-behalf → `teamLeaderKnowledge/schedule/workflows/swap_on_behalf.md`

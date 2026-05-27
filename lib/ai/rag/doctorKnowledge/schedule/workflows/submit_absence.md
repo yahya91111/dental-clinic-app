@@ -23,11 +23,18 @@ database/policy layer.
   the Doctor's slots for the affected day(s).
 - `mark_doctor_absent(doctor_id, type, dates, period?)` —
   record the absence.
+- `find_swap_candidates(slot_id, target_period)` — list
+  doctors who hold the `target_period` on the SAME DAY
+  as `slot_id` and are eligible to swap.
 - `broadcast_swap_request(slot_id, candidate_ids,
-  timeout_minutes=1440)` — fire the implicit swap
-  broadcast for PE/PS (see auto-broadcast section).
-- `find_swap_candidates(slot_id, scope)` — list
-  eligible doctors for the broadcast.
+  timeout_minutes=1440)` — send the swap request to
+  one stage's candidate list. The 24-hour timeout is
+  the per-stage maximum.
+- `get_swap_request_status(request_id)` — returns the
+  current state of an open request (how many accepted,
+  rejected, pending).
+- `cancel_swap_request(request_id)` — closes an open
+  request without waiting for the timeout.
 - Templates from `sharedKnowledge/notifications/clinical/event_templates.md`:
   `doctor_absence_recorded`.
 - The unified prompt: `sharedKnowledge/notifications/universal/notify_prompt.md`.
@@ -64,31 +71,111 @@ database/policy layer.
 2. Confirm in one short line: "سجّلت {type_arabic}
    يوم {day}."
 
-### Phase 3 — Auto-broadcast (PE/PS only)
+### Phase 3 — Auto-cascade broadcast (PE/PS only)
 
-For PE or PS, immediately fire a swap broadcast WITHOUT
-asking. This is the documented exception in the Doctor
-Assistant prompt.
+For PE or PS, immediately start a **staged cascade** to
+find a doctor on the SAME DAY who will take the empty
+period. Coverage is always same-day — no cross-day
+swaps exist in this system.
 
-1. Call `find_swap_candidates(slot_id, scope='clinic')`
-   to gather eligible doctors. Eligible = same clinic,
-   not absent that period, not already in another slot
-   at the same time.
+The cascade asks one period at a time, following the
+adjacency order from
+`teamLeaderKnowledge/schedule/rules/period_definitions.md`.
+The doctor MUST approve each escalation; the AI never
+auto-advances.
 
-2. **If `candidate_ids` is empty**, skip the broadcast
-   call entirely and follow the "no eligible candidates"
-   edge case at the bottom of this file:
-   inform the Doctor and proceed to Phase 4.
+**The cascade stages**
 
-3. Otherwise, call `broadcast_swap_request(slot_id,
-   candidate_ids, timeout_minutes=1440)`.
+For an absent period P, the three escalation stages
+are:
 
-4. Inform the Doctor in one line:
-   "أبدأت طلب عام للتبديل. إذا قبل أحد خلال 24 ساعه،
-   يصير تبديل تلقائي. إذا ما قبل أحد، الاستئذان يبقى
-   والفتره فاضيه (التيم ليدر بيشوفها)."
+| Stage | Target | Example for P4 absent |
+|-------|--------|----------------------|
+| 1 | Same shift, adjacent period | P3 |
+| 2 | Other shift, closest period | P2 |
+| 3 | Other shift, farthest period | P1 |
 
-For SL or VC, skip this phase — no broadcast.
+The adjacency table in `period_definitions.md` gives
+the 1st/2nd/3rd choice for every absent period. Use
+that table.
+
+**Per-stage flow**
+
+For each stage:
+
+1. **Inform the Doctor before sending:**
+   "بسأل أطباء {target_period} الحين."
+
+2. Call `find_swap_candidates(slot_id, target_period)`.
+
+3. If `candidate_ids` is empty (e.g., that period has
+   no doctors that day, or the only candidates are on
+   leave), inform the Doctor and ask whether to skip
+   to the next stage:
+   "ما فيه أطباء بـ {target_period} يوم {day}. أنتقل
+   لـ {next_period}؟" [نعم] [لا، ألغِ التبديل]
+
+4. Otherwise, call `broadcast_swap_request(slot_id,
+   candidate_ids, timeout_minutes=1440)` and store the
+   `request_id`.
+
+5. Wait for one of these outcomes:
+   - **An acceptance arrives** → the system completes
+     the swap atomically. Inform the Doctor:
+     "د.{name} قبل التبديل. صار له {target_period}
+     يوم {day} وأنت مستأذن."
+     Stop the cascade.
+   - **All candidates reject** (before timeout) → see
+     "escalation prompt" below.
+   - **Timeout elapses with no acceptance** → treat as
+     all-rejected, see "escalation prompt" below.
+
+**Escalation prompt (between stages)**
+
+When a stage ends with no acceptance, the AI does NOT
+auto-advance. It tells the Doctor and asks:
+
+"رفض أطباء {target_period}. تبيني أنتقل لـ
+{next_period}؟"
+[نعم، انتقل] [لا، خلّيها كذا]
+
+- On `نعم` → start the next stage.
+- On `لا` → close the cascade. The permission stands,
+  the period is empty; the TL will see it as a
+  coverage card on their side.
+
+**End of cascade (all three stages rejected)**
+
+After Stage 3 ends with no acceptance, inform the
+Doctor:
+"خلصت كل المراحل. الجميع رفض. استئذانك مسجّل
+والفتره فاضيه. التيم ليدر بيشوفها على شاشته."
+
+Then proceed to Phase 4.
+
+**Doctor checks status mid-cascade**
+
+The Doctor can ask at any point: "شصار على الطلب؟"
+or "وين وصل التبديل؟"
+
+1. Call `get_swap_request_status(request_id)` for the
+   current stage's open request.
+2. Report briefly:
+   "بمرحله {stage}/{total}: بسأل أطباء {target_period}.
+   {responded_count} ردّوا ({rejected_count} رفضوا)،
+   {pending_count} لسّه ما ردّوا. الوقت المتبقي
+   {remaining} ساعه."
+3. Offer the Doctor a choice:
+   [انتظر للنهايه] [انتقل للمرحله التاليه الحين]
+   [ألغِ التبديل]
+   - `انتظر` → return without changes.
+   - `انتقل الحين` → cancel the open request and start
+     the next stage immediately (with confirmation
+     about which period to target).
+   - `ألغِ` → cancel the open request and close the
+     cascade.
+
+For SL or VC, skip this phase entirely — no broadcast.
 
 ### Phase 4 — Apply notify_prompt
 
@@ -130,10 +217,12 @@ already covered awareness.
   weekend is non-working, so the VC effectively covers
   only the working days within the range.
 
-- **PE/PS with no eligible candidates for broadcast.**
-  Skip the broadcast and inform: "ما فيه أطباء مؤهلين
-  للتبديل بهالفتره. الاستئذان مسجّل والفتره راح تكون
-  فاضيه."
+- **PE/PS with no eligible candidates for any stage.**
+  If Stage 1 returns zero candidates, ask the Doctor
+  whether to skip to Stage 2 (and so on). If all three
+  stages have zero candidates, inform: "ما فيه أطباء
+  مؤهلين للتبديل بأي فتره يوم {day}. الاستئذان مسجّل
+  والفتره راح تكون فاضيه."
 
 - **PE/PS during a period the doctor is delegator or
   EX, not clinic doctor.** Skip the broadcast — no
@@ -154,8 +243,12 @@ already covered awareness.
 
 ## Common mistakes to avoid
 
-- Do NOT ask the Doctor to confirm the broadcast for
-  PE/PS — it is automatic per the prompt.
+- Do NOT ask the Doctor to confirm starting Stage 1 —
+  Stage 1 fires automatically per the prompt.
+- Do ALWAYS ask the Doctor before escalating to Stage
+  2 or Stage 3. Escalation requires explicit approval.
+- Do NOT broadcast across days. Coverage is always
+  same-day.
 - Do NOT broadcast for SL/VC — those are not
   swappable.
 - Do NOT include a medical reason in the
@@ -168,7 +261,7 @@ already covered awareness.
 
 ---
 
-## Example conversation — PE with auto-broadcast
+## Example conversation — PE with cascade (Stage 1 succeeds)
 
 ```
 Doctor: استئذان P4 الخميس
@@ -188,21 +281,96 @@ AI: [internal: mark_doctor_absent(self, 'PE',
 
 AI: سجّلت استئذانك P4 الخميس.
 
-AI: [internal: find_swap_candidates(slot_id, 'clinic')
-     → 6 candidates]
+AI: بسأل أطباء P3 الخميس (نفس الشفت) الحين.
+    [internal: find_swap_candidates(slot_id, 'P3')
+     → 3 candidates]
     [internal: broadcast_swap_request(slot_id,
-     candidate_ids, 1440)]
+     candidate_ids, 1440), stores request_id]
 
-AI: أبدأت طلب عام للتبديل. إذا قبل أحد خلال 24 ساعه،
-    يصير تبديل تلقائي.
+[20 minutes later, د.أحمد accepts]
+
+AI: د.أحمد قبل التبديل. صار له P4 الخميس وأنت
+    مستأذن. (الذي كان معه P3 الخميس صار لك.)
 
 AI: أعلِم أحد؟
-    [أفراد محددين] [القروب (+ التريني)]
-    [كل المركز] [لا داعي]
+    [المعنيّين فقط (د.أحمد)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
 
 Doctor: [لا داعي]
 
 AI: تم.
+```
+
+---
+
+## Example conversation — PE with cascade (escalation to Stage 2)
+
+```
+Doctor: استئذان P4 الأحد
+
+AI: [marks the absence as in the example above]
+
+AI: سجّلت استئذانك P4 الأحد.
+
+AI: بسأل أطباء P3 الأحد (نفس الشفت) الحين.
+    [internal: broadcast to 3 P3 candidates]
+
+[3 hours later, all 3 reject]
+
+AI: رفض أطباء P3. تبيني أنتقل لـ P2 (الشفت الصباحي،
+    أقرب فتره)؟
+    [نعم، انتقل] [لا، خلّيها كذا]
+
+Doctor: [نعم، انتقل]
+
+AI: بسأل أطباء P2 الأحد الحين.
+    [internal: broadcast to 5 P2 candidates]
+
+[1 hour later, د.سامي accepts]
+
+AI: د.سامي قبل التبديل. صار له P4 الأحد وأنت مستأذن.
+
+AI: أعلِم أحد؟
+    [المعنيّين فقط (د.سامي)] [أفراد محددين]
+    [القروب (+ التريني)] [كل المركز] [لا داعي]
+
+Doctor: [القروب (+ التريني)]
+
+AI: أُرسل لـ 6 أطباء.
+```
+
+---
+
+## Example conversation — Doctor checks status mid-cascade
+
+```
+[Earlier: Doctor submitted PE for P4 Thursday.
+ Stage 1 broadcast went out to 3 P3 candidates.
+ 1 hour later, 2 rejected, 1 hasn't responded.]
+
+Doctor: شصار على طلب التبديل؟
+
+AI: [internal: get_swap_request_status(request_id)]
+
+AI: بمرحله 1/3: بسأل أطباء P3.
+    3 ردّوا حتى الحين (2 رفضوا، 1 لسّه ما رد).
+    الوقت المتبقي: 23 ساعه.
+
+    تبي:
+    [انتظر للنهايه] [انتقل للمرحله التاليه الحين]
+    [ألغِ التبديل]
+
+Doctor: [انتقل للمرحله التاليه الحين]
+
+AI: [internal: cancel_swap_request(request_id)]
+
+AI: تبيني أنتقل لـ P2 (الشفت الصباحي)؟
+    [نعم] [لا]
+
+Doctor: [نعم]
+
+AI: بسأل أطباء P2 الخميس الحين.
+    [internal: broadcast to P2 candidates]
 ```
 
 ---
