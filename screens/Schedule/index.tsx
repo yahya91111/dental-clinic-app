@@ -10,10 +10,9 @@ import { CellDetailModal } from './CellDetailModal';
 import { WeekStrip } from './WeekStrip';
 import { DoctorsTab } from './DoctorsTab';
 import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings } from '../../lib/database';
-import { supabase } from '../../lib/supabase';
 import { AIOrb, AIState } from '../../components/AIOrb';
 import { AIChatSheet, ChatMessage } from '../../components/AIChatSheet';
-import { sendMessage, buildScheduleContext, AIMessage } from '../../lib/ai';
+import { sendMessageV2, type V2Message, type V2User } from '../../lib/ai_v2';
 import { useAuth } from '../../AuthContext';
 
 interface ScheduleScreenProps {
@@ -81,9 +80,11 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiState, setAiState] = useState<AIState>('idle');
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
-  const aiHistoryRef = useRef<AIMessage[]>([]);
+  const aiHistoryRef = useRef<V2Message[]>([]);
 
   const handleAISend = async (text: string) => {
+    if (!user) return;
+
     // Add user message
     const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: text, timestamp: Date.now() };
     setAiMessages(prev => [...prev, userMsg]);
@@ -92,50 +93,29 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     setAiLoading(true);
     setAiState('thinking');
 
-    // Load doctors and groups for context
-    let doctors: any[] = [];
-    let groups: any[] = [];
-    if (clinicId) {
-      const { data: pending } = await supabase
-        .from('pending_doctors').select('id, name, role')
-        .eq('clinic_id', clinicId).in('role', ['doctor', 'coordinator', 'team_leader']);
-      const { data: assigned } = await supabase
-        .from('doctors').select('id, name, role')
-        .eq('clinic_id', clinicId).in('role', ['doctor', 'coordinator', 'team_leader']);
-      doctors = [...(pending || []), ...(assigned || [])];
+    // Context block helps the AI without forcing it to ask basics
+    const tabLabel = activeTab === 'daily_duty'
+      ? 'Daily Duty'
+      : activeTab === 'doctors' ? 'Doctors' : activeTab === 'vacation' ? 'Vacation' : 'Weekend';
+    const contextData =
+      `Selected week start (Sunday): ${formatWeekStart(selectedWeekStart)}\n` +
+      `Clinic count: ${clinicCount}\n` +
+      `Currently viewing: ${tabLabel}`;
 
-      const { data: grpData } = await supabase
-        .from('doctor_groups').select('*, doctor_group_members(*)')
-        .eq('clinic_id', clinicId).order('sort_order');
-      groups = (grpData || []).map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        doctors: (g.doctor_group_members || []).map((m: any) => ({
-          id: m.doctor_id,
-          name: m.doctor_name,
-          workStatus: m.work_status,
-        })),
-      }));
-    }
+    const v2User: V2User = {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      clinicId: user.clinicId || undefined,
+      clinicName: user.clinicName,
+    };
 
-    // Build context from current schedule + doctors + groups
-    const context = buildScheduleContext({
-      weekStart: formatWeekStart(selectedWeekStart),
-      clinicCount,
-      slots,
-      groups,
-    }) + (doctors.length > 0
-      ? `\nAll clinic doctors (with IDs):\n${doctors.map(d => `  - ${d.name} | id: ${d.id} | role: ${d.role}`).join('\n')}\n`
-      : '')
-      + `\nUser is currently viewing: ${activeTab === 'daily_duty' ? 'Daily Duty (schedule grid)' : activeTab === 'doctors' ? 'Doctors (group management)' : activeTab === 'vacation' ? 'Vacation' : 'Weekend Duty'}\n`;
-
-    const response = await sendMessage(
-      aiHistoryRef.current,
-      context,
-      clinicId || undefined,
-      formatWeekStart(selectedWeekStart),
-      user,
-    );
+    const response = await sendMessageV2({
+      messages: aiHistoryRef.current,
+      user: v2User,
+      clinicId: clinicId || undefined,
+      contextData,
+    });
 
     setAiLoading(false);
 

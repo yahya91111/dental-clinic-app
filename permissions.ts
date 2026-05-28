@@ -65,8 +65,6 @@ export interface PermissionCheck {
   canRemoveEx: boolean;
 
   // Group permissions
-  canCreateGroup: boolean;
-  canDeleteGroup: boolean;
   canAddDoctorToGroup: boolean;
   canMoveDoctorBetweenGroups: boolean;
 
@@ -147,8 +145,6 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canRemoveEx: true,
 
         // Groups
-        canCreateGroup: true,
-        canDeleteGroup: true,
         canAddDoctorToGroup: true,
         canMoveDoctorBetweenGroups: true,
 
@@ -224,8 +220,6 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canRemoveEx: true,
 
         // Groups
-        canCreateGroup: true,
-        canDeleteGroup: true,
         canAddDoctorToGroup: true,
         canMoveDoctorBetweenGroups: true,
 
@@ -302,8 +296,6 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canRemoveEx: true,
 
         // Groups
-        canCreateGroup: true,
-        canDeleteGroup: true,
         canAddDoctorToGroup: true,
         canMoveDoctorBetweenGroups: true,
 
@@ -379,8 +371,6 @@ export function getPermissions(role: UserRole): PermissionCheck {
         canRemoveEx: false,
 
         // Groups — cannot manage at all
-        canCreateGroup: false,
-        canDeleteGroup: false,
         canAddDoctorToGroup: false,
         canMoveDoctorBetweenGroups: false,
 

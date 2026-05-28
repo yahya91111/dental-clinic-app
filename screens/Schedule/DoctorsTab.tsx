@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, Modal, TextInput, Keyboard, TouchableWithoutFeedback, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import { scale } from '../../lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import {
-  createDoctorGroup,
-  updateDoctorGroup,
-  deleteDoctorGroup as dbDeleteGroup,
   moveDoctorBetweenGroups,
   updateDoctorWorkStatus,
 } from '../../lib/database';
+import { TEMPLATE_NAMES, GROUP_TEMPLATES } from '../../lib/algorithms/groupTemplates';
 
 const GROUP_COLORS = [
   { name: 'Blue', color: '#3B82F6', bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)' },
@@ -23,12 +21,13 @@ const GROUP_COLORS = [
   { name: 'Indigo', color: '#6366F1', bg: 'rgba(99,102,241,0.15)', border: 'rgba(99,102,241,0.3)' },
 ];
 
-export type DoctorWorkStatus = 'active' | 'vacation' | 'light_duty';
+export type DoctorWorkStatus = 'active' | 'vacation' | 'light_duty' | 'trainee';
 
 const WORK_STATUS_CONFIG: Record<DoctorWorkStatus, { label: string; color: string; icon: string }> = {
-  active: { label: 'Active', color: '#10B981', icon: 'checkmark-circle' },
-  vacation: { label: 'Vacation', color: '#6B7280', icon: 'airplane' },
+  active:     { label: 'Active',     color: '#10B981', icon: 'checkmark-circle' },
+  vacation:   { label: 'Vacation',   color: '#6B7280', icon: 'airplane' },
   light_duty: { label: 'Light Duty', color: '#F59E0B', icon: 'sunny' },
+  trainee:    { label: 'Trainee',    color: '#10B981', icon: 'school' },
 };
 
 export interface DoctorItem {
@@ -36,6 +35,7 @@ export interface DoctorItem {
   name: string;
   role?: string;
   workStatus?: DoctorWorkStatus;
+  supervisorDoctorId?: string | null;
 }
 
 export interface DoctorGroup {
@@ -55,18 +55,9 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
   const [allDoctors, setAllDoctors] = useState<DoctorItem[]>([]);
   const [groups, setGroups] = useState<DoctorGroup[]>([]);
 
-  // Modal states
-  const [showAddGroup, setShowAddGroup] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [selectedColorIndex, setSelectedColorIndex] = useState(0);
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-
-  // Doctor action modal (move + status)
+  // Doctor action modal (move + status + pick supervisor for trainee)
   const [selectedDoctor, setSelectedDoctor] = useState<{ doctor: DoctorItem; fromGroupId: string | null } | null>(null);
-  const [doctorActionMode, setDoctorActionMode] = useState<'menu' | 'move' | 'status'>('menu');
-
-  // Group menu (three dots)
-  const [menuGroupId, setMenuGroupId] = useState<string | null>(null);
+  const [doctorActionMode, setDoctorActionMode] = useState<'menu' | 'move' | 'status' | 'pick_supervisor'>('menu');
 
   // Unassigned section
   const [unassignedExpanded, setUnassignedExpanded] = useState(false);
@@ -118,25 +109,37 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
 
       const prevExpanded = groups.reduce<Record<string, boolean>>((acc, g) => { acc[g.id] = g.isExpanded; return acc; }, {});
 
-      const loadedGroups: DoctorGroup[] = groupsData.map((g: any, idx: number) => {
-        const members = g.doctor_group_members || [];
-        const groupDoctors: DoctorItem[] = members.map((m: any) => {
-          const doc = doctors.find(d => d.id === m.doctor_id);
+      // فلترة وترتيب: فقط القروبات الـ4 من القوالب الثابتة، بترتيبها
+      const templateOrderMap = new Map(
+        GROUP_TEMPLATES.map((t) => [t.name, t.sortOrder]),
+      );
+      const loadedGroups: DoctorGroup[] = groupsData
+        .filter((g: any) => TEMPLATE_NAMES.has(g.name))
+        .sort((a: any, b: any) => {
+          const aOrder = templateOrderMap.get(a.name) ?? 999;
+          const bOrder = templateOrderMap.get(b.name) ?? 999;
+          return aOrder - bOrder;
+        })
+        .map((g: any) => {
+          const members = g.doctor_group_members || [];
+          const groupDoctors: DoctorItem[] = members.map((m: any) => {
+            const doc = doctors.find(d => d.id === m.doctor_id);
+            return {
+              id: m.doctor_id,
+              name: doc?.name || m.doctor_name,
+              role: doc?.role,
+              workStatus: m.work_status as DoctorWorkStatus,
+              supervisorDoctorId: m.supervisor_doctor_id ?? null,
+            };
+          });
           return {
-            id: m.doctor_id,
-            name: doc?.name || m.doctor_name,
-            role: doc?.role,
-            workStatus: m.work_status as DoctorWorkStatus,
+            id: g.id,
+            name: g.name,
+            colorIndex: g.color_index,
+            doctors: groupDoctors,
+            isExpanded: prevExpanded[g.id] ?? false,
           };
         });
-        return {
-          id: g.id,
-          name: g.name,
-          colorIndex: g.color_index,
-          doctors: groupDoctors,
-          isExpanded: prevExpanded[g.id] ?? false,
-        };
-      });
       setGroups(loadedGroups);
     } catch (error) {
       console.error('Error loading groups:', error);
@@ -170,32 +173,6 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
     ));
   };
 
-  const addGroup = async () => {
-    if (!newGroupName.trim() || !clinicId) return;
-    if (editingGroupId) {
-      await updateDoctorGroup(editingGroupId, newGroupName.trim(), selectedColorIndex);
-      setEditingGroupId(null);
-    } else {
-      await createDoctorGroup(clinicId, newGroupName.trim(), selectedColorIndex, groups.length);
-    }
-    setNewGroupName('');
-    setShowAddGroup(false);
-    await reload();
-  };
-
-  const deleteGroup = (groupId: string) => {
-    Alert.alert('Delete Group', 'Doctors will be moved to Unassigned.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          await dbDeleteGroup(groupId);
-          await reload();
-        },
-      },
-    ]);
-  };
-
   const moveDoctor = async (toGroupId: string | null) => {
     if (!selectedDoctor) return;
     const { doctor, fromGroupId } = selectedDoctor;
@@ -207,20 +184,29 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
 
   const handleUpdateStatus = async (status: DoctorWorkStatus) => {
     if (!selectedDoctor) return;
+    // trainee يحتاج اختيار مدرّب أولاً
+    if (status === 'trainee') {
+      setDoctorActionMode('pick_supervisor');
+      return;
+    }
     const { doctor, fromGroupId } = selectedDoctor;
     if (fromGroupId) {
-      await updateDoctorWorkStatus(fromGroupId, doctor.id, status);
+      await updateDoctorWorkStatus(fromGroupId, doctor.id, status, null);
     }
     setSelectedDoctor(null);
     setDoctorActionMode('menu');
     await reload();
   };
 
-  const openEditGroup = (group: DoctorGroup) => {
-    setEditingGroupId(group.id);
-    setNewGroupName(group.name);
-    setSelectedColorIndex(group.colorIndex);
-    setShowAddGroup(true);
+  const handlePickSupervisor = async (supervisorDoctorId: string) => {
+    if (!selectedDoctor) return;
+    const { doctor, fromGroupId } = selectedDoctor;
+    if (fromGroupId) {
+      await updateDoctorWorkStatus(fromGroupId, doctor.id, 'trainee', supervisorDoctorId);
+    }
+    setSelectedDoctor(null);
+    setDoctorActionMode('menu');
+    await reload();
   };
 
   if (loading) {
@@ -281,12 +267,6 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                 {group.doctors.length}
               </Text>
             </View>
-            <TouchableOpacity
-              onPress={() => setMenuGroupId(menuGroupId === group.id ? null : group.id)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="ellipsis-vertical" size={scale(18)} color={gc.color} />
-            </TouchableOpacity>
           </View>
         </TouchableOpacity>
 
@@ -302,49 +282,127 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                 fontStyle: 'italic',
               }}>No doctors in this group</Text>
             ) : (
-              group.doctors.map((doctor, idx) => {
-                const status = doctor.workStatus || 'active';
-                const statusCfg = WORK_STATUS_CONFIG[status];
-                return (
-                  <TouchableOpacity
-                    key={doctor.id}
-                    activeOpacity={0.7}
-                    onPress={() => { setDoctorActionMode('menu'); setSelectedDoctor({ doctor, fromGroupId: group.id }); }}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: scale(8),
-                      paddingHorizontal: scale(8),
-                      borderBottomWidth: idx < group.doctors.length - 1 ? scale(1) : 0,
-                      borderBottomColor: 'rgba(0,0,0,0.04)',
-                    }}
-                  >
-                    {status !== 'active' && (
-                      <View style={{
+              (() => {
+                // ─── ترتيب الأطباء: التريني يظهر تحت اسم مدرّبه ───
+                // 1. غير-التريني بترتيبهم الأصلي
+                // 2. التريني الذي مدرّبه في نفس القروب: يُلصق تحت المدرّب (indented)
+                // 3. التريني الذي مدرّبه في قروب آخر (أو بدون): في نهاية القائمة مع label
+                // الفيكيشن دائماً في الأسفل
+                const onVacation = group.doctors.filter(d => d.workStatus === 'vacation');
+                const notOnVacation = group.doctors.filter(d => d.workStatus !== 'vacation');
+
+                const nonTrainees = notOnVacation.filter(d => d.workStatus !== 'trainee');
+                const trainees = notOnVacation.filter(d => d.workStatus === 'trainee');
+
+                const traineesBySupervisor = new Map<string, DoctorItem[]>();
+                for (const t of trainees) {
+                  if (t.supervisorDoctorId) {
+                    const arr = traineesBySupervisor.get(t.supervisorDoctorId) || [];
+                    arr.push(t);
+                    traineesBySupervisor.set(t.supervisorDoctorId, arr);
+                  }
+                }
+
+                // قائمة الأطباء عبر كل القروبات (للبحث عن مدرّب في قروب آخر)
+                const allDoctorsById = new Map<string, { name: string; groupName: string }>();
+                groups.forEach(g => g.doctors.forEach(d => {
+                  allDoctorsById.set(d.id, { name: d.name, groupName: g.name });
+                }));
+
+                type Item = {
+                  doctor: DoctorItem;
+                  indented: boolean;
+                  externalSupervisor?: { name: string; groupName: string };
+                };
+                const items: Item[] = [];
+
+                // 1. الأطباء العاديون مع التريني تحت مدرّبيهم
+                for (const d of nonTrainees) {
+                  items.push({ doctor: d, indented: false });
+                  const sub = traineesBySupervisor.get(d.id) || [];
+                  for (const t of sub) {
+                    items.push({ doctor: t, indented: true });
+                  }
+                }
+                // 2. التريني بدون مدرّب في نفس القروب
+                for (const t of trainees) {
+                  const supId = t.supervisorDoctorId;
+                  const supInSameGroup = supId && nonTrainees.find(d => d.id === supId);
+                  if (!supInSameGroup) {
+                    const supInfo = supId ? allDoctorsById.get(supId) : undefined;
+                    items.push({ doctor: t, indented: false, externalSupervisor: supInfo });
+                  }
+                }
+                // 3. الفيكيشن في الأسفل
+                for (const d of onVacation) {
+                  items.push({ doctor: d, indented: false });
+                }
+
+                return items.map((item, idx) => {
+                  const doctor = item.doctor;
+                  const status = doctor.workStatus || 'active';
+                  const statusCfg = WORK_STATUS_CONFIG[status];
+                  return (
+                    <TouchableOpacity
+                      key={doctor.id}
+                      activeOpacity={0.7}
+                      onPress={() => { setDoctorActionMode('menu'); setSelectedDoctor({ doctor, fromGroupId: group.id }); }}
+                      style={{
                         flexDirection: 'row',
                         alignItems: 'center',
-                        backgroundColor: statusCfg.color + '15',
-                        borderRadius: scale(8),
-                        paddingHorizontal: scale(6),
-                        paddingVertical: scale(2),
-                        marginRight: scale(6),
-                      }}>
-                        <Ionicons name={statusCfg.icon as any} size={scale(10)} color={statusCfg.color} />
-                        <Text style={{ fontSize: scale(8), fontWeight: '600', color: statusCfg.color, marginLeft: scale(3) }}>
-                          {statusCfg.label}
-                        </Text>
+                        paddingVertical: scale(8),
+                        paddingHorizontal: scale(8),
+                        paddingLeft: item.indented ? scale(28) : scale(8),
+                        borderBottomWidth: idx < items.length - 1 ? scale(1) : 0,
+                        borderBottomColor: 'rgba(0,0,0,0.04)',
+                      }}
+                    >
+                      {item.indented && (
+                        <Ionicons
+                          name="return-down-forward"
+                          size={scale(12)}
+                          color={WORK_STATUS_CONFIG.trainee.color}
+                          style={{ marginRight: scale(6) }}
+                        />
+                      )}
+                      {status !== 'active' && (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          backgroundColor: statusCfg.color + '15',
+                          borderRadius: scale(8),
+                          paddingHorizontal: scale(6),
+                          paddingVertical: scale(2),
+                          marginRight: scale(6),
+                        }}>
+                          <Ionicons name={statusCfg.icon as any} size={scale(10)} color={statusCfg.color} />
+                          <Text style={{ fontSize: scale(8), fontWeight: '600', color: statusCfg.color, marginLeft: scale(3) }}>
+                            {statusCfg.label}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{
+                          fontSize: scale(13),
+                          fontWeight: '600',
+                          color: status === 'active' ? '#2D3748' : statusCfg.color,
+                          textAlign: 'right',
+                        }}>{doctor.name}</Text>
+                        {item.externalSupervisor && (
+                          <Text style={{
+                            fontSize: scale(9),
+                            color: WORK_STATUS_CONFIG.trainee.color,
+                            textAlign: 'right',
+                            marginTop: scale(1),
+                          }}>
+                            تريني عند د. {item.externalSupervisor.name} ({item.externalSupervisor.groupName})
+                          </Text>
+                        )}
                       </View>
-                    )}
-                    <Text style={{
-                      flex: 1,
-                      fontSize: scale(13),
-                      fontWeight: '600',
-                      color: status === 'active' ? '#2D3748' : statusCfg.color,
-                      textAlign: 'right',
-                    }}>{doctor.name}</Text>
-                  </TouchableOpacity>
-                );
-              })
+                    </TouchableOpacity>
+                  );
+                });
+              })()
             )}
           </View>
         )}
@@ -456,202 +514,6 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
         )}
       </View>
 
-      {/* Add Group Button */}
-      <TouchableOpacity
-        onPress={() => {
-          setEditingGroupId(null);
-          setNewGroupName('');
-          setSelectedColorIndex(groups.length % GROUP_COLORS.length);
-          setShowAddGroup(true);
-        }}
-        activeOpacity={0.7}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingVertical: scale(14),
-          borderRadius: scale(14),
-          backgroundColor: 'rgba(255,255,255,0.35)',
-          borderWidth: scale(2),
-          borderColor: 'rgba(255,255,255,0.7)',
-          borderStyle: 'dashed',
-          gap: scale(8),
-        }}
-      >
-        <Ionicons name="add-circle-outline" size={scale(20)} color="#8B5CF6" />
-        <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#8B5CF6' }}>Add Group</Text>
-      </TouchableOpacity>
-
-      {/* Group Menu Modal (three dots) */}
-      <Modal transparent visible={menuGroupId !== null} animationType="fade" onRequestClose={() => setMenuGroupId(null)}>
-        <TouchableWithoutFeedback onPress={() => setMenuGroupId(null)}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}>
-            <View style={{
-              width: '65%',
-              backgroundColor: 'rgba(30, 30, 40, 0.95)',
-              borderRadius: scale(16),
-              padding: scale(6),
-              borderWidth: scale(1),
-              borderColor: 'rgba(255,255,255,0.15)',
-            }}>
-              <TouchableOpacity
-                onPress={() => {
-                  const group = groups.find(g => g.id === menuGroupId);
-                  setMenuGroupId(null);
-                  if (group) openEditGroup(group);
-                }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: scale(10),
-                  paddingVertical: scale(13),
-                  paddingHorizontal: scale(14),
-                  borderRadius: scale(10),
-                }}
-              >
-                <Ionicons name="pencil-outline" size={scale(17)} color="#A5B4FC" />
-                <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF' }}>Edit</Text>
-              </TouchableOpacity>
-              <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: scale(10) }} />
-              <TouchableOpacity
-                onPress={() => {
-                  const gId = menuGroupId;
-                  setMenuGroupId(null);
-                  if (gId) deleteGroup(gId);
-                }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: scale(10),
-                  paddingVertical: scale(13),
-                  paddingHorizontal: scale(14),
-                  borderRadius: scale(10),
-                }}
-              >
-                <Ionicons name="trash-outline" size={scale(17)} color="#F87171" />
-                <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#F87171' }}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Add/Edit Group Modal */}
-      <Modal transparent visible={showAddGroup} animationType="fade" onRequestClose={() => setShowAddGroup(false)}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}>
-            <View style={{
-              width: '80%',
-              backgroundColor: 'rgba(255,255,255,0.95)',
-              borderRadius: scale(20),
-              padding: scale(24),
-              borderWidth: scale(2),
-              borderColor: 'rgba(255,255,255,0.8)',
-            }}>
-              <Text style={{
-                fontSize: scale(16),
-                fontWeight: '700',
-                color: '#1E3A8A',
-                textAlign: 'center',
-                marginBottom: scale(16),
-              }}>
-                {editingGroupId ? 'Edit Group' : 'New Group'}
-              </Text>
-              <TextInput
-                value={newGroupName}
-                onChangeText={setNewGroupName}
-                placeholder="Group name"
-                placeholderTextColor="#A0AEC0"
-                style={{
-                  fontSize: scale(16),
-                  fontWeight: '600',
-                  color: '#2D3748',
-                  textAlign: 'center',
-                  backgroundColor: 'rgba(0,0,0,0.04)',
-                  borderRadius: scale(14),
-                  paddingVertical: scale(12),
-                  borderWidth: scale(2),
-                  borderColor: 'rgba(102,126,234,0.3)',
-                  marginBottom: scale(16),
-                }}
-                autoFocus
-              />
-
-              {/* Color Picker */}
-              <Text style={{
-                fontSize: scale(12),
-                fontWeight: '600',
-                color: '#6B7280',
-                marginBottom: scale(8),
-                textAlign: 'center',
-              }}>Color</Text>
-              <View style={{
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: scale(8),
-                flexWrap: 'wrap',
-                marginBottom: scale(20),
-              }}>
-                {GROUP_COLORS.map((gc, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => setSelectedColorIndex(i)}
-                    style={{
-                      width: scale(32),
-                      height: scale(32),
-                      borderRadius: scale(16),
-                      backgroundColor: gc.color,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: selectedColorIndex === i ? scale(3) : 0,
-                      borderColor: '#FFFFFF',
-                      shadowColor: selectedColorIndex === i ? gc.color : 'transparent',
-                      shadowOffset: { width: 0, height: scale(2) },
-                      shadowOpacity: 0.5,
-                      shadowRadius: scale(4),
-                      elevation: selectedColorIndex === i ? 4 : 0,
-                    }}
-                  >
-                    {selectedColorIndex === i && (
-                      <Ionicons name="checkmark" size={scale(16)} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: scale(10) }}>
-                <TouchableOpacity
-                  onPress={() => { setShowAddGroup(false); setEditingGroupId(null); }}
-                  style={{
-                    flex: 1,
-                    paddingVertical: scale(12),
-                    borderRadius: scale(12),
-                    backgroundColor: 'rgba(0,0,0,0.06)',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#6B7280' }}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={addGroup}
-                  style={{
-                    flex: 1,
-                    paddingVertical: scale(12),
-                    borderRadius: scale(12),
-                    backgroundColor: '#667EEA',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: scale(14), fontWeight: '700', color: '#FFFFFF' }}>
-                    {editingGroupId ? 'Save' : 'Create'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
       {/* Doctor Action Modal */}
       <Modal transparent visible={selectedDoctor !== null} animationType="fade" onRequestClose={() => { setSelectedDoctor(null); setDoctorActionMode('menu'); }}>
         <TouchableWithoutFeedback onPress={() => { setSelectedDoctor(null); setDoctorActionMode('menu'); }}>
@@ -723,6 +585,44 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                         <Ionicons name="flag-outline" size={scale(20)} color="#FCD34D" />
                         <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF' }}>Change Status</Text>
                       </TouchableOpacity>
+                    )}
+                    {selectedDoctor?.fromGroupId && selectedDoctor.doctor.workStatus === 'trainee' && (
+                      <>
+                        <TouchableOpacity
+                          onPress={() => setDoctorActionMode('pick_supervisor')}
+                          activeOpacity={0.7}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: scale(10),
+                            paddingVertical: scale(13),
+                            paddingHorizontal: scale(14),
+                            borderRadius: scale(12),
+                            backgroundColor: 'rgba(16,185,129,0.12)',
+                            borderWidth: scale(1),
+                            borderColor: 'rgba(16,185,129,0.25)',
+                          }}
+                        >
+                          <Ionicons name="school-outline" size={scale(20)} color={WORK_STATUS_CONFIG.trainee.color} />
+                          <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF' }}>Change Supervisor</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleUpdateStatus('active')}
+                          activeOpacity={0.7}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: scale(10),
+                            paddingVertical: scale(13),
+                            paddingHorizontal: scale(14),
+                            borderRadius: scale(12),
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                          }}
+                        >
+                          <Ionicons name="person-remove-outline" size={scale(20)} color="#F87171" />
+                          <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF' }}>Remove Trainee</Text>
+                        </TouchableOpacity>
+                      </>
                     )}
                   </View>
                 )}
@@ -840,6 +740,112 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                         </TouchableOpacity>
                       );
                     })}
+                  </View>
+                )}
+
+                {/* Pick Supervisor (trainee flow) — أطباء نفس القروب فقط */}
+                {doctorActionMode === 'pick_supervisor' && (
+                  <View>
+                    <TouchableOpacity
+                      onPress={() => setDoctorActionMode('menu')}
+                      style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(12) }}
+                    >
+                      <Ionicons name="arrow-back" size={scale(18)} color="rgba(255,255,255,0.6)" />
+                      <Text style={{ fontSize: scale(13), fontWeight: '600', color: 'rgba(255,255,255,0.6)', marginLeft: scale(6) }}>Back</Text>
+                    </TouchableOpacity>
+                    <Text style={{
+                      fontSize: scale(13),
+                      fontWeight: '600',
+                      color: 'rgba(255,255,255,0.85)',
+                      marginBottom: scale(12),
+                      textAlign: 'center',
+                    }}>
+                      اختر الطبيب المسؤول عن التريني
+                    </Text>
+                    {(() => {
+                      // فقط الأطباء النشطين في نفس قروب التريني
+                      const traineeGroup = groups.find(g => g.id === selectedDoctor?.fromGroupId);
+                      const candidates = traineeGroup
+                        ? traineeGroup.doctors.filter(d =>
+                            d.workStatus !== 'trainee' &&
+                            d.workStatus !== 'vacation' &&
+                            d.id !== selectedDoctor?.doctor.id,
+                          )
+                        : [];
+                      const currentSupervisorId = selectedDoctor?.doctor.supervisorDoctorId;
+                      const accentColor = WORK_STATUS_CONFIG.trainee.color;
+
+                      if (candidates.length === 0) {
+                        return (
+                          <Text style={{
+                            fontSize: scale(12),
+                            color: 'rgba(255,255,255,0.5)',
+                            textAlign: 'center',
+                            paddingVertical: scale(16),
+                            fontStyle: 'italic',
+                          }}>
+                            لا يوجد أطباء متاحون في هذا القروب
+                          </Text>
+                        );
+                      }
+                      return candidates.map((doctor) => {
+                        const isCurrent = doctor.id === currentSupervisorId;
+                        return (
+                          <TouchableOpacity
+                            key={doctor.id}
+                            onPress={() => handlePickSupervisor(doctor.id)}
+                            activeOpacity={0.7}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              paddingVertical: scale(14),
+                              paddingHorizontal: scale(14),
+                              borderRadius: scale(14),
+                              marginBottom: scale(8),
+                              backgroundColor: isCurrent
+                                ? 'rgba(16,185,129,0.18)'
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: scale(1),
+                              borderColor: isCurrent
+                                ? 'rgba(16,185,129,0.45)'
+                                : 'rgba(255,255,255,0.06)',
+                            }}
+                          >
+                            <Ionicons
+                              name={isCurrent ? 'checkmark-circle' : 'person-circle-outline'}
+                              size={scale(24)}
+                              color={isCurrent ? accentColor : 'rgba(255,255,255,0.6)'}
+                              style={{ marginRight: scale(12) }}
+                            />
+                            <Text style={{
+                              flex: 1,
+                              fontSize: scale(15),
+                              fontWeight: '600',
+                              color: '#FFFFFF',
+                              textAlign: 'right',
+                            }}>
+                              {doctor.name}
+                            </Text>
+                            {isCurrent ? (
+                              <Text style={{
+                                fontSize: scale(10),
+                                fontWeight: '700',
+                                color: accentColor,
+                                marginLeft: scale(6),
+                              }}>
+                                الحالي
+                              </Text>
+                            ) : (
+                              <Ionicons
+                                name="chevron-back"
+                                size={scale(16)}
+                                color="rgba(255,255,255,0.35)"
+                              />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      });
+                    })()}
                   </View>
                 )}
 

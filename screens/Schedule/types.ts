@@ -1,7 +1,7 @@
 // Schedule Types
 export type DayOfWeek = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
 
-export type DoctorRole = 'clinic' | 'delegator';
+export type DoctorRole = 'clinic' | 'delegator' | 'ex';
 export type DoctorStatus = 'active' | 'sick_leave' | 'permission_start' | 'permission_end' | 'vacation' | 'extra';
 
 export interface ScheduleSlot {
@@ -52,4 +52,5 @@ export const STATUS_CONFIG: Record<DoctorStatus, { label: string; shortLabel: st
 export const ROLE_CONFIG: Record<DoctorRole, { label: string; color: string; bgColor: string; borderColor: string }> = {
   clinic: { label: 'Clinic', color: '#2563EB', bgColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.3)' },
   delegator: { label: 'Delegator', color: '#7C3AED', bgColor: 'rgba(139,92,246,0.15)', borderColor: 'rgba(139,92,246,0.3)' },
+  ex: { label: 'EX', color: '#A78BFA', bgColor: 'rgba(167,139,250,0.15)', borderColor: 'rgba(167,139,250,0.3)' },
 };

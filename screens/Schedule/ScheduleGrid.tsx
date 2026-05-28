@@ -378,7 +378,8 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                   style={{ flex: 1, flexDirection: 'row' }}
                 >
                   {(() => {
-                    const exSlots = slots.filter(s => s.day === day.key && s.period === 0);
+                    // EX يُحدَّد بالـ role لا بـ period (لأن الخوارزمية تكتب period=0 لكنه ليس شرطاً)
+                    const exSlots = slots.filter(s => s.day === day.key && s.role === 'ex');
                     // clinicNumber 1 = right side, clinicNumber 2 = left side
                     const rightSlots = exSlots.filter(s => s.clinicNumber === 1 || s.clinicNumber === 0);
                     const leftSlots = exSlots.filter(s => s.clinicNumber === 2);

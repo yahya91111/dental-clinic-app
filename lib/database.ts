@@ -1324,63 +1324,6 @@ export async function getDoctorGroups(clinicId: string): Promise<DatabaseRespons
   }
 }
 
-export async function createDoctorGroup(
-  clinicId: string,
-  name: string,
-  colorIndex: number,
-  sortOrder: number
-): Promise<DatabaseResponse<any>> {
-  try {
-    const { data, error } = await supabase
-      .from('doctor_groups')
-      .insert({ clinic_id: clinicId, name, color_index: colorIndex, sort_order: sortOrder })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { data, error: null };
-  } catch (error) {
-    console.error('Error creating doctor group:', error);
-    return { data: null, error: error as Error };
-  }
-}
-
-export async function updateDoctorGroup(
-  groupId: string,
-  name: string,
-  colorIndex: number
-): Promise<DatabaseResponse<any>> {
-  try {
-    const { data, error } = await supabase
-      .from('doctor_groups')
-      .update({ name, color_index: colorIndex, updated_at: new Date().toISOString() })
-      .eq('id', groupId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { data, error: null };
-  } catch (error) {
-    console.error('Error updating doctor group:', error);
-    return { data: null, error: error as Error };
-  }
-}
-
-export async function deleteDoctorGroup(groupId: string): Promise<DatabaseResponse<null>> {
-  try {
-    const { error } = await supabase
-      .from('doctor_groups')
-      .delete()
-      .eq('id', groupId);
-
-    if (error) throw error;
-    return { data: null, error: null };
-  } catch (error) {
-    console.error('Error deleting doctor group:', error);
-    return { data: null, error: error as Error };
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // Schedule - Doctor Group Members
 // ═══════════════════════════════════════════════════════════════
@@ -1487,12 +1430,21 @@ export async function moveDoctorBetweenGroups(
 export async function updateDoctorWorkStatus(
   groupId: string,
   doctorId: string,
-  workStatus: string
+  workStatus: string,
+  supervisorDoctorId?: string | null,
 ): Promise<DatabaseResponse<null>> {
   try {
+    // عندما الحالة ليست trainee، نمسح ربط المدرّب تلقائياً.
+    // عندما تكون trainee، نحفظ معرّف المدرّب (إن وُجد).
+    const updates: Record<string, unknown> = {
+      work_status: workStatus,
+      updated_at: new Date().toISOString(),
+      supervisor_doctor_id: workStatus === 'trainee' ? (supervisorDoctorId ?? null) : null,
+    };
+
     const { error } = await supabase
       .from('doctor_group_members')
-      .update({ work_status: workStatus, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('group_id', groupId)
       .eq('doctor_id', doctorId);
 
