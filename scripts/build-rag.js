@@ -7,11 +7,10 @@
 // Usage:  node scripts/build-rag.js
 // Output: lib/ai/rag/_compiled.ts
 //
-// The output exports two constants:
+// The output exports three constants:
 //   - SHARED_KNOWLEDGE_RAG   — concatenated shared knowledge
 //   - TEAM_LEADER_RAG        — concatenated TL workflows + rules + examples
-//
-// (DOCTOR_RAG will be added when the Doctor assistant is wired.)
+//   - DOCTOR_RAG             — concatenated Doctor workflows + rules + examples
 //
 // Re-run this script whenever any .md file under lib/ai/rag/
 // changes.
@@ -71,9 +70,13 @@ function escapeForTemplateLiteral(text) {
 function build() {
   const shared = compileSubtree('sharedKnowledge');
   const teamLeader = compileSubtree('teamLeaderKnowledge');
+  const doctor = compileSubtree('doctorKnowledge');
 
   const sharedFiles = collectMarkdownFiles(path.join(RAG_ROOT, 'sharedKnowledge'));
   const tlFiles = collectMarkdownFiles(path.join(RAG_ROOT, 'teamLeaderKnowledge'));
+  const drFiles = fs.existsSync(path.join(RAG_ROOT, 'doctorKnowledge'))
+    ? collectMarkdownFiles(path.join(RAG_ROOT, 'doctorKnowledge'))
+    : [];
 
   const header = `// ═══════════════════════════════════════════════════════════════
 // DCM AI RAG — auto-generated from .md files under lib/ai/rag/
@@ -82,24 +85,28 @@ function build() {
 // Re-generate with:  node scripts/build-rag.js
 //
 // Generated: ${new Date().toISOString()}
-// Shared knowledge files: ${sharedFiles.length}
+// Shared knowledge files:      ${sharedFiles.length}
 // Team Leader knowledge files: ${tlFiles.length}
+// Doctor knowledge files:      ${drFiles.length}
 // ═══════════════════════════════════════════════════════════════
 
 `;
 
   const body =
     `export const SHARED_KNOWLEDGE_RAG = \`${escapeForTemplateLiteral(shared)}\`;\n\n` +
-    `export const TEAM_LEADER_RAG = \`${escapeForTemplateLiteral(teamLeader)}\`;\n`;
+    `export const TEAM_LEADER_RAG = \`${escapeForTemplateLiteral(teamLeader)}\`;\n\n` +
+    `export const DOCTOR_RAG = \`${escapeForTemplateLiteral(doctor)}\`;\n`;
 
   fs.writeFileSync(OUTPUT_FILE, header + body, 'utf8');
 
   const sharedKB = Math.round(shared.length / 1024);
   const tlKB = Math.round(teamLeader.length / 1024);
+  const drKB = Math.round(doctor.length / 1024);
   console.log(`Wrote ${path.relative(process.cwd(), OUTPUT_FILE)}`);
   console.log(`  Shared knowledge:      ${sharedFiles.length} files, ${sharedKB} KB`);
   console.log(`  Team Leader knowledge: ${tlFiles.length} files, ${tlKB} KB`);
-  console.log(`  Total size: ${Math.round((shared.length + teamLeader.length) / 1024)} KB`);
+  console.log(`  Doctor knowledge:      ${drFiles.length} files, ${drKB} KB`);
+  console.log(`  Total size: ${Math.round((shared.length + teamLeader.length + doctor.length) / 1024)} KB`);
 }
 
 build();

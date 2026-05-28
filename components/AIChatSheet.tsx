@@ -15,6 +15,28 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+/**
+ * Detect a trailing block of `[label] [label] ...` patterns in an
+ * assistant message and split it into prose + button labels. The
+ * AI writes choices this way naturally per the RAG (see
+ * `notify_prompt.md`, `create_weekly_sequential.md` etc.). We
+ * require at least 2 brackets at the very end of the message so
+ * stray references like "حالة: [active]" or "P1 [SL]" inside a
+ * normal answer don't get misread as buttons.
+ */
+function parseChoices(content: string): { text: string; choices: string[] } {
+  const trimmed = content.trimEnd();
+  const tailMatch = trimmed.match(/((?:\[[^\[\]\n]+\][ \t]*\n?[ \t]*)+)\s*$/);
+  if (!tailMatch) return { text: content, choices: [] };
+
+  const tail = tailMatch[1];
+  const choices = Array.from(tail.matchAll(/\[([^\[\]\n]+)\]/g)).map((m) => m[1].trim());
+  if (choices.length < 2) return { text: content, choices: [] };
+
+  const text = trimmed.slice(0, trimmed.length - tailMatch[0].length).trimEnd();
+  return { text, choices };
+}
+
 export interface PromptTemplate {
   id: string;
   name: string;
@@ -309,36 +331,80 @@ export function AIChatSheet({ visible, onClose, messages, onSend, isLoading = fa
                 </View>
               )}
 
-              {messages.map(msg => (
-                <View key={msg.id} style={{
-                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '82%',
-                  marginBottom: scale(10),
-                }}>
-                  <View style={{
-                    paddingHorizontal: scale(14),
-                    paddingVertical: scale(10),
-                    borderRadius: scale(16),
-                    backgroundColor: msg.role === 'user'
-                      ? 'rgba(139,92,246,0.35)'
-                      : 'rgba(255,255,255,0.06)',
-                    borderWidth: scale(1),
-                    borderColor: msg.role === 'user'
-                      ? 'rgba(139,92,246,0.3)'
-                      : 'rgba(255,255,255,0.08)',
-                    borderBottomRightRadius: msg.role === 'user' ? scale(4) : scale(16),
-                    borderBottomLeftRadius: msg.role === 'user' ? scale(16) : scale(4),
+              {messages.map((msg, idx) => {
+                const isLast = idx === messages.length - 1;
+                // Only the last assistant message gets clickable
+                // buttons. Once the user replies (a user message
+                // becomes the new last entry), the buttons
+                // disappear naturally so the user can't double-tap
+                // a stale choice.
+                const { text, choices } = msg.role === 'assistant' && isLast && !isLoading
+                  ? parseChoices(msg.content)
+                  : { text: msg.content, choices: [] as string[] };
+
+                return (
+                  <View key={msg.id} style={{
+                    alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    maxWidth: '82%',
+                    marginBottom: scale(10),
                   }}>
-                    <Text style={{
-                      fontSize: scale(13),
-                      fontWeight: '500',
-                      color: msg.role === 'user' ? '#E8DEFF' : 'rgba(255,255,255,0.85)',
-                      lineHeight: scale(19),
-                      textAlign: 'left',
-                    }}>{msg.content}</Text>
+                    <View style={{
+                      paddingHorizontal: scale(14),
+                      paddingVertical: scale(10),
+                      borderRadius: scale(16),
+                      backgroundColor: msg.role === 'user'
+                        ? 'rgba(139,92,246,0.35)'
+                        : 'rgba(255,255,255,0.06)',
+                      borderWidth: scale(1),
+                      borderColor: msg.role === 'user'
+                        ? 'rgba(139,92,246,0.3)'
+                        : 'rgba(255,255,255,0.08)',
+                      borderBottomRightRadius: msg.role === 'user' ? scale(4) : scale(16),
+                      borderBottomLeftRadius: msg.role === 'user' ? scale(16) : scale(4),
+                    }}>
+                      <Text style={{
+                        fontSize: scale(13),
+                        fontWeight: '500',
+                        color: msg.role === 'user' ? '#E8DEFF' : 'rgba(255,255,255,0.85)',
+                        lineHeight: scale(19),
+                        textAlign: 'left',
+                      }}>{text}</Text>
+                    </View>
+
+                    {choices.length > 0 && (
+                      <View style={{
+                        flexDirection: 'row',
+                        flexWrap: 'wrap',
+                        gap: scale(6),
+                        marginTop: scale(8),
+                        marginLeft: scale(2),
+                      }}>
+                        {choices.map((choice, i) => (
+                          <TouchableOpacity
+                            key={`${msg.id}-choice-${i}`}
+                            onPress={() => onSend(choice)}
+                            activeOpacity={0.7}
+                            style={{
+                              paddingHorizontal: scale(12),
+                              paddingVertical: scale(7),
+                              borderRadius: scale(14),
+                              backgroundColor: 'rgba(139,92,246,0.18)',
+                              borderWidth: scale(1),
+                              borderColor: 'rgba(139,92,246,0.45)',
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: scale(12),
+                              fontWeight: '600',
+                              color: '#E8DEFF',
+                            }}>{choice}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
                   </View>
-                </View>
-              ))}
+                );
+              })}
 
               {/* Loading indicator */}
               {isLoading && (
