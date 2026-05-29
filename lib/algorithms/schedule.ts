@@ -829,14 +829,32 @@ export function distributeShift(
     // عيادة الدليقيتر (الطبيبان يتبادلان clinic/delegator) تتنقّل يومياً بين
     // العيادات المزدوجة لعدالة الحمل الأثقل (الكل يتناوب على الفترتين).
     const k = D - M;
-    // البورد مستثنى من delegator دائماً → نختار زوج الدليقيتر من غير البورد
+    // البورد مستثنى من delegator دائماً → نختار زوج الدليقيتر من غير البورد.
+    // نختاره بأقل عدد دليقيتر تراكمي (سجل + أسبوع جارٍ)، لا بترتيب البركة،
+    // وإلا تكرّر نفس الطبيب صاحب الحمل الأعلى في الدور الدوّار (يُرتَّب للمقدمة
+    // فيُسحب للزوج ثانيةً → حلقة مفرغة). يطابق منطق الدليقيتر المنفرد.
     const nonBoardFirst: LoadedDoctor[] = [];
-    const otherDocs: LoadedDoctor[] = [];
-    for (const d of available) {
-      if (d.groupTemplate.key !== 'board' && nonBoardFirst.length < 2) {
-        nonBoardFirst.push(d);
-      } else {
-        otherDocs.push(d);
+    let otherDocs: LoadedDoctor[] = [];
+    const nonBoardAvail = available.filter((d) => d.groupTemplate.key !== 'board');
+    if (nonBoardAvail.length >= 2 && pastDelCount && weeklyDelCount) {
+      const byDel = [...nonBoardAvail].sort((a, b) => {
+        const da = (pastDelCount.get(a.id) ?? 0) + (weeklyDelCount.get(a.id) ?? 0);
+        const db = (pastDelCount.get(b.id) ?? 0) + (weeklyDelCount.get(b.id) ?? 0);
+        if (da !== db) return da - db; // ASC: أقل دليقيتر أولاً
+        return a.name.localeCompare(b.name);
+      });
+      nonBoardFirst.push(byDel[0]!, byDel[1]!);
+      const pairIds = new Set([byDel[0]!.id, byDel[1]!.id]);
+      // الباقي يحافظ على ترتيب البركة الأصلي (لعدالة العيادات/الاحتياطي)
+      otherDocs = available.filter((d) => !pairIds.has(d.id));
+    } else {
+      // fallback (بلا عدّادات أو نقص أطباء غير بورد): أول طبيبين غير بورد
+      for (const d of available) {
+        if (d.groupTemplate.key !== 'board' && nonBoardFirst.length < 2) {
+          nonBoardFirst.push(d);
+        } else {
+          otherDocs.push(d);
+        }
       }
     }
     if (nonBoardFirst.length < 2) {
