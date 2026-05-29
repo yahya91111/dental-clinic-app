@@ -550,18 +550,21 @@ export type ShiftDistribution = {
 };
 
 /**
- * يقرّر أيّ طبيب من الزوج يأخذ الفترة الأولى من الشفت وأيّهما الثانية،
- * بناءً على آخر فترة فردية أخذها كل واحد + توازن سجله الكلي.
+ * يقرّر أيّ طبيب من الزوج يأخذ الفترة الأولى من الشفت وأيّهما الثانية.
  *
- * القاعدة الأولى — آخر فترة فردية:
- * - من أخذ فترة أولى آخر مرة (1 أو 3) → يأخذ الفترة الثانية الآن
- * - من أخذ فترة ثانية آخر مرة (2 أو 4) → يأخذ الفترة الأولى الآن
+ * النمط مرن (ليس إجبارياً يومياً): الأساس هو التوازن التراكمي عبر الأسبوع،
+ * لا التبديل القسري كل يوم. هذا يسمح بـ "يومين فترة أولى ثم يومين ثانية"
+ * ويترك مجالاً لتدوير الدليقيتر/العيادات دون تعارض.
  *
- * عند التعادل (كلاهما أخذ نفس الفترة آخر مرة، أو كلاهما بلا سجل):
- * - نستخدم سجل P1MinusP2 (عدد P1 ناقص عدد P2 عبر التاريخ)
- * - من عنده P1 أكثر → يأخذ P2 الآن (لتوازن النسب)
+ * القاعدة الأولى — التوازن التراكمي (P1MinusP2 = عدد الأولى ناقص الثانية):
+ * - من عنده فترات أولى أكثر تاريخياً → يأخذ الفترة الثانية الآن
+ * - من عنده فترات ثانية أكثر → يأخذ الفترة الأولى الآن
+ *   (يبقي الجميع قريبين من التوازن 50/50 على المدى الطويل)
  *
- * يضمن تناوب الطبيب بين الفترتين دون كسر تدوير EX/del.
+ * القاعدة الثانية (عند تعادل التوازن) — آخر فترة فردية:
+ * - من أخذ أولى آخر مرة → يأخذ الثانية الآن (تناوب لطيف)
+ *
+ * بلا أي سجل → نُبقي الترتيب كما هو (محافظة على تدوير EX/del).
  */
 function pickP1P2(
   docA: LoadedDoctor,
@@ -569,27 +572,28 @@ function pickP1P2(
   lastClinicPeriod: Map<string, Period> | undefined,
   p1MinusP2: Map<string, number> | undefined,
 ): [LoadedDoctor, LoadedDoctor] {
-  if (!lastClinicPeriod) return [docA, docB];
-  const lastA = lastClinicPeriod.get(docA.id);
-  const lastB = lastClinicPeriod.get(docB.id);
-  const aWasFirst = lastA === 1 || lastA === 3;
-  const bWasFirst = lastB === 1 || lastB === 3;
-  const aWasSecond = lastA === 2 || lastA === 4;
-  const bWasSecond = lastB === 2 || lastB === 4;
-
-  // الحالات الواضحة: واحد كان أول والآخر لم يكن
-  if (aWasFirst && !bWasFirst) return [docB, docA];
-  if (bWasFirst && !aWasFirst) return [docA, docB];
-  if (aWasSecond && !bWasSecond) return [docA, docB];
-  if (bWasSecond && !aWasSecond) return [docB, docA];
-
-  // تعادل: من عنده P1 أكثر يأخذ P2 (توازن)
+  // أولاً: التوازن التراكمي — من عنده P1 أكثر يأخذ P2 الآن
   if (p1MinusP2) {
     const da = p1MinusP2.get(docA.id) ?? 0;
     const db = p1MinusP2.get(docB.id) ?? 0;
-    if (da > db) return [docB, docA]; // a عنده P1 أكثر → b يأخذ P1، a يأخذ P2
-    if (db > da) return [docA, docB]; // b عنده P1 أكثر → a يأخذ P1، b يأخذ P2
+    if (da > db) return [docB, docA]; // a عنده P1 أكثر → a يأخذ P2
+    if (db > da) return [docA, docB]; // b عنده P1 أكثر → b يأخذ P2
   }
+
+  // ثانياً (تعادل التوازن): تناوب لطيف من آخر فترة فردية
+  if (lastClinicPeriod) {
+    const lastA = lastClinicPeriod.get(docA.id);
+    const lastB = lastClinicPeriod.get(docB.id);
+    const aWasFirst = lastA === 1 || lastA === 3;
+    const bWasFirst = lastB === 1 || lastB === 3;
+    const aWasSecond = lastA === 2 || lastA === 4;
+    const bWasSecond = lastB === 2 || lastB === 4;
+    if (aWasFirst && !bWasFirst) return [docB, docA];
+    if (bWasFirst && !aWasFirst) return [docA, docB];
+    if (aWasSecond && !bWasSecond) return [docA, docB];
+    if (bWasSecond && !aWasSecond) return [docB, docA];
+  }
+
   return [docA, docB];
 }
 
@@ -611,6 +615,7 @@ export function distributeShift(
   boardConfig?: BoardConfig,
   lastClinicPeriod?: Map<string, Period>,
   p1MinusP2?: Map<string, number>,
+  delegatorRotationIndex?: number,
 ): ShiftDistribution {
   const slots: AssignedSlot[] = [];
   const warnings: string[] = [];
@@ -626,8 +631,10 @@ export function distributeShift(
   if (br.kind === 'pair_shares_clinic') {
     const [b1, b2] = br.doctors;
     boardClinic = N; // آخر عيادة
-    slots.push({ day, period: p1, clinicNumber: N, doctor: b1, role: 'clinic' });
-    slots.push({ day, period: p2, clinicNumber: N, doctor: b2, role: 'clinic' });
+    // زوج البورد يتناوبان P1/P2 أيضاً (توازن عبر الأسبوع)
+    const [bf, bs] = pickP1P2(b1, b2, lastClinicPeriod, p1MinusP2);
+    slots.push({ day, period: p1, clinicNumber: N, doctor: bf, role: 'clinic' });
+    slots.push({ day, period: p2, clinicNumber: N, doctor: bs, role: 'clinic' });
     available = available.filter((d) => d.id !== b1.id && d.id !== b2.id);
   }
 
@@ -644,6 +651,18 @@ export function distributeShift(
     slots.push({ day, period: p, clinicNumber: 0, doctor: doc, role: 'delegator' });
   const addEx = (p: Period, doc: LoadedDoctor) =>
     slots.push({ day, period: p, clinicNumber: 0, doctor: doc, role: 'ex' });
+
+  // خانة EX = شفت كامل. نستخدم clinic_number لتمييز الصباح (1) عن المساء (2)
+  // ليُعرَض في الواجهة في الجهة الصحيحة.
+  const exShiftSlot = pool.shift === 'morning' ? 1 : 2;
+  const addExShift = (doc: LoadedDoctor) =>
+    slots.push({
+      day,
+      period: 0 as unknown as Period,
+      clinicNumber: exShiftSlot,
+      doctor: doc,
+      role: 'ex',
+    });
 
   // ─── light_duty: قواعد التوزيع ───
   // - يدخل دوران EX مثل باقي الأطباء (يأخذ EX حين دوره يأتي)
@@ -676,10 +695,7 @@ export function distributeShift(
   }
   // أضف خانات EX للتخفيف الذي اختاره الدوران
   for (const ld of ldTakingEx) {
-    slots.push({
-      day, period: 0 as unknown as Period, clinicNumber: 0,
-      doctor: ld, role: 'ex',
-    });
+    addExShift(ld);
   }
 
   // Step B: التخفيف غير المُختار لـ EX → التوزيع الافتراضي
@@ -777,13 +793,7 @@ export function distributeShift(
       }
     }
     while (idx < D) {
-      slots.push({
-        day,
-        period: 0 as unknown as Period,
-        clinicNumber: 0,
-        doctor: available[idx++]!,
-        role: 'ex',
-      });
+      addExShift(available[idx++]!);
     }
   } else if (D === 0) {
     if (M > 0) warnings.push(`الشفت بلا أطباء (${M} عيادة فارغة)`);
@@ -815,7 +825,9 @@ export function distributeShift(
       addClinic(clinicNums[i]!, p2, doc);
     }
   } else if (D >= M + 2 && D <= 2 * M) {
-    // k عيادات بطبيبين + (M-k) لوحدهم + delegator rotation في إحدى المزدوجات
+    // k عيادات بطبيبين + (M-k) لوحدهم + delegator rotation في إحدى المزدوجات.
+    // عيادة الدليقيتر (الطبيبان يتبادلان clinic/delegator) تتنقّل يومياً بين
+    // العيادات المزدوجة لعدالة الحمل الأثقل (الكل يتناوب على الفترتين).
     const k = D - M;
     // البورد مستثنى من delegator دائماً → نختار زوج الدليقيتر من غير البورد
     const nonBoardFirst: LoadedDoctor[] = [];
@@ -852,22 +864,28 @@ export function distributeShift(
         addClinic(c, p2, doc);
       }
     } else {
-      // الزوج الأول للدليقيتر الدوّار من غير البورد
-      const c0 = clinicNums[0]!;
-      const [f0, s0] = pickP1P2(nonBoardFirst[0]!, nonBoardFirst[1]!, lastClinicPeriod, p1MinusP2);
-      addClinic(c0, p1, f0);
-      addClinic(c0, p2, s0);
-      addDelegator(p1, s0);
-      addDelegator(p2, f0);
-      // الباقي: البورد أولاً (يأخذ clinic مبكراً) ثم باقي العاديين
-      let ri = 0;
-      for (let i = 1; i < k; i++) {
+      // موقع عيادة الدليقيتر بين العيادات المزدوجة (تدوير يومي)
+      const hostPos = (((delegatorRotationIndex ?? 0) % k) + k) % k;
+      let ri = 0; // مؤشر otherDocs (البورد + باقي العاديين)
+      // العيادات المزدوجة
+      for (let i = 0; i < k; i++) {
         const c = clinicNums[i]!;
-        const [f, s] = pickP1P2(otherDocs[ri]!, otherDocs[ri + 1]!, lastClinicPeriod, p1MinusP2);
-        addClinic(c, p1, f);
-        addClinic(c, p2, s);
-        ri += 2;
+        if (i === hostPos) {
+          // عيادة الدليقيتر: الزوج غير البورد يتبادل clinic/delegator
+          const [f0, s0] = pickP1P2(nonBoardFirst[0]!, nonBoardFirst[1]!, lastClinicPeriod, p1MinusP2);
+          addClinic(c, p1, f0);
+          addClinic(c, p2, s0);
+          addDelegator(p1, s0);
+          addDelegator(p2, f0);
+        } else {
+          // عيادة عادية مزدوجة: تقسيم (كل طبيب فترة)
+          const [f, s] = pickP1P2(otherDocs[ri]!, otherDocs[ri + 1]!, lastClinicPeriod, p1MinusP2);
+          addClinic(c, p1, f);
+          addClinic(c, p2, s);
+          ri += 2;
+        }
       }
+      // العيادات الفردية (طبيب واحد الفترتين)
       for (let i = k; i < M; i++) {
         const doc = otherDocs[ri++]!;
         const c = clinicNums[i]!;
@@ -901,13 +919,7 @@ export function distributeShift(
     addDelegator(p2, solo);
     while (idx < D) {
       // EX = خانة واحدة بـ period=0 لتُعرَض في صف EX المخصّص بالـ UI
-      slots.push({
-        day,
-        period: 0 as unknown as Period,
-        clinicNumber: 0,
-        doctor: available[idx++]!,
-        role: 'ex',
-      });
+      addExShift(available[idx++]!);
     }
   }
 
@@ -930,13 +942,7 @@ export function distributeShift(
 
   // ─── التريني beginner الذي مدربه غائب → احتياط تلقائي ───
   for (const orphan of pool.beginnersOrphan) {
-    slots.push({
-      day,
-      period: 0 as unknown as Period,
-      clinicNumber: 0,
-      doctor: orphan,
-      role: 'ex',
-    });
+    addExShift(orphan);
   }
 
   return { shift: pool.shift, slots, warnings };
@@ -1434,6 +1440,10 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   // تدوير P1/P2: يبدأ من آخر فترة فردية أخذها كل طبيب بالأسابيع السابقة
   const lastClinicPeriod = computeLastClinicPeriod(data.pastSlots);
   const p1MinusP2 = computeP1MinusP2(data.pastSlots);
+  // تدوير عيادة الدليقيتر: عدّاد منفصل لكل شفت (يتقدّم كل يوم عمل)
+  // ليتنقّل الدليقيتر بين العيادات: ع1 ثم ع2 ثم ع3 ثم يعود
+  let morningDelIdx = 0;
+  let eveningDelIdx = 0;
 
   for (const day of plan) {
     if (day.isHoliday) continue;
@@ -1451,7 +1461,9 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         pastExCount, weeklyExCount,
         pastDelCount, weeklyDelCount,
         input.boardConfig, lastClinicPeriod, p1MinusP2,
+        morningDelIdx,
       );
+      morningDelIdx++;
       allSlots.push(...res.slots);
       todaysSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} صباح: ${w}`));
@@ -1473,7 +1485,9 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         pastExCount, weeklyExCount,
         pastDelCount, weeklyDelCount,
         input.boardConfig, lastClinicPeriod, p1MinusP2,
+        eveningDelIdx,
       );
+      eveningDelIdx++;
       allSlots.push(...res.slots);
       todaysSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} مساء: ${w}`));

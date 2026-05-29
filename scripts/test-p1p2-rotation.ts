@@ -143,53 +143,36 @@ async function main() {
   const lightDutyNames = new Set(
     data.doctors.filter((d) => d.workStatus === 'light_duty').map((d) => d.name),
   );
-  divider('تحليل تناوب P1/P2 لكل طبيب (يستثني light_duty)');
-  console.log('الطبيب'.padEnd(28) + 'تسلسل الفترات الفردية'.padEnd(42) + 'تكرارات  حالة');
-  console.log('-'.repeat(80));
-  let perfect = 0;
-  let oneRepeat = 0;
-  let manyRepeats = 0;
-  for (const r of rows) {
-    if (lightDutyNames.has(r.name)) continue;
-    const seq = r.days.filter((s) => s === 'P1' || s === 'P2');
-    if (seq.length === 0) continue;
-    let repeats = 0;
-    for (let i = 1; i < seq.length; i++) {
-      if (seq[i] === seq[i - 1]) repeats++;
-    }
-    const mark = repeats === 0 ? '✓ مثالي' : repeats === 1 ? '~ مقبول' : '✗ ضعيف';
-    if (repeats === 0) perfect++;
-    else if (repeats === 1) oneRepeat++;
-    else manyRepeats++;
-    console.log(
-      r.name.padEnd(28) +
-        seq.join(' ').padEnd(42) +
-        String(repeats).padEnd(9) +
-        mark,
-    );
-  }
-  console.log('-'.repeat(80));
-  console.log(
-    `المجموع: ${perfect} مثالي، ${oneRepeat} مقبول (تكرار واحد)، ${manyRepeats} ضعيف`,
-  );
-
-  divider('توازن P1 vs P2 لكل طبيب (نسبة P1 من مجموع الفردي)');
-  console.log('الطبيب'.padEnd(28) + 'P1'.padEnd(6) + 'P2'.padEnd(6) + 'النسبة');
-  console.log('-'.repeat(60));
+  // النمط مرن: المهم التوازن التراكمي (نسبة P1 قريبة من 50%)، لا التبديل الصارم.
+  // يُسمح بيومين فترة أولى ثم يومين ثانية طالما التوازن صحي.
+  divider('تحليل توازن P1/P2 لكل طبيب (يستثني light_duty) — الهدف نسبة قريبة من 50%');
+  console.log('الطبيب'.padEnd(28) + 'تسلسل الفترات الفردية'.padEnd(42) + 'نسبة P1  حالة');
+  console.log('-'.repeat(82));
+  let good = 0;
+  let fair = 0;
+  let bad = 0;
   for (const r of rows) {
     if (lightDutyNames.has(r.name)) continue;
     const seq = r.days.filter((s) => s === 'P1' || s === 'P2');
     if (seq.length === 0) continue;
     const p1c = seq.filter((s) => s === 'P1').length;
-    const p2c = seq.filter((s) => s === 'P2').length;
-    const ratio = ((p1c / seq.length) * 100).toFixed(0);
+    const ratio = (p1c / seq.length) * 100;
+    // توازن صحي: 40-60%. مقبول: 33-67%. خارجها: ضعيف
+    const mark = ratio >= 40 && ratio <= 60 ? '✓ متوازن'
+      : ratio >= 33 && ratio <= 67 ? '~ مقبول'
+      : '✗ غير متوازن';
+    if (ratio >= 40 && ratio <= 60) good++;
+    else if (ratio >= 33 && ratio <= 67) fair++;
+    else bad++;
     console.log(
       r.name.padEnd(28) +
-        String(p1c).padEnd(6) +
-        String(p2c).padEnd(6) +
-        `${ratio}%`,
+        seq.join(' ').padEnd(42) +
+        `${ratio.toFixed(0)}%`.padEnd(9) +
+        mark,
     );
   }
+  console.log('-'.repeat(82));
+  console.log(`المجموع: ${good} متوازن، ${fair} مقبول، ${bad} غير متوازن`);
 }
 
 main().catch((err) => {
