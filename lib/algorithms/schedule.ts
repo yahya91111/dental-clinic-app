@@ -307,6 +307,8 @@ export type ShiftPool = {
   lightDuty: LoadedDoctor[];
   /** التريني beginner مرتبط بـ supervisor (key = supervisor doctor id) */
   beginnersByBuddy: Map<string, LoadedDoctor[]>;
+  /** التريني beginner الذي مدربه غائب → احتياط تلقائي */
+  beginnersOrphan: LoadedDoctor[];
   /** أطباء غائبون هذا الشفت (للعرض كـ EX) */
   absent: { doctor: LoadedDoctor; status: SlotStatus }[];
   /** سيناريو البورد المُطبَّق */
@@ -406,6 +408,7 @@ function buildShiftPool(
   // 6. فصل التريني beginner و light_duty عن البركة الرئيسية
   const traineeModes = input.traineeModes || {};
   const beginnersByBuddy = new Map<string, LoadedDoctor[]>();
+  const beginnersOrphan: LoadedDoctor[] = [];
   const mainPool: LoadedDoctor[] = [];
   const lightDuty: LoadedDoctor[] = [];
 
@@ -432,8 +435,8 @@ function buildShiftPool(
         arr.push(d);
         beginnersByBuddy.set(supId, arr);
       } else {
-        // المدرّب غائب → التريني beginner يصير EX (يبقى في pool لكن C4 يضعه EX)
-        mainPool.push(d);
+        // المدرّب غائب أو لا يوجد → التريني احتياط تلقائي
+        beginnersOrphan.push(d);
       }
     } else {
       mainPool.push(d);
@@ -445,6 +448,7 @@ function buildShiftPool(
     available: mainPool,
     lightDuty,
     beginnersByBuddy,
+    beginnersOrphan,
     absent,
     boardRule,
   };
@@ -907,22 +911,32 @@ export function distributeShift(
     }
   }
 
-  // ─── التريني beginner: يلصق بالمدرّب في خانات clinic ───
+  // ─── التريني beginner: ظل المدرّب في كل أدواره ───
+  // ينسخ كل خانات المدرّب (clinic + delegator + ex) بنفس الفترة والعياده
   for (const [supId, beginners] of pool.beginnersByBuddy.entries()) {
-    const supClinicSlots = slots.filter(
-      (s) => s.doctor.id === supId && s.role === 'clinic',
-    );
+    const supSlots = slots.filter((s) => s.doctor.id === supId);
     for (const beg of beginners) {
-      for (const ss of supClinicSlots) {
+      for (const ss of supSlots) {
         slots.push({
           day,
           period: ss.period,
           clinicNumber: ss.clinicNumber,
           doctor: beg,
-          role: 'clinic',
+          role: ss.role,
         });
       }
     }
+  }
+
+  // ─── التريني beginner الذي مدربه غائب → احتياط تلقائي ───
+  for (const orphan of pool.beginnersOrphan) {
+    slots.push({
+      day,
+      period: 0 as unknown as Period,
+      clinicNumber: 0,
+      doctor: orphan,
+      role: 'ex',
+    });
   }
 
   return { shift: pool.shift, slots, warnings };
