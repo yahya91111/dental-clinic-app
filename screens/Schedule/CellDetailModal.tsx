@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ScheduleSlot, DayOfWeek, DoctorStatus, DAYS, STATUS_CONFIG } from './types';
 import { supabase } from '../../lib/supabase';
 import { upsertScheduleSlot, deleteScheduleSlot, createNotification } from '../../lib/database';
+import { getTemplateByName, sortByTemplateOrder } from '../../lib/algorithms/groupTemplates';
 
 interface CellDetailModalProps {
   visible: boolean;
@@ -140,15 +141,19 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
         .order('name');
       const allDocs = [...(pending || []), ...(assigned || [])].map(d => ({ id: d.id, name: d.name || 'Unknown' }));
 
-      // Load groups with members
+      // Load groups with members — نُبقي فقط القوالب الـ4 (AGD/A/B/Board)
+      // ونتجاهل أي قروبات قديمة في DB
       const { data: groupsData } = await supabase
         .from('doctor_groups')
         .select('*, doctor_group_members(*)')
-        .eq('clinic_id', clinicId)
-        .order('sort_order');
+        .eq('clinic_id', clinicId);
+
+      const validGroups = (groupsData || []).filter((g: any) => getTemplateByName(g.name));
+      const orderedGroups = sortByTemplateOrder(validGroups);
 
       const assignedIds = new Set<string>();
-      const groups: PickerGroup[] = (groupsData || []).map((g: any) => {
+      const groups: PickerGroup[] = orderedGroups.map((g: any) => {
+        const template = getTemplateByName(g.name)!;
         const members = (g.doctor_group_members || []) as any[];
         // Sort: active first, vacation/light_duty last
         const sorted = [...members].sort((a, b) => {
@@ -161,7 +166,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
           const doc = allDocs.find(d => d.id === m.doctor_id);
           return { id: m.doctor_id, name: doc?.name || m.doctor_name, workStatus: m.work_status };
         });
-        return { id: g.id, name: g.name, colorIndex: g.color_index, doctors, isExpanded: false };
+        return { id: g.id, name: g.name, colorIndex: template.colorIndex, doctors, isExpanded: false };
       });
 
       setPickerGroups(groups);

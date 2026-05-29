@@ -552,6 +552,27 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                 {/* Main Menu */}
                 {doctorActionMode === 'menu' && (
                   <View style={{ gap: scale(8) }}>
+                    {/* إرجاع سريع للعمل — يظهر فقط لطبيب بإجازة، بنقرة واحدة */}
+                    {selectedDoctor?.fromGroupId && selectedDoctor.doctor.workStatus === 'vacation' && (
+                      <TouchableOpacity
+                        onPress={() => handleUpdateStatus('active')}
+                        activeOpacity={0.7}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: scale(10),
+                          paddingVertical: scale(13),
+                          paddingHorizontal: scale(14),
+                          borderRadius: scale(12),
+                          backgroundColor: 'rgba(16,185,129,0.15)',
+                          borderWidth: scale(1),
+                          borderColor: 'rgba(16,185,129,0.3)',
+                        }}
+                      >
+                        <Ionicons name="arrow-undo-outline" size={scale(20)} color="#34D399" />
+                        <Text style={{ fontSize: scale(14), fontWeight: '700', color: '#FFFFFF' }}>إرجاع للعمل</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       onPress={() => setDoctorActionMode('move')}
                       activeOpacity={0.7}

@@ -78,10 +78,11 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                 const getDoctorIds = (periodId: number, clinicNum: number) =>
                   slots.filter(s => s.day === day.key && s.period === periodId && s.role === 'clinic' && s.clinicNumber === clinicNum)
                     .map(s => s.doctorId).sort().join(',');
-                const getDelegatorId = (periodId: number) => {
-                  const d = slots.find(s => s.day === day.key && s.period === periodId && s.role === 'delegator');
-                  return d?.doctorId || '';
-                };
+                // كل الـ doctor IDs في الدليقيتر لفترة معيّنة، مرتبة (لمقارنة المطابقة بين P1/P2)
+                // مهم لدعم تريني beginner + المدرب في نفس الخانة
+                const getDelegatorId = (periodId: number) =>
+                  slots.filter(s => s.day === day.key && s.period === periodId && s.role === 'delegator')
+                    .map(s => s.doctorId).sort().join(',');
 
                 return PAIRS.map(([pA, pB], pairIndex) => (
                   <View key={pairIndex} style={{
@@ -219,9 +220,13 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
                               }}>
-                                <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(6), textAlign: 'right' }} numberOfLines={1}>
-                                  {dlgA[0]?.doctorName || '—'}
-                                </Text>
+                                <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
+                                  {dlgA.length > 0 ? dlgA.map(s => (
+                                    <Text key={s.id} style={{ fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', textAlign: 'right' }} numberOfLines={1}>{s.doctorName}</Text>
+                                  )) : (
+                                    <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                                  )}
+                                </View>
                                 <LinearGradient
                                   colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
                                   start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
@@ -246,9 +251,11 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                   backgroundColor: visible ? 'rgba(255,255,255,0.2)' : 'transparent',
                                 }}>
                                   {visible ? (<>
-                                    <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(3), textAlign: 'right' }} numberOfLines={1}>
-                                      {dl[0].doctorName}
-                                    </Text>
+                                    <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
+                                      {dl.map(s => (
+                                        <Text key={s.id} style={{ fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', textAlign: 'right' }} numberOfLines={1}>{s.doctorName}</Text>
+                                      ))}
+                                    </View>
                                     <LinearGradient
                                       colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
                                       start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
@@ -276,9 +283,13 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
                               }}>
-                                <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', paddingVertical: scale(3), paddingHorizontal: scale(6), textAlign: 'right' }} numberOfLines={1}>
-                                  {dlgA[0]?.doctorName || '—'}
-                                </Text>
+                                <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
+                                  {dlgA.length > 0 ? dlgA.map(s => (
+                                    <Text key={s.id} style={{ fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', textAlign: 'right' }} numberOfLines={1}>{s.doctorName}</Text>
+                                  )) : (
+                                    <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                                  )}
+                                </View>
                                 <LinearGradient
                                   colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
                                   start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
@@ -299,9 +310,13 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                     borderColor: 'rgba(255,255,255,0.6)',
                                     backgroundColor: 'rgba(255,255,255,0.2)',
                                   }}>
-                                    <Text style={{ flex: 1, fontSize: scale(8), fontWeight: '700', color: dl.length > 0 ? '#6B4C9A' : '#CBD5E0', paddingVertical: scale(3), paddingHorizontal: scale(3), textAlign: 'right' }} numberOfLines={1}>
-                                      {dl.length > 0 ? dl[0].doctorName : '—'}
-                                    </Text>
+                                    <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
+                                      {dl.length > 0 ? dl.map(s => (
+                                        <Text key={s.id} style={{ fontSize: scale(8), fontWeight: '700', color: '#6B4C9A', textAlign: 'right' }} numberOfLines={1}>{s.doctorName}</Text>
+                                      )) : (
+                                        <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
+                                      )}
+                                    </View>
                                     <LinearGradient
                                       colors={['rgba(124,108,180,0.4)', 'rgba(167,155,203,0.25)', 'rgba(167,155,203,0.25)', 'rgba(124,108,180,0.4)']}
                                       start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
@@ -385,7 +400,12 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                     const leftSlots = exSlots.filter(s => s.clinicNumber === 2);
 
                     const renderExCard = (slot: ScheduleSlot) => {
-                      const config = STATUS_CONFIG[slot.status];
+                      // للـ EX: لون بنفسجي ثابت + ليبل "EX". لو الطبيب حالته
+                      // غير active (غياب)، نستخدم لون الحالة بدلاً.
+                      const statusConfig = STATUS_CONFIG[slot.status];
+                      const isExRole = slot.role === 'ex';
+                      const color = isExRole ? '#7C3AED' : statusConfig.color;
+                      const shortLabel = isExRole ? 'EX' : statusConfig.shortLabel;
                       return (
                         <View key={slot.id} style={{
                           flexDirection: 'row',
@@ -401,13 +421,13 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                             flex: 1,
                             fontSize: scale(8),
                             fontWeight: '700',
-                            color: config.color,
+                            color,
                             paddingVertical: scale(3),
                             paddingHorizontal: scale(4),
                             textAlign: 'right',
                           }} numberOfLines={1}>{slot.doctorName}</Text>
                           <LinearGradient
-                            colors={[config.color + '90', config.color + '50', config.color + '50', config.color + '90']}
+                            colors={[color + '90', color + '50', color + '50', color + '90']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 0, y: 1 }}
                             style={{
@@ -422,10 +442,10 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                               fontSize: scale(6),
                               fontWeight: '800',
                               color: '#FFFFFF',
-                              textShadowColor: config.color + '80',
+                              textShadowColor: color + '80',
                               textShadowOffset: { width: 0, height: scale(0.5) },
                               textShadowRadius: scale(1),
-                            }}>{config.shortLabel}</Text>
+                            }}>{shortLabel}</Text>
                           </LinearGradient>
                         </View>
                       );
