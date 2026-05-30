@@ -13,7 +13,7 @@ import type { TraineeMode, WeekDay, Shift } from '../lib/algorithms/schedule';
 import { supabase } from '../lib/supabase';
 
 const CLINIC_ID = '10000000-0000-0000-0000-000000000001';
-const WEEK_START = '2026-05-31';
+const WEEK_START = process.argv[2] || '2026-05-31';
 const DAYS: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 const DAY_LABEL: Record<string, string> = {
   sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء',

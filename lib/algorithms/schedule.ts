@@ -738,7 +738,19 @@ export function distributeShift(
     for (let i = 0; i < Lc; i++) {
       addClinic(reservedClinics[i]!, p1, remainingLDs[i]!);
       if (available.length > 0) {
-        const partner = available.shift()!;
+        // شريك التخفيف: نختار صاحب أعلى دليقيتر (ثم أعلى احتياطي) — أي الأقل
+        // حاجةً لهذين الدورين — كي لا نسحب مرشّح الدليقيتر (صاحب الأدنى، ومنهم
+        // العائد من إجازة/الجديد) بعيداً عن دوره فيُحجَز شريكاً عمياءً.
+        const partner = [...available].sort((a, b) => {
+          const da = (pastDelCount?.get(a.id) ?? 0) + (weeklyDelCount?.get(a.id) ?? 0);
+          const db = (pastDelCount?.get(b.id) ?? 0) + (weeklyDelCount?.get(b.id) ?? 0);
+          if (da !== db) return db - da; // أعلى دليقيتر أولاً
+          const ea = (pastExCount?.get(a.id) ?? 0) + (weeklyExCount?.get(a.id) ?? 0);
+          const eb = (pastExCount?.get(b.id) ?? 0) + (weeklyExCount?.get(b.id) ?? 0);
+          if (ea !== eb) return eb - ea; // ثم أعلى احتياطي
+          return a.name.localeCompare(b.name);
+        })[0]!;
+        available = available.filter((d) => d.id !== partner.id);
         addClinic(reservedClinics[i]!, p2, partner);
       } else {
         warnings.push(`عيادة ${reservedClinics[i]} P2 فارغة (لا يوجد طبيب لمساعدة light_duty)`);
@@ -1033,6 +1045,56 @@ function computePastRoleCount(
     counts.set(s.doctorId, (counts.get(s.doctorId) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * يُمهّد عدّادات الطبيب ذي السجل الصفري (عائد من إجازة أو مسجَّل حديثاً) حتى
+ * يندمج بعدالة بدل أن يضعه صفرُ سجله في موضع متطرّف:
+ *   - الدليقيتر: يُمهَّد بـ "أدنى" عدّاد الحاضرين → يساوي الأقل فيدخل الدوران
+ *     ويواكب (لا يُحمَّل ولا يُهمَّش).
+ *   - الاحتياطي: يُمهَّد بـ "أعلى" عدّاد الحاضرين → لا يأخذ راحة (الراحة لمن
+ *     أجهده الدوام)، لأنه عائد مرتاح.
+ *
+ * - "بلا سجل" = لم يظهر في أي خانة خلال الأسبوعين، وليس في إجازة هذا الأسبوع.
+ * - الحدّان من الحاضرين غير البورد (للبورد عدّادات محمية خاصة).
+ * - لو الجميع بلا سجل (عيادة جديدة/سجل ممسوح): لا حدّ → لا تمهيد (متساوون).
+ *
+ * يُعدّل الخرائط في مكانها، ويرجّع أسماء من جرى تمهيده.
+ */
+function seedZeroHistoryDoctors(
+  doctors: LoadedDoctor[],
+  pastSlots: LoadedSlot[],
+  pastDelCount: Map<string, number>,
+  pastExCount: Map<string, number>,
+): string[] {
+  const presence = new Map<string, number>();
+  for (const s of pastSlots) {
+    presence.set(s.doctorId, (presence.get(s.doctorId) ?? 0) + 1);
+  }
+  const peers = doctors.filter(
+    (d) => (presence.get(d.id) ?? 0) > 0 && d.groupTemplate.key !== 'board',
+  );
+  const zeroHistory = doctors.filter(
+    (d) => (presence.get(d.id) ?? 0) === 0 && d.workStatus !== 'vacation',
+  );
+  if (peers.length === 0 || zeroHistory.length === 0) return [];
+
+  let minDel = Infinity;
+  let maxEx = -Infinity;
+  for (const d of peers) {
+    const del = pastDelCount.get(d.id) ?? 0;
+    const ex = pastExCount.get(d.id) ?? 0;
+    if (del < minDel) minDel = del;
+    if (ex > maxEx) maxEx = ex;
+  }
+
+  const seeded: string[] = [];
+  for (const d of zeroHistory) {
+    pastDelCount.set(d.id, minDel); // أدنى دليقيتر → يدخل الدوران ويواكب
+    pastExCount.set(d.id, maxEx);   // أعلى احتياطي → لا يأخذ راحة (يعمل)
+    seeded.push(d.name);
+  }
+  return seeded;
 }
 
 /**
@@ -1450,6 +1512,16 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   const pastScores = computeLoadScores(data.doctors, data.pastSlots);
   const pastExCount = computePastRoleCount(data.doctors, data.pastSlots, 'ex');
   const pastDelCount = computePastRoleCount(data.doctors, data.pastSlots, 'delegator');
+  // عدالة العائد من الإجازة / الطبيب الجديد (سجل صفري): دليقيتر=أدنى الحاضرين،
+  // احتياطي=أعلى الحاضرين — فيواكب الدوران ولا يأخذ راحةً هو في غنى عنها.
+  const seededReturning = seedZeroHistoryDoctors(
+    data.doctors, data.pastSlots, pastDelCount, pastExCount,
+  );
+  if (seededReturning.length > 0) {
+    warnings.push(
+      `مُهّد سجل ${seededReturning.length} طبيب عائد/جديد (دليقيتر=الأدنى، احتياطي=الأعلى): ${seededReturning.join('، ')}`,
+    );
+  }
   const weeklyScore = new Map<string, number>();
   const weeklyExCount = new Map<string, number>();
   const weeklyDelCount = new Map<string, number>();
