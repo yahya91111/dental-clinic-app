@@ -111,6 +111,19 @@ const QI = (id: string) => DOCTORS.indexOf(id); // ترتيب عامّ ثابت 
 const LD_SET = new Set(LIGHT_DUTY); // التخفيف: دائماً ف1، لا ينفرد، لا مضيف
 const isLD = (id: string) => LD_SET.has(id);
 
+// كم زاوَج كل (مخفّف|عاديّ) — لمنع تثبيت شريك مع المخفّف (يدور على الجميع)
+const pairWith: Counter = new Map();
+// يختار شريك المخفّف: الأقلّ مزاوجةً معه أولاً، ثم الأعلى استحقاقاً لـ ف2، ثم الاسم
+function pickPartner(ld: string, candidates: string[]): string {
+  return [...candidates].sort((a, b) => {
+    const wa = get(pairWith, `${ld}|${a}`), wb = get(pairWith, `${ld}|${b}`);
+    if (wa !== wb) return wa - wb;
+    const d = p1minusP2(b) - p1minusP2(a);
+    if (d !== 0) return d;
+    return QI(a) - QI(b);
+  })[0]!;
+}
+
 // يوزّع بركة العاديين على الشكل s عبر العجلات (احتياط←منفرد←دليقيتر←أزواج)،
 // ثم يربط Lc شركاء للتخفيف من الباقي. يُرجع الأزواج العادية والباقي.
 function fillRegulars(pool: string[], s: Shape, plan: DayPlan, lds: string[], Lc: number) {
@@ -139,12 +152,9 @@ function fillRegulars(pool: string[], s: Shape, plan: DayPlan, lds: string[], Lc
   //    (أكبر p1−p2) عبر العجلة الرابعة → يتدوّر الشريك ولا يعلق أحد في ف2.
   for (let i = 0; i < Lc; i++) {
     const ld = lds[i]!;
-    const partner = [...pool].sort((a, b) => {
-      const diff = p1minusP2(b) - p1minusP2(a);
-      return diff !== 0 ? diff : QI(a) - QI(b);
-    })[0]!;
+    const partner = pickPartner(ld, pool);
     pool = pool.filter((d) => d !== partner);
-    inc(p1c, ld); inc(p2c, partner);
+    inc(pairWith, `${ld}|${partner}`); inc(p1c, ld); inc(p2c, partner);
     plan.ldClinics.push([ld, partner]); // [تخفيف ف1, شريك ف2]
   }
 
@@ -154,12 +164,9 @@ function fillRegulars(pool: string[], s: Shape, plan: DayPlan, lds: string[], Lc
   for (const ld of pool.filter(isLD)) {
     if (remainingPairs <= 0) break;
     const others = pool.filter((d) => d !== ld && !isLD(d));
-    const partner = [...others].sort((a, b) => {
-      const diff = p1minusP2(b) - p1minusP2(a);
-      return diff !== 0 ? diff : QI(a) - QI(b);
-    })[0]!;
+    const partner = pickPartner(ld, others);
     pool = pool.filter((d) => d !== ld && d !== partner);
-    inc(p1c, ld); inc(p2c, partner);
+    inc(pairWith, `${ld}|${partner}`); inc(p1c, ld); inc(p2c, partner);
     plan.plainPairs.push([ld, partner]);
     remainingPairs--;
   }
