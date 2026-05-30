@@ -1177,6 +1177,16 @@ function seedZeroHistoryDoctors(
   }
   const weeksPresent = (id: string) => weeksByDoctor.get(id)?.size ?? 0;
 
+  // الأسبوع الأخير في النافذة + من حضر فيه. التمهيد يُطبَّق فقط على من غاب
+  // الأسبوعَ الماضي مباشرة (عائد *هذا* الأسبوع)؛ من عمل الأسبوع الماضي طبيب
+  // عادي مندمج — لا نُعيد تمهيده لمجرّد بقاء إجازة قديمة في نافذة الأسبوعين
+  // (وإلا ضخّمنا عدّاداته فتذبذب توزيعه بعد العودة).
+  let lastWeek = '';
+  for (const s of pastSlots) if (s.weekStart > lastWeek) lastWeek = s.weekStart;
+  const presentLastWeek = new Set(
+    pastSlots.filter((s) => s.weekStart === lastWeek).map((s) => s.doctorId),
+  );
+
   // أكثر حضوراً بين العاديين غير البورد (= الحضور الكامل في النافذة)
   const nonBoardReg = doctors.filter(
     (d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'light_duty',
@@ -1222,12 +1232,13 @@ function seedZeroHistoryDoctors(
     return ref;
   };
 
-  // (أ) العائد/الجديد: «أقلّ من الأقران» في عدد أسابيع الحضور، وليس مُجازاً الآن
+  // (أ) العائد/الجديد: غاب الأسبوعَ الماضي مباشرة (عائد هذا الأسبوع أو جديد)،
+  // وليس مُجازاً الآن. لا نُمهّد من عمل الأسبوع الماضي (مندمج أصلاً).
   const returning: string[] = [];
   for (const d of doctors) {
     if (d.workStatus === 'vacation') continue;
     if (d.workStatus === 'light_duty') continue; // يُعالَج في (ب)
-    if (weeksPresent(d.id) < maxWeeks) {
+    if (!presentLastWeek.has(d.id)) {
       const ref = computeRef(d.groupTemplate.key);
       if (!ref) continue; // لا أقران مستقرّون في قروبه → لا مرجع
       pastDelCount.set(d.id, ref.seedDel);
