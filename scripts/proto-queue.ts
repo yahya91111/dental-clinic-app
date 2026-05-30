@@ -14,12 +14,15 @@
 // تشغيل:  npx tsx scripts/proto-queue.ts
 // ═══════════════════════════════════════════════════════════════
 
-// ─── إعدادات السيناريو ───
-const CLINICS = 2;
-const DOCTORS = ['د.أحمد', 'د.بسام', 'د.جلال', 'د.هاني', 'د.وفاء', 'د.دانيا'];
-const LIGHT_DUTY = ['د.دانيا']; // أطباء تخفيف العمل (لا ينفردون، خارج عجلة الدليقيتر)
+// ─── إعدادات السيناريو (من سطر الأوامر: عيادات أطباء تخفيف أسابيع) ───
+// مثال:  npx tsx scripts/proto-queue.ts 3 5 0 2
+const CLINICS = Number(process.argv[2] ?? 2);
+const NUM_DOCTORS = Number(process.argv[3] ?? 4);
+const NUM_LD = Number(process.argv[4] ?? 0); // عدد أطباء التخفيف (آخر K)
+const WEEKS = Number(process.argv[5] ?? 2);
+const DOCTORS = Array.from({ length: NUM_DOCTORS }, (_, i) => `د${i + 1}`);
+const LIGHT_DUTY = DOCTORS.slice(NUM_DOCTORS - NUM_LD); // آخر K أطباء = تخفيف
 const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-const WEEKS = 2;
 
 // ─── نقاط السؤال (سياسات قابلة للقلب) ───
 const DELEGATOR_ENABLED = true; // افتراضي: المركز يستعمل الدليقيتر
@@ -132,11 +135,17 @@ function fillRegulars(pool: string[], s: Shape, plan: DayPlan, lds: string[], Lc
   }
   remove(delChosen);
 
-  // ④ شركاء التخفيف: الباقي بعد الأدوار الثقيلة (نصف يوم، ف2). التخفيف يأخذ ف1.
-  //    الشريك = مَن لم تختره عجلة الدليقيتر (أي الأعلى دليقيتراً) → يستريح نصف يوم.
+  // ④ شركاء التخفيف (عيادة محجوزة): التخفيف ف1، وشريكه = الأعلى استحقاقاً لـ ف2
+  //    (أكبر p1−p2) عبر العجلة الرابعة → يتدوّر الشريك ولا يعلق أحد في ف2.
   for (let i = 0; i < Lc; i++) {
-    const partner = pool.shift()!;
-    plan.ldClinics.push([lds[i]!, partner]); // [تخفيف ف1, شريك ف2]
+    const ld = lds[i]!;
+    const partner = [...pool].sort((a, b) => {
+      const diff = p1minusP2(b) - p1minusP2(a);
+      return diff !== 0 ? diff : QI(a) - QI(b);
+    })[0]!;
+    pool = pool.filter((d) => d !== partner);
+    inc(p1c, ld); inc(p2c, partner);
+    plan.ldClinics.push([ld, partner]); // [تخفيف ف1, شريك ف2]
   }
 
   // ⑤ الأزواج. أولاً أزواج التخفيف: التخفيف ف1 دائماً، وشريكه = الأعلى استحقاقاً
@@ -194,8 +203,9 @@ function tally(plan: DayPlan) {
   for (const d of plan.solos) { inc(fullDays, d); inc(periods, d, 2); }
   for (const [a, b] of plan.plainPairs) for (const d of [a, b]) { inc(halfDays, d); inc(periods, d, 1); }
   for (const [ld, partner] of plan.ldClinics) {
-    inc(halfDays, ld); inc(periods, ld, 1); inc(p1c, ld); // التخفيف ف1
-    inc(halfDays, partner); inc(periods, partner, 1); inc(p2c, partner); // الشريك ف2
+    // ف1/ف2 حُسبا وقت التعيين في fillRegulars؛ هنا فقط نصف اليوم والفترات
+    inc(halfDays, ld); inc(periods, ld, 1);
+    inc(halfDays, partner); inc(periods, partner, 1);
   }
 }
 
