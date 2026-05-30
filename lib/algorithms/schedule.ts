@@ -249,13 +249,15 @@ export async function loadScheduleData(
     return { data: null, error: `فشل تحميل خانات الأسبوع: ${existingErr.message}` };
   }
 
-  // 4. خانات الأسبوع السابق (للعدالة) — نافذة أسبوع واحد متحرّكة
-  const oneWeekAgo = shiftWeekStart(weekStart, 1);
+  // 4. خانات الأسابيع السابقة (للعدالة) — نافذة أسبوعين متحرّكة.
+  // أسبوعان ينعّمان التذبذب التراكمي، ويلتقطهما تمهيد «أقلّ من الأقران»
+  // الذي يحمي العائد من الغياب الجزئي داخل النافذة.
+  const windowStart = shiftWeekStart(weekStart, 2);
   const { data: past, error: pastErr } = await supabase
     .from('schedule_slots')
     .select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
     .eq('clinic_id', clinicId)
-    .gte('week_start', oneWeekAgo)
+    .gte('week_start', windowStart)
     .lt('week_start', weekStart);
   if (pastErr) {
     return { data: null, error: `فشل تحميل سجل الأسبوع السابق: ${pastErr.message}` };
@@ -613,14 +615,19 @@ export function distributeShift(
   lastClinicPeriod?: Map<string, Period>,
   p1MinusP2?: Map<string, number>,
   delegatorRotationIndex?: number,
-  pastScores?: Map<string, number>,
-  weeklyScore?: Map<string, number>,
+  pastPeriods?: Map<string, number>,
+  weeklyPeriods?: Map<string, number>,
+  pastSoloCount?: Map<string, number>,
+  weeklySoloCount?: Map<string, number>,
 ): ShiftDistribution {
   const slots: AssignedSlot[] = [];
-  // حِمل الفترات التراكمي (clinic=1، del=2): يُستخدم لتدوير دور "المنفرد"
-  // (فترتان = ثقيل) على الأقلّ حِملاً، وشريك التخفيف على الأعلى حِملاً.
+  // الشريك يُقاس بـ الفترات (وقت): دليقيتر=1 كالعيادة → الأعلى وقتاً يستريح.
   const loadOf = (id: string) =>
-    (pastScores?.get(id) ?? 0) + (weeklyScore?.get(id) ?? 0);
+    (pastPeriods?.get(id) ?? 0) + (weeklyPeriods?.get(id) ?? 0);
+  // المنفرد (عيادة كاملة وحده) يُدار round-robin مستقلّ: الأقلّ أخذاً له أولاً،
+  // ثم الأقلّ فترات، ثم الاسم → توزيع متساوٍ تماماً لا يتأثّر بتقارب الأقران.
+  const soloOf = (id: string) =>
+    (pastSoloCount?.get(id) ?? 0) + (weeklySoloCount?.get(id) ?? 0);
   const warnings: string[] = [];
   const periods = SHIFT_PERIODS[pool.shift];
   const p1 = periods[0]!;
@@ -742,31 +749,19 @@ export function distributeShift(
     for (let i = 0; i < Lc; i++) {
       addClinic(reservedClinics[i]!, p1, remainingLDs[i]!);
       if (available.length > 0) {
-        // شريك التخفيف يعمل فترة واحدة فقط وهي دائماً الفترة الثانية (التخفيف
-        // يأخذ الأولى). دور الشريك خفيف (فترة واحدة) مثل دور الزوج.
-        //
-        // أولاً نحجز الأقلّ حِملاً للدور الثقيل (المنفرد فترتان / الدليقيتر)
-        // فلا يُسحب شريكاً، وإلا تركّز مقعد الشريك دائماً على مَن سيؤدّي المنفرد.
-        // ثم نختار الشريك من الباقين بـ استحقاق P2 الأعلى (p1MinusP2 الأكبر =
-        // أخذ فترات أولى أكثر) → يتدوّر مقعد الفترة الثانية على الجميع. ثم
-        // الأعلى حِملاً، فالأعلى دليقيتر، فالاسم.
-        let partnerPool = available;
-        if (available.length > 1) {
-          const lowestLoad = [...available].sort((a, b) => {
-            const la = loadOf(a.id);
-            const lb = loadOf(b.id);
-            if (la !== lb) return la - lb;
-            return a.name.localeCompare(b.name);
-          })[0]!;
-          partnerPool = available.filter((d) => d.id !== lowestLoad.id);
-        }
-        const partner = [...partnerPool].sort((a, b) => {
-          const pa = p1MinusP2?.get(a.id) ?? 0;
-          const pb = p1MinusP2?.get(b.id) ?? 0;
-          if (pa !== pb) return pb - pa; // الأكثر استحقاقاً لـ P2 أولاً
+        // شريك التخفيف يعمل فترة واحدة فقط (نصف يوم) وهي دائماً الفترة الثانية
+        // (التخفيف يأخذ الأولى). هذا الدور هو "الراحة" الوحيدة في الشفت، فيجب
+        // أن يذهب لـ الأعلى حِملاً تراكمياً ليستريح وتتساوى الفترات بين الجميع
+        // (وإلا عمل الأثقل يوماً كاملاً دائماً بينما يرتاح الأخفّ). ثم نكسر
+        // التعادل بـ استحقاق P2 (p1MinusP2 الأكبر) لتدوير مقعد الفترة الثانية،
+        // ثم أعلى دليقيتر، ثم الاسم.
+        const partner = [...available].sort((a, b) => {
           const la = loadOf(a.id);
           const lb = loadOf(b.id);
-          if (la !== lb) return lb - la; // ثم أعلى حِمل
+          if (la !== lb) return lb - la; // الأعلى فترات يستريح (نصف يوم)
+          const pa = p1MinusP2?.get(a.id) ?? 0;
+          const pb = p1MinusP2?.get(b.id) ?? 0;
+          if (pa !== pb) return pb - pa; // ثم الأكثر استحقاقاً لـ P2
           const da = (pastDelCount?.get(a.id) ?? 0) + (weeklyDelCount?.get(a.id) ?? 0);
           const db = (pastDelCount?.get(b.id) ?? 0) + (weeklyDelCount?.get(b.id) ?? 0);
           if (da !== db) return db - da; // ثم أعلى دليقيتر
@@ -852,28 +847,10 @@ export function distributeShift(
       addClinic(clinicNums[i]!, p1, doc);
       addClinic(clinicNums[i]!, p2, doc);
     }
-  } else if (D === M + 1) {
-    // فائض طبيب واحد → عيادة واحدة بطبيبين (فترة لكل) + باقي العيادات منفردون.
-    // المنفرد دور ثقيل (فترتان) → يذهب لـ (M-1) الأقلّ حِملاً فيتدوّر يومياً؛
-    // الزوج (فترة واحدة لكل = خفيف) للطبيبين الأعلى حِملاً. لا delegator.
-    const byLoadAsc = [...available].sort((a, b) => {
-      const la = loadOf(a.id);
-      const lb = loadOf(b.id);
-      if (la !== lb) return la - lb; // الأقلّ حِملاً أولاً (يأخذ المنفرد الثقيل)
-      return a.name.localeCompare(b.name);
-    });
-    for (let i = 0; i < M - 1; i++) {
-      const doc = byLoadAsc[i]!;
-      addClinic(clinicNums[i]!, p1, doc);
-      addClinic(clinicNums[i]!, p2, doc);
-    }
-    const [f0, s0] = pickP1P2(
-      byLoadAsc[M - 1]!, byLoadAsc[M]!, lastClinicPeriod, p1MinusP2,
-    );
-    addClinic(clinicNums[M - 1]!, p1, f0);
-    addClinic(clinicNums[M - 1]!, p2, s0);
-  } else if (D >= M + 2 && D <= 2 * M) {
-    // k عيادات بطبيبين + (M-k) لوحدهم + delegator rotation في إحدى المزدوجات.
+  } else if (D >= M + 1 && D <= 2 * M) {
+    // فائض طبيب واحد فأكثر → k عيادة دليقيتر (طبيبان يتبادلان clinic/delegator)
+    // + (M-k) منفردون. حتى الفائض الواحد (D=M+1, k=1) ينتج دليقيتراً من
+    // العيادة المزدوجة بدل تقسيمها بلا دليقيتر — ما دام فيها طبيبان عاديان.
     // عيادة الدليقيتر (الطبيبان يتبادلان clinic/delegator) تتنقّل يومياً بين
     // العيادات المزدوجة لعدالة الحمل الأثقل (الكل يتناوب على الفترتين).
     const k = D - M;
@@ -936,14 +913,19 @@ export function distributeShift(
       // والأزواج (فترة لكل = خفيف) للأعلى حِملاً — مثل منطق D=M+1، منعاً
       // لتثبيت طبيب واحد على المنفرد. otherDocs = العاديون عدا زوج الدليقيتر.
       const soloCount = M - k;
-      const byLoadAsc = [...otherDocs].sort((a, b) => {
+      // المنفرد بـ round-robin: الأقلّ أخذاً للمنفرد سابقاً أولاً، ثم الأقلّ
+      // فترات، ثم الاسم → كلٌّ يأخذ نصيباً متساوياً من «الجلوس وحده».
+      const bySolo = [...otherDocs].sort((a, b) => {
+        const sa = soloOf(a.id);
+        const sb = soloOf(b.id);
+        if (sa !== sb) return sa - sb;
         const la = loadOf(a.id);
         const lb = loadOf(b.id);
         if (la !== lb) return la - lb;
         return a.name.localeCompare(b.name);
       });
-      const soloDocs = byLoadAsc.slice(0, soloCount);     // الأقلّ حِملاً → منفرد
-      const pairDocs = byLoadAsc.slice(soloCount);        // الباقي → أزواج
+      const soloDocs = bySolo.slice(0, soloCount);        // الأقلّ منفرداً → منفرد
+      const pairDocs = bySolo.slice(soloCount);           // الباقي → أزواج
       let pi = 0; // مؤشر pairDocs
       // العيادات المزدوجة
       for (let i = 0; i < k; i++) {
@@ -1062,6 +1044,62 @@ function computeLoadScores(
 }
 
 /**
+ * يحسب نقاط "فترات" (وقت) لكل طبيب: كل فترة حضور = 1 (عيادة ودليقيتر سواء).
+ *
+ * يختلف عن computeLoadScores في أن الدليقيتر = 1 لا 2 → يوم المنفرد (عيادتان)
+ * يساوي يوم الدليقيتر (عيادة+دليقيتر) في الوقت. يُستخدم حصراً لتدوير "المنفرد"
+ * وشريك التخفيف، فلا يقع صاحب المنفرد في فخّ "الأرخص نقاطاً" فيُكدَّس عليه.
+ * (الحِمل المرجّح دليقيتر=2 يبقى لترتيب البركة ودوران الدليقيتر/الاحتياطي.)
+ *   - clinic    : 1
+ *   - delegator : 1
+ *   - ex        : 0
+ */
+function computePeriodScores(
+  doctors: LoadedDoctor[],
+  pastSlots: LoadedSlot[],
+): Map<string, number> {
+  const scores = new Map<string, number>();
+  for (const d of doctors) scores.set(d.id, 0);
+
+  for (const s of pastSlots) {
+    if (s.status !== 'active') continue;
+    if (s.role !== 'clinic' && s.role !== 'delegator') continue; // ex = 0
+    scores.set(s.doctorId, (scores.get(s.doctorId) ?? 0) + 1);
+  }
+  return scores;
+}
+
+/**
+ * يعدّ مرّات "المنفرد" لكل طبيب من السجل: المنفرد = احتلال الطبيب فترتي
+ * نفس العيادة في نفس الشفت (وحده طوال اليوم). دور ثقيل اجتماعياً (لا شريك)،
+ * فنُديره round-robin مستقلّ — من أخذه أقلّ يأخذه التالي → توزيع متساوٍ تماماً
+ * (لا يكفي قياس الحِمل/الفترات لأن الأقران المتقاربين يجعلون الاختيار ثنائي
+ * القطب). دقّة العدّ: شفت واحد بعيادة واحدة كاملة = مرة واحدة.
+ */
+function computeSoloCount(
+  doctors: LoadedDoctor[],
+  pastSlots: LoadedSlot[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const d of doctors) counts.set(d.id, 0);
+
+  const byKey = new Map<string, number>();
+  for (const s of pastSlots) {
+    if (s.status !== 'active' || s.role !== 'clinic') continue;
+    const shift = s.period <= 2 ? 'm' : 'e';
+    const key = `${s.doctorId}|${s.weekStart}|${s.dayOfWeek}|${shift}|${s.clinicNumber}`;
+    byKey.set(key, (byKey.get(key) ?? 0) + 1);
+  }
+  for (const [key, n] of byKey) {
+    if (n >= 2) {
+      const id = key.slice(0, key.indexOf('|'));
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
  * يعدّ مرّات أخذ دور معيّن لكل طبيب من سجل سابق — بدقة "شفت واحد = مرة واحدة".
  * - solo delegator (P1+P2 نفس الشفت) يُحسب مرة واحدة
  * - del-P1 فقط (مع تخفيف) يُحسب مرة واحدة
@@ -1098,21 +1136,26 @@ function computePastRoleCount(
 /**
  * يُمهّد عدّادات الأطباء الذين يضعهم سجلُّهم في موضع متطرّف غير عادل:
  *
- * المبدأ: يدخل بـ (أعلى دليقيتر عند المستقرّين − 1) → يكون الأوحد الأدنى بفارق
- * واحد، فيأخذ دليقيتراً واحداً هذا الأسبوع يصل به إلى القمة فيتساوى مع الجميع،
- * ثم تدور العجلة بسلاسة (لا تكديس، لا تخطٍّ).
+ * المبدأ: يدخل بـ (أعلى المستقرّين − 1) في كل بُعد → يكون الأوحد الأدنى بفارق
+ * واحد، فيأخذ نوبة واحدة هذا الأسبوع تصل به إلى القمة فيتساوى مع الجميع، ثم
+ * تدور العجلة بسلاسة (لا تكديس، لا تخطٍّ، ولا يلحق العجز كله).
  *
- * (أ) العائد من إجازة / المسجَّل حديثاً (سجل صفري):
- *   - الدليقيتر: (أعلى المستقرّين − 1).
- *   - الاحتياطي: "أعلى" عدّاد المستقرّين → لا يأخذ راحة (هو عائد مرتاح).
+ * الكشف (مَن): «أقلّ من الأقران» = عدد الأسابيع الحاضرة في النافذة أقلّ من
+ * المستقرّين (غاب أسبوعاً أو أكثر، أو جديد بلا سجل). يلتقط الغياب الجزئي الذي
+ * يخفيه الحضور>0 في نافذة الأسبوعين — لا يكفي شرط «صفر حضور» القديم.
  *
- * (ب) طبيب التخفيف: دليقيتره منخفض اصطناعياً (مُستثنى من الأزواج في الـ≤6)،
- *   فتظنّه "مَديناً" وتكدّس عليه الدليقيتر في الـ7+. نرفعه إلى (الأعلى − 1)
- *   إن كان أقلّ (لا نُنزله) → يدخل كوافد، نصيب عادل بلا تثبيت، ويبقى مشاركاً.
+ * التصحيح (كم) — لكل عائد/جديد غير المُجاز هذا الأسبوع:
+ *   - الدليقيتر: (أعلى المستقرّين − 1) → دور منفصل يأخذه مرة فيتساوى.
+ *   - الحِمل والفترات: "أعلى" المستقرّين (توازٍ) → لا يلحق الأسابيع الغائبة
+ *     ولا يصير الأدنى فيمتصّ المنفرد؛ يرتّب كنظير عادي. (يحمي بُعد العيادة.)
+ *   - الاحتياطي: "أعلى" المستقرّين → لا يأخذ راحة (هو عائد مرتاح).
  *
- * - "بلا سجل" = لم يظهر في أي خانة خلال النافذة، وليس في إجازة هذا الأسبوع.
- * - المرجع: العاديون المستقرّون (حاضرون، غير بورد، غير تخفيف).
- * - لو لا عاديين مستقرّين (عيادة جديدة/سجل ممسوح): لا مرجع → لا تمهيد.
+ * (ب) طبيب التخفيف الحاضر: دليقيتره منخفض اصطناعياً (مُستثنى من الأزواج في
+ *   الـ≤6)، فتظنّه "مَديناً" وتكدّس عليه الدليقيتر. نرفعه إلى (الأعلى − 1) إن
+ *   كان أقلّ (لا نُنزله) → نصيب عادل بلا تثبيت، ويبقى مشاركاً.
+ *
+ * - المرجع: العاديون المستقرّون (أكثر الأسابيع حضوراً، غير بورد، غير تخفيف).
+ * - لو لا مستقرّين (عيادة جديدة/سجل ممسوح): لا مرجع → لا تمهيد.
  *
  * يُعدّل الخرائط في مكانها، ويرجّع أسماء من جرى تمهيده لكل فئة.
  */
@@ -1121,43 +1164,88 @@ function seedZeroHistoryDoctors(
   pastSlots: LoadedSlot[],
   pastDelCount: Map<string, number>,
   pastExCount: Map<string, number>,
+  pastScores: Map<string, number>,
+  pastPeriods: Map<string, number>,
+  pastSoloCount: Map<string, number>,
 ): { returning: string[]; lightDuty: string[] } {
-  const presence = new Map<string, number>();
+  // عدد الأسابيع المتميّزة التي حضر فيها كل طبيب داخل النافذة
+  const weeksByDoctor = new Map<string, Set<string>>();
   for (const s of pastSlots) {
-    presence.set(s.doctorId, (presence.get(s.doctorId) ?? 0) + 1);
+    let set = weeksByDoctor.get(s.doctorId);
+    if (!set) { set = new Set(); weeksByDoctor.set(s.doctorId, set); }
+    set.add(s.weekStart);
   }
-  // المرجع = العاديون المستقرّون فقط (غير بورد وغير تخفيف)
-  const peers = doctors.filter(
-    (d) => (presence.get(d.id) ?? 0) > 0
-      && d.groupTemplate.key !== 'board'
-      && d.workStatus !== 'light_duty',
+  const weeksPresent = (id: string) => weeksByDoctor.get(id)?.size ?? 0;
+
+  // أكثر حضوراً بين العاديين غير البورد (= الحضور الكامل في النافذة)
+  const nonBoardReg = doctors.filter(
+    (d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'light_duty',
   );
-  if (peers.length === 0) return { returning: [], lightDuty: [] };
-
-  let maxDel = 0;
-  let maxEx = -Infinity;
-  for (const d of peers) {
-    const del = pastDelCount.get(d.id) ?? 0;
-    const ex = pastExCount.get(d.id) ?? 0;
-    if (del > maxDel) maxDel = del;
-    if (ex > maxEx) maxEx = ex;
+  let maxWeeks = 0;
+  for (const d of nonBoardReg) {
+    const w = weeksPresent(d.id);
+    if (w > maxWeeks) maxWeeks = w;
   }
-  const seedDel = Math.max(0, maxDel - 1); // أعلى المستقرّين ناقص واحد
+  if (maxWeeks === 0) return { returning: [], lightDuty: [] };
 
-  // (أ) العائد/الجديد بلا سجل
+  // المرجع يُحسب لكل قروب على حدة: قروب A وB مستوياهما مختلفان (عدد أطباء
+  // مختلف → حِمل/فترات مختلفة). متوسّط القروبين معاً يُدخِل العائد أدنى من
+  // أقرانه الحقيقيين فيُكدَّس عليه المنفرد. لذا نمهّده بمتوسّط أقران قروبه.
+  const peers = nonBoardReg.filter((d) => weeksPresent(d.id) === maxWeeks);
+  type GroupRef = {
+    seedDel: number; maxEx: number;
+    seedLoad: number; seedPeriods: number; seedSolo: number;
+  };
+  const refByGroup = new Map<string, GroupRef | null>();
+  const computeRef = (groupKey: string): GroupRef | null => {
+    if (refByGroup.has(groupKey)) return refByGroup.get(groupKey)!;
+    const gp = peers.filter((d) => d.groupTemplate.key === groupKey);
+    if (gp.length === 0) { refByGroup.set(groupKey, null); return null; }
+    let maxDel = 0, maxEx = -Infinity, sumLoad = 0, sumPeriods = 0, sumSolo = 0;
+    for (const d of gp) {
+      const del = pastDelCount.get(d.id) ?? 0;
+      const ex = pastExCount.get(d.id) ?? 0;
+      if (del > maxDel) maxDel = del;
+      if (ex > maxEx) maxEx = ex;
+      sumLoad += pastScores.get(d.id) ?? 0;
+      sumPeriods += pastPeriods.get(d.id) ?? 0;
+      sumSolo += pastSoloCount.get(d.id) ?? 0;
+    }
+    const ref: GroupRef = {
+      seedDel: Math.max(0, maxDel - 1), // الدليقيتر: دور منفصل → الأعلى−1
+      maxEx,                             // أعلى احتياطي → لا يأخذ راحة (يعمل)
+      seedLoad: Math.round(sumLoad / gp.length),       // متوسّط حِمل القروب
+      seedPeriods: Math.round(sumPeriods / gp.length), // متوسّط فترات القروب
+      seedSolo: Math.round(sumSolo / gp.length),       // متوسّط منفرد القروب
+    };
+    refByGroup.set(groupKey, ref);
+    return ref;
+  };
+
+  // (أ) العائد/الجديد: «أقلّ من الأقران» في عدد أسابيع الحضور، وليس مُجازاً الآن
   const returning: string[] = [];
   for (const d of doctors) {
-    if ((presence.get(d.id) ?? 0) === 0 && d.workStatus !== 'vacation') {
-      pastDelCount.set(d.id, seedDel); // الأعلى−1 → يأخذ واحداً فيتساوى
-      pastExCount.set(d.id, maxEx);    // أعلى احتياطي → لا يأخذ راحة (يعمل)
+    if (d.workStatus === 'vacation') continue;
+    if (d.workStatus === 'light_duty') continue; // يُعالَج في (ب)
+    if (weeksPresent(d.id) < maxWeeks) {
+      const ref = computeRef(d.groupTemplate.key);
+      if (!ref) continue; // لا أقران مستقرّون في قروبه → لا مرجع
+      pastDelCount.set(d.id, ref.seedDel);
+      pastScores.set(d.id, ref.seedLoad);
+      pastPeriods.set(d.id, ref.seedPeriods);
+      pastSoloCount.set(d.id, ref.seedSolo);
+      pastExCount.set(d.id, ref.maxEx);
       returning.push(d.name);
     }
   }
 
-  // (ب) التخفيف الحاضر: نرفعه إلى (الأعلى−1) إن كان أقلّ (لا نُنزله)
+  // (ب) التخفيف الحاضر: نرفع دليقيتره إلى (الأعلى−1) إن كان أقلّ (لا نُنزله)
   const lightDuty: string[] = [];
   for (const d of doctors) {
-    if (d.workStatus === 'light_duty' && (presence.get(d.id) ?? 0) > 0) {
+    if (d.workStatus === 'light_duty' && weeksPresent(d.id) > 0) {
+      const ref = computeRef(d.groupTemplate.key);
+      if (!ref) continue;
+      const seedDel = ref.seedDel;
       const cur = pastDelCount.get(d.id) ?? 0;
       if (cur < seedDel) {
         pastDelCount.set(d.id, seedDel);
@@ -1257,6 +1345,35 @@ function accumulateWeeklyScores(
     if (pts === 0) continue;
     const curr = weeklyScore.get(s.doctor.id) ?? 0;
     weeklyScore.set(s.doctor.id, curr + pts);
+  }
+}
+
+/** يضيف فترات هذا الشفت (دليقيتر=1 كالعيادة) للسجل الجاري — لتدوير المنفرد */
+function accumulateWeeklyPeriods(
+  slots: AssignedSlot[],
+  weeklyPeriods: Map<string, number>,
+): void {
+  for (const s of slots) {
+    if (s.role !== 'clinic' && s.role !== 'delegator') continue; // ex = 0
+    weeklyPeriods.set(s.doctor.id, (weeklyPeriods.get(s.doctor.id) ?? 0) + 1);
+  }
+}
+
+/** يضيف مرّات المنفرد (عيادة كاملة لطبيب وحده) لهذا الشفت للسجل الجاري */
+function accumulateSoloCount(
+  slots: AssignedSlot[],
+  weeklySolo: Map<string, number>,
+): void {
+  const byKey = new Map<string, { id: string; n: number }>();
+  for (const s of slots) {
+    if (s.role !== 'clinic') continue;
+    const shift = s.period <= 2 ? 'm' : 'e';
+    const key = `${s.doctor.id}|${shift}|${s.clinicNumber}`;
+    const e = byKey.get(key) ?? { id: s.doctor.id, n: 0 };
+    e.n++; byKey.set(key, e);
+  }
+  for (const { id, n } of byKey.values()) {
+    if (n >= 2) weeklySolo.set(id, (weeklySolo.get(id) ?? 0) + 1);
   }
 }
 
@@ -1582,16 +1699,19 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   //    - boardConfig: يقرّر إذا كان البورد يدخل del/ex
   const allSlots: AssignedSlot[] = [];
   const pastScores = computeLoadScores(data.doctors, data.pastSlots);
+  const pastPeriods = computePeriodScores(data.doctors, data.pastSlots);
+  const pastSoloCount = computeSoloCount(data.doctors, data.pastSlots);
   const pastExCount = computePastRoleCount(data.doctors, data.pastSlots, 'ex');
   const pastDelCount = computePastRoleCount(data.doctors, data.pastSlots, 'delegator');
   // عدالة (أ) العائد/الجديد و(ب) التخفيف: نمهّد عدّاداتهم بمستوى العاديين
   // المستقرّين فلا يقعون في موضع متطرّف (لا دفعة لحاق ولا تثبيت دليقيتر).
   const seeded = seedZeroHistoryDoctors(
     data.doctors, data.pastSlots, pastDelCount, pastExCount,
+    pastScores, pastPeriods, pastSoloCount,
   );
   if (seeded.returning.length > 0) {
     warnings.push(
-      `مُهّد سجل ${seeded.returning.length} عائد/جديد (دليقيتر=الأعلى−1، احتياطي=الأعلى): ${seeded.returning.join('، ')}`,
+      `مُهّد سجل ${seeded.returning.length} عائد/جديد (دليقيتر=الأعلى−1، حِمل/فترات+احتياطي=الأعلى): ${seeded.returning.join('، ')}`,
     );
   }
   if (seeded.lightDuty.length > 0) {
@@ -1600,6 +1720,8 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     );
   }
   const weeklyScore = new Map<string, number>();
+  const weeklyPeriods = new Map<string, number>();
+  const weeklySoloCount = new Map<string, number>();
   const weeklyExCount = new Map<string, number>();
   const weeklyDelCount = new Map<string, number>();
   const lastRole = new Map<string, SlotRoleAssigned>();
@@ -1628,13 +1750,16 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         pastExCount, weeklyExCount,
         pastDelCount, weeklyDelCount,
         input.boardConfig, lastClinicPeriod, p1MinusP2,
-        morningDelIdx, pastScores, weeklyScore,
+        morningDelIdx, pastPeriods, weeklyPeriods,
+        pastSoloCount, weeklySoloCount,
       );
       morningDelIdx++;
       allSlots.push(...res.slots);
       todaysSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} صباح: ${w}`));
       accumulateWeeklyScores(res.slots, weeklyScore);
+      accumulateWeeklyPeriods(res.slots, weeklyPeriods);
+      accumulateSoloCount(res.slots, weeklySoloCount);
       accumulateRoleCount(res.slots, weeklyExCount, 'ex');
       accumulateRoleCount(res.slots, weeklyDelCount, 'delegator');
       recordClinicPeriods(res.slots, lastClinicPeriod);
@@ -1652,13 +1777,16 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         pastExCount, weeklyExCount,
         pastDelCount, weeklyDelCount,
         input.boardConfig, lastClinicPeriod, p1MinusP2,
-        eveningDelIdx, pastScores, weeklyScore,
+        eveningDelIdx, pastPeriods, weeklyPeriods,
+        pastSoloCount, weeklySoloCount,
       );
       eveningDelIdx++;
       allSlots.push(...res.slots);
       todaysSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} مساء: ${w}`));
       accumulateWeeklyScores(res.slots, weeklyScore);
+      accumulateWeeklyPeriods(res.slots, weeklyPeriods);
+      accumulateSoloCount(res.slots, weeklySoloCount);
       accumulateRoleCount(res.slots, weeklyExCount, 'ex');
       accumulateRoleCount(res.slots, weeklyDelCount, 'delegator');
       recordClinicPeriods(res.slots, lastClinicPeriod);
