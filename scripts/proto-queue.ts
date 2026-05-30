@@ -72,10 +72,13 @@ type Counter = Map<string, number>;
 const inc = (m: Counter, k: string, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
 const get = (m: Counter, k: string) => m.get(k) ?? 0;
 
-const exCount: Counter = new Map(); // ① عجلة الاحتياطي
-const soloCount: Counter = new Map(); // ② عجلة الانفراد
-const delCount: Counter = new Map(); // ③ عجلة الدليقيتر
-const p1c: Counter = new Map(); // ④ تنوّع الفترة
+// عجلات دوران (موضع لا أرقام): مَن يأخذ الدور → آخر الطابور. الغائب يبقى في
+// مكانه (المقدّمة) فيُؤخذ أوّلاً عند عودته — دورة واحدة ثم لآخره. لا تكدّس.
+const exWheel: string[] = [...DOCTORS]; // ① عجلة الاحتياط
+const soloWheel: string[] = [...DOCTORS]; // ② عجلة الانفراد
+const delWheel: string[] = [...DOCTORS]; // ③ عجلة الدليقيتر
+// ميزان ف1/ف2 (④): حياديّ عند الصفر، فلا يُثقِل عائداً/وافداً (ليس عدّاد حِمل)
+const p1c: Counter = new Map();
 const p2c: Counter = new Map();
 
 const p1minusP2 = (id: string) => get(p1c, id) - get(p2c, id);
@@ -96,15 +99,21 @@ type DayPlan = {
   ex: string[];
 };
 
-// تختار «الأقلّ أخذاً» لدور ما من بركة، وتكسر التعادل بترتيب الكيو (استقرار)
-function pickByWheel(pool: string[], wheel: Counter, qi: (id: string) => number, count: number): string[] {
-  return [...pool]
-    .sort((a, b) => {
-      const ca = get(wheel, a), cb = get(wheel, b);
-      if (ca !== cb) return ca - cb;
-      return qi(a) - qi(b);
-    })
-    .slice(0, count);
+// يأخذ أوّل count متاحين من مقدّمة العجلة، وينقلهم لآخرها (الباقون بمكانهم).
+// الغائب يبقى في المقدّمة فيُؤخذ أوّلاً عند عودته (لا تكدّس، لا إثقال).
+function spin(wheel: string[], avail: Set<string>, count: number): string[] {
+  const picked: string[] = [];
+  for (const d of wheel) {
+    if (picked.length >= count) break;
+    if (avail.has(d)) picked.push(d);
+  }
+  if (picked.length) {
+    const ps = new Set(picked);
+    const rest = wheel.filter((d) => !ps.has(d));
+    wheel.length = 0;
+    wheel.push(...rest, ...picked);
+  }
+  return picked;
 }
 
 const QI = (id: string) => DOCTORS.indexOf(id); // ترتيب عامّ ثابت لكسر التعادل
@@ -129,22 +138,22 @@ function pickPartner(ld: string, candidates: string[]): string {
 function fillRegulars(pool: string[], s: Shape, plan: DayPlan, lds: string[], Lc: number) {
   const remove = (taken: string[]) => { const set = new Set(taken); pool = pool.filter((d) => !set.has(d)); };
 
-  // ① الاحتياط  ② المنفرد  ③ الدليقيتر
-  const exChosen = pickByWheel(pool, exCount, QI, s.ex);
-  for (const d of exChosen) { plan.ex.push(d); inc(exCount, d); }
+  // ① الاحتياط  ② المنفرد  ③ الدليقيتر — كلٌّ بعجلته (الأقرب لمقدّمة الطابور)
+  const exChosen = spin(exWheel, new Set(pool), s.ex);
+  for (const d of exChosen) plan.ex.push(d);
   remove(exChosen);
 
-  const soloChosen = pickByWheel(pool, soloCount, QI, s.solos);
-  for (const d of soloChosen) { plan.solos.push(d); inc(soloCount, d); }
+  const soloChosen = spin(soloWheel, new Set(pool), s.solos);
+  for (const d of soloChosen) plan.solos.push(d);
   remove(soloChosen);
 
   const delSeats = s.soloDelegator + s.hostClinics * 2;
-  const delChosen = pickByWheel(pool, delCount, QI, delSeats);
+  const delChosen = spin(delWheel, new Set(pool), delSeats);
   let di = 0;
-  for (let c = 0; c < s.soloDelegator; c++) { const d = delChosen[di++]!; plan.soloDelegators.push(d); inc(delCount, d); }
+  for (let c = 0; c < s.soloDelegator; c++) plan.soloDelegators.push(delChosen[di++]!);
   for (let c = 0; c < s.hostClinics; c++) {
     const a = delChosen[di++]!, b = delChosen[di++]!;
-    plan.hostPairs.push([a, b]); inc(delCount, a); inc(delCount, b);
+    plan.hostPairs.push([a, b]);
   }
   remove(delChosen);
 
@@ -199,9 +208,9 @@ function planDay(regulars: string[], lds: string[], M: number): DayPlan {
   const surplus = Math.max(0, total - M); // عيادات قابلة للمضاعفة
   const Lc = Math.min(lds.length, surplus); // عدد أزواج التخفيف
   const ldSoloN = lds.length - Lc; // فائض التخفيف → منفرد
-  const ldSolo = pickByWheel(lds, soloCount, QI, ldSoloN); // أيّهم ينفرد (تدوير)
+  const ldSolo = spin(soloWheel, new Set(lds), ldSoloN); // أيّهم ينفرد (تدوير)
   const ldSoloSet = new Set(ldSolo);
-  for (const ld of ldSolo) { plan.solos.push(ld); inc(soloCount, ld); }
+  for (const ld of ldSolo) plan.solos.push(ld);
   const ldPaired = lds.filter((d) => !ldSoloSet.has(d));
   const s = computeShape(R - Lc, Math.max(0, M - lds.length)); // العاديون الباقون
   fillRegulars([...regulars], s, plan, ldPaired, Lc);
@@ -212,17 +221,20 @@ function planDay(regulars: string[], lds: string[], M: number): DayPlan {
 const fullDays: Counter = new Map();
 const halfDays: Counter = new Map();
 const periods: Counter = new Map();
+const soloN: Counter = new Map(); // للتقرير فقط: عدد المنفرد/الدليقيتر/الاحتياط
+const delN: Counter = new Map();
+const exN: Counter = new Map();
 
 function tally(plan: DayPlan) {
-  for (const [a, b] of plan.hostPairs) for (const d of [a, b]) { inc(fullDays, d); inc(periods, d, 2); }
-  for (const d of plan.soloDelegators) { inc(fullDays, d); inc(periods, d, 2); }
-  for (const d of plan.solos) { inc(fullDays, d); inc(periods, d, 2); }
+  for (const [a, b] of plan.hostPairs) for (const d of [a, b]) { inc(delN, d); inc(fullDays, d); inc(periods, d, 2); }
+  for (const d of plan.soloDelegators) { inc(delN, d); inc(fullDays, d); inc(periods, d, 2); }
+  for (const d of plan.solos) { inc(soloN, d); inc(fullDays, d); inc(periods, d, 2); }
   for (const [a, b] of plan.plainPairs) for (const d of [a, b]) { inc(halfDays, d); inc(periods, d, 1); }
   for (const [ld, partner] of plan.ldClinics) {
-    // ف1/ف2 حُسبا وقت التعيين في fillRegulars؛ هنا فقط نصف اليوم والفترات
     inc(halfDays, ld); inc(periods, ld, 1);
     inc(halfDays, partner); inc(periods, partner, 1);
   }
+  for (const d of plan.ex) inc(exN, d);
 }
 
 // ─── العرض ───
@@ -262,9 +274,9 @@ function main() {
   for (const d of DOCTORS) {
     console.log(
       d.padEnd(11) +
-        String(get(soloCount, d)).padEnd(7) +
-        String(get(delCount, d)).padEnd(9) +
-        String(get(exCount, d)).padEnd(8) +
+        String(get(soloN, d)).padEnd(7) +
+        String(get(delN, d)).padEnd(9) +
+        String(get(exN, d)).padEnd(8) +
         String(get(halfDays, d)).padEnd(7) +
         String(get(periods, d)).padEnd(7) +
         String(get(p1c, d)).padEnd(4) +
