@@ -1,0 +1,250 @@
+// ═══════════════════════════════════════════════════════════════
+// نموذج أوّلي (prototype) — منطق «العجلة/الدور» بدل «الحمل»
+//
+// كل دور يُوزَّع بـ «عجلة» مستقلّة: مَن أخذه أقلّ يأخذه التالي → تدوير
+// عادل، والتذبذب يذوب عبر تراكم الأسابيع (لا تصفير للعجلات).
+//
+// سلّم الأولويات (الأعلى يُحسَم أولاً ويكسر تعادل الأدنى):
+//   ① الاحتياطي  ② المنفرد  ③ الدليقيتر  ④ تنوّع الفترات (ف1/ف2)
+//
+// نقاط السؤال (سياسات للّيدر — لها افتراضي وتُقلَب عند الطلب):
+//   • DELEGATOR_ENABLED : هل المركز يستعمل الدليقيتر أصلاً؟ (افتراضي: نعم)
+//   • SURPLUS_AS_RESERVE: الفائض الأول احتياطي بدل دليقيتر منفرد؟ (افتراضي: لا)
+//
+// تشغيل:  npx tsx scripts/proto-queue.ts
+// ═══════════════════════════════════════════════════════════════
+
+// ─── إعدادات السيناريو ───
+const CLINICS = 2;
+const DOCTORS = ['د.أحمد', 'د.بسام', 'د.جلال', 'د.هاني', 'د.وفاء', 'د.دانيا'];
+const LIGHT_DUTY = ['د.دانيا']; // أطباء تخفيف العمل (لا ينفردون، خارج عجلة الدليقيتر)
+const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+const WEEKS = 2;
+
+// ─── نقاط السؤال (سياسات قابلة للقلب) ───
+const DELEGATOR_ENABLED = true; // افتراضي: المركز يستعمل الدليقيتر
+const SURPLUS_AS_RESERVE = false; // افتراضي: الفائض الأول دليقيتر منفرد
+
+// ─── شكل التوزيع: كم دور من كل نوع في اليوم (D أطباء، M عيادات) ───
+type Shape = {
+  hostClinics: number; // عيادة مضيفة: طبيبان يوماً كاملاً (عيادة+دليقيتر)
+  plainPairs: number; // عيادة زوج: طبيبان نصف يوم لكلٍّ فترة
+  solos: number; // عيادة منفرد: طبيب يوماً كاملاً وحده
+  soloDelegator: number; // دليقيتر منفرد (فترتان دليقيتر)
+  ex: number; // احتياط (راحة)
+  empty: number; // عيادات بلا طبيب (شح)
+};
+
+function computeShape(D: number, M: number, delegator = DELEGATOR_ENABLED): Shape {
+  const z: Shape = { hostClinics: 0, plainPairs: 0, solos: 0, soloDelegator: 0, ex: 0, empty: 0 };
+  if (D <= 0) return { ...z, empty: M };
+  if (D < M) return { ...z, solos: D, empty: M - D };
+  if (D === M) return { ...z, solos: M }; // طبيب لكل عيادة، يوم كامل وحده
+
+  // ── الدليقيتر مُعطّل (أو مأخوذ مسبقاً): عيادات منفرد/زوج فقط، والفائض يرتاح ──
+  if (!delegator) {
+    if (D <= 2 * M) return { ...z, plainPairs: D - M, solos: 2 * M - D };
+    return { ...z, plainPairs: M, ex: D - 2 * M };
+  }
+
+  // ── علم الدليقيتر مُفعّل ──
+  if (D <= 2 * M) {
+    const k = D - M; // عيادات مزدوجة
+    return { ...z, hostClinics: 1, plainPairs: k - 1, solos: M - k };
+  }
+  if (D === 2 * M + 1) {
+    // الفائض الأول: دليقيتر منفرد (افتراضي) أم احتياطي (عند الطلب)؟
+    return SURPLUS_AS_RESERVE
+      ? { ...z, plainPairs: M, ex: 1 }
+      : { ...z, plainPairs: M, soloDelegator: 1 };
+  }
+  // فائض أكبر: أزواج + دليقيتر منفرد + الباقي احتياط
+  return SURPLUS_AS_RESERVE
+    ? { ...z, plainPairs: M, ex: D - 2 * M }
+    : { ...z, plainPairs: M, soloDelegator: 1, ex: D - (2 * M + 1) };
+}
+
+// ─── حالة العجلات (تستمرّ عبر الأيام والأسابيع — لا تُصفَّر) ───
+type Counter = Map<string, number>;
+const inc = (m: Counter, k: string, n = 1) => m.set(k, (m.get(k) ?? 0) + n);
+const get = (m: Counter, k: string) => m.get(k) ?? 0;
+
+const exCount: Counter = new Map(); // ① عجلة الاحتياطي
+const soloCount: Counter = new Map(); // ② عجلة الانفراد
+const delCount: Counter = new Map(); // ③ عجلة الدليقيتر
+const p1c: Counter = new Map(); // ④ تنوّع الفترة
+const p2c: Counter = new Map();
+
+const p1minusP2 = (id: string) => get(p1c, id) - get(p2c, id);
+// يرتّب (a,b) فيعيد [ف1, ف2] ويحدّث العدّاد: الأكثر ف1 يُدفع لـ ف2
+function assignPeriods(a: string, b: string): [string, string] {
+  const [first, second] = p1minusP2(a) <= p1minusP2(b) ? [a, b] : [b, a];
+  inc(p1c, first); inc(p2c, second);
+  return [first, second];
+}
+
+// ─── محاكاة يوم واحد ───
+type DayPlan = {
+  hostPairs: [string, string][];
+  soloDelegators: string[];
+  solos: string[];
+  plainPairs: [string, string][];
+  ldClinics: [string, string][]; // [تخفيف(ف1), شريك(ف2)]
+  ex: string[];
+};
+
+// تختار «الأقلّ أخذاً» لدور ما من بركة، وتكسر التعادل بترتيب الكيو (استقرار)
+function pickByWheel(pool: string[], wheel: Counter, qi: (id: string) => number, count: number): string[] {
+  return [...pool]
+    .sort((a, b) => {
+      const ca = get(wheel, a), cb = get(wheel, b);
+      if (ca !== cb) return ca - cb;
+      return qi(a) - qi(b);
+    })
+    .slice(0, count);
+}
+
+const QI = (id: string) => DOCTORS.indexOf(id); // ترتيب عامّ ثابت لكسر التعادل
+const LD_SET = new Set(LIGHT_DUTY); // التخفيف: دائماً ف1، لا ينفرد، لا مضيف
+const isLD = (id: string) => LD_SET.has(id);
+
+// يوزّع بركة العاديين على الشكل s عبر العجلات (احتياط←منفرد←دليقيتر←أزواج)،
+// ثم يربط Lc شركاء للتخفيف من الباقي. يُرجع الأزواج العادية والباقي.
+function fillRegulars(pool: string[], s: Shape, plan: DayPlan, lds: string[], Lc: number) {
+  const remove = (taken: string[]) => { const set = new Set(taken); pool = pool.filter((d) => !set.has(d)); };
+
+  // ① الاحتياط  ② المنفرد  ③ الدليقيتر
+  const exChosen = pickByWheel(pool, exCount, QI, s.ex);
+  for (const d of exChosen) { plan.ex.push(d); inc(exCount, d); }
+  remove(exChosen);
+
+  const soloChosen = pickByWheel(pool, soloCount, QI, s.solos);
+  for (const d of soloChosen) { plan.solos.push(d); inc(soloCount, d); }
+  remove(soloChosen);
+
+  const delSeats = s.soloDelegator + s.hostClinics * 2;
+  const delChosen = pickByWheel(pool, delCount, QI, delSeats);
+  let di = 0;
+  for (let c = 0; c < s.soloDelegator; c++) { const d = delChosen[di++]!; plan.soloDelegators.push(d); inc(delCount, d); }
+  for (let c = 0; c < s.hostClinics; c++) {
+    const a = delChosen[di++]!, b = delChosen[di++]!;
+    plan.hostPairs.push([a, b]); inc(delCount, a); inc(delCount, b);
+  }
+  remove(delChosen);
+
+  // ④ شركاء التخفيف: الباقي بعد الأدوار الثقيلة (نصف يوم، ف2). التخفيف يأخذ ف1.
+  //    الشريك = مَن لم تختره عجلة الدليقيتر (أي الأعلى دليقيتراً) → يستريح نصف يوم.
+  for (let i = 0; i < Lc; i++) {
+    const partner = pool.shift()!;
+    plan.ldClinics.push([lds[i]!, partner]); // [تخفيف ف1, شريك ف2]
+  }
+
+  // ⑤ الأزواج. أولاً أزواج التخفيف: التخفيف ف1 دائماً، وشريكه = الأعلى استحقاقاً
+  //    لـ ف2 (أكبر p1−p2) كي يتدوّر الشريك ولا يعلق أحد في ف2.
+  let remainingPairs = s.plainPairs;
+  for (const ld of pool.filter(isLD)) {
+    if (remainingPairs <= 0) break;
+    const others = pool.filter((d) => d !== ld && !isLD(d));
+    const partner = [...others].sort((a, b) => {
+      const diff = p1minusP2(b) - p1minusP2(a);
+      return diff !== 0 ? diff : QI(a) - QI(b);
+    })[0]!;
+    pool = pool.filter((d) => d !== ld && d !== partner);
+    inc(p1c, ld); inc(p2c, partner);
+    plan.plainPairs.push([ld, partner]);
+    remainingPairs--;
+  }
+  // ثم الأزواج العادية + تنوّع الفترات
+  let li = 0;
+  for (let c = 0; c < remainingPairs; c++) {
+    plan.plainPairs.push(assignPeriods(pool[li]!, pool[li + 1]!));
+    li += 2;
+  }
+}
+
+function planDay(regulars: string[], lds: string[], M: number): DayPlan {
+  const plan: DayPlan = { hostPairs: [], soloDelegators: [], solos: [], plainPairs: [], ldClinics: [], ex: [] };
+  const total = regulars.length + lds.length;
+  const sAll = computeShape(total, M);
+
+  // ── التخفيف لا ينفرد ولا يكون مضيفاً. فإن خلا الشكل منهما (العدد ≥ 2M+1:
+  //    أزواج + دليقيتر منفرد + احتياط) فلا خطر على التخفيف → يدخل العجلات
+  //    كعاديّ تماماً: يأخذ الدليقيتر المنفرد بـ دوره (لا كل يوم)، وإلا زوج/احتياط. ──
+  if (sAll.solos === 0 && sAll.hostClinics === 0) {
+    fillRegulars([...regulars, ...lds], sAll, plan, [], 0);
+    return plan;
+  }
+
+  // ── يوجد منفرد/مضيف (العدد ≤ 2M): التخفيف يُجبر على الزوج (لا ينفرد/لا مضيف)
+  //    → احجز عيادة + شريك له، ووزّع الباقي عادياً عبر العجلات. ──
+  const Lc = Math.min(lds.length, M);
+  const s = computeShape(regulars.length - Lc, M - Lc);
+  fillRegulars([...regulars], s, plan, lds, Lc);
+  return plan;
+}
+
+// ─── عدّادات التقرير ───
+const fullDays: Counter = new Map();
+const halfDays: Counter = new Map();
+const periods: Counter = new Map();
+
+function tally(plan: DayPlan) {
+  for (const [a, b] of plan.hostPairs) for (const d of [a, b]) { inc(fullDays, d); inc(periods, d, 2); }
+  for (const d of plan.soloDelegators) { inc(fullDays, d); inc(periods, d, 2); }
+  for (const d of plan.solos) { inc(fullDays, d); inc(periods, d, 2); }
+  for (const [a, b] of plan.plainPairs) for (const d of [a, b]) { inc(halfDays, d); inc(periods, d, 1); }
+  for (const [ld, partner] of plan.ldClinics) {
+    inc(halfDays, ld); inc(periods, ld, 1); inc(p1c, ld); // التخفيف ف1
+    inc(halfDays, partner); inc(periods, partner, 1); inc(p2c, partner); // الشريك ف2
+  }
+}
+
+// ─── العرض ───
+function renderDay(dayName: string, plan: DayPlan) {
+  const parts: string[] = [];
+  let cn = 1;
+  for (const [a, b] of plan.hostPairs) parts.push(`ع${cn++}[مضيف]: ${a}(عيادة+دليقيتر)  ${b}(عيادة+دليقيتر)`);
+  for (const [a, b] of plan.plainPairs) parts.push(`ع${cn++}[زوج]: ${a}(ف1)  ${b}(ف2)`);
+  for (const [ld, p] of plan.ldClinics) parts.push(`ع${cn++}[تخفيف]: ${ld}(ف1-تخفيف)  ${p}(ف2)`);
+  for (const d of plan.solos) parts.push(`ع${cn++}[منفرد]: ${d}(يوم كامل)`);
+  for (const d of plan.soloDelegators) parts.push(`دليقيتر منفرد: ${d}`);
+  if (plan.ex.length) parts.push(`احتياط: ${plan.ex.join('، ')}`);
+  console.log(`  ${dayName.padEnd(8)} ${parts.join('   |   ')}`);
+}
+
+// ─── التشغيل ───
+function main() {
+  const M = CLINICS;
+  const lds = DOCTORS.filter((d) => LIGHT_DUTY.includes(d));
+  const regulars = DOCTORS.filter((d) => !LIGHT_DUTY.includes(d));
+
+  console.log(`السيناريو: ${M} عيادات، ${DOCTORS.length} أطباء (منهم ${lds.length} تخفيف: ${lds.join('، ') || 'لا'}).`);
+  console.log(`نقاط السؤال: الدليقيتر=${DELEGATOR_ENABLED ? 'مُفعّل' : 'مُعطّل'}  الفائض-احتياطي=${SURPLUS_AS_RESERVE}\n`);
+
+  for (let w = 0; w < WEEKS; w++) {
+    console.log(`═══ الأسبوع ${w + 1} ═══`);
+    for (const day of DAYS) {
+      const plan = planDay(regulars, lds, M);
+      renderDay(day, plan);
+      tally(plan);
+    }
+    console.log('');
+  }
+
+  console.log('═══ التقرير (مجموع أسبوعين) ═══');
+  console.log('الطبيب'.padEnd(10) + 'منفرد  دليقيتر  احتياط  أنصاف  فترات  ف1  ف2');
+  for (const d of DOCTORS) {
+    console.log(
+      d.padEnd(11) +
+        String(get(soloCount, d)).padEnd(7) +
+        String(get(delCount, d)).padEnd(9) +
+        String(get(exCount, d)).padEnd(8) +
+        String(get(halfDays, d)).padEnd(7) +
+        String(get(periods, d)).padEnd(7) +
+        String(get(p1c, d)).padEnd(4) +
+        String(get(p2c, d)),
+    );
+  }
+}
+
+main();
