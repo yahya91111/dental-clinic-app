@@ -184,11 +184,20 @@ function planDay(regulars: string[], lds: string[], M: number): DayPlan {
     return plan;
   }
 
-  // ── يوجد منفرد/مضيف (العدد ≤ 2M): التخفيف يُجبر على الزوج (لا ينفرد/لا مضيف)
-  //    → احجز عيادة + شريك له، ووزّع الباقي عادياً عبر العجلات. ──
-  const Lc = Math.min(lds.length, M);
-  const s = computeShape(regulars.length - Lc, M - Lc);
-  fillRegulars([...regulars], s, plan, lds, Lc);
+  // ── يوجد منفرد/مضيف (العدد ≤ 2M): التخفيف يُفضّل الزوج (ف1 + شريك). ──
+  //    أزواج التخفيف محدودة بالفائض (العيادات القابلة للمضاعفة). فإن كثُر
+  //    التخفيف وقلّ الفائض (مثل 4/3 + تخفيفين) → الفائض من المخففين يَنفرد
+  //    (مسموح عند تعدّد التخفيف، لفتح العيادات)، بدوره بينهم لا تثبيتاً.
+  const R = regulars.length;
+  const surplus = Math.max(0, total - M); // عيادات قابلة للمضاعفة
+  const Lc = Math.min(lds.length, surplus); // عدد أزواج التخفيف
+  const ldSoloN = lds.length - Lc; // فائض التخفيف → منفرد
+  const ldSolo = pickByWheel(lds, soloCount, QI, ldSoloN); // أيّهم ينفرد (تدوير)
+  const ldSoloSet = new Set(ldSolo);
+  for (const ld of ldSolo) { plan.solos.push(ld); inc(soloCount, ld); }
+  const ldPaired = lds.filter((d) => !ldSoloSet.has(d));
+  const s = computeShape(R - Lc, Math.max(0, M - lds.length)); // العاديون الباقون
+  fillRegulars([...regulars], s, plan, ldPaired, Lc);
   return plan;
 }
 
