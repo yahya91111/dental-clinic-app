@@ -163,7 +163,7 @@ export type LoadedData = {
   clinicCount: number;
   doctors: LoadedDoctor[];
   existingSlots: LoadedSlot[];      // الأسبوع الحالي (لاحترام الغيابات)
-  pastSlots: LoadedSlot[];          // آخر أسبوعين (للعدالة)
+  pastSlots: LoadedSlot[];          // الأسبوع السابق (للعدالة — نافذة أسبوع)
 };
 
 /**
@@ -248,16 +248,16 @@ export async function loadScheduleData(
     return { data: null, error: `فشل تحميل خانات الأسبوع: ${existingErr.message}` };
   }
 
-  // 4. خانات الأسبوعين السابقين (للعدالة)
-  const twoWeeksAgo = shiftWeekStart(weekStart, 2);
+  // 4. خانات الأسبوع السابق (للعدالة) — نافذة أسبوع واحد متحرّكة
+  const oneWeekAgo = shiftWeekStart(weekStart, 1);
   const { data: past, error: pastErr } = await supabase
     .from('schedule_slots')
     .select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
     .eq('clinic_id', clinicId)
-    .gte('week_start', twoWeeksAgo)
+    .gte('week_start', oneWeekAgo)
     .lt('week_start', weekStart);
   if (pastErr) {
-    return { data: null, error: `فشل تحميل سجل الأسبوعين السابقين: ${pastErr.message}` };
+    return { data: null, error: `فشل تحميل سجل الأسبوع السابق: ${pastErr.message}` };
   }
 
   const mapSlot = (s: any): LoadedSlot => ({
@@ -703,7 +703,7 @@ export function distributeShift(
   const L = remainingLDs.length;
   const baseLdAsSoloDel = L === 1 && totalShiftDoctors >= 2 * clinicNums.length + 1;
 
-  // دوران del: التخفيف يأخذ solo del فقط إذا كان عدد del لديه ≤ أقل عدد del بين الأطباء العاديين
+  // دوران del: التخفيف يأخذ solo del فقط إذا كان عدد del لديه < أقل عدد del بين العاديين
   // (البورد مستثنى دائماً من delegator، لذا يُحذف من المقارنة)
   let ldAsSoloDelegator = baseLdAsSoloDel;
   if (baseLdAsSoloDel && pastDelCount && weeklyDelCount) {
@@ -715,8 +715,9 @@ export function distributeShift(
       const rdel = (pastDelCount.get(r.id) ?? 0) + (weeklyDelCount.get(r.id) ?? 0);
       if (rdel < minRegDel) minRegDel = rdel;
     }
-    // التخفيف يأخذ solo del فقط إذا كان عدده يساوي أو أقل من الأقل بين العاديين
-    ldAsSoloDelegator = ldDel <= minRegDel;
+    // التخفيف يأخذ solo del فقط إذا كان عدده أقلّ فعلاً (لا عند التساوي) —
+    // فعند بلوغه القمة يتوقّف، ولا يُثبَّت بالتكرار.
+    ldAsSoloDelegator = ldDel < minRegDel;
   }
 
   if (ldAsSoloDelegator) {
@@ -773,7 +774,12 @@ export function distributeShift(
         const sorted = [...eligible].sort((a, b) => {
           const da = (pastDelCount.get(a.id) ?? 0) + (weeklyDelCount.get(a.id) ?? 0);
           const db = (pastDelCount.get(b.id) ?? 0) + (weeklyDelCount.get(b.id) ?? 0);
-          if (da !== db) return da - db; // ASC: lowest del first
+          if (da !== db) return da - db; // ASC: أقل دليقيتر إجمالاً
+          // عند التساوي: من أخذ دليقيتر أقلّ هذا الأسبوع (كي لا يُعاد اختيار
+          // من أخذ للتوّ بينما ينتظر من لم يأخذ بعد)
+          const wa = weeklyDelCount.get(a.id) ?? 0;
+          const wb = weeklyDelCount.get(b.id) ?? 0;
+          if (wa !== wb) return wa - wb;
           return a.name.localeCompare(b.name);
         });
         const soloDelDoc = sorted[0]!;
@@ -1048,53 +1054,77 @@ function computePastRoleCount(
 }
 
 /**
- * يُمهّد عدّادات الطبيب ذي السجل الصفري (عائد من إجازة أو مسجَّل حديثاً) حتى
- * يندمج بعدالة بدل أن يضعه صفرُ سجله في موضع متطرّف:
- *   - الدليقيتر: يُمهَّد بـ "أدنى" عدّاد الحاضرين → يساوي الأقل فيدخل الدوران
- *     ويواكب (لا يُحمَّل ولا يُهمَّش).
- *   - الاحتياطي: يُمهَّد بـ "أعلى" عدّاد الحاضرين → لا يأخذ راحة (الراحة لمن
- *     أجهده الدوام)، لأنه عائد مرتاح.
+ * يُمهّد عدّادات الأطباء الذين يضعهم سجلُّهم في موضع متطرّف غير عادل:
  *
- * - "بلا سجل" = لم يظهر في أي خانة خلال الأسبوعين، وليس في إجازة هذا الأسبوع.
- * - الحدّان من الحاضرين غير البورد (للبورد عدّادات محمية خاصة).
- * - لو الجميع بلا سجل (عيادة جديدة/سجل ممسوح): لا حدّ → لا تمهيد (متساوون).
+ * المبدأ: يدخل بـ (أعلى دليقيتر عند المستقرّين − 1) → يكون الأوحد الأدنى بفارق
+ * واحد، فيأخذ دليقيتراً واحداً هذا الأسبوع يصل به إلى القمة فيتساوى مع الجميع،
+ * ثم تدور العجلة بسلاسة (لا تكديس، لا تخطٍّ).
  *
- * يُعدّل الخرائط في مكانها، ويرجّع أسماء من جرى تمهيده.
+ * (أ) العائد من إجازة / المسجَّل حديثاً (سجل صفري):
+ *   - الدليقيتر: (أعلى المستقرّين − 1).
+ *   - الاحتياطي: "أعلى" عدّاد المستقرّين → لا يأخذ راحة (هو عائد مرتاح).
+ *
+ * (ب) طبيب التخفيف: دليقيتره منخفض اصطناعياً (مُستثنى من الأزواج في الـ≤6)،
+ *   فتظنّه "مَديناً" وتكدّس عليه الدليقيتر في الـ7+. نرفعه إلى (الأعلى − 1)
+ *   إن كان أقلّ (لا نُنزله) → يدخل كوافد، نصيب عادل بلا تثبيت، ويبقى مشاركاً.
+ *
+ * - "بلا سجل" = لم يظهر في أي خانة خلال النافذة، وليس في إجازة هذا الأسبوع.
+ * - المرجع: العاديون المستقرّون (حاضرون، غير بورد، غير تخفيف).
+ * - لو لا عاديين مستقرّين (عيادة جديدة/سجل ممسوح): لا مرجع → لا تمهيد.
+ *
+ * يُعدّل الخرائط في مكانها، ويرجّع أسماء من جرى تمهيده لكل فئة.
  */
 function seedZeroHistoryDoctors(
   doctors: LoadedDoctor[],
   pastSlots: LoadedSlot[],
   pastDelCount: Map<string, number>,
   pastExCount: Map<string, number>,
-): string[] {
+): { returning: string[]; lightDuty: string[] } {
   const presence = new Map<string, number>();
   for (const s of pastSlots) {
     presence.set(s.doctorId, (presence.get(s.doctorId) ?? 0) + 1);
   }
+  // المرجع = العاديون المستقرّون فقط (غير بورد وغير تخفيف)
   const peers = doctors.filter(
-    (d) => (presence.get(d.id) ?? 0) > 0 && d.groupTemplate.key !== 'board',
+    (d) => (presence.get(d.id) ?? 0) > 0
+      && d.groupTemplate.key !== 'board'
+      && d.workStatus !== 'light_duty',
   );
-  const zeroHistory = doctors.filter(
-    (d) => (presence.get(d.id) ?? 0) === 0 && d.workStatus !== 'vacation',
-  );
-  if (peers.length === 0 || zeroHistory.length === 0) return [];
+  if (peers.length === 0) return { returning: [], lightDuty: [] };
 
-  let minDel = Infinity;
+  let maxDel = 0;
   let maxEx = -Infinity;
   for (const d of peers) {
     const del = pastDelCount.get(d.id) ?? 0;
     const ex = pastExCount.get(d.id) ?? 0;
-    if (del < minDel) minDel = del;
+    if (del > maxDel) maxDel = del;
     if (ex > maxEx) maxEx = ex;
   }
+  const seedDel = Math.max(0, maxDel - 1); // أعلى المستقرّين ناقص واحد
 
-  const seeded: string[] = [];
-  for (const d of zeroHistory) {
-    pastDelCount.set(d.id, minDel); // أدنى دليقيتر → يدخل الدوران ويواكب
-    pastExCount.set(d.id, maxEx);   // أعلى احتياطي → لا يأخذ راحة (يعمل)
-    seeded.push(d.name);
+  // (أ) العائد/الجديد بلا سجل
+  const returning: string[] = [];
+  for (const d of doctors) {
+    if ((presence.get(d.id) ?? 0) === 0 && d.workStatus !== 'vacation') {
+      pastDelCount.set(d.id, seedDel); // الأعلى−1 → يأخذ واحداً فيتساوى
+      pastExCount.set(d.id, maxEx);    // أعلى احتياطي → لا يأخذ راحة (يعمل)
+      returning.push(d.name);
+    }
   }
-  return seeded;
+
+  // (ب) التخفيف الحاضر: نرفعه إلى (الأعلى−1) إن كان أقلّ (لا نُنزله)
+  const lightDuty: string[] = [];
+  for (const d of doctors) {
+    if (d.workStatus === 'light_duty' && (presence.get(d.id) ?? 0) > 0) {
+      const cur = pastDelCount.get(d.id) ?? 0;
+      if (cur < seedDel) {
+        pastDelCount.set(d.id, seedDel);
+        lightDuty.push(d.name);
+      }
+    }
+  }
+
+  return { returning, lightDuty };
 }
 
 /**
@@ -1512,14 +1542,19 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   const pastScores = computeLoadScores(data.doctors, data.pastSlots);
   const pastExCount = computePastRoleCount(data.doctors, data.pastSlots, 'ex');
   const pastDelCount = computePastRoleCount(data.doctors, data.pastSlots, 'delegator');
-  // عدالة العائد من الإجازة / الطبيب الجديد (سجل صفري): دليقيتر=أدنى الحاضرين،
-  // احتياطي=أعلى الحاضرين — فيواكب الدوران ولا يأخذ راحةً هو في غنى عنها.
-  const seededReturning = seedZeroHistoryDoctors(
+  // عدالة (أ) العائد/الجديد و(ب) التخفيف: نمهّد عدّاداتهم بمستوى العاديين
+  // المستقرّين فلا يقعون في موضع متطرّف (لا دفعة لحاق ولا تثبيت دليقيتر).
+  const seeded = seedZeroHistoryDoctors(
     data.doctors, data.pastSlots, pastDelCount, pastExCount,
   );
-  if (seededReturning.length > 0) {
+  if (seeded.returning.length > 0) {
     warnings.push(
-      `مُهّد سجل ${seededReturning.length} طبيب عائد/جديد (دليقيتر=الأدنى، احتياطي=الأعلى): ${seededReturning.join('، ')}`,
+      `مُهّد سجل ${seeded.returning.length} عائد/جديد (دليقيتر=الأعلى−1، احتياطي=الأعلى): ${seeded.returning.join('، ')}`,
+    );
+  }
+  if (seeded.lightDuty.length > 0) {
+    warnings.push(
+      `رُفع دليقيتر ${seeded.lightDuty.length} تخفيف إلى الأعلى−1 (منعاً للتثبيت): ${seeded.lightDuty.join('، ')}`,
     );
   }
   const weeklyScore = new Map<string, number>();
