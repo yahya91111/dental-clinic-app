@@ -82,12 +82,10 @@ export const V2_TOOLS: V2Tool[] = [
                 'all_morning',
                 'all_evening',
                 'hybrid_evening_days',
-                'addition_to_group',
               ],
               description:
                 'separate_schedule=دوام منفصل | all_morning=كل الأسبوع صباحاً | ' +
-                'all_evening=كل الأسبوع مساءً | hybrid_evening_days=أيام محددة مساءً | ' +
-                'addition_to_group=يُضاف للقروب. ' +
+                'all_evening=كل الأسبوع مساءً | hybrid_evening_days=أيام محددة مساءً. ' +
                 'توزيع البورد داخل الشفت تلقائي: 2+ بورد يشاركون عيادة، 1 بورد يصير عادي.',
             },
             eveningDays: {
@@ -174,8 +172,6 @@ function buildBoardScenario(
         eveningDays: filtered as WeekDay[],
       };
     }
-    case 'addition_to_group':
-      return { kind: 'addition_to_group' };
     default:
       return null;
   }

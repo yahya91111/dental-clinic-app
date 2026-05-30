@@ -48,7 +48,6 @@ export type AShiftPlan = Record<WeekDay, Shift>;
  * - all_morning          : كل الأسبوع صباحاً
  * - all_evening          : كل الأسبوع مساءً
  * - hybrid_evening_days  : أيام محددة مساءً والباقي صباحاً
- * - addition_to_group    : يُضاف للقروب الذي يعمل معه
  *
  * توزيع البورد داخل الشفت تلقائي:
  * - 2+ بورد → يتشاركون عيادة معاً (آخر عيادة، فترة لكل واحد)
@@ -63,8 +62,7 @@ export type BoardConfig = {
     | { kind: 'separate_schedule' }
     | { kind: 'all_morning' }
     | { kind: 'all_evening' }
-    | { kind: 'hybrid_evening_days'; eveningDays: WeekDay[] }
-    | { kind: 'addition_to_group' };
+    | { kind: 'hybrid_evening_days'; eveningDays: WeekDay[] };
   includeInExRotation: boolean;
 };
 
@@ -482,10 +480,6 @@ function resolveBoardForShift(
       inShift = isEveningDay ? shift === 'evening' : shift === 'morning';
       break;
     }
-    case 'addition_to_group':
-      // افتراضي: يتبع شفت قروب A (يضاف للقروب الذي يعمل ذلك الشفت)
-      inShift = true;
-      break;
   }
 
   if (!inShift) {
@@ -616,8 +610,14 @@ export function distributeShift(
   lastClinicPeriod?: Map<string, Period>,
   p1MinusP2?: Map<string, number>,
   delegatorRotationIndex?: number,
+  pastScores?: Map<string, number>,
+  weeklyScore?: Map<string, number>,
 ): ShiftDistribution {
   const slots: AssignedSlot[] = [];
+  // حِمل الفترات التراكمي (clinic=1، del=2): يُستخدم لتدوير دور "المنفرد"
+  // (فترتان = ثقيل) على الأقلّ حِملاً، وشريك التخفيف على الأعلى حِملاً.
+  const loadOf = (id: string) =>
+    (pastScores?.get(id) ?? 0) + (weeklyScore?.get(id) ?? 0);
   const warnings: string[] = [];
   const periods = SHIFT_PERIODS[pool.shift];
   const p1 = periods[0]!;
@@ -739,16 +739,34 @@ export function distributeShift(
     for (let i = 0; i < Lc; i++) {
       addClinic(reservedClinics[i]!, p1, remainingLDs[i]!);
       if (available.length > 0) {
-        // شريك التخفيف: نختار صاحب أعلى دليقيتر (ثم أعلى احتياطي) — أي الأقل
-        // حاجةً لهذين الدورين — كي لا نسحب مرشّح الدليقيتر (صاحب الأدنى، ومنهم
-        // العائد من إجازة/الجديد) بعيداً عن دوره فيُحجَز شريكاً عمياءً.
-        const partner = [...available].sort((a, b) => {
+        // شريك التخفيف يعمل فترة واحدة فقط وهي دائماً الفترة الثانية (التخفيف
+        // يأخذ الأولى). دور الشريك خفيف (فترة واحدة) مثل دور الزوج.
+        //
+        // أولاً نحجز الأقلّ حِملاً للدور الثقيل (المنفرد فترتان / الدليقيتر)
+        // فلا يُسحب شريكاً، وإلا تركّز مقعد الشريك دائماً على مَن سيؤدّي المنفرد.
+        // ثم نختار الشريك من الباقين بـ استحقاق P2 الأعلى (p1MinusP2 الأكبر =
+        // أخذ فترات أولى أكثر) → يتدوّر مقعد الفترة الثانية على الجميع. ثم
+        // الأعلى حِملاً، فالأعلى دليقيتر، فالاسم.
+        let partnerPool = available;
+        if (available.length > 1) {
+          const lowestLoad = [...available].sort((a, b) => {
+            const la = loadOf(a.id);
+            const lb = loadOf(b.id);
+            if (la !== lb) return la - lb;
+            return a.name.localeCompare(b.name);
+          })[0]!;
+          partnerPool = available.filter((d) => d.id !== lowestLoad.id);
+        }
+        const partner = [...partnerPool].sort((a, b) => {
+          const pa = p1MinusP2?.get(a.id) ?? 0;
+          const pb = p1MinusP2?.get(b.id) ?? 0;
+          if (pa !== pb) return pb - pa; // الأكثر استحقاقاً لـ P2 أولاً
+          const la = loadOf(a.id);
+          const lb = loadOf(b.id);
+          if (la !== lb) return lb - la; // ثم أعلى حِمل
           const da = (pastDelCount?.get(a.id) ?? 0) + (weeklyDelCount?.get(a.id) ?? 0);
           const db = (pastDelCount?.get(b.id) ?? 0) + (weeklyDelCount?.get(b.id) ?? 0);
-          if (da !== db) return db - da; // أعلى دليقيتر أولاً
-          const ea = (pastExCount?.get(a.id) ?? 0) + (weeklyExCount?.get(a.id) ?? 0);
-          const eb = (pastExCount?.get(b.id) ?? 0) + (weeklyExCount?.get(b.id) ?? 0);
-          if (ea !== eb) return eb - ea; // ثم أعلى احتياطي
+          if (da !== db) return db - da; // ثم أعلى دليقيتر
           return a.name.localeCompare(b.name);
         })[0]!;
         available = available.filter((d) => d.id !== partner.id);
@@ -832,16 +850,25 @@ export function distributeShift(
       addClinic(clinicNums[i]!, p2, doc);
     }
   } else if (D === M + 1) {
-    // عيادة واحدة بطبيبين (كل واحد فترة) + باقي العيادات لوحدهم. لا delegator.
-    const [f0, s0] = pickP1P2(available[0]!, available[1]!, lastClinicPeriod, p1MinusP2);
-    addClinic(clinicNums[0]!, p1, f0);
-    addClinic(clinicNums[0]!, p2, s0);
-    idx = 2;
-    for (let i = 1; i < M; i++) {
-      const doc = available[idx++]!;
+    // فائض طبيب واحد → عيادة واحدة بطبيبين (فترة لكل) + باقي العيادات منفردون.
+    // المنفرد دور ثقيل (فترتان) → يذهب لـ (M-1) الأقلّ حِملاً فيتدوّر يومياً؛
+    // الزوج (فترة واحدة لكل = خفيف) للطبيبين الأعلى حِملاً. لا delegator.
+    const byLoadAsc = [...available].sort((a, b) => {
+      const la = loadOf(a.id);
+      const lb = loadOf(b.id);
+      if (la !== lb) return la - lb; // الأقلّ حِملاً أولاً (يأخذ المنفرد الثقيل)
+      return a.name.localeCompare(b.name);
+    });
+    for (let i = 0; i < M - 1; i++) {
+      const doc = byLoadAsc[i]!;
       addClinic(clinicNums[i]!, p1, doc);
       addClinic(clinicNums[i]!, p2, doc);
     }
+    const [f0, s0] = pickP1P2(
+      byLoadAsc[M - 1]!, byLoadAsc[M]!, lastClinicPeriod, p1MinusP2,
+    );
+    addClinic(clinicNums[M - 1]!, p1, f0);
+    addClinic(clinicNums[M - 1]!, p2, s0);
   } else if (D >= M + 2 && D <= 2 * M) {
     // k عيادات بطبيبين + (M-k) لوحدهم + delegator rotation في إحدى المزدوجات.
     // عيادة الدليقيتر (الطبيبان يتبادلان clinic/delegator) تتنقّل يومياً بين
@@ -1586,7 +1613,7 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         pastExCount, weeklyExCount,
         pastDelCount, weeklyDelCount,
         input.boardConfig, lastClinicPeriod, p1MinusP2,
-        morningDelIdx,
+        morningDelIdx, pastScores, weeklyScore,
       );
       morningDelIdx++;
       allSlots.push(...res.slots);
@@ -1610,7 +1637,7 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         pastExCount, weeklyExCount,
         pastDelCount, weeklyDelCount,
         input.boardConfig, lastClinicPeriod, p1MinusP2,
-        eveningDelIdx,
+        eveningDelIdx, pastScores, weeklyScore,
       );
       eveningDelIdx++;
       allSlots.push(...res.slots);

@@ -504,7 +504,6 @@ build_schedule({
       | "all_morning"            (board works all week mornings)
       | "all_evening"            (board works all week evenings)
       | "hybrid_evening_days"    (board works evenings on specific days)
-      | "addition_to_group"      (board added to whichever group is working)
     eveningDays?: WeekDay[]      (only if hybrid_evening_days)
     includeInExRotation:         boolean
     // Note: board is ALWAYS excluded from delegator rotation (TL adds manually).
