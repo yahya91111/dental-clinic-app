@@ -223,6 +223,9 @@ export async function loadScheduleData(
   }>) {
     const template = getTemplateByName(g.name);
     if (!template) continue;  // نتجاهل القروبات غير القوالب
+    // AGD مستثنى نهائياً من توزيع الجداول (له طبيعة عمل مستقلة) — لا يُحمّل
+    // أصلاً فلا يدخل البِرَك ولا عدّادات العدالة ولا تمهيد السجل.
+    if (template.key === 'agd') continue;
     const members = g.doctor_group_members || [];
     for (const m of members) {
       doctors.push({
@@ -929,7 +932,19 @@ export function distributeShift(
     } else {
       // موقع عيادة الدليقيتر بين العيادات المزدوجة (تدوير يومي)
       const hostPos = (((delegatorRotationIndex ?? 0) % k) + k) % k;
-      let ri = 0; // مؤشر otherDocs (البورد + باقي العاديين)
+      // العيادات الفردية (فترتان = ثقيل) تذهب للأقلّ حِملاً فتتدوّر يومياً،
+      // والأزواج (فترة لكل = خفيف) للأعلى حِملاً — مثل منطق D=M+1، منعاً
+      // لتثبيت طبيب واحد على المنفرد. otherDocs = العاديون عدا زوج الدليقيتر.
+      const soloCount = M - k;
+      const byLoadAsc = [...otherDocs].sort((a, b) => {
+        const la = loadOf(a.id);
+        const lb = loadOf(b.id);
+        if (la !== lb) return la - lb;
+        return a.name.localeCompare(b.name);
+      });
+      const soloDocs = byLoadAsc.slice(0, soloCount);     // الأقلّ حِملاً → منفرد
+      const pairDocs = byLoadAsc.slice(soloCount);        // الباقي → أزواج
+      let pi = 0; // مؤشر pairDocs
       // العيادات المزدوجة
       for (let i = 0; i < k; i++) {
         const c = clinicNums[i]!;
@@ -942,15 +957,15 @@ export function distributeShift(
           addDelegator(p2, f0);
         } else {
           // عيادة عادية مزدوجة: تقسيم (كل طبيب فترة)
-          const [f, s] = pickP1P2(otherDocs[ri]!, otherDocs[ri + 1]!, lastClinicPeriod, p1MinusP2);
+          const [f, s] = pickP1P2(pairDocs[pi]!, pairDocs[pi + 1]!, lastClinicPeriod, p1MinusP2);
           addClinic(c, p1, f);
           addClinic(c, p2, s);
-          ri += 2;
+          pi += 2;
         }
       }
-      // العيادات الفردية (طبيب واحد الفترتين)
+      // العيادات الفردية (طبيب واحد الفترتين) — الأقلّ حِملاً
       for (let i = k; i < M; i++) {
-        const doc = otherDocs[ri++]!;
+        const doc = soloDocs[i - k]!;
         const c = clinicNums[i]!;
         addClinic(c, p1, doc);
         addClinic(c, p2, doc);
@@ -1529,7 +1544,7 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
       doctorsAssigned: 0,
       absencesRespected: 0,
       warnings,
-      errors: ['لا يوجد أطباء في القروبات الـ4 (AGD/A/B/Board)'],
+      errors: ['لا يوجد أطباء في قروبات التوزيع (A/B/Board)'],
       summary: 'لا يوجد أطباء',
     };
   }

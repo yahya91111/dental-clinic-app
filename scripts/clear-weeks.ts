@@ -8,7 +8,10 @@
 import { supabase } from '../lib/supabase';
 
 const CLINIC_ID = '10000000-0000-0000-0000-000000000001';
-const WEEKS = ['2026-05-24', '2026-05-31', '2026-06-07'];
+// أسابيع من سطر الأوامر إن وُجدت، وإلا الافتراضي
+const WEEKS = process.argv.slice(2).length > 0
+  ? process.argv.slice(2)
+  : ['2026-05-24', '2026-05-31', '2026-06-07'];
 
 async function countWeek(week: string): Promise<number> {
   const { count, error } = await supabase
