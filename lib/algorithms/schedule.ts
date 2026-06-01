@@ -293,8 +293,8 @@ export async function loadScheduleData(
 /** سيناريو البورد كما يُطبَّق على شفت معين */
 export type BoardRuleResolved =
   | { kind: 'no_board' }
-  | { kind: 'in_pool' }                                            // داخل المجموعة كأطباء عاديين (1 بورد)
-  | { kind: 'pair_shares_clinic'; doctors: [LoadedDoctor, LoadedDoctor] }; // 2+ بورد
+  | { kind: 'in_pool' }                              // 1 بورد: داخل المجموعة كطبيب عاديّ
+  | { kind: 'shared_clinic'; doctors: LoadedDoctor[] }; // 2+ بورد: اثنان بالعيادة، والباقي احتياطيّ يتناوب
 
 /** بركة شفت: من يعمل + البورد + التريني beginner + الغياب */
 export type ShiftPool = {
@@ -525,14 +525,12 @@ function resolveBoardForShift(
     return { boardInShift: [], boardRule: { kind: 'no_board' } };
   }
 
-  // قاعدة تلقائية: 2+ بورد → عيادة مشتركة. 1 بورد → طبيب عادي.
+  // قاعدة تلقائية: 2+ بورد → عيادة مشتركة (اثنان بالعيادة، الباقي احتياطيّ
+  // يتناوب عبر عجلة البورد). 1 بورد → طبيب عاديّ داخل البِركة.
   if (allBoard.length >= 2) {
     return {
       boardInShift: allBoard,
-      boardRule: {
-        kind: 'pair_shares_clinic',
-        doctors: [allBoard[0]!, allBoard[1]!],
-      },
+      boardRule: { kind: 'shared_clinic', doctors: allBoard },
     };
   }
   return { boardInShift: allBoard, boardRule: { kind: 'in_pool' } };

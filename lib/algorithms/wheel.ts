@@ -36,6 +36,7 @@ export type Wheels = {
   solo: string[]; // عجلة الانفراد (ترتيب دوران بمعرّفات الأطباء)
   del: string[]; // عجلة الدليقيتر
   ex: string[]; // عجلة الاحتياط
+  board: string[]; // عجلة البورد (3+: مَن في العيادة مقابل الاحتياط، تتناوب)
   p1MinusP2: Map<string, number>; // ميزان مقعد العيادة ف1/ف2 — لا يحسب الدليقيتر (حياديّ عند الصفر)
   pairWith: Map<string, number>; // "ld|reg" → عدد المزاوجات (منع تثبيت شريك التخفيف)
 };
@@ -214,6 +215,9 @@ function planDay(regulars: LoadedDoctor[], lds: LoadedDoctor[], M: number, w: Wh
 export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): Wheels {
   const roster = doctors.map((d) => d.id);
   const rosterIdx = new Map(roster.map((id, i) => [id, i]));
+  const boardIds = new Set(
+    doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id),
+  );
 
   // آخر ظهور لكل دور (وقت قابل للمقارنة: "أسبوع#يوم")
   const dayIdx: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
@@ -221,6 +225,7 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
   const lastDel = new Map<string, string>();
   const lastEx = new Map<string, string>();
   const lastSolo = new Map<string, string>();
+  const lastBoardClinic = new Map<string, string>(); // آخر مرّة كان بورديّ في العيادة المشتركة
   const p1MinusP2 = new Map<string, number>();
 
   // كشف المنفرد: طبيب له خانتا clinic بنفس (يوم|شفت|عيادة)
@@ -238,6 +243,9 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
     if (s.role === 'clinic') {
       if (isFirstPeriod(s.period)) p1MinusP2.set(s.doctorId, (p1MinusP2.get(s.doctorId) ?? 0) + 1);
       else p1MinusP2.set(s.doctorId, (p1MinusP2.get(s.doctorId) ?? 0) - 1);
+      if (boardIds.has(s.doctorId) && (lastBoardClinic.get(s.doctorId) ?? '') < t) {
+        lastBoardClinic.set(s.doctorId, t); // لتدوير احتياط البورد
+      }
     }
     if (s.role === 'clinic') {
       const sh = s.period <= 2 ? 'm' : 'e';
@@ -263,15 +271,14 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
 
   // البورد لا يدخل عجلة الدليقيتر إطلاقاً (حتى لو كان وحده داخل البِركة) —
   // يوزَّع بالعيادات/الاحتياط فقط. فنبني عجلة الدليقيتر من غير البورد.
-  const boardIds = new Set(
-    doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id),
-  );
   const nonBoard = roster.filter((id) => !boardIds.has(id));
+  const boardRoster = roster.filter((id) => boardIds.has(id));
 
   return {
     solo: order(lastSolo),
     del: order(lastDel, nonBoard),
     ex: order(lastEx),
+    board: order(lastBoardClinic, boardRoster), // الأقدم في العيادة أولاً → يدخلها التالي
     p1MinusP2,
     pairWith: new Map(),
   };
@@ -296,15 +303,27 @@ export function distributeShiftWheel(
   let available = [...pool.available];
   const lds = [...pool.lightDuty];
 
-  // ── البورد: 2+ بورد يتقاسمان آخر عيادة (الفترتان) ──
+  // ── البورد (2+): اثنان يتقاسمان آخر عيادة (الفترتان)، والباقي احتياطيّ
+  //    يتناوب يوميّاً عبر عجلة البورد (مَن لم يدخل العيادة مؤخّراً يدخلها) ──
   let boardClinic: number | null = null;
-  if (pool.boardRule.kind === 'pair_shares_clinic') {
-    const [b1, b2] = pool.boardRule.doctors;
+  if (pool.boardRule.kind === 'shared_clinic') {
+    const boardDocs = pool.boardRule.doctors;
+    const byId = new Map(boardDocs.map((d) => [d.id, d]));
+    const boardAvail = new Set(boardDocs.map((d) => d.id));
     boardClinic = N;
-    const [bf, bs] = p1mp2(w, b1.id) <= p1mp2(w, b2.id) ? [b1, b2] : [b2, b1];
-    addClinic(boardClinic, p1, bf); takeP1(w, bf.id);
-    addClinic(boardClinic, p2, bs); takeP2(w, bs.id);
-    available = available.filter((d) => d.id !== b1.id && d.id !== b2.id);
+    const inClinicIds = spin(w.board, boardAvail, 2); // الاثنان للعيادة
+    const inClinic = inClinicIds.map((id) => byId.get(id)!);
+    if (inClinic.length >= 2) {
+      const [x, y] = inClinic;
+      const [bf, bs] = p1mp2(w, x!.id) <= p1mp2(w, y!.id) ? [x!, y!] : [y!, x!];
+      addClinic(boardClinic, p1, bf); takeP1(w, bf.id);
+      addClinic(boardClinic, p2, bs); takeP2(w, bs.id);
+    } else if (inClinic.length === 1) {
+      addClinic(boardClinic, p1, inClinic[0]!); addClinic(boardClinic, p2, inClinic[0]!);
+    }
+    const inSet = new Set(inClinicIds);
+    for (const d of boardDocs) if (!inSet.has(d.id)) addEx(d); // الباقي احتياطيّ
+    available = available.filter((d) => !boardAvail.has(d.id));
   }
 
   // أرقام العيادات المتاحة (عدا عيادة البورد)

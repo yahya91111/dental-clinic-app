@@ -18,11 +18,19 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
   const getSlots = (day: DayOfWeek, period: number) =>
     slots.filter(s => s.day === day && s.period === period);
 
-  // Filter slots: show only current user's slots, unless expanded
+  // Filter slots: show only current user's slots, unless expanded.
+  // التريني المبتدئ يظلّ مكان مدرّبه (نفس العيادة/الدور/الفترة) → نُظهر اسمه
+  // مع المستخدم حتى في العرض الشخصيّ (التوقل مغلق).
   const getVisibleSlots = (day: DayOfWeek, period: number) => {
     const all = getSlots(day, period);
     if (!userId || expandAll) return all;
-    return all.filter(s => s.doctorId === userId);
+    const mine = all.filter(s => s.doctorId === userId);
+    if (mine.length === 0) return mine;
+    const myPos = new Set(mine.map(s => `${s.clinicNumber}|${s.role}`));
+    const shadows = all.filter(
+      s => s.doctorId !== userId && myPos.has(`${s.clinicNumber}|${s.role}`),
+    );
+    return [...mine, ...shadows];
   };
 
   // Check if user has any assignment on this day
