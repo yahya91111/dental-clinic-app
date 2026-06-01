@@ -395,9 +395,22 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                   {(() => {
                     // EX يُحدَّد بالـ role لا بـ period (لأن الخوارزمية تكتب period=0 لكنه ليس شرطاً)
                     const exSlots = slots.filter(s => s.day === day.key && s.role === 'ex');
+                    // الغياب (حالة غير active) يظهر أيضاً في صفّ الـ EX باسم الطبيب وكوده
+                    // (SL/VC/PS/PE). غياب اليوم الكامل قد يولّد عدّة فترات → خانة واحدة
+                    // لكل طبيب/جهة حتى لا يتكرّر الاسم.
+                    const seenAbsent = new Set<string>();
+                    const absentSlots = slots.filter(s => {
+                      if (s.day !== day.key || s.status === 'active') return false;
+                      const side = s.clinicNumber === 2 ? 'L' : 'R';
+                      const k = `${s.doctorId}|${side}`;
+                      if (seenAbsent.has(k)) return false;
+                      seenAbsent.add(k);
+                      return true;
+                    });
+                    const allEx = [...exSlots, ...absentSlots];
                     // clinicNumber 1 = right side, clinicNumber 2 = left side
-                    const rightSlots = exSlots.filter(s => s.clinicNumber === 1 || s.clinicNumber === 0);
-                    const leftSlots = exSlots.filter(s => s.clinicNumber === 2);
+                    const rightSlots = allEx.filter(s => s.clinicNumber === 1 || s.clinicNumber === 0);
+                    const leftSlots = allEx.filter(s => s.clinicNumber === 2);
 
                     const renderExCard = (slot: ScheduleSlot) => {
                       // للـ EX: لون بنفسجي ثابت + ليبل "EX". لو الطبيب حالته

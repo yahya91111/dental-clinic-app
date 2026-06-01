@@ -36,7 +36,7 @@ export type Wheels = {
   solo: string[]; // عجلة الانفراد (ترتيب دوران بمعرّفات الأطباء)
   del: string[]; // عجلة الدليقيتر
   ex: string[]; // عجلة الاحتياط
-  p1MinusP2: Map<string, number>; // ميزان ف1/ف2 (حياديّ عند الصفر)
+  p1MinusP2: Map<string, number>; // ميزان مقعد العيادة ف1/ف2 — لا يحسب الدليقيتر (حياديّ عند الصفر)
   pairWith: Map<string, number>; // "ld|reg" → عدد المزاوجات (منع تثبيت شريك التخفيف)
 };
 
@@ -146,8 +146,11 @@ function fillRegulars(
   let di = 0;
   for (let c = 0; c < s.soloDelegator; c++) plan.soloDelegators.push(byId.get(delIds[di++]!)!);
   for (let c = 0; c < s.hostClinics; c++) {
-    const a = byId.get(delIds[di++]!)!, b = byId.get(delIds[di++]!)!;
-    plan.hostPairs.push([a, b]);
+    const x = byId.get(delIds[di++]!)!, y = byId.get(delIds[di++]!)!;
+    // مَن جلس عيادة-ف1 أقلّ يأخذ مقعد ف1 الآن (والآخر ف2) → تناوب الدور الفرعيّ
+    const [a, b] = p1mp2(w, x.id) <= p1mp2(w, y.id) ? [x, y] : [y, x];
+    takeP1(w, a.id); takeP2(w, b.id);
+    plan.hostPairs.push([a, b]); // a: عيادة-ف1+دليقيتر-ف2 · b: عيادة-ف2+دليقيتر-ف1
   }
   remove(delIds);
 
@@ -230,7 +233,9 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
     } else if ((s.role as string) === 'ex') {
       if ((lastEx.get(s.doctorId) ?? '') < t) lastEx.set(s.doctorId, t);
     }
-    if (s.role === 'clinic' || s.role === 'delegator') {
+    // ميزان الفترات يحسب مقعد العيادة فقط (لا الدليقيتر) — وإلا بقي المضيف
+    // متعادلاً صفراً دائماً (عيادة-ف1 يقابلها دليقيتر-ف2) فيُثبَّت دوره الفرعيّ.
+    if (s.role === 'clinic') {
       if (isFirstPeriod(s.period)) p1MinusP2.set(s.doctorId, (p1MinusP2.get(s.doctorId) ?? 0) + 1);
       else p1MinusP2.set(s.doctorId, (p1MinusP2.get(s.doctorId) ?? 0) - 1);
     }
@@ -249,16 +254,23 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
     }
   }
 
-  const order = (last: Map<string, string>): string[] =>
-    [...roster].sort((a, b) => {
+  const order = (last: Map<string, string>, pool: string[] = roster): string[] =>
+    [...pool].sort((a, b) => {
       const la = last.get(a) ?? '', lb = last.get(b) ?? '';
       if (la !== lb) return la < lb ? -1 : 1; // الأقدم/الأبعد أولاً (مقدّمة)
       return (rosterIdx.get(a) ?? 0) - (rosterIdx.get(b) ?? 0);
     });
 
+  // البورد لا يدخل عجلة الدليقيتر إطلاقاً (حتى لو كان وحده داخل البِركة) —
+  // يوزَّع بالعيادات/الاحتياط فقط. فنبني عجلة الدليقيتر من غير البورد.
+  const boardIds = new Set(
+    doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id),
+  );
+  const nonBoard = roster.filter((id) => !boardIds.has(id));
+
   return {
     solo: order(lastSolo),
-    del: order(lastDel),
+    del: order(lastDel, nonBoard),
     ex: order(lastEx),
     p1MinusP2,
     pairWith: new Map(),
@@ -298,12 +310,36 @@ export function distributeShiftWheel(
   // أرقام العيادات المتاحة (عدا عيادة البورد)
   const clinicNums: number[] = [];
   for (let i = 1; i <= N; i++) if (i !== boardClinic) clinicNums.push(i);
-  const M = clinicNums.length;
+
+  // ── استئذان جزئيّ (PS/PE): كلٌّ يحجز عيادة في فترته المتاحة، وشريك كامل
+  //    يغطّي الفترة الأخرى. يستهلك عيادة وطبيباً كاملاً، فيقلّ M والبِركة. ──
+  const partials = pool.partialAvailable ?? [];
+  const partialIds = new Set(partials.map((p) => p.doctor.id));
+  const partialClinics: [Period, LoadedDoctor, Period, LoadedDoctor][] = []; // [فترة المستأذِن، هو، فترة الشريك، الشريك]
+  for (const { doctor, openPeriod } of partials) {
+    const otherPeriod: Period = openPeriod === p1 ? p2 : p1;
+    const cands = available.filter((d) => !partialIds.has(d.id));
+    if (cands.length === 0) { warnings.push(`لا شريك متاح لاستئذان ${doctor.name}`); continue; }
+    // الشريك: الأكثر استحقاقاً للفترة الأخرى (عبر ميزان مقعد العيادة)
+    const partnerFirst = otherPeriod === p1;
+    const partner = [...cands].sort((a, b) =>
+      partnerFirst ? p1mp2(w, a.id) - p1mp2(w, b.id) : p1mp2(w, b.id) - p1mp2(w, a.id),
+    )[0]!;
+    available = available.filter((d) => d.id !== partner.id);
+    if (openPeriod === p1) takeP1(w, doctor.id); else takeP2(w, doctor.id);
+    if (otherPeriod === p1) takeP1(w, partner.id); else takeP2(w, partner.id);
+    partialClinics.push([openPeriod, doctor, otherPeriod, partner]);
+  }
+  const M = Math.max(0, clinicNums.length - partialClinics.length);
 
   // ── القاعدة الرباعية على العاديين + التخفيف ──
   const plan = planDay(available, lds, M, w);
 
   let ci = 0;
+  for (const [docP, doc, partP, partner] of partialClinics) {
+    const c = clinicNums[ci++]!;
+    addClinic(c, docP, doc); addClinic(c, partP, partner);
+  }
   for (const [a, b] of plan.hostPairs) {
     const c = clinicNums[ci++]!;
     addClinic(c, p1, a); addClinic(c, p2, b); // العيادة

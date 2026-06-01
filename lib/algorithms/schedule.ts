@@ -315,6 +315,12 @@ export type ShiftPool = {
   beginnersOrphan: LoadedDoctor[];
   /** أطباء غائبون هذا الشفت (للعرض كـ EX) */
   absent: { doctor: LoadedDoctor; status: SlotStatus }[];
+  /**
+   * استئذان جزئيّ (PS/PE): متاح فترة واحدة فقط من الشفت.
+   * PE (نهاية الدوام) = متاح الفترة الأولى؛ PS (بداية الدوام) = متاح الثانية.
+   * يحجز عيادة في فترته المتاحة، وشريك كامل يغطّي الأخرى.
+   */
+  partialAvailable: { doctor: LoadedDoctor; openPeriod: Period }[];
   /** سيناريو البورد المُطبَّق */
   boardRule: BoardRuleResolved;
 };
@@ -388,19 +394,8 @@ function buildShiftPool(
     return false;
   });
 
-  // 3. البورد حسب السيناريو
-  const allBoard = data.doctors.filter((d) => d.groupTemplate.key === 'board');
-  const { boardInShift, boardRule } = resolveBoardForShift(
-    day,
-    shift,
-    allBoard,
-    input.boardConfig,
-  );
-
-  // 4. تجميع المرشحين
-  const candidates = [...groupDoctors, ...crossers, ...boardInShift];
-
-  // 5. استخراج الغياب من الخانات الموجودة في DB لهذا اليوم/الشفت
+  // 3. استخراج الغياب من الخانات الموجودة في DB لهذا اليوم/الشفت
+  //    (يسبق قرار البورد: عضو بورد متغيّب/متفرّغ لا يُحتسب في تقاسم العيادة)
   const absent = findAbsencesForShift(
     data.existingSlots,
     day,
@@ -408,6 +403,42 @@ function buildShiftPool(
     doctorById,
   );
   const absentIds = new Set(absent.map((a) => a.doctor.id));
+
+  // 4. البورد حسب السيناريو — نصفّي المتغيّبين/الإجازة أولاً، فيتقرّر
+  //    تقاسم العيادة (2 متاحين) أو بورد واحد داخل البِركة (1) أو لا بورد (0).
+  const availableBoard = data.doctors.filter(
+    (d) =>
+      d.groupTemplate.key === 'board' &&
+      !absentIds.has(d.id) &&
+      d.workStatus !== 'vacation',
+  );
+  const { boardInShift, boardRule } = resolveBoardForShift(
+    day,
+    shift,
+    availableBoard,
+    input.boardConfig,
+  );
+
+  // 5. تجميع المرشحين
+  const candidates = [...groupDoctors, ...crossers, ...boardInShift];
+
+  // 5.5 استئذان جزئيّ (PS/PE): متاح فترة واحدة من هذا الشفت فقط.
+  //     PE (نهاية الدوام) = غائب الفترة الثانية → متاح الأولى؛ PS = العكس.
+  //     الشفت يُستنبط ضمنياً: الطبيب مرشّح في الشفت الذي يعمله فقط.
+  const shiftPeriods = SHIFT_PERIODS[shift];
+  const candidateIds = new Set(candidates.map((c) => c.id));
+  const partialAvailable: { doctor: LoadedDoctor; openPeriod: Period }[] = [];
+  const partialIds = new Set<string>();
+  for (const slot of data.existingSlots) {
+    if (slot.dayOfWeek !== day) continue;
+    if (slot.status !== 'permission_start' && slot.status !== 'permission_end') continue;
+    if (!candidateIds.has(slot.doctorId) || partialIds.has(slot.doctorId)) continue;
+    const d = doctorById.get(slot.doctorId);
+    if (!d) continue;
+    const openPeriod = slot.status === 'permission_end' ? shiftPeriods[0]! : shiftPeriods[1]!;
+    partialAvailable.push({ doctor: d, openPeriod });
+    partialIds.add(slot.doctorId);
+  }
 
   // 6. فصل التريني beginner و light_duty عن البركة الرئيسية
   const traineeModes = input.traineeModes || {};
@@ -418,6 +449,7 @@ function buildShiftPool(
 
   for (const d of candidates) {
     if (absentIds.has(d.id)) continue; // متغيّب
+    if (partialIds.has(d.id)) continue; // استئذان جزئيّ — يُعالَج منفصلاً
     if (d.workStatus === 'vacation') continue; // إجازة دائمة — خارج الجدول
 
     // light_duty يخرج من البركة الرئيسية، يُوضع لاحقاً في P2/P4 فقط
@@ -454,6 +486,7 @@ function buildShiftPool(
     beginnersByBuddy,
     beginnersOrphan,
     absent,
+    partialAvailable,
     boardRule,
   };
 }
@@ -519,7 +552,12 @@ function findAbsencesForShift(
   for (const slot of existingSlots) {
     if (slot.dayOfWeek !== day) continue;
     if (slot.status === 'active') continue;
-    if (!periods.includes(slot.period as Period)) continue;
+    // غياب اليوم الكامل (SL/VC) يُسجَّل أحياناً بـ period=0 (خانة العرض في صفّ
+    // الـ EX) → غياب في الشفتين. وإلا نطابق فترة الشفت (للغياب المُسجَّل بفتراته).
+    const fullDay = slot.status === 'vacation' || slot.status === 'sick_leave';
+    const matchesShift =
+      periods.includes(slot.period as Period) || (slot.period === 0 && fullDay);
+    if (!matchesShift) continue;
     if (seen.has(slot.doctorId)) continue;
     const d = doctorById.get(slot.doctorId);
     if (!d) continue;
