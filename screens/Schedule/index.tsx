@@ -12,6 +12,7 @@ import { DoctorsTab } from './DoctorsTab';
 import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings } from '../../lib/database';
 import { AIOrb, AIState } from '../../components/AIOrb';
 import { AIChatSheet, ChatMessage } from '../../components/AIChatSheet';
+import { AISchedulePanel, PanelAction } from '../../components/AISchedulePanel';
 import { sendMessageV2, type V2Message, type V2User } from '../../lib/ai_v2';
 import { useAuth } from '../../AuthContext';
 
@@ -77,6 +78,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
 
   // AI Assistant
   const [showAIChat, setShowAIChat] = useState(false);
+  const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiState, setAiState] = useState<AIState>('idle');
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -576,9 +578,22 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       </Modal>
 
       {/* AI Orb */}
-      {!showAIChat && (
-        <AIOrb state={aiState} onPress={() => setShowAIChat(true)} />
+      {!showAIChat && !showAIPanel && (
+        <AIOrb state={aiState} onPress={() => setShowAIPanel(true)} />
       )}
+
+      {/* AI hub: cinematic reveal + orbiting quick actions */}
+      <AISchedulePanel
+        visible={showAIPanel}
+        onClose={() => setShowAIPanel(false)}
+        onAction={(action: PanelAction) => {
+          setShowAIPanel(false);
+          setShowAIChat(true);
+          if (action === 'create') {
+            setTimeout(() => handleAISend('أنشئ جدول هذا الأسبوع'), 350);
+          }
+        }}
+      />
 
       {/* AI Chat Sheet */}
       <AIChatSheet
