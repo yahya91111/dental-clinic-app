@@ -12,7 +12,7 @@ interface AIOrbProps {
 }
 
 // Tangled "thread ball" — purple strands woven into a sphere.
-const THREADS: { d: string; color: string; w: number }[] = [
+export const THREADS: { d: string; color: string; w: number }[] = [
   { color: '#A855F7', d: 'M20 60 C 30 20, 90 20, 100 60 C 90 100, 30 100, 20 60 Z', w: 2 },
   { color: '#7C3AED', d: 'M60 20 C 100 30, 100 90, 60 100 C 20 90, 20 30, 60 20 Z', w: 2 },
   { color: '#C084FC', d: 'M22 40 C 50 14, 90 28, 98 60 C 86 96, 40 102, 22 80 C 12 64, 14 50, 22 40 Z', w: 2 },

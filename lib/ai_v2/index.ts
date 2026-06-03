@@ -87,6 +87,43 @@ function buildUserIdentityBlock(user: V2User): string {
 }
 
 /**
+ * يبني "دفتر الأطباء" — كتلة نصّية تربط اسم كل طبيب بالـ id الخاص به،
+ * وتُعلِّم الذكاء مَن هو تريني (يحتاج تحديد وضع) قبل البناء. بدونها كان
+ * الذكاء يعرف الأسماء فقط فيخمّن الـ id ويفشل ثم يعيد المحاولة.
+ *
+ * يُحمّل بشكل lazy حتى لا يستورد supabase وقت الـ bundle (مهم لاختبارات Node).
+ * عند أي فشل يرجّع سلسلة فارغة — السياق اختياري ولا يجب أن يكسر المحادثة.
+ */
+async function buildDoctorRosterBlock(clinicId: string): Promise<string> {
+  try {
+    const { loadDoctorRoster } = await import('../algorithms/schedule');
+    const { doctors, error } = await loadDoctorRoster(clinicId);
+    if (error || !doctors || doctors.length === 0) return '';
+
+    const groupLabel: Record<string, string> = {
+      group_a: 'A',
+      group_b: 'B',
+      board: 'Board',
+    };
+    const lines = doctors.map((d) => {
+      const grp = groupLabel[d.groupTemplate.key] || d.groupTemplate.key;
+      const tags: string[] = [`group ${grp}`];
+      if (d.workStatus === 'trainee') tags.push('TRAINEE (needs mode before build)');
+      else if (d.workStatus === 'light_duty') tags.push('light-duty');
+      else if (d.workStatus === 'vacation') tags.push('on vacation');
+      return `- ${d.name} [id: ${d.id}] — ${tags.join(' — ')}`;
+    });
+
+    return (
+      `\nDoctors in your clinic (use the [id] whenever an action needs a ` +
+      `specific doctor — never guess it):\n${lines.join('\n')}\n`
+    );
+  } catch {
+    return '';
+  }
+}
+
+/**
  * يحدّ المحادثة إلى أحدث 40 رسالة مع تثبيت الرسالة الأولى.
  * هذا يمنع فقدان النية الأصلية في المحادثات الطويلة.
  */
@@ -133,6 +170,15 @@ export async function sendMessageV2(
         text: buildUserIdentityBlock(opts.user),
       },
     ];
+
+    // دفتر الأطباء (اسم ↔ id ↔ تريني) — يُجلب من DB حسب عيادة المستخدم.
+    // اختياري: عند الفشل يرجّع فارغاً ولا يُحقن.
+    if (opts.clinicId) {
+      const rosterBlock = await buildDoctorRosterBlock(opts.clinicId);
+      if (rosterBlock) {
+        systemBlocks.push({ type: 'text', text: rosterBlock });
+      }
+    }
 
     if (opts.contextData) {
       systemBlocks.push({
@@ -197,10 +243,14 @@ export async function sendMessageV2(
       );
 
       const toolResults: Array<Record<string, unknown>> = [];
+      // نصّ هذه الجولة وحدها. النصّ قبل استدعاء أداة = تمهيد ("سأبني الآن…")
+      // يُهمَل؛ نُبقي فقط نصّ الجولة المنهية (الإجابة النهائية) لمنع التصاق
+      // التمهيد بالنتيجة في رسالة المستخدم.
+      let roundText = '';
 
       for (const block of data.content || []) {
         if (block.type === 'text') {
-          allText += block.text;
+          roundText += block.text;
           // eslint-disable-next-line no-console
           console.log(
             `[AI V2 round ${round + 1}] TEXT:`,
@@ -221,8 +271,9 @@ export async function sendMessageV2(
         }
       }
 
-      // انتهاء الدورة: لا أدوات → اخرج
+      // انتهاء الدورة: لا أدوات → هذه الجولة هي الإجابة النهائية
       if (data.stop_reason !== 'tool_use' || toolResults.length === 0) {
+        allText = roundText;
         break;
       }
 

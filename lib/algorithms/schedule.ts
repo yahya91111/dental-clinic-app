@@ -90,6 +90,24 @@ export type DoctorPreference =
 
 // ─── المدخلات للدالة الرئيسية ────────────────────────────────
 
+/** غياب إضافيّ مُدخَل يدويًّا (استثناء) — يُطبَّق على يوم/شفت محدد دون كتابته في DB */
+export type ExtraAbsence = {
+  doctorId: string;
+  day: WeekDay;
+  /** 'full' = اليوم كاملاً (شفتان)، أو شفت محدد */
+  scope: 'full' | Shift;
+  /** نوع الغياب (للإحصاء فقط) — الافتراضي 'vacation' */
+  status?: SlotStatus;
+};
+
+/** استئذان جزئيّ مُدخَل كاستثناء — حضور فترة واحدة من الشفت (ليس غياباً) */
+export type ExtraPermission = {
+  doctorId: string;
+  day: WeekDay;
+  /** start=استئذان بداية (غائب أول فترة) | end=استئذان نهاية (غائب آخر فترة) */
+  kind: 'start' | 'end';
+};
+
 export type ScheduleBuildInput = {
   /** بداية الأسبوع (يجب أن تكون يوم أحد) — صيغة YYYY-MM-DD */
   weekStart: string;
@@ -109,6 +127,27 @@ export type ScheduleBuildInput = {
   /** وضع كل تريني (key = doctor_id) */
   traineeModes?: Record<string, TraineeMode>;
 
+  /**
+   * خيارات التريني المستقلّ (key = doctor_id): هل يدخل دورة الدليقيتر/الاحتياطي.
+   * الافتراضي (غياب المفتاح) = يدخل كأيّ طبيب عاديّ.
+   */
+  traineeOptions?: Record<string, { inDelegator?: boolean; inReserve?: boolean }>;
+
+  /** تعطيل الدليقيتر لهذا الأسبوع (استثناء "بدون دليقيتر"). الافتراضي: مُفعّل */
+  delegatorEnabled?: boolean;
+
+  /**
+   * غيابات إضافية يدخلها التيم ليدر كاستثناءات (تفرّغ/مرضية/إجازة ليوم محدد)
+   * تُعامَل كالغياب المُسجَّل في DB لكنها لا تُكتب — تؤثّر على التوزيع فقط.
+   */
+  extraAbsences?: ExtraAbsence[];
+
+  /**
+   * استئذانات جزئيّة يدخلها التيم ليدر كاستثناءات — حضور فترة واحدة من الشفت.
+   * تُعامَل كاستئذان PS/PE المُسجَّل في DB لكنها تأتي من نصّ الاستثناءات.
+   */
+  extraPermissions?: ExtraPermission[];
+
   /** تفضيلات أطباء محددين (key = doctor_id) */
   doctorPreferences?: Record<string, DoctorPreference>;
 
@@ -118,6 +157,13 @@ export type ScheduleBuildInput = {
 
 // ─── المخرجات ─────────────────────────────────────────────────
 
+/** متغيّب/متفرّغ لعرضه في صفّ "إضافي" بالمعاينة (لا يدخل التوزيع) */
+export type PreviewAbsence = {
+  day: WeekDay;
+  doctorName: string;
+  label: string;   // كود الحالة (VC/SL/PS/PE) أو "متفرّغ" للاستثناء اليدويّ
+};
+
 export type ScheduleBuildResult = {
   success: boolean;
   slotsCreated: number;
@@ -126,12 +172,24 @@ export type ScheduleBuildResult = {
   warnings: string[];
   errors: string[];
   summary: string;
+  previewSlots?: AssignedSlot[];   // الخانات المحسوبة (للمعاينة قبل الحفظ)
+  previewAbsences?: PreviewAbsence[]; // المتغيّبون/المتفرّغون (صفّ إضافي بالمعاينة)
+  clinicCount?: number;            // عدد العيادات (لرسم شبكة المعاينة)
 };
 
 // ─── تحميل البيانات (C2) ─────────────────────────────────────
 
 export type DoctorWorkStatus = 'active' | 'vacation' | 'light_duty' | 'trainee';
-export type SlotStatus = 'active' | 'sick_leave' | 'permission' | 'vacation';
+// حالات الخانة كما تُخزَّن في DB (مطابقة لـ DoctorStatus في screens/Schedule/types.ts):
+//   permission_start (PS) = متأخّر → غائب الفترة الأولى | permission_end (PE) = خروج مبكّر → غائب الثانية
+//   PS/PE/extra تُخزَّن بـ period=0 (لا تُعدّ غيابَ يومٍ كامل)
+export type SlotStatus =
+  | 'active'
+  | 'sick_leave'
+  | 'permission_start'
+  | 'permission_end'
+  | 'vacation'
+  | 'extra';
 export type SlotRole = 'clinic' | 'delegator';
 
 /** طبيب محمّل من قاعدة البيانات، مفلتر للقروبات الـ4 (templates) فقط */
@@ -287,6 +345,52 @@ export async function loadScheduleData(
   };
 }
 
+/**
+ * محمّل خفيف للأطباء فقط (بلا خانات، بلا تاريخ أسبوع).
+ * يُستخدم لحقن "دفتر الأطباء" في سياق الذكاء حتى يربط الاسم بالـ id
+ * ويعرف مَن هو تريني قبل البناء. يعيد استخدام نفس فلترة loadScheduleData
+ * (القوالب الأربعة فقط، وAGD مستثنى).
+ */
+export async function loadDoctorRoster(
+  clinicId: string,
+): Promise<{ doctors: LoadedDoctor[] | null; error: string | null }> {
+  const { data: groupsData, error: groupsErr } = await supabase
+    .from('doctor_groups')
+    .select('id, name, doctor_group_members(doctor_id, doctor_name, work_status, supervisor_doctor_id)')
+    .eq('clinic_id', clinicId);
+  if (groupsErr) {
+    return { doctors: null, error: `فشل تحميل الأطباء: ${groupsErr.message}` };
+  }
+
+  const doctors: LoadedDoctor[] = [];
+  for (const g of (groupsData || []) as Array<{
+    id: string;
+    name: string;
+    doctor_group_members?: Array<{
+      doctor_id: string;
+      doctor_name: string;
+      work_status: string;
+      supervisor_doctor_id: string | null;
+    }>;
+  }>) {
+    const template = getTemplateByName(g.name);
+    if (!template) continue;
+    if (template.key === 'agd') continue;
+    for (const m of g.doctor_group_members || []) {
+      doctors.push({
+        id: m.doctor_id,
+        name: m.doctor_name,
+        groupTemplate: template,
+        groupId: g.id,
+        workStatus: (m.work_status as DoctorWorkStatus) || 'active',
+        supervisorDoctorId: m.supervisor_doctor_id ?? null,
+      });
+    }
+  }
+
+  return { doctors, error: null };
+}
+
 // ─── خطة الأسبوع (C3) ────────────────────────────────────────
 // لكل (يوم/شفت): من سيعمل، البورد، الغياب، التريني beginner
 
@@ -404,6 +508,18 @@ function buildShiftPool(
   );
   const absentIds = new Set(absent.map((a) => a.doctor.id));
 
+  // 3.5 غيابات الاستثناءات اليدويّة (تفرّغ/مرضية/إجازة ليوم محدد) — تُدمَج
+  //     كالغياب المُسجَّل، لكنها لا تُكتب في DB (تؤثّر على هذا البناء فقط)
+  for (const e of input.extraAbsences || []) {
+    if (e.day !== day) continue;
+    if (e.scope !== 'full' && e.scope !== shift) continue;
+    if (absentIds.has(e.doctorId)) continue;
+    const d = doctorById.get(e.doctorId);
+    if (!d) continue;
+    absent.push({ doctor: d, status: e.status || 'vacation' });
+    absentIds.add(e.doctorId);
+  }
+
   // 4. البورد حسب السيناريو — نصفّي المتغيّبين/الإجازة أولاً، فيتقرّر
   //    تقاسم العيادة (2 متاحين) أو بورد واحد داخل البِركة (1) أو لا بورد (0).
   const availableBoard = data.doctors.filter(
@@ -438,6 +554,18 @@ function buildShiftPool(
     const openPeriod = slot.status === 'permission_end' ? shiftPeriods[0]! : shiftPeriods[1]!;
     partialAvailable.push({ doctor: d, openPeriod });
     partialIds.add(slot.doctorId);
+  }
+
+  // 5.6 استئذانات الاستثناءات اليدويّة (من نصّ التيم ليدر) — تُدمَج كالـ PS/PE
+  //     end (نهاية) = متاح أول فترة | start (بداية) = متاح آخر فترة
+  for (const p of input.extraPermissions || []) {
+    if (p.day !== day) continue;
+    if (!candidateIds.has(p.doctorId) || partialIds.has(p.doctorId)) continue;
+    const d = doctorById.get(p.doctorId);
+    if (!d) continue;
+    const openPeriod = p.kind === 'end' ? shiftPeriods[0]! : shiftPeriods[1]!;
+    partialAvailable.push({ doctor: d, openPeriod });
+    partialIds.add(p.doctorId);
   }
 
   // 6. فصل التريني beginner و light_duty عن البركة الرئيسية
@@ -550,6 +678,9 @@ function findAbsencesForShift(
   for (const slot of existingSlots) {
     if (slot.dayOfWeek !== day) continue;
     if (slot.status === 'active') continue;
+    // الاستئذان الجزئيّ (PS/PE) ليس غيابًا — حضور فترة واحدة فقط، يُعالَج منفصلاً
+    // في buildShiftPool (partialAvailable). و'extra' دور احتياط لا غياب.
+    if (slot.status === 'permission_start' || slot.status === 'permission_end' || slot.status === 'extra') continue;
     // غياب اليوم الكامل (SL/VC) يُسجَّل أحياناً بـ period=0 (خانة العرض في صفّ
     // الـ EX) → غياب في الشفتين. وإلا نطابق فترة الشفت (للغياب المُسجَّل بفتراته).
     const fullDay = slot.status === 'vacation' || slot.status === 'sick_leave';
@@ -741,16 +872,27 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   // تُمرَّر لكل شفت وتدور (مَن يأخذ الدور → آخر الطابور).
   const wheels = createWheels(data.doctors, data.pastSlots);
 
+  // استثناءات التريني المستقلّ من دورتَي الدليقيتر/الاحتياطي (حسب خيارات الويزرد)
+  const modesForExcl = input.traineeModes || {};
+  const opts = input.traineeOptions || {};
+  const excludeDel = new Set<string>();
+  const excludeEx = new Set<string>();
+  for (const [id, o] of Object.entries(opts)) {
+    if (modesForExcl[id] !== 'independent') continue; // الخيارات للمستقلّ فقط
+    if (o.inDelegator === false) excludeDel.add(id);
+    if (o.inReserve === false) excludeEx.add(id);
+  }
+
   for (const day of plan) {
     if (day.isHoliday) continue;
 
     if (day.morning) {
-      const res = distributeShiftWheel(day.day, data.clinicCount, day.morning, wheels);
+      const res = distributeShiftWheel(day.day, data.clinicCount, day.morning, wheels, input.delegatorEnabled, excludeEx, excludeDel);
       allSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} صباح: ${w}`));
     }
     if (day.evening) {
-      const res = distributeShiftWheel(day.day, data.clinicCount, day.evening, wheels);
+      const res = distributeShiftWheel(day.day, data.clinicCount, day.evening, wheels, input.delegatorEnabled, excludeEx, excludeDel);
       allSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} مساء: ${w}`));
     }
@@ -776,6 +918,36 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     }
   }
 
+  // 6.5 صفّ "إضافي" للمعاينة: المتغيّبون من DB + المتفرّغون (الاستثناءات اليدويّة)
+  const STATUS_LABEL: Record<string, string> = {
+    vacation: 'VC', sick_leave: 'SL', permission_start: 'PS', permission_end: 'PE', extra: 'EX',
+  };
+  const previewAbsences: PreviewAbsence[] = [];
+  const seenAbs = new Set<string>();
+  for (const s of data.existingSlots) {
+    if (s.status === 'active') continue;
+    const key = `${s.dayOfWeek}|${s.doctorId}`;
+    if (seenAbs.has(key)) continue;
+    seenAbs.add(key);
+    previewAbsences.push({ day: s.dayOfWeek as WeekDay, doctorName: s.doctorName, label: STATUS_LABEL[s.status] ?? '' });
+  }
+  for (const e of input.extraAbsences || []) {
+    const key = `${e.day}|${e.doctorId}`;
+    if (seenAbs.has(key)) continue;
+    const d = data.doctors.find((x) => x.id === e.doctorId);
+    if (!d) continue;
+    seenAbs.add(key);
+    previewAbsences.push({ day: e.day, doctorName: d.name, label: 'متفرّغ' });
+  }
+  for (const p of input.extraPermissions || []) {
+    const key = `${p.day}|${p.doctorId}`;
+    if (seenAbs.has(key)) continue;
+    const d = data.doctors.find((x) => x.id === p.doctorId);
+    if (!d) continue;
+    seenAbs.add(key);
+    previewAbsences.push({ day: p.day, doctorName: d.name, label: p.kind === 'start' ? 'PS' : 'PE' });
+  }
+
   // 7. ملخّص
   const uniqueDoctors = new Set(allSlots.map((s) => s.doctor.id));
   const slotsCreated = allSlots.length;
@@ -793,9 +965,66 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     warnings,
     errors: [],
     summary,
+    previewSlots: allSlots,
+    previewAbsences,
+    clinicCount: data.clinicCount,
   };
+}
+
+/** علامة استئذان (PS/PE) تُكتب في DB لتظهر بصفّ EX في الجدول الأساسيّ */
+export type PermissionMarker = {
+  doctorId: string;
+  doctorName: string;
+  day: WeekDay;
+  kind: 'start' | 'end';
+};
+
+/**
+ * يكتب خانات جاهزة مباشرةً (بعد تعديل يدويّ في المعاينة) دون إعادة بناء.
+ * يستبدل خانات الأسبوع النشطة بالمُمرَّرة. الغيابات لا تُمسّ.
+ * permissions: علامات استئذان (من نصّ الاستثناءات) تُكتب لتظهر في الجدول الأساسيّ.
+ */
+async function saveSlots(
+  clinicId: string,
+  weekStart: string,
+  slots: AssignedSlot[],
+  permissions?: PermissionMarker[],
+): Promise<{ success: boolean; error?: string }> {
+  const err = await writeSlots(clinicId, weekStart, slots);
+  if (err) return { success: false, error: err };
+
+  // علامات الاستئذان: نحذف أولاً ما كتبه الذكاء سابقاً (تفادي التكرار عند إعادة
+  // الحفظ)، مع إبقاء العلامات المُدخَلة يدويّاً (source != 'ai')، ثم نُدخل الجديدة.
+  const { error: delErr } = await supabase
+    .from('schedule_slots')
+    .delete()
+    .eq('clinic_id', clinicId)
+    .eq('week_start', weekStart)
+    .eq('source', 'ai')
+    .in('status', ['permission_start', 'permission_end']);
+  if (delErr) return { success: false, error: `فشل تنظيف الاستئذان: ${delErr.message}` };
+
+  const markers = permissions || [];
+  if (markers.length > 0) {
+    const rows = markers.map((m) => ({
+      clinic_id: clinicId,
+      week_start: weekStart,
+      day_of_week: m.day,
+      period: 0,
+      clinic_number: 1,
+      doctor_id: m.doctorId,
+      doctor_name: m.doctorName,
+      role: 'clinic',
+      status: m.kind === 'start' ? 'permission_start' : 'permission_end',
+      source: 'ai',
+    }));
+    const { error: insErr } = await supabase.from('schedule_slots').insert(rows);
+    if (insErr) return { success: false, error: `فشل كتابة الاستئذان: ${insErr.message}` };
+  }
+  return { success: true };
 }
 
 export const schedule = {
   build,
+  saveSlots,
 };

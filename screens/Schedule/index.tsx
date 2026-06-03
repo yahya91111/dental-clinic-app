@@ -11,8 +11,9 @@ import { WeekStrip } from './WeekStrip';
 import { DoctorsTab } from './DoctorsTab';
 import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings } from '../../lib/database';
 import { AIOrb, AIState } from '../../components/AIOrb';
-import { AIChatSheet, ChatMessage } from '../../components/AIChatSheet';
+import { ChatMessage } from '../../components/aiTypes';
 import { AISchedulePanel, PanelAction } from '../../components/AISchedulePanel';
+import { WizardResult } from '../../components/ScheduleWizard';
 import { sendMessageV2, type V2Message, type V2User } from '../../lib/ai_v2';
 import { useAuth } from '../../AuthContext';
 
@@ -77,7 +78,6 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [activeTab, setActiveTab] = useState<ScheduleTab>('daily_duty');
 
   // AI Assistant
-  const [showAIChat, setShowAIChat] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiState, setAiState] = useState<AIState>('idle');
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
@@ -578,32 +578,27 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       </Modal>
 
       {/* AI Orb */}
-      {!showAIChat && !showAIPanel && (
+      {!showAIPanel && (
         <AIOrb state={aiState} onPress={() => setShowAIPanel(true)} />
       )}
 
-      {/* AI hub: cinematic reveal + orbiting quick actions */}
+      {/* AI hub: cinematic reveal + orbiting quick actions + in-page chat */}
       <AISchedulePanel
         visible={showAIPanel}
         onClose={() => setShowAIPanel(false)}
-        onAction={(action: PanelAction) => {
-          setShowAIPanel(false);
-          setShowAIChat(true);
-          if (action === 'create') {
-            setTimeout(() => handleAISend('أنشئ جدول هذا الأسبوع'), 350);
-          }
+        onAction={(_action: PanelAction) => {
+          // "إنشاء جدول" يُدار داخل اللوحة (استبيان داخل الصفحة).
+          // هنا فقط الإجراءات الأخرى (حفظ/تبديل) — لاحقًا.
         }}
-      />
-
-      {/* AI Chat Sheet */}
-      <AIChatSheet
-        visible={showAIChat}
-        onClose={() => setShowAIChat(false)}
         messages={aiMessages}
         onSend={handleAISend}
         isLoading={aiLoading}
         contextLabel={`Schedule — ${activeTab === 'daily_duty' ? 'Daily Duty' : activeTab === 'doctors' ? 'Doctors' : activeTab === 'vacation' ? 'Vacation' : 'Weekend'}`}
         clinicId={clinicId}
+        onCreateSchedule={(result: WizardResult) => {
+          // TODO: تمرير result إلى بناء الجدول لاحقًا
+          console.log('[Wizard] result:', JSON.stringify(result));
+        }}
       />
 
       {/* Cell Detail Modal */}

@@ -31,6 +31,8 @@ const isFirstPeriod = (p: number) => p === 1 || p === 3;
 export const DELEGATOR_ENABLED = true; // المركز يستعمل الدليقيتر
 export const SURPLUS_AS_RESERVE = false; // الفائض الأول دليقيتر منفرد (لا احتياطي)
 
+const EMPTY_SET: Set<string> = new Set(); // افتراضي ثابت لمعاملات الاستثناء
+
 // ─── حالة العجلات (تُبنى من سجل الأسابيع السابقة، وتستمرّ عبر أيام الأسبوع) ───
 export type Wheels = {
   solo: string[]; // عجلة الانفراد (ترتيب دوران بمعرّفات الأطباء)
@@ -90,6 +92,22 @@ function spin(wheel: string[], avail: Set<string>, count: number): string[] {
   return picked;
 }
 
+// يُفضّل غير المُستثنَين أولاً، لكنه يقع على المُستثنَين عند الحاجة كي لا يبقى
+// مقعدٌ شاغراً. عند فراغ exclude يطابق spin تماماً (سلوك محفوظ).
+function spinPrefer(
+  wheel: string[], avail: Set<string>, count: number, exclude: Set<string>,
+): string[] {
+  if (exclude.size === 0) return spin(wheel, avail, count);
+  const preferred = new Set([...avail].filter((id) => !exclude.has(id)));
+  const picked = spin(wheel, preferred, count);
+  if (picked.length >= count) return picked;
+  // نقصٌ في غير المُستثنَين → نسمح للمُستثنَين بسدّ الباقي (تفادي مقعد شاغر)
+  const pickedSet = new Set(picked);
+  const rest = new Set([...avail].filter((id) => !pickedSet.has(id)));
+  const more = spin(wheel, rest, count - picked.length);
+  return [...picked, ...more];
+}
+
 // ─── ميزان ف1/ف2 ───
 const p1mp2 = (w: Wheels, id: string) => w.p1MinusP2.get(id) ?? 0;
 function takeP1(w: Wheels, id: string) { w.p1MinusP2.set(id, p1mp2(w, id) + 1); }
@@ -127,6 +145,7 @@ type DayPlan = {
 function fillRegulars(
   pool: LoadedDoctor[], s: Shape, plan: DayPlan,
   lds: LoadedDoctor[], Lc: number, w: Wheels, ldSet: Set<string>,
+  excludeEx: Set<string> = EMPTY_SET, excludeDel: Set<string> = EMPTY_SET,
 ) {
   const byId = new Map(pool.map((d) => [d.id, d]));
   let arr = [...pool];
@@ -134,7 +153,8 @@ function fillRegulars(
   const remove = (rm: string[]) => { const set = new Set(rm); arr = arr.filter((d) => !set.has(d.id)); };
 
   // ① الاحتياط  ② المنفرد  ③ الدليقيتر — كلٌّ بعجلته
-  const exIds = spin(w.ex, ids(), s.ex);
+  // (المتدرّب المستقلّ المُستثنى لا يدخل الاحتياط/الدليقيتر إلا اضطراراً)
+  const exIds = spinPrefer(w.ex, ids(), s.ex, excludeEx);
   for (const id of exIds) plan.ex.push(byId.get(id)!);
   remove(exIds);
 
@@ -143,7 +163,7 @@ function fillRegulars(
   remove(soloIds);
 
   const delSeats = s.soloDelegator + s.hostClinics * 2;
-  const delIds = spin(w.del, ids(), delSeats);
+  const delIds = spinPrefer(w.del, ids(), delSeats, excludeDel);
   let di = 0;
   for (let c = 0; c < s.soloDelegator; c++) plan.soloDelegators.push(byId.get(delIds[di++]!)!);
   for (let c = 0; c < s.hostClinics; c++) {
@@ -185,15 +205,19 @@ function fillRegulars(
   }
 }
 
-function planDay(regulars: LoadedDoctor[], lds: LoadedDoctor[], M: number, w: Wheels): DayPlan {
+function planDay(
+  regulars: LoadedDoctor[], lds: LoadedDoctor[], M: number, w: Wheels,
+  delegatorEnabled: boolean = DELEGATOR_ENABLED,
+  excludeEx: Set<string> = EMPTY_SET, excludeDel: Set<string> = EMPTY_SET,
+): DayPlan {
   const plan: DayPlan = { hostPairs: [], soloDelegators: [], solos: [], plainPairs: [], ldClinics: [], ex: [] };
   const ldSet = new Set(lds.map((d) => d.id));
   const total = regulars.length + lds.length;
-  const sAll = computeShape(total, M, DELEGATOR_ENABLED);
+  const sAll = computeShape(total, M, delegatorEnabled);
 
   // العدد ≥ 2M+1 (لا منفرد ولا مضيف): التخفيف مشارك عاديّ في العجلات
   if (sAll.solos === 0 && sAll.hostClinics === 0) {
-    fillRegulars([...regulars, ...lds], sAll, plan, [], 0, w, ldSet);
+    fillRegulars([...regulars, ...lds], sAll, plan, [], 0, w, ldSet, excludeEx, excludeDel);
     return plan;
   }
 
@@ -205,8 +229,8 @@ function planDay(regulars: LoadedDoctor[], lds: LoadedDoctor[], M: number, w: Wh
   const ldSoloIds = new Set(spin(w.solo, new Set(lds.map((d) => d.id)), ldSoloN));
   for (const d of lds) if (ldSoloIds.has(d.id)) plan.solos.push(d);
   const ldPaired = lds.filter((d) => !ldSoloIds.has(d.id));
-  const s = computeShape(R - Lc, Math.max(0, M - lds.length), DELEGATOR_ENABLED);
-  fillRegulars([...regulars], s, plan, ldPaired, Lc, w, ldSet);
+  const s = computeShape(R - Lc, Math.max(0, M - lds.length), delegatorEnabled);
+  fillRegulars([...regulars], s, plan, ldPaired, Lc, w, ldSet, excludeEx, excludeDel);
   return plan;
 }
 
@@ -287,6 +311,8 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
 // ─── التوزيع لشفت واحد: يحوّل خطة اليوم إلى خانات حقيقية ───
 export function distributeShiftWheel(
   day: WeekDay, N: number, pool: ShiftPool, w: Wheels,
+  delegatorEnabled: boolean = DELEGATOR_ENABLED,
+  excludeEx: Set<string> = EMPTY_SET, excludeDel: Set<string> = EMPTY_SET,
 ): ShiftDistribution {
   const slots: AssignedSlot[] = [];
   const warnings: string[] = [];
@@ -352,7 +378,7 @@ export function distributeShiftWheel(
   const M = Math.max(0, clinicNums.length - partialClinics.length);
 
   // ── القاعدة الرباعية على العاديين + التخفيف ──
-  const plan = planDay(available, lds, M, w);
+  const plan = planDay(available, lds, M, w, delegatorEnabled, excludeEx, excludeDel);
 
   let ci = 0;
   for (const [docP, doc, partP, partner] of partialClinics) {
