@@ -197,6 +197,7 @@ function resultToBuildInput(
     delegatorEnabled: parsed?.delegatorEnabled,
     extraAbsences: parsed?.extraAbsences,
     extraPermissions: parsed?.extraPermissions,
+    extraShifts: parsed?.extraShifts,
     dryRun,
   };
 }
@@ -347,7 +348,14 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
         day: p.day,
         kind: p.kind,
       }));
-      const res = await schedule.saveSlots(clinicId, r.weekStart, finalSlots, permissions);
+      // الغياب النصّي (تفرّغ/مرضية) يُحفظ كغياب حقيقيّ — لا فرق عن اليدويّ
+      const absences = (merged?.extraAbsences || []).map((a) => ({
+        doctorId: a.doctorId,
+        doctorName: nameById.get(a.doctorId) || '',
+        day: a.day,
+        status: (a.status === 'sick_leave' ? 'sick_leave' : 'vacation') as 'sick_leave' | 'vacation',
+      }));
+      const res = await schedule.saveSlots(clinicId, r.weekStart, finalSlots, permissions, absences);
       if (res.success) onComplete(r);
       else setBuildError(res.error || 'تعذّر حفظ الجدول.');
     } catch (e) {

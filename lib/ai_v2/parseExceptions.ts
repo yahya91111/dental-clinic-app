@@ -9,7 +9,7 @@
 // (المايسترو: الخوارزمية تعمل، الذكاء يفسّر المُدخَل البشري فقط)
 // ═══════════════════════════════════════════════════════════════
 
-import type { ExtraAbsence, ExtraPermission, WeekDay } from '../algorithms/schedule';
+import type { ExtraAbsence, ExtraPermission, ExtraShift, WeekDay } from '../algorithms/schedule';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
@@ -42,6 +42,8 @@ export type ParsedExceptions = {
   extraAbsences: ExtraAbsence[];
   /** استئذانات جزئيّة (بداية/نهاية) — حضور فترة واحدة من الشفت */
   extraPermissions: ExtraPermission[];
+  /** نقل شفت ليوم واحد — الطبيب يعمل في شفت غير شفت قروبه ذلك اليوم */
+  extraShifts: ExtraShift[];
   /** أسماء غامضة/مكرّرة تحتاج تأكيد المستخدم (يسأل الذكاء: من تقصد؟) */
   clarifications: Clarification[];
   /** ملاحظات لم يستطع المُفسِّر تحويلها لحقل (تُعرَض للتيم ليدر للمراجعة) */
@@ -53,6 +55,7 @@ const EMPTY: ParsedExceptions = {
   holidayDays: [],
   extraAbsences: [],
   extraPermissions: [],
+  extraShifts: [],
   clarifications: [],
   unresolved: [],
 };
@@ -80,15 +83,20 @@ const TOOL = {
         items: {
           type: 'object',
           properties: {
-            doctorId: { type: 'string', description: 'معرّف الطبيب من قائمة الأطباء المُعطاة.' },
+            doctorIndex: { type: 'integer', description: 'رقم الطبيب من القائمة المرقّمة (مثال: 3).' },
             day: { type: 'string', enum: VALID_DAYS },
             scope: {
               type: 'string',
               enum: ['full', 'morning', 'evening'],
               description: 'full=اليوم كامل، أو شفت محدد إن ذُكر صباحاً/مساءً.',
             },
+            status: {
+              type: 'string',
+              enum: ['vacation', 'sick_leave'],
+              description: 'sick_leave=مرضية/طبية/إجازة مرضية. vacation=تفرّغ/إجازة. الافتراضي vacation.',
+            },
           },
-          required: ['doctorId', 'day', 'scope'],
+          required: ['doctorIndex', 'day', 'scope', 'status'],
         },
         description: 'غياب طبيب (تفرّغ/مرضية/إجازة) ليوم محدد.',
       },
@@ -97,7 +105,7 @@ const TOOL = {
         items: {
           type: 'object',
           properties: {
-            doctorId: { type: 'string', description: 'معرّف الطبيب من قائمة الأطباء المُعطاة.' },
+            doctorIndex: { type: 'integer', description: 'رقم الطبيب من القائمة المرقّمة (مثال: 3).' },
             day: { type: 'string', enum: VALID_DAYS },
             kind: {
               type: 'string',
@@ -105,9 +113,26 @@ const TOOL = {
               description: 'start=استئذان بداية (يأتي متأخّراً، غائب أول فترة). end=استئذان نهاية (يخرج مبكّراً، غائب آخر فترة). "استئذان" بلا تحديد → end.',
             },
           },
-          required: ['doctorId', 'day', 'kind'],
+          required: ['doctorIndex', 'day', 'kind'],
         },
         description: 'استئذان جزئيّ: حضور فترة واحدة فقط من الشفت (ليس غياباً كاملاً).',
+      },
+      extraShifts: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            doctorIndex: { type: 'integer', description: 'رقم الطبيب من القائمة المرقّمة (مثال: 3).' },
+            day: { type: 'string', enum: VALID_DAYS },
+            shift: {
+              type: 'string',
+              enum: ['morning', 'evening'],
+              description: 'الشفت الذي يعمله الطبيب ذلك اليوم: صباح=morning، عصر/مساء=evening.',
+            },
+          },
+          required: ['doctorIndex', 'day', 'shift'],
+        },
+        description: 'نقل شفت ليوم واحد: الطبيب يعمل اليوم كاملاً لكن في الشفت المذكور (ليس غياباً ولا استئذاناً).',
       },
       clarifications: {
         type: 'array',
@@ -119,9 +144,9 @@ const TOOL = {
             day: { type: 'string', enum: VALID_DAYS },
             scope: { type: 'string', enum: ['full', 'morning', 'evening'], description: 'للغياب فقط.' },
             permKind: { type: 'string', enum: ['start', 'end'], description: 'للاستئذان فقط.' },
-            candidateIds: { type: 'array', items: { type: 'string' }, description: 'معرّفات الأطباء المحتملين (اثنان فأكثر).' },
+            candidateIndexes: { type: 'array', items: { type: 'integer' }, description: 'أرقام الأطباء المحتملين من القائمة (اثنان فأكثر).' },
           },
-          required: ['mention', 'kind', 'day', 'candidateIds'],
+          required: ['mention', 'kind', 'day', 'candidateIndexes'],
         },
         description: 'اسم غامض أو يطابق أكثر من طبيب (أسماء مكرّرة) — لا تخمّن، ضَعه هنا مع المرشّحين.',
       },
@@ -131,26 +156,29 @@ const TOOL = {
         description: 'أيّ جملة لم تُفهَم أو لم يُطابَق اسمها أيّ طبيب — تُنقَل كما هي.',
       },
     },
-    required: ['delegatorEnabled', 'holidayDays', 'extraAbsences', 'extraPermissions', 'clarifications', 'unresolved'],
+    required: ['delegatorEnabled', 'holidayDays', 'extraAbsences', 'extraPermissions', 'extraShifts', 'clarifications', 'unresolved'],
   },
 } as const;
 
 function buildPrompt(text: string, roster: RosterEntry[]): string {
-  const rosterLines = roster.map((r) => `- ${r.name} (id: ${r.id})`).join('\n');
+  const rosterLines = roster.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
   return [
     'أنت تُحوّل ملاحظات استثناءات أسبوع العمل إلى حقول منظَّمة.',
     '',
-    'قائمة الأطباء (طابِق الأسماء معها، واستخدم الـ id):',
+    'قائمة الأطباء المرقّمة (طابِق الاسم المذكور معها، واستخدم الرقم في doctorIndex):',
     rosterLines || '(لا يوجد)',
     '',
     'قواعد:',
     '- يوم الأسبوع: الأحد=sunday, الاثنين=monday, الثلاثاء=tuesday, الأربعاء=wednesday, الخميس=thursday.',
     '- "تفرّغ" أو "مرضية" أو "إجازة" أو "غائب" ليوم → extraAbsences (scope=full ما لم يُذكر صباحاً/مساءً).',
+    '  • نوع الغياب (status): "مرضية/مرضيه/طبية/طبيه/إجازة مرضية" → status=sick_leave؛ "تفرّغ/متفرّغ/إجازة/غائب" → status=vacation. الافتراضي vacation.',
     '- "استئذان" → extraPermissions (حضور فترة واحدة، ليس غياباً). "بداية"/"متأخّر"/"يأتي متأخّراً" → kind=start؛ "نهاية"/"يخرج مبكّراً"/"خروج بدري" → kind=end؛ "استئذان" بلا تحديد → kind=end.',
+    '- "دوامه عصر/مساءً" أو "دوامه صباح" أو "حوّله للعصر/الصباح يوم كذا" أو "اجعله مع الشفت الثاني" → extraShifts {shift}. الطبيب يعمل اليوم كاملاً في الشفت المذكور (نقل شفت، ليس غياباً ولا استئذاناً).',
     '- "عطلة" أو "يوم عطلة" → holidayDays.',
     '- "بدون دليقيتر" أو "بلا delegators" → delegatorEnabled=false.',
-    '- إذا طابق اسمٌ مذكور أكثر من طبيب (أسماء مكرّرة) أو كان غامضاً يحتمل عدّة أطباء: لا تخمّن، ولا تضعه في extraAbsences/extraPermissions؛ بل ضَعه في clarifications مع candidateIds (معرّفات المرشّحين) ونوعه (kind) ويومه (وscope للغياب أو permKind للاستئذان).',
-    '- إن لم تجد أيّ طبيب مطابق لاسمٍ مذكور إطلاقاً، ضَع الجملة في unresolved ولا تخترع id.',
+    '- استخدم دائماً رقم الطبيب من القائمة (doctorIndex)، وتأكّد أنّ الرقم يقابل الاسم المذكور تماماً. لا تستعمل أرقاماً ليست في القائمة.',
+    '- إذا طابق اسمٌ مذكور أكثر من طبيب (أسماء مكرّرة) أو كان غامضاً يحتمل عدّة أطباء: لا تخمّن، ولا تضعه في extraAbsences/extraPermissions؛ بل ضَعه في clarifications مع candidateIndexes (أرقام المرشّحين) ونوعه (kind) ويومه (وscope للغياب أو permKind للاستئذان).',
+    '- إن لم تجد أيّ طبيب مطابق لاسمٍ مذكور إطلاقاً، ضَع الجملة في unresolved ولا تخترع رقماً.',
     '- إن كان النصّ فارغاً أو لا يحوي استثناءات، أرجِع القيم الافتراضية (delegatorEnabled=true، والباقي فارغ).',
     '- استدعِ report_exceptions دائماً.',
     '',
@@ -203,10 +231,13 @@ export async function parseExceptions(
   }
 }
 
-/** يُنقّي مخرجات النموذج: يتحقّق من الأيام والـ ids ويُسقِط غير الصالح */
+/** يُنقّي مخرجات النموذج: يترجم أرقام الأطباء إلى ids ويتحقّق من الأيام ويُسقِط غير الصالح */
 function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
-  const validIds = new Set(roster.map((r) => r.id));
   const dayOk = (d: any): d is WeekDay => VALID_DAYS.includes(d);
+  // النموذج يُرجِع رقم الطبيب (1-based) من القائمة — نترجمه هنا حتميّاً إلى id.
+  // (لا نُحمّل النموذج نسخ UUID — نسخ الأرقام أدقّ بكثير.)
+  const idxOk = (n: any): boolean => Number.isInteger(n) && n >= 1 && n <= roster.length;
+  const entryAt = (n: any): RosterEntry | null => (idxOk(n) ? roster[n - 1]! : null);
 
   const holidayDays = Array.isArray(raw.holidayDays)
     ? (raw.holidayDays.filter(dayOk) as WeekDay[])
@@ -221,12 +252,28 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
     for (const e of raw.extraAbsences) {
       if (!e || !dayOk(e.day)) continue;
       const scope = e.scope === 'morning' || e.scope === 'evening' ? e.scope : 'full';
-      if (!validIds.has(e.doctorId)) {
-        // اسم لم يُطابَق بطبيب — انقله للمراجعة بدل اختراع توزيع
-        unresolved.push(`غياب غير مُطابَق: ${e.doctorId ?? ''} (${e.day})`);
+      const entry = entryAt(e.doctorIndex);
+      if (!entry) {
+        // رقم لم يُطابَق طبيباً — انقله للمراجعة بدل اختراع توزيع
+        unresolved.push(`غياب غير مُطابَق: رقم ${e.doctorIndex ?? '?'} (${e.day})`);
         continue;
       }
-      extraAbsences.push({ doctorId: e.doctorId, day: e.day, scope });
+      const status = e.status === 'sick_leave' ? 'sick_leave' : 'vacation';
+      extraAbsences.push({ doctorId: entry.id, day: e.day, scope, status });
+    }
+  }
+
+  const extraShifts: ExtraShift[] = [];
+  if (Array.isArray(raw.extraShifts)) {
+    for (const s of raw.extraShifts) {
+      if (!s || !dayOk(s.day)) continue;
+      if (s.shift !== 'morning' && s.shift !== 'evening') continue;
+      const entry = entryAt(s.doctorIndex);
+      if (!entry) {
+        unresolved.push(`نقل شفت غير مُطابَق: رقم ${s.doctorIndex ?? '?'} (${s.day})`);
+        continue;
+      }
+      extraShifts.push({ doctorId: entry.id, day: s.day, shift: s.shift });
     }
   }
 
@@ -235,21 +282,21 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
     for (const p of raw.extraPermissions) {
       if (!p || !dayOk(p.day)) continue;
       const kind = p.kind === 'start' ? 'start' : 'end'; // الافتراض: نهاية
-      if (!validIds.has(p.doctorId)) {
-        unresolved.push(`استئذان غير مُطابَق: ${p.doctorId ?? ''} (${p.day})`);
+      const entry = entryAt(p.doctorIndex);
+      if (!entry) {
+        unresolved.push(`استئذان غير مُطابَق: رقم ${p.doctorIndex ?? '?'} (${p.day})`);
         continue;
       }
-      extraPermissions.push({ doctorId: p.doctorId, day: p.day, kind });
+      extraPermissions.push({ doctorId: entry.id, day: p.day, kind });
     }
   }
 
-  const byId = new Map(roster.map((r) => [r.id, r]));
   const clarifications: Clarification[] = [];
   if (Array.isArray(raw.clarifications)) {
     for (const c of raw.clarifications) {
       if (!c || !dayOk(c.day) || typeof c.mention !== 'string') continue;
-      const candidates = (Array.isArray(c.candidateIds) ? c.candidateIds : [])
-        .map((id: any) => byId.get(id))
+      const candidates = (Array.isArray(c.candidateIndexes) ? c.candidateIndexes : [])
+        .map((n: any) => entryAt(n))
         .filter((r: any): r is RosterEntry => !!r);
       if (candidates.length < 2) {
         // مرشّح واحد أو لا مرشّح → ليس غموضاً قابلاً للتأكيد، انقله للمراجعة
@@ -273,6 +320,7 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
     holidayDays: Array.from(new Set(holidayDays)),
     extraAbsences,
     extraPermissions,
+    extraShifts,
     clarifications,
     unresolved,
   };

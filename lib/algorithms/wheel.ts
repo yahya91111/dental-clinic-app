@@ -108,6 +108,22 @@ function spinPrefer(
   return [...picked, ...more];
 }
 
+// عقوبة الاحتياط: مَن غاب (طبية/تفرّغ) "قبل دوره" — أي ليس في مقدّمة طابور
+// الاحتياط — يرحل إلى المؤخّرة (فقد أولويّته لأنه نال راحته مبكّراً). مَن كان
+// في المقدّمة (هو التالي = "في دوره") يبقى مكانه فيُؤخذ أوّلاً عند عودته.
+// protectedFront = مَن كان مقدّمة الطابور بداية اليوم (قبل أيّ دوران).
+export function applyExAbsence(
+  w: Wheels, absentIds: Set<string>, protectedFront?: string,
+): void {
+  if (absentIds.size === 0) return;
+  const movers = w.ex.filter((id) => absentIds.has(id) && id !== protectedFront);
+  if (movers.length === 0) return;
+  const mset = new Set(movers);
+  const rest = w.ex.filter((id) => !mset.has(id));
+  w.ex.length = 0;
+  w.ex.push(...rest, ...movers); // الترتيب النسبيّ محفوظ
+}
+
 // ─── ميزان ف1/ف2 ───
 const p1mp2 = (w: Wheels, id: string) => w.p1MinusP2.get(id) ?? 0;
 function takeP1(w: Wheels, id: string) { w.p1MinusP2.set(id, p1mp2(w, id) + 1); }
@@ -234,6 +250,39 @@ function planDay(
   return plan;
 }
 
+// ─── طابور الاحتياط: يُبنى بإعادة تشغيل التاريخ يوماً بيوم (لا بالأحدثيّة فقط) ───
+// لأنّ قاعدة الاحتياط مختلفة: الغياب "قبل الدور" يُرحّل لآخر الطابور أيضاً، لا
+// أخذ الاحتياط وحده. فنُعيد تشغيل كلّ يوم بالترتيب الزمنيّ ونطبّق نفس القاعدة:
+//   • مَن أخذ الاحتياط ذلك اليوم → المؤخّرة.
+//   • مَن غاب وليس في المقدّمة (قبل دوره) → المؤخّرة.
+//   • مَن غاب وهو في المقدّمة (في دوره) → يبقى مكانه.
+function replayExWheel(
+  roster: string[], rosterIdx: Map<string, number>, pastSlots: LoadedSlot[],
+): string[] {
+  const dayIdx: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+  const buckets = new Map<string, { ex: Set<string>; absent: Set<string> }>();
+  for (const s of pastSlots) {
+    const key = `${s.weekStart}#${dayIdx[s.dayOfWeek] ?? 0}`;
+    let b = buckets.get(key);
+    if (!b) { b = { ex: new Set(), absent: new Set() }; buckets.set(key, b); }
+    if (s.status === 'active') {
+      if ((s.role as string) === 'ex') b.ex.add(s.doctorId);
+    } else if (s.status === 'sick_leave' || s.status === 'vacation') {
+      b.absent.add(s.doctorId); // طبية/تفرّغ فقط (لا الاستئذان)
+    }
+  }
+  let wheel = [...roster].sort((a, b) => (rosterIdx.get(a) ?? 0) - (rosterIdx.get(b) ?? 0));
+  for (const key of [...buckets.keys()].sort()) {
+    const { ex, absent } = buckets.get(key)!;
+    const front = wheel[0]; // مقدّمة الطابور بداية اليوم (محميّة من عقوبة الغياب)
+    const isMover = (id: string) => ex.has(id) || (absent.has(id) && id !== front);
+    if (wheel.some(isMover)) {
+      wheel = [...wheel.filter((id) => !isMover(id)), ...wheel.filter(isMover)];
+    }
+  }
+  return wheel;
+}
+
 // ─── بناء العجلات من سجل الأسابيع السابقة (استمرارية عبر الأسابيع) ───
 // ترتيب العجلة = الأقدم/مَن لم يأخذ الدور أولاً (مقدّمة الطابور). الأحدث آخراً.
 export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): Wheels {
@@ -247,7 +296,6 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
   const dayIdx: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
   const stamp = (s: LoadedSlot) => `${s.weekStart}#${dayIdx[s.dayOfWeek] ?? 0}`;
   const lastDel = new Map<string, string>();
-  const lastEx = new Map<string, string>();
   const lastSolo = new Map<string, string>();
   const lastBoardClinic = new Map<string, string>(); // آخر مرّة كان بورديّ في العيادة المشتركة
   const p1MinusP2 = new Map<string, number>();
@@ -259,9 +307,8 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
     const t = stamp(s);
     if (s.role === 'delegator') {
       if ((lastDel.get(s.doctorId) ?? '') < t) lastDel.set(s.doctorId, t);
-    } else if ((s.role as string) === 'ex') {
-      if ((lastEx.get(s.doctorId) ?? '') < t) lastEx.set(s.doctorId, t);
     }
+    // الاحتياط (ex) يُبنى منفصلاً عبر replayExWheel (قاعدة مختلفة) — لا نتتبّعه هنا
     // ميزان الفترات يحسب مقعد العيادة فقط (لا الدليقيتر) — وإلا بقي المضيف
     // متعادلاً صفراً دائماً (عيادة-ف1 يقابلها دليقيتر-ف2) فيُثبَّت دوره الفرعيّ.
     if (s.role === 'clinic') {
@@ -301,7 +348,7 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
   return {
     solo: order(lastSolo),
     del: order(lastDel, nonBoard),
-    ex: order(lastEx),
+    ex: replayExWheel(roster, rosterIdx, pastSlots), // قاعدة الاحتياط الخاصّة (الغياب قبل الدور)
     board: order(lastBoardClinic, boardRoster), // الأقدم في العيادة أولاً → يدخلها التالي
     p1MinusP2,
     pairWith: new Map(),
