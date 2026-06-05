@@ -17,12 +17,48 @@
 
 import {
   SCHEDULE_ASSISTANT_V2,
+  REQUESTS_ASSISTANT_V2,
   CORE_PROMPT_V2,
   TEAM_LEADER_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
-import { V2_TOOLS, dispatchV2Tool, type V2ToolContext, type SchedulePreview } from './tools';
+import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview } from './tools';
+import { REQUESTS_TOOLS, dispatchRequestTool } from './tools_requests';
 export type { SchedulePreview } from './tools';
+
+// ─── التوجيه بين المساعدين (جدول / طلبات) ──────────────────────
+export type V2Task = 'schedule' | 'requests';
+
+type TaskBundle = {
+  prompt: string;
+  tools: V2Tool[];
+  dispatch: (name: string, input: unknown, ctx: V2ToolContext) => Promise<string>;
+};
+
+const TASK_BUNDLES: Record<V2Task, TaskBundle> = {
+  schedule: { prompt: SCHEDULE_ASSISTANT_V2, tools: V2_TOOLS, dispatch: dispatchV2Tool },
+  requests: { prompt: REQUESTS_ASSISTANT_V2, tools: REQUESTS_TOOLS, dispatch: dispatchRequestTool },
+};
+
+// بوّابة تصنيف خفيفة للمحادثة الحرّة (بلا زرّ): تستنبط النيّة من آخر رسالة.
+// الكلمات الواضحة تكفي؛ الافتراضي «جدول». (يمكن لاحقًا نداء نموذج للغموض.)
+const REQUEST_HINTS = [
+  'مرضي', 'طبي', 'استئذان', 'تفرّغ', 'تفرغ', 'اجاز', 'إجاز', 'تبديل', 'بدّل', 'بدل',
+  'انقل', 'نقل القروب', 'عدد العياد', 'امسح الجدول', 'احتياط', 'تخفيف', 'متدرّب',
+];
+const SCHEDULE_HINTS = ['ابن الجدول', 'ابنِ الجدول', 'انشئ جدول', 'أنشئ جدول', 'وزّع', 'وزع', 'بناء الجدول', 'اعمل جدول', 'سوّ الجدول'];
+
+function classifyTask(messages: V2Message[]): V2Task {
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  if (SCHEDULE_HINTS.some((h) => lastUser.includes(h))) return 'schedule';
+  if (REQUEST_HINTS.some((h) => lastUser.includes(h))) return 'requests';
+  return 'schedule';
+}
+
+function resolveTask(opts: SendMessageV2Options): V2Task {
+  if (opts.task === 'schedule' || opts.task === 'requests') return opts.task;
+  return classifyTask(opts.messages);
+}
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
@@ -49,6 +85,8 @@ export type SendMessageV2Options = {
   user: V2User;
   clinicId?: string;
   contextData?: string;
+  /** المهمّة: من زرّ الواجهة (schedule/requests). إن غابت → تُستنبط من النصّ. */
+  task?: V2Task;
 };
 
 export type SendMessageV2Result = {
@@ -161,9 +199,14 @@ export async function sendMessageV2(
     };
   }
 
+  // أيّ مساعد نُشغّل: من الزرّ (task) أو باستنباط من النصّ
+  const task = resolveTask(opts);
+  const bundle = TASK_BUNDLES[task];
+
   try {
     // Layered system prompt — كل طبقة لها cache key مستقل.
-    // أول رسالة في الجلسة تكتب الكاش، الباقي يقرأ منه.
+    // النواة + الدور مشتركان دائمًا (يبقيان مُخزَّنين)، وبلوك المساعد يتغيّر
+    // حسب المهمّة ولكلّ مساعد كاشه الخاصّ.
     const systemBlocks: Array<Record<string, unknown>> = [
       {
         type: 'text',
@@ -177,7 +220,7 @@ export async function sendMessageV2(
       },
       {
         type: 'text',
-        text: SCHEDULE_ASSISTANT_V2,
+        text: bundle.prompt,
         cache_control: { type: 'ephemeral', ttl: '1h' },
       },
     ];
@@ -233,7 +276,10 @@ export async function sendMessageV2(
       onPreview: (p) => { capturedPreview = p; },
     };
 
-    const toolsEnabled = V2_TOOLS.length > 0;
+    const activeTools = bundle.tools;
+    const toolsEnabled = activeTools.length > 0;
+    // eslint-disable-next-line no-console
+    console.log(`[AI V2] task=${task} (tools=${activeTools.length})`);
     let allText = '';
     let inputTokensTotal = 0;
     let outputTokensTotal = 0;
@@ -254,7 +300,7 @@ export async function sendMessageV2(
           model: DEFAULT_MODEL,
           max_tokens: MAX_TOKENS,
           system: systemBlocks,
-          tools: toolsEnabled ? V2_TOOLS : undefined,
+          tools: toolsEnabled ? activeTools : undefined,
           messages: conversation,
         }),
       });
@@ -294,7 +340,7 @@ export async function sendMessageV2(
             block.text.slice(0, 300),
           );
         } else if (block.type === 'tool_use' && toolsEnabled) {
-          const result = await dispatchV2Tool(block.name, block.input, toolCtx);
+          const result = await bundle.dispatch(block.name, block.input, toolCtx);
           // eslint-disable-next-line no-console
           console.log(
             `[AI V2 round ${round + 1}] TOOL ${block.name} →`,
