@@ -12,8 +12,29 @@
 
 // schedule محمّل بشكل lazy حتى لا يستورد supabase وقت الـ bundle
 // (مهم لاختبارات Node — راجع scripts/test-ai-v2.ts)
-import type { ScheduleBuildInput, WeekDay } from '../algorithms/schedule';
+import type {
+  ScheduleBuildInput, WeekDay,
+  AssignedSlot, PreviewAbsence, PermissionMarker, AbsenceMarker,
+} from '../algorithms/schedule';
 import { KNOWLEDGE_INDEX, KNOWLEDGE_DOCS } from './_compiled';
+
+/**
+ * حزمة معاينة جدول تُمرَّر من أداة build_schedule (في وضع dryRun) إلى الواجهة
+ * كي تعرض صفحة المعاينة وتحفظ ما يراه المستخدم بالضبط (saveSlots). تحمل:
+ *  - slots/absences: للرسم (نفس ما يعرضه المعالج Wizard).
+ *  - permissions/absenceMarkers: علامات منظَّمة (مع خانة EX) للحفظ.
+ */
+export type SchedulePreview = {
+  weekStart: string;
+  clinicId: string;
+  slots: AssignedSlot[];
+  absences: PreviewAbsence[];
+  clinicCount: number;
+  summary: string;
+  warnings: string[];
+  permissions: PermissionMarker[];
+  absenceMarkers: AbsenceMarker[];
+};
 
 const WEEK_DAYS_LIST: WeekDay[] = [
   'sunday', 'monday', 'tuesday', 'wednesday', 'thursday',
@@ -38,8 +59,11 @@ export type V2ToolContext = {
     clinicId?: string;
     clinicName?: string;
   } | null;
-  /** دفتر الأطباء مرتّباً (نفس ترتيب العرض المرقّم للذكاء) — لترجمة doctorIndex → id */
-  roster?: { id: string; name: string }[];
+  /** دفتر الأطباء مرتّباً (نفس ترتيب العرض المرقّم للذكاء) — لترجمة doctorIndex → id.
+   *  groupKey (group_a/group_b/board/…) يُستعمل لحساب خانة EX الصحيحة للغياب/الاستئذان. */
+  roster?: { id: string; name: string; groupKey?: string }[];
+  /** تُستدعى عند بناء معاينة (dryRun) — تُمرّر الحزمة للواجهة لتعرضها وتحفظها */
+  onPreview?: (preview: SchedulePreview) => void;
 };
 
 /**
@@ -289,6 +313,23 @@ function buildBoardScenario(
     }
     default:
       return null;
+  }
+}
+
+/** شفت البورد ليومٍ ما حسب سيناريو البورد — لحساب خانة EX الصحيحة لغياب طبيب بورد */
+function boardShiftForDay(
+  scenario: ScheduleBuildInput['boardConfig']['scenario'],
+  day: WeekDay,
+): 'morning' | 'evening' {
+  switch (scenario.kind) {
+    case 'all_evening':
+      return 'evening';
+    case 'hybrid_evening_days':
+      return scenario.eveningDays.includes(day) ? 'evening' : 'morning';
+    case 'all_morning':
+    case 'separate_schedule':
+    default:
+      return 'morning';
   }
 }
 
@@ -558,6 +599,46 @@ async function handleBuildSchedule(
     // lazy import: يحمّل supabase فقط عند الاستدعاء الفعلي
     const { schedule } = await import('../algorithms/schedule');
     const result = await schedule.build(buildInput);
+
+    // معاينة (dryRun): مرّر الحزمة للواجهة لتعرض صفحة المعاينة ويحفظ المستخدم منها.
+    // نحسب علامات الغياب/الاستئذان بخانة EX الصحيحة (مثل المعالج Wizard).
+    if (buildInput.dryRun && result.success && result.previewSlots && ctx.onPreview) {
+      const nameAt = (id: string) => ctx.roster?.find((d) => d.id === id)?.name ?? '';
+      const exCell = (doctorId: string, day: WeekDay): number => {
+        const ov = (buildInput.extraShifts || []).find((s) => s.doctorId === doctorId && s.day === day);
+        let shift: 'morning' | 'evening';
+        if (ov) shift = ov.shift;
+        else {
+          const key = ctx.roster?.find((d) => d.id === doctorId)?.groupKey;
+          const aShift = buildInput.aShiftPlan[day];
+          if (key === 'group_b') shift = aShift === 'morning' ? 'evening' : 'morning';
+          else if (key === 'board') shift = boardShiftForDay(buildInput.boardConfig.scenario, day);
+          else shift = aShift; // group_a وغيره يتبع خطّة قروب A
+        }
+        return shift === 'morning' ? 1 : 2;
+      };
+      const permissions: PermissionMarker[] = (buildInput.extraPermissions || []).map((p) => ({
+        doctorId: p.doctorId, doctorName: nameAt(p.doctorId), day: p.day, kind: p.kind,
+        clinicNumber: exCell(p.doctorId, p.day),
+      }));
+      const absenceMarkers: AbsenceMarker[] = (buildInput.extraAbsences || []).map((a) => ({
+        doctorId: a.doctorId, doctorName: nameAt(a.doctorId), day: a.day,
+        status: a.status === 'sick_leave' ? 'sick_leave' : 'vacation',
+        clinicNumber: exCell(a.doctorId, a.day),
+      }));
+      ctx.onPreview({
+        weekStart: buildInput.weekStart,
+        clinicId: ctx.clinicId,
+        slots: result.previewSlots,
+        absences: result.previewAbsences ?? [],
+        clinicCount: result.clinicCount ?? 1,
+        summary: result.summary,
+        warnings: result.warnings,
+        permissions,
+        absenceMarkers,
+      });
+    }
+
     const lines: string[] = [];
     lines.push(`success: ${result.success}`);
     lines.push(`summary: ${result.summary}`);

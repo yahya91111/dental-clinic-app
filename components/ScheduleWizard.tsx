@@ -968,12 +968,13 @@ function PreviewGrid({ slots, absences, clinicCount, sel, onTap }: { slots: Assi
   );
 }
 
-function PreviewView({ preview, building, error, onSave, onEdit }: {
+export function PreviewView({ preview, building, error, onSave, onEdit, hideEdit }: {
   preview: { slots: AssignedSlot[]; absences: PreviewAbsence[]; clinicCount: number; summary: string; warnings: string[] };
   building: boolean;
   error: string | null;
   onSave: (slots: AssignedSlot[]) => void;
   onEdit: () => void;
+  hideEdit?: boolean;   // مسار الجات: يُخفي "رجوع للتعديل" (أيقونة المحادثة تكفي)
 }) {
   // نسخة قابلة للتعديل + حالة التحديد (نقر طبيب ثم آخر في نفس اليوم → تبديل)
   const [slots, setSlots] = useState<AssignedSlot[]>(preview.slots);
@@ -1031,14 +1032,16 @@ function PreviewView({ preview, building, error, onSave, onEdit }: {
             </>
           )}
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onEdit}
-          disabled={building}
-          activeOpacity={0.85}
-          style={{ paddingVertical: scale(14), paddingHorizontal: scale(20), borderRadius: scale(16), backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' }}
-        >
-          <Text style={{ fontSize: scale(15), fontWeight: '700', color: 'rgba(255,255,255,0.6)' }}>رجوع للتعديل</Text>
-        </TouchableOpacity>
+        {!hideEdit && (
+          <TouchableOpacity
+            onPress={onEdit}
+            disabled={building}
+            activeOpacity={0.85}
+            style={{ paddingVertical: scale(14), paddingHorizontal: scale(20), borderRadius: scale(16), backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center' }}
+          >
+            <Text style={{ fontSize: scale(15), fontWeight: '700', color: 'rgba(255,255,255,0.6)' }}>رجوع للتعديل</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );

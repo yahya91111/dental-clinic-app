@@ -14,7 +14,8 @@ import { AIOrb, AIState } from '../../components/AIOrb';
 import { ChatMessage } from '../../components/aiTypes';
 import { AISchedulePanel, PanelAction } from '../../components/AISchedulePanel';
 import { WizardResult } from '../../components/ScheduleWizard';
-import { sendMessageV2, type V2Message, type V2User } from '../../lib/ai_v2';
+import { sendMessageV2, type V2Message, type V2User, type SchedulePreview } from '../../lib/ai_v2';
+import { schedule, type AssignedSlot } from '../../lib/algorithms/schedule';
 import { useAuth } from '../../AuthContext';
 
 interface ScheduleScreenProps {
@@ -83,6 +84,10 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const aiHistoryRef = useRef<V2Message[]>([]);
+  // معاينة جدول بناها الذكاء في الشات — تُعرَض فوق صفحة الذكاء، والحفظ من هناك
+  const [aiPreview, setAiPreview] = useState<SchedulePreview | null>(null);
+  const [aiPreviewSaving, setAiPreviewSaving] = useState(false);
+  const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
 
   const handleAISend = async (text: string) => {
     if (!user) return;
@@ -126,6 +131,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       const assistantMsg: ChatMessage = { id: `a${Date.now()}`, role: 'assistant', content: response.message, timestamp: Date.now() };
       setAiMessages(prev => [...prev, assistantMsg]);
       aiHistoryRef.current.push({ role: 'assistant', content: response.message });
+      // إن بنى الذكاء معاينة جدول هذه الرسالة → اعرضها (يحفظها المستخدم من صفحة المعاينة)
+      if (response.preview) setAiPreview(response.preview);
       // Reload schedule in case AI made changes
       loadSchedule();
     } else {
@@ -136,6 +143,32 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
 
     // Reset state after delay
     setTimeout(() => setAiState('idle'), 2000);
+  };
+
+  // حفظ معاينة الشات كما هي (بعد أيّ تبديل يدويّ) — يكتب الخانات + علامات الغياب/الاستئذان
+  const handleSaveAiPreview = async (finalSlots: AssignedSlot[]) => {
+    if (!aiPreview || !clinicId) return;
+    setAiPreviewSaving(true);
+    setAiPreviewError(null);
+    try {
+      const res = await schedule.saveSlots(
+        clinicId,
+        aiPreview.weekStart,
+        finalSlots,
+        aiPreview.permissions,
+        aiPreview.absenceMarkers,
+      );
+      if (res.success) {
+        setAiPreview(null);
+        loadSchedule();
+      } else {
+        setAiPreviewError(res.error || 'تعذّر حفظ الجدول.');
+      }
+    } catch (e) {
+      setAiPreviewError(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+    } finally {
+      setAiPreviewSaving(false);
+    }
   };
 
   // Bottom bar hide/show on scroll
@@ -599,6 +632,11 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           // TODO: تمرير result إلى بناء الجدول لاحقًا
           console.log('[Wizard] result:', JSON.stringify(result));
         }}
+        chatPreview={aiPreview}
+        chatPreviewSaving={aiPreviewSaving}
+        chatPreviewError={aiPreviewError}
+        onSaveChatPreview={handleSaveAiPreview}
+        onDiscardChatPreview={() => setAiPreview(null)}
       />
 
       {/* Cell Detail Modal */}

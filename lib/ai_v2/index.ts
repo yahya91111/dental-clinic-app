@@ -21,7 +21,8 @@ import {
   TEAM_LEADER_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
-import { V2_TOOLS, dispatchV2Tool, type V2ToolContext } from './tools';
+import { V2_TOOLS, dispatchV2Tool, type V2ToolContext, type SchedulePreview } from './tools';
+export type { SchedulePreview } from './tools';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
@@ -54,6 +55,8 @@ export type SendMessageV2Result = {
   success: boolean;
   message: string;
   error?: string;
+  /** حزمة معاينة جدول (لو بنى الذكاء معاينة هذه الرسالة) — الواجهة تعرضها وتحفظها */
+  preview?: SchedulePreview;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -196,13 +199,13 @@ export async function sendMessageV2(
 
     // دفتر الأطباء (مرقّم) — يُحمّل مرّة واحدة: يُعرَض بالأرقام للذكاء، ويُمرَّر
     // للأدوات كي تترجم الأرقام إلى معرّفات (لا نُحمّل الذكاء نسخ المعرّفات).
-    let rosterForTools: { id: string; name: string }[] = [];
+    let rosterForTools: { id: string; name: string; groupKey?: string }[] = [];
     if (opts.clinicId) {
       try {
         const { loadDoctorRoster } = await import('../algorithms/schedule');
         const { doctors } = await loadDoctorRoster(opts.clinicId);
         if (doctors && doctors.length > 0) {
-          rosterForTools = doctors.map((d) => ({ id: d.id, name: d.name }));
+          rosterForTools = doctors.map((d) => ({ id: d.id, name: d.name, groupKey: d.groupTemplate.key }));
           systemBlocks.push({ type: 'text', text: buildDoctorRosterBlock(doctors) });
         }
       } catch {
@@ -221,10 +224,13 @@ export async function sendMessageV2(
       opts.messages,
     ).map((m) => ({ role: m.role, content: m.content }));
 
+    // آخر معاينة بناها الذكاء هذه الرسالة (تُرجَّع للواجهة لتعرضها وتحفظها)
+    let capturedPreview: SchedulePreview | undefined;
     const toolCtx: V2ToolContext = {
       clinicId: opts.clinicId || '',
       user: opts.user,
       roster: rosterForTools,
+      onPreview: (p) => { capturedPreview = p; },
     };
 
     const toolsEnabled = V2_TOOLS.length > 0;
@@ -330,6 +336,7 @@ export async function sendMessageV2(
     return {
       success: true,
       message: allText,
+      preview: capturedPreview,
       usage: {
         inputTokens: inputTokensTotal,
         outputTokens: outputTokensTotal,

@@ -8,8 +8,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../lib/scale';
 import { ChatMessage } from './aiTypes';
-import { WizardContent, WizardResult } from './ScheduleWizard';
+import { WizardContent, WizardResult, PreviewView } from './ScheduleWizard';
 import type { Clarification, ResolvedClarification, UnsupportedRequest } from '../lib/ai_v2/parseExceptions';
+import type { SchedulePreview } from '../lib/ai_v2/tools';
+import type { AssignedSlot } from '../lib/algorithms/schedule';
 
 const DAY_AR: Record<string, string> = {
   sunday: 'الأحد', monday: 'الاثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
@@ -27,6 +29,12 @@ interface AISchedulePanelProps {
   contextLabel?: string;          // small line under the header (optional)
   clinicId?: string | null;       // for the create-schedule questionnaire (group names)
   onCreateSchedule?: (result: WizardResult) => void; // questionnaire finished
+  // معاينة جدول قادمة من الشات (الذكاء بنى معاينة) — تُعرَض فوق الصفحة، والحفظ من هنا
+  chatPreview?: SchedulePreview | null;
+  chatPreviewSaving?: boolean;
+  chatPreviewError?: string | null;
+  onSaveChatPreview?: (slots: AssignedSlot[]) => void;
+  onDiscardChatPreview?: () => void;
 }
 
 // Detects a trailing block of [choice] [choice] tokens at the end of an assistant message
@@ -792,7 +800,7 @@ function UnsupportedCards({ items }: { items: UnsupportedRequest[] }) {
   );
 }
 
-export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, isLoading, contextLabel, clinicId, onCreateSchedule }: AISchedulePanelProps) {
+export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, isLoading, contextLabel, clinicId, onCreateSchedule, chatPreview, chatPreviewSaving, chatPreviewError, onSaveChatPreview, onDiscardChatPreview }: AISchedulePanelProps) {
   const morph = useRef(new Animated.Value(0)).current;       // 0 = knot A .. 1 = straight C
   const gather = useRef(new Animated.Value(0)).current;      // 0 = thin colored threads .. 1 = thick page surface
   const surfaceOp = useRef(new Animated.Value(0)).current;   // real page surface
@@ -821,6 +829,22 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   const [createKey, setCreateKey] = useState(0);             // bump → remount WizardContent (fresh state)
   const [mounted, setMounted] = useState(visible);
   const closingRef = useRef(false);
+
+  // معاينة الشات: تُخفى/تُعرَض دون حذف بياناتها (الرجوع للتعديل يُخفي فقط، وزرّ
+  // "عرض المعاينة" يعيدها). تظهر تلقائيًّا كلّما بنى الذكاء معاينة جديدة.
+  const [showPreview, setShowPreview] = useState(false);
+  const prevPreviewRef = useRef<SchedulePreview | null>(null);
+  // عند فتح المحادثة من المعاينة: نُخفي المعاينة ونعيدها تلقائيًّا حين تُغلَق المحادثة
+  const reopenPreviewRef = useRef(false);
+  useEffect(() => {
+    if (chatPreview && chatPreview !== prevPreviewRef.current) setShowPreview(true);
+    prevPreviewRef.current = chatPreview ?? null;
+  }, [chatPreview]);
+  const openChatFromPreview = () => {
+    reopenPreviewRef.current = true;
+    setShowPreview(false);
+    openSlideChat();
+  };
 
   const homeRef = useRef<OrbitHandle>(null);
   const schedRef = useRef<OrbitHandle>(null);
@@ -926,7 +950,14 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   const closeSlideChat = () => {
     Keyboard.dismiss();
     Animated.timing(chatSlide, { toValue: 0, duration: 300, easing: Easing.in(Easing.cubic), useNativeDriver: true })
-      .start(() => setChatOpen(false));
+      .start(() => {
+        setChatOpen(false);
+        // إن فُتِحت المحادثة من المعاينة → أعِد المعاينة عند إغلاقها
+        if (reopenPreviewRef.current && chatPreview) {
+          reopenPreviewRef.current = false;
+          setShowPreview(true);
+        }
+      });
   };
 
   // OPEN: the knot shows first, then bursts open (bulgy/springy) -> straightens -> gathers into the page
@@ -1206,6 +1237,44 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
           />
           <ChatInputBar light onSend={onSend} />
         </Animated.View>
+
+        {/* معاينة جدول من الشات — تُعرَض فوق كلّ شيء؛ يحفظ المستخدم منها مباشرةً
+            (نفس صفحة معاينة المعالج Wizard). أيقونة المحادثة (أعلى يمين) تعيده
+            للمحادثة للتعديل مع بقاء المعاينة، وتعود تلقائيًّا عند إغلاق المحادثة. */}
+        {chatPreview && showPreview && (
+          <View style={[StyleSheet.absoluteFill, { zIndex: 20 }]}>
+            <LinearGradient colors={['#1E1B4B', '#312E81', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            <PreviewView
+              preview={{
+                slots: chatPreview.slots,
+                absences: chatPreview.absences,
+                clinicCount: chatPreview.clinicCount,
+                summary: chatPreview.summary,
+                warnings: chatPreview.warnings,
+              }}
+              building={!!chatPreviewSaving}
+              error={chatPreviewError ?? null}
+              onSave={(slots) => onSaveChatPreview?.(slots)}
+              onEdit={openChatFromPreview}
+              hideEdit
+            />
+            {/* أيقونة المحادثة — تفتح المحادثة للتعديل (المعاينة تبقى وتعود عند الإغلاق) */}
+            <TouchableOpacity
+              onPress={openChatFromPreview}
+              activeOpacity={0.85}
+              style={{ position: 'absolute', top: scale(48), right: scale(16), zIndex: 21 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <LinearGradient
+                colors={['#A78BFA', '#7C3AED']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={{ width: scale(42), height: scale(42), borderRadius: scale(21), alignItems: 'center', justifyContent: 'center', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.3)' }}
+              >
+                <Ionicons name="chatbubbles" size={scale(20)} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
 
       </View>
     </Modal>
