@@ -47,6 +47,8 @@ yarn-error.*
 !README.md
 # DCM AI RAG knowledge base (required for AI assistants)
 !lib/ai/rag/**/*.md
+# DCM AI V2 prompt + knowledge sources (the real source of truth)
+!lib/ai_v2/**/*.md
 
 # SQL files (database schemas)
 *.sql
