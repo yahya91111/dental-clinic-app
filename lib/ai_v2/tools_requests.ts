@@ -139,6 +139,33 @@ export const REQUESTS_TOOLS: V2Tool[] = [
       required: ['weekStart'],
     },
   },
+  {
+    name: 'move_doctor_group',
+    description: 'ينقل طبيبًا إلى قروب آخر (A/B/البورد). يؤثّر على الجداول القادمة. الليدر فأعلى.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctorIndex: { type: 'integer' },
+        toGroup: { type: 'string', enum: ['group_a', 'group_b', 'board'], description: 'القروب الهدف.' },
+      },
+      required: ['doctorIndex', 'toGroup'],
+    },
+  },
+  {
+    name: 'set_group_status',
+    description:
+      'يغيّر حالة طبيبٍ في قروبه: عاديّ/إجازة/تخفيف/متدرّب. للمتدرّب يمكن تحديد مدرّبه ' +
+      '(supervisorIndex). الليدر فأعلى.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctorIndex: { type: 'integer' },
+        workStatus: { type: 'string', enum: ['active', 'vacation', 'light_duty', 'trainee'] },
+        supervisorIndex: { type: 'integer', description: 'رقم المدرّب — فقط لو workStatus=trainee.' },
+      },
+      required: ['doctorIndex', 'workStatus'],
+    },
+  },
 ];
 
 // ─── أدوات مساعدة ──────────────────────────────────────────────
@@ -163,6 +190,23 @@ async function getClinicCount(clinicId: string): Promise<number> {
   const { getScheduleSettings } = await import('../database');
   const { data } = await getScheduleSettings(clinicId);
   return data?.clinic_count ?? 2;
+}
+
+/** قروب الطبيب الحاليّ (group_id) من عضويّاته */
+async function findDoctorGroupId(clinicId: string, doctorId: string): Promise<string | null> {
+  const { getAllGroupMembers } = await import('../database');
+  const { data } = await getAllGroupMembers(clinicId);
+  const m = (data || []).find((x: { doctor_id: string }) => x.doctor_id === doctorId);
+  return (m as { group_id?: string } | undefined)?.group_id ?? null;
+}
+
+/** معرّف قروب القالب (group_a/group_b/board) في هذه العيادة */
+async function resolveGroupId(clinicId: string, templateKey: string): Promise<string | null> {
+  const { getDoctorGroups } = await import('../database');
+  const { getTemplateByName } = await import('../algorithms/groupTemplates');
+  const { data } = await getDoctorGroups(clinicId);
+  const g = (data || []).find((x: { name: string }) => getTemplateByName(x.name)?.key === templateKey);
+  return (g as { id?: string } | undefined)?.id ?? null;
 }
 
 // ─── الموزّع ───────────────────────────────────────────────────
@@ -268,6 +312,30 @@ export async function dispatchRequestTool(
       case 'clear_week': {
         const res = await requests.clearWeek(actor, ctx.clinicId, String(r.weekStart));
         return res.success ? `تمّ مسح جدول أسبوع ${r.weekStart} كاملًا.` : `Tool error: ${res.error}`;
+      }
+
+      case 'move_doctor_group': {
+        const doc = resolveDoctor(ctx, r.doctorIndex);
+        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        const toKey = String(r.toGroup);
+        if (!['group_a', 'group_b', 'board'].includes(toKey)) return 'Tool error: القروب الهدف غير صالح.';
+        const fromGroupId = await findDoctorGroupId(ctx.clinicId, doc.id);
+        const toGroupId = await resolveGroupId(ctx.clinicId, toKey);
+        if (!toGroupId) return 'Tool error: القروب الهدف غير موجود في العيادة.';
+        const res = await requests.moveDoctorGroup(actor, doc.id, doc.name, fromGroupId, toGroupId);
+        return res.success ? `تمّ نقل ${doc.name} إلى القروب الجديد.` : `Tool error: ${res.error}`;
+      }
+
+      case 'set_group_status': {
+        const doc = resolveDoctor(ctx, r.doctorIndex);
+        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        const ws = String(r.workStatus);
+        if (!['active', 'vacation', 'light_duty', 'trainee'].includes(ws)) return 'Tool error: الحالة غير صالحة.';
+        const groupId = await findDoctorGroupId(ctx.clinicId, doc.id);
+        if (!groupId) return 'Tool error: لا يوجد قروب لهذا الطبيب.';
+        const supervisor = ws === 'trainee' ? resolveDoctor(ctx, r.supervisorIndex) : null;
+        const res = await requests.setDoctorGroupStatus(actor, groupId, doc.id, ws, supervisor?.id ?? null);
+        return res.success ? `تمّ ضبط حالة ${doc.name} على ${ws}.` : `Tool error: ${res.error}`;
       }
 
       default:
