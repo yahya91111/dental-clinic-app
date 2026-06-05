@@ -33,6 +33,12 @@ export type Clarification = {
 /** غموض بعد اختيار المستخدم للطبيب الصحيح → يتحوّل إلى غياب/استئذان في البناء */
 export type ResolvedClarification = { clar: Clarification; doctorId: string };
 
+/** طلب مفهوم لكنّه خارج قدرات بناء الجدول — يُبلَّغ به المستخدم في الجات */
+export type UnsupportedRequest = {
+  request: string;  // الطلب كما ورد
+  reason: string;   // سبب مختصر (عربيّ) يُعرَض للمستخدم
+};
+
 export type ParsedExceptions = {
   /** الدليقيتر: false إذا طلب التيم ليدر التوزيع بدونه */
   delegatorEnabled: boolean;
@@ -46,6 +52,8 @@ export type ParsedExceptions = {
   extraShifts: ExtraShift[];
   /** أسماء غامضة/مكرّرة تحتاج تأكيد المستخدم (يسأل الذكاء: من تقصد؟) */
   clarifications: Clarification[];
+  /** طلبات مفهومة لكنها خارج قدرات بناء الجدول (يُبلَّغ بها في الجات) */
+  unsupported: UnsupportedRequest[];
   /** ملاحظات لم يستطع المُفسِّر تحويلها لحقل (تُعرَض للتيم ليدر للمراجعة) */
   unresolved: string[];
 };
@@ -57,6 +65,7 @@ const EMPTY: ParsedExceptions = {
   extraPermissions: [],
   extraShifts: [],
   clarifications: [],
+  unsupported: [],
   unresolved: [],
 };
 
@@ -123,16 +132,20 @@ const TOOL = {
           type: 'object',
           properties: {
             doctorIndex: { type: 'integer', description: 'رقم الطبيب من القائمة المرقّمة (مثال: 3).' },
-            day: { type: 'string', enum: VALID_DAYS },
+            days: {
+              type: 'array',
+              items: { type: 'string', enum: VALID_DAYS },
+              description: 'كل الأيام التي ينتقل فيها (يوم أو أكثر؛ الأسبوع كله = الأيام الخمسة).',
+            },
             shift: {
               type: 'string',
               enum: ['morning', 'evening'],
-              description: 'الشفت الذي يعمله الطبيب ذلك اليوم: صباح=morning، عصر/مساء=evening.',
+              description: 'الشفت الذي يعمله الطبيب تلك الأيام: صباح=morning، عصر/مساء=evening.',
             },
           },
-          required: ['doctorIndex', 'day', 'shift'],
+          required: ['doctorIndex', 'days', 'shift'],
         },
-        description: 'نقل شفت ليوم واحد: الطبيب يعمل اليوم كاملاً لكن في الشفت المذكور (ليس غياباً ولا استئذاناً).',
+        description: 'نقل شفت ليوم أو أكثر أو الأسبوع كله: الطبيب يعمل أيامه المذكورة كاملةً في الشفت المحدّد (نقل شفت، ليس غياباً ولا استئذاناً مطلقاً).',
       },
       clarifications: {
         type: 'array',
@@ -150,13 +163,25 @@ const TOOL = {
         },
         description: 'اسم غامض أو يطابق أكثر من طبيب (أسماء مكرّرة) — لا تخمّن، ضَعه هنا مع المرشّحين.',
       },
+      unsupported: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            request: { type: 'string', description: 'الطلب كما ورد في النصّ.' },
+            reason: { type: 'string', description: 'سبب مختصر بالعربيّة يُعرَض للمستخدم (مثلاً: غير مدعوم في بناء الجدول).' },
+          },
+          required: ['request', 'reason'],
+        },
+        description: 'طلب واضح ومفهوم لكنّه ليس ضمن العمليات المدعومة (انظر القائمة) — لا تحشره في حقل آخر.',
+      },
       unresolved: {
         type: 'array',
         items: { type: 'string' },
-        description: 'أيّ جملة لم تُفهَم أو لم يُطابَق اسمها أيّ طبيب — تُنقَل كما هي.',
+        description: 'جملة غير مفهومة أو لم يُطابَق اسمها أيّ طبيب — تُنقَل كما هي (تختلف عن unsupported المفهوم).',
       },
     },
-    required: ['delegatorEnabled', 'holidayDays', 'extraAbsences', 'extraPermissions', 'extraShifts', 'clarifications', 'unresolved'],
+    required: ['delegatorEnabled', 'holidayDays', 'extraAbsences', 'extraPermissions', 'extraShifts', 'clarifications', 'unsupported', 'unresolved'],
   },
 } as const;
 
@@ -168,16 +193,24 @@ function buildPrompt(text: string, roster: RosterEntry[]): string {
     'قائمة الأطباء المرقّمة (طابِق الاسم المذكور معها، واستخدم الرقم في doctorIndex):',
     rosterLines || '(لا يوجد)',
     '',
+    'العمليات المدعومة الوحيدة في بناء الجدول هي: (1) غياب تفرّغ/مرضية، (2) استئذان بداية/نهاية،',
+    '(3) نقل شفت ليوم أو أكثر أو الأسبوع كله، (4) يوم عطلة، (5) إلغاء الدليقيتر. لا شيء غيرها.',
+    'أيّ طلبٍ واضح خارج هذه القائمة (مثل: تحديد عدد فترات، منع طبيب من العمل مع آخر، تثبيت عيادة',
+    'معيّنة، تغيير عدد العيادات، أيّ قيد آخر) ضَعه في unsupported مع سبب مختصر، ولا تحشره في حقلٍ آخر إطلاقاً.',
+    '',
     'قواعد:',
     '- يوم الأسبوع: الأحد=sunday, الاثنين=monday, الثلاثاء=tuesday, الأربعاء=wednesday, الخميس=thursday.',
     '- "تفرّغ" أو "مرضية" أو "إجازة" أو "غائب" ليوم → extraAbsences (scope=full ما لم يُذكر صباحاً/مساءً).',
     '  • نوع الغياب (status): "مرضية/مرضيه/طبية/طبيه/إجازة مرضية" → status=sick_leave؛ "تفرّغ/متفرّغ/إجازة/غائب" → status=vacation. الافتراضي vacation.',
     '- "استئذان" → extraPermissions (حضور فترة واحدة، ليس غياباً). "بداية"/"متأخّر"/"يأتي متأخّراً" → kind=start؛ "نهاية"/"يخرج مبكّراً"/"خروج بدري" → kind=end؛ "استئذان" بلا تحديد → kind=end.',
-    '- "دوامه عصر/مساءً" أو "دوامه صباح" أو "حوّله للعصر/الصباح يوم كذا" أو "اجعله مع الشفت الثاني" → extraShifts {shift}. الطبيب يعمل اليوم كاملاً في الشفت المذكور (نقل شفت، ليس غياباً ولا استئذاناً).',
+    '- نقل الشفت ("دوامه عصر/مساءً"، "دوامه صباح"، "حوّله للشفت الثاني"، "ثابت عصر/صبح هذا الأسبوع") → extraShifts: حدّد doctorIndex وshift وقائمة days بكل الأيام المقصودة.',
+    '  • يوم واحد → days فيها يوم واحد. عدّة أيام ("الاثنين والثلاثاء") → كل الأيام في days. الأسبوع كله ("هذا الأسبوع"/"ثابت") → days=[sunday,monday,tuesday,wednesday,thursday].',
+    '  • نقل الشفت ليس غياباً ولا تفرّغاً ولا استئذاناً أبداً — لا تضعه في extraAbsences مهما كان عدد الأيام.',
     '- "عطلة" أو "يوم عطلة" → holidayDays.',
     '- "بدون دليقيتر" أو "بلا delegators" → delegatorEnabled=false.',
     '- استخدم دائماً رقم الطبيب من القائمة (doctorIndex)، وتأكّد أنّ الرقم يقابل الاسم المذكور تماماً. لا تستعمل أرقاماً ليست في القائمة.',
     '- إذا طابق اسمٌ مذكور أكثر من طبيب (أسماء مكرّرة) أو كان غامضاً يحتمل عدّة أطباء: لا تخمّن، ولا تضعه في extraAbsences/extraPermissions؛ بل ضَعه في clarifications مع candidateIndexes (أرقام المرشّحين) ونوعه (kind) ويومه (وscope للغياب أو permKind للاستئذان).',
+    '- طلب مفهوم لكنّه خارج العمليات المدعومة → unsupported {request, reason}. سبب عربيّ مختصر (مثلاً: «غير مدعوم في بناء الجدول حاليّاً»).',
     '- إن لم تجد أيّ طبيب مطابق لاسمٍ مذكور إطلاقاً، ضَع الجملة في unresolved ولا تخترع رقماً.',
     '- إن كان النصّ فارغاً أو لا يحوي استثناءات، أرجِع القيم الافتراضية (delegatorEnabled=true، والباقي فارغ).',
     '- استدعِ report_exceptions دائماً.',
@@ -247,6 +280,15 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
     ? raw.unresolved.filter((s: any) => typeof s === 'string' && s.trim())
     : [];
 
+  const unsupported: UnsupportedRequest[] = Array.isArray(raw.unsupported)
+    ? raw.unsupported
+        .filter((u: any) => u && typeof u.request === 'string' && u.request.trim())
+        .map((u: any) => ({
+          request: u.request.trim(),
+          reason: (typeof u.reason === 'string' && u.reason.trim()) || 'غير مدعوم في بناء الجدول حاليّاً.',
+        }))
+    : [];
+
   const extraAbsences: ExtraAbsence[] = [];
   if (Array.isArray(raw.extraAbsences)) {
     for (const e of raw.extraAbsences) {
@@ -264,16 +306,26 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
   }
 
   const extraShifts: ExtraShift[] = [];
+  const seenShift = new Set<string>();
   if (Array.isArray(raw.extraShifts)) {
     for (const s of raw.extraShifts) {
-      if (!s || !dayOk(s.day)) continue;
-      if (s.shift !== 'morning' && s.shift !== 'evening') continue;
+      if (!s || (s.shift !== 'morning' && s.shift !== 'evening')) continue;
       const entry = entryAt(s.doctorIndex);
       if (!entry) {
-        unresolved.push(`نقل شفت غير مُطابَق: رقم ${s.doctorIndex ?? '?'} (${s.day})`);
+        unresolved.push(`نقل شفت غير مُطابَق: رقم ${s.doctorIndex ?? '?'}`);
         continue;
       }
-      extraShifts.push({ doctorId: entry.id, day: s.day, shift: s.shift });
+      const days: WeekDay[] = (Array.isArray(s.days) ? s.days : []).filter(dayOk);
+      if (days.length === 0) {
+        unresolved.push(`نقل شفت بلا أيّام: ${entry.name}`);
+        continue;
+      }
+      for (const day of days) {
+        const k = `${entry.id}|${day}`;
+        if (seenShift.has(k)) continue; // تفادي التكرار
+        seenShift.add(k);
+        extraShifts.push({ doctorId: entry.id, day, shift: s.shift });
+      }
     }
   }
 
@@ -322,6 +374,7 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
     extraPermissions,
     extraShifts,
     clarifications,
+    unsupported,
     unresolved,
   };
 }

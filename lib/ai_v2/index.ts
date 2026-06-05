@@ -16,9 +16,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 import {
-  CATALOG_V2,
+  SCHEDULE_ASSISTANT_V2,
   CORE_PROMPT_V2,
   TEAM_LEADER_PROMPT_V2,
+  KNOWLEDGE_INDEX,
 } from './_compiled';
 import { V2_TOOLS, dispatchV2Tool, type V2ToolContext } from './tools';
 
@@ -94,33 +95,44 @@ function buildUserIdentityBlock(user: V2User): string {
  * يُحمّل بشكل lazy حتى لا يستورد supabase وقت الـ bundle (مهم لاختبارات Node).
  * عند أي فشل يرجّع سلسلة فارغة — السياق اختياري ولا يجب أن يكسر المحادثة.
  */
-async function buildDoctorRosterBlock(clinicId: string): Promise<string> {
-  try {
-    const { loadDoctorRoster } = await import('../algorithms/schedule');
-    const { doctors, error } = await loadDoctorRoster(clinicId);
-    if (error || !doctors || doctors.length === 0) return '';
+function buildDoctorRosterBlock(
+  doctors: Array<{ name: string; groupTemplate: { key: string }; workStatus: string }>,
+): string {
+  const groupLabel: Record<string, string> = {
+    group_a: 'A',
+    group_b: 'B',
+    board: 'Board',
+  };
+  const lines = doctors.map((d, i) => {
+    const grp = groupLabel[d.groupTemplate.key] || d.groupTemplate.key;
+    const tags: string[] = [`group ${grp}`];
+    if (d.workStatus === 'trainee') tags.push('TRAINEE');
+    else if (d.workStatus === 'light_duty') tags.push('light-duty');
+    else if (d.workStatus === 'vacation') tags.push('on vacation');
+    return `${i + 1}. ${d.name} — ${tags.join(' — ')}`;
+  });
 
-    const groupLabel: Record<string, string> = {
-      group_a: 'A',
-      group_b: 'B',
-      board: 'Board',
-    };
-    const lines = doctors.map((d) => {
-      const grp = groupLabel[d.groupTemplate.key] || d.groupTemplate.key;
-      const tags: string[] = [`group ${grp}`];
-      if (d.workStatus === 'trainee') tags.push('TRAINEE (needs mode before build)');
-      else if (d.workStatus === 'light_duty') tags.push('light-duty');
-      else if (d.workStatus === 'vacation') tags.push('on vacation');
-      return `- ${d.name} [id: ${d.id}] — ${tags.join(' — ')}`;
-    });
+  return (
+    `\nDoctors in your clinic (use the NUMBER as doctorIndex whenever an ` +
+    `action needs a specific doctor — never invent it):\n${lines.join('\n')}\n`
+  );
+}
 
-    return (
-      `\nDoctors in your clinic (use the [id] whenever an action needs a ` +
-      `specific doctor — never guess it):\n${lines.join('\n')}\n`
-    );
-  } catch {
-    return '';
-  }
+/**
+ * يبني فهرس المعرفة — أسطر صغيرة (اسم + متى تُجلب) تُحقن في system prompt
+ * كي يعرف الذكاء ما هي الوثائق المتاحة فيستدعي fetch_knowledge بالاسم عند
+ * الحاجة. الأجسام نفسها لا تُحمّل إلا عند الجلب (توفير توكن). يتوسّع تلقائياً:
+ * أيّ وثيقة جديدة في knowledge/ تظهر هنا بعد إعادة البناء.
+ */
+function buildKnowledgeIndexBlock(): string {
+  if (!KNOWLEDGE_INDEX.length) return '';
+  const lines = KNOWLEDGE_INDEX.map((d) => `- ${d.name}: ${d.when || d.title}`);
+  return (
+    `\nReference docs you can fetch on demand with fetch_knowledge ` +
+    `(pass the name). Fetch one only when you need to explain a concept or ` +
+    `answer a "why/how" question — never for actual schedule results:\n` +
+    `${lines.join('\n')}\n`
+  );
 }
 
 /**
@@ -162,21 +174,39 @@ export async function sendMessageV2(
       },
       {
         type: 'text',
-        text: CATALOG_V2,
+        text: SCHEDULE_ASSISTANT_V2,
         cache_control: { type: 'ephemeral', ttl: '1h' },
-      },
-      {
-        type: 'text',
-        text: buildUserIdentityBlock(opts.user),
       },
     ];
 
-    // دفتر الأطباء (اسم ↔ id ↔ تريني) — يُجلب من DB حسب عيادة المستخدم.
-    // اختياري: عند الفشل يرجّع فارغاً ولا يُحقن.
+    // فهرس المعرفة (ثابت، يُخزَّن بالكاش) — يخبر الذكاء بالوثائق المتاحة فقط
+    const knowledgeIndexBlock = buildKnowledgeIndexBlock();
+    if (knowledgeIndexBlock) {
+      systemBlocks.push({
+        type: 'text',
+        text: knowledgeIndexBlock,
+        cache_control: { type: 'ephemeral', ttl: '1h' },
+      });
+    }
+
+    systemBlocks.push({
+      type: 'text',
+      text: buildUserIdentityBlock(opts.user),
+    });
+
+    // دفتر الأطباء (مرقّم) — يُحمّل مرّة واحدة: يُعرَض بالأرقام للذكاء، ويُمرَّر
+    // للأدوات كي تترجم الأرقام إلى معرّفات (لا نُحمّل الذكاء نسخ المعرّفات).
+    let rosterForTools: { id: string; name: string }[] = [];
     if (opts.clinicId) {
-      const rosterBlock = await buildDoctorRosterBlock(opts.clinicId);
-      if (rosterBlock) {
-        systemBlocks.push({ type: 'text', text: rosterBlock });
+      try {
+        const { loadDoctorRoster } = await import('../algorithms/schedule');
+        const { doctors } = await loadDoctorRoster(opts.clinicId);
+        if (doctors && doctors.length > 0) {
+          rosterForTools = doctors.map((d) => ({ id: d.id, name: d.name }));
+          systemBlocks.push({ type: 'text', text: buildDoctorRosterBlock(doctors) });
+        }
+      } catch {
+        /* عند الفشل: لا دفتر، ولا حقن */
       }
     }
 
@@ -194,6 +224,7 @@ export async function sendMessageV2(
     const toolCtx: V2ToolContext = {
       clinicId: opts.clinicId || '',
       user: opts.user,
+      roster: rosterForTools,
     };
 
     const toolsEnabled = V2_TOOLS.length > 0;

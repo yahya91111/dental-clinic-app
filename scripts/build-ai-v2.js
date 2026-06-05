@@ -22,13 +22,51 @@ const fs = require('fs');
 const path = require('path');
 
 const V2_ROOT = path.join(__dirname, '..', 'lib', 'ai_v2');
+const KNOWLEDGE_DIR = path.join(V2_ROOT, 'knowledge');
 const OUTPUT_FILE = path.join(V2_ROOT, '_compiled.ts');
 
 const FILES = [
   { name: 'CORE_PROMPT_V2', file: 'core_prompt.md' },
   { name: 'TEAM_LEADER_PROMPT_V2', file: 'team_leader_prompt.md' },
-  { name: 'CATALOG_V2', file: 'catalog.md' },
+  { name: 'SCHEDULE_ASSISTANT_V2', file: 'schedule_assistant.md' },
 ];
+
+/**
+ * Parse simple `--- title: … / when: … ---` frontmatter.
+ * Returns { meta, body }. No frontmatter → empty meta, full text as body.
+ */
+function parseFrontmatter(raw) {
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!m) return { meta: {}, body: raw.trim() };
+  const meta = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const i = line.indexOf(':');
+    if (i === -1) continue;
+    meta[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  return { meta, body: m[2].trim() };
+}
+
+/**
+ * Scan lib/ai_v2/knowledge/*.md → on-demand knowledge layer.
+ * Auto-discovered: drop a new .md (with frontmatter) and it joins the
+ * index + docs map automatically — no code change needed. The doc NAME is
+ * its filename without extension; the AI fetches by that name.
+ */
+function compileKnowledge() {
+  if (!fs.existsSync(KNOWLEDGE_DIR)) return { index: [], docs: {} };
+  const files = fs.readdirSync(KNOWLEDGE_DIR).filter((f) => f.endsWith('.md')).sort();
+  const index = [];
+  const docs = {};
+  for (const f of files) {
+    const name = f.replace(/\.md$/, '');
+    const raw = fs.readFileSync(path.join(KNOWLEDGE_DIR, f), 'utf8');
+    const { meta, body } = parseFrontmatter(raw);
+    docs[name] = body;
+    index.push({ name, title: meta.title || name, when: meta.when || '' });
+  }
+  return { index, docs };
+}
 
 /**
  * Escape a string for embedding inside a TS template literal:
@@ -67,7 +105,19 @@ function build() {
     '',
   ].join('\n');
 
-  const output = header + '\n' + sections.join('\n\n') + '\n';
+  // ─── On-demand knowledge layer (index + docs map) ───────────────
+  const { index, docs } = compileKnowledge();
+  const knowledgeSection = [
+    '// ─── Knowledge layer (fetched on demand via fetch_knowledge) ───',
+    '// KNOWLEDGE_INDEX is injected (small) so the AI knows what exists;',
+    '// KNOWLEDGE_DOCS bodies are returned only when a doc is fetched.',
+    `export type KnowledgeIndexEntry = { name: string; title: string; when: string };`,
+    `export const KNOWLEDGE_INDEX: KnowledgeIndexEntry[] = ${JSON.stringify(index, null, 2)};`,
+    `export const KNOWLEDGE_DOCS: Record<string, string> = ${JSON.stringify(docs, null, 2)};`,
+  ].join('\n');
+
+  const output =
+    header + '\n' + sections.join('\n\n') + '\n\n' + knowledgeSection + '\n';
   fs.writeFileSync(OUTPUT_FILE, output, 'utf8');
 
   const sizes = FILES.map(({ name, file }) => {
@@ -78,6 +128,7 @@ function build() {
 
   console.log(`AI V2 prompts compiled to ${path.relative(process.cwd(), OUTPUT_FILE)}`);
   console.log(sizes);
+  console.log(`  knowledge: ${index.length} doc(s) → ${index.map((d) => d.name).join(', ') || '(none)'}`);
 }
 
 build();

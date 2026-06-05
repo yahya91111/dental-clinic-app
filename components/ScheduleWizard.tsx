@@ -13,7 +13,7 @@ import {
   schedule, loadDoctorRoster, WEEK_DAYS,
   type AssignedSlot, type ScheduleBuildInput, type WeekDay, type Period, type PreviewAbsence,
 } from '../lib/algorithms/schedule';
-import { parseExceptions, type ParsedExceptions, type RosterEntry, type Clarification, type ResolvedClarification } from '../lib/ai_v2/parseExceptions';
+import { parseExceptions, type ParsedExceptions, type RosterEntry, type Clarification, type ResolvedClarification, type UnsupportedRequest } from '../lib/ai_v2/parseExceptions';
 
 // ═══════════════════════════════════════════════════════════════
 // WizardContent — استبيان "إنشاء جدول" داخل صفحة الذكاء (لا Modal)
@@ -63,6 +63,7 @@ interface WizardContentProps {
   pendingClarifyCount?: number;                // عدد الغموض غير المحلول (لاعتراض الحفظ)
   onClarifications?: (list: Clarification[]) => void;  // تبليغ اللوحة بالأسماء الغامضة بعد البناء
   onNeedClarify?: () => void;                  // عند الحفظ مع وجود غموض → افتح الجات وحذّر
+  onUnsupported?: (list: UnsupportedRequest[]) => void; // طلبات غير مدعومة → تُعرَض في الجات
 }
 
 /** يدمج حلول الغموض (المُختارة في الجات) كغيابات/استئذانات في المدخلات قبل البناء */
@@ -202,7 +203,7 @@ function resultToBuildInput(
   };
 }
 
-export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pendingClarifyCount = 0, onClarifications, onNeedClarify }: WizardContentProps) {
+export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pendingClarifyCount = 0, onClarifications, onNeedClarify, onUnsupported }: WizardContentProps) {
   const [stepId, setStepId] = useState<StepId>('date');
 
   // التاريخ
@@ -219,6 +220,8 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
 
   // قائمة كل الأطباء (id/name) — لمطابقة أسماء الاستثناءات
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  // قروب كل طبيب (group_a/group_b/board/agd) — لتحديد شفته عند كتابة خانة EX
+  const [groupKeyById, setGroupKeyById] = useState<Map<string, string>>(new Map());
 
   // المتدرّبون (كلّ متدرّب بأسئلته في صفحة واحدة)
   const [trainees, setTrainees] = useState<TraineeConfig[]>([]);
@@ -252,6 +255,7 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
       const { doctors } = await loadDoctorRoster(clinicId);
       if (doctors) {
         setRoster(doctors.map((d) => ({ id: d.id, name: d.name })));
+        setGroupKeyById(new Map(doctors.map((d) => [d.id, d.groupTemplate.key])));
         setTrainees(
           doctors
             .filter((d) => d.workStatus === 'trainee')
@@ -317,6 +321,7 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
       const parsed = await parseExceptions(r.exceptions || '', roster);
       parsedRef.current = parsed;
       onClarifications?.(parsed.clarifications);   // اللوحة تعرض البادج + تسأل في الجات
+      onUnsupported?.(parsed.unsupported);         // اللوحة تفتح الجات بطلبات غير مدعومة
       await buildPreviewFrom(parsed);
     } catch (e) {
       setBuildError(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -342,11 +347,27 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
       // علامات الاستئذان (PS/PE) — تشمل المحلولة من الجات — تُكتب لتظهر بالجدول الأساسيّ
       const nameById = new Map(roster.map((d) => [d.id, d.name]));
       const merged = parsedRef.current ? applyResolved(parsedRef.current, resolved) : null;
+      // خانة EX الصحيحة حسب شفت الطبيب ذلك اليوم: 1=صباح، 2=مساء.
+      // الأولوية لنقل الشفت (extraShift)، ثم قروب الطبيب مع خطّة الشفتات.
+      const exCell = (doctorId: string, day: WeekDay): number => {
+        const ov = (merged?.extraShifts || []).find((s) => s.doctorId === doctorId && s.day === day);
+        let shift: ShiftValue;
+        if (ov) shift = ov.shift;
+        else {
+          const key = groupKeyById.get(doctorId);
+          const aShift = shifts[day];
+          if (key === 'group_b') shift = aShift === 'morning' ? 'evening' : 'morning';
+          else if (key === 'board') shift = boardShifts[day];
+          else shift = aShift; // group_a + غيره يتبع خطّة القروب A
+        }
+        return shift === 'morning' ? 1 : 2;
+      };
       const permissions = (merged?.extraPermissions || []).map((p) => ({
         doctorId: p.doctorId,
         doctorName: nameById.get(p.doctorId) || '',
         day: p.day,
         kind: p.kind,
+        clinicNumber: exCell(p.doctorId, p.day),
       }));
       // الغياب النصّي (تفرّغ/مرضية) يُحفظ كغياب حقيقيّ — لا فرق عن اليدويّ
       const absences = (merged?.extraAbsences || []).map((a) => ({
@@ -354,6 +375,7 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
         doctorName: nameById.get(a.doctorId) || '',
         day: a.day,
         status: (a.status === 'sick_leave' ? 'sick_leave' : 'vacation') as 'sick_leave' | 'vacation',
+        clinicNumber: exCell(a.doctorId, a.day),
       }));
       const res = await schedule.saveSlots(clinicId, r.weekStart, finalSlots, permissions, absences);
       if (res.success) onComplete(r);

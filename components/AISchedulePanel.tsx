@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../lib/scale';
 import { ChatMessage } from './aiTypes';
 import { WizardContent, WizardResult } from './ScheduleWizard';
-import type { Clarification, ResolvedClarification } from '../lib/ai_v2/parseExceptions';
+import type { Clarification, ResolvedClarification, UnsupportedRequest } from '../lib/ai_v2/parseExceptions';
 
 const DAY_AR: Record<string, string> = {
   sunday: 'الأحد', monday: 'الاثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
@@ -773,6 +773,25 @@ function ClarifyCards({ clarifications, onResolve }: {
   );
 }
 
+function UnsupportedCards({ items }: { items: UnsupportedRequest[] }) {
+  if (items.length === 0) return null;
+  return (
+    <View style={{ gap: scale(8), marginBottom: scale(6) }}>
+      <View style={{ backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: scale(1), borderColor: 'rgba(239,68,68,0.4)', borderRadius: scale(14), paddingHorizontal: scale(12), paddingVertical: scale(9) }}>
+        <Text style={{ color: '#7A1212', fontSize: scale(12.5), fontWeight: '700', textAlign: 'right', lineHeight: scale(19) }}>
+          ⚠️ تعذّر تنفيذ الطلبات التالية (غير مدعومة في بناء الجدول حاليّاً):
+        </Text>
+      </View>
+      {items.map((u, i) => (
+        <View key={`${i}-${u.request}`} style={{ backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: scale(1), borderColor: 'rgba(239,68,68,0.18)', borderRadius: scale(16), paddingHorizontal: scale(14), paddingVertical: scale(11) }}>
+          <Text style={{ color: '#3A2E66', fontSize: scale(13.5), fontWeight: '700', textAlign: 'right', lineHeight: scale(21) }}>«{u.request}»</Text>
+          <Text style={{ color: '#8A4B4B', fontSize: scale(12), fontWeight: '600', textAlign: 'right', lineHeight: scale(18), marginTop: scale(3) }}>{u.reason}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, isLoading, contextLabel, clinicId, onCreateSchedule }: AISchedulePanelProps) {
   const morph = useRef(new Animated.Value(0)).current;       // 0 = knot A .. 1 = straight C
   const gather = useRef(new Animated.Value(0)).current;      // 0 = thin colored threads .. 1 = thick page surface
@@ -791,6 +810,12 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   const resolveClar = (c: Clarification, doctorId: string) => {
     setResolvedClar((prev) => [...prev, { clar: c, doctorId }]);
     setClarifications((prev) => prev.filter((x) => !(x.mention === c.mention && x.day === c.day && x.kind === c.kind)));
+  };
+  // طلبات غير مدعومة: يفتح الذكاء الجات ويشرحها (إعلاميّ، لا يمنع الحفظ)
+  const [unsupported, setUnsupported] = useState<UnsupportedRequest[]>([]);
+  const handleUnsupported = (list: UnsupportedRequest[]) => {
+    setUnsupported(list);
+    if (list.length > 0) openSlideChat();
   };
   const [view, setView] = useState<'home' | 'schedule' | 'chat' | 'create'>('home');
   const [createKey, setCreateKey] = useState(0);             // bump → remount WizardContent (fresh state)
@@ -909,7 +934,7 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
     closingRef.current = false;
     transitioningRef.current = false;
     setView('home'); sub.setValue(0); chatOp.setValue(0); wizardOp.setValue(0);
-    chatSlide.setValue(0); setChatOpen(false); setClarifications([]); setResolvedClar([]);
+    chatSlide.setValue(0); setChatOpen(false); setClarifications([]); setResolvedClar([]); setUnsupported([]);
     homeRef.current?.show(); schedRef.current?.hide();   // reset orbits to the home state
     morph.setValue(0); gather.setValue(0); surfaceOp.setValue(0); content.setValue(0); threadsOp.setValue(1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1090,6 +1115,7 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
                 pendingClarifyCount={clarifications.length}
                 onClarifications={handleClarifications}
                 onNeedClarify={openSlideChat}
+                onUnsupported={handleUnsupported}
               />
             )}
           </Animated.View>
@@ -1129,10 +1155,10 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
               >
                 <Ionicons name="chatbubbles" size={scale(20)} color="#fff" />
               </LinearGradient>
-              {/* بادج عدد الأسماء الغامضة غير المحلولة */}
-              {clarifications.length > 0 && (
+              {/* بادج عدد الأسماء الغامضة + الطلبات غير المدعومة */}
+              {clarifications.length + unsupported.length > 0 && (
                 <View style={{ position: 'absolute', top: -scale(4), left: -scale(4), minWidth: scale(20), height: scale(20), borderRadius: scale(10), backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(5), borderWidth: scale(1.5), borderColor: '#fff' }}>
-                  <Text style={{ color: '#fff', fontSize: scale(11), fontWeight: '800' }}>{clarifications.length}</Text>
+                  <Text style={{ color: '#fff', fontSize: scale(11), fontWeight: '800' }}>{clarifications.length + unsupported.length}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -1175,7 +1201,7 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
             messages={messages}
             isLoading={isLoading}
             onSend={onSend}
-            header={<ClarifyCards clarifications={clarifications} onResolve={resolveClar} />}
+            header={<><UnsupportedCards items={unsupported} /><ClarifyCards clarifications={clarifications} onResolve={resolveClar} /></>}
             style={{ position: 'absolute', top: scale(84), left: 0, right: 0, bottom: scale(94) }}
           />
           <ChatInputBar light onSend={onSend} />

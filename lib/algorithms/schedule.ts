@@ -557,16 +557,31 @@ function buildShiftPool(
   // 5.0 نقل شفت ليوم محدد (استثناء التيم ليدر): الطبيب يعمل اليوم في شفت غير
   //     شفت قروبه الطبيعي. نُزيله من الشفت الخطأ هنا، ونُضيفه في الشفت الصحيح.
   //     يُطبَّق على أطباء القروب فقط (group_a/group_b)؛ البورد له منطقه الخاص.
-  const dayOverrides = (input.extraShifts || []).filter((o) => o.day === day);
-  if (dayOverrides.length) {
-    const moveOut = new Set(
-      dayOverrides.filter((o) => o.shift !== shift).map((o) => o.doctorId),
-    );
-    if (moveOut.size) candidates = candidates.filter((c) => !moveOut.has(c.id));
+  //     والتريني beginner (الظلّ) ينتقل مع مدرّبه إلى الشفت الجديد.
+  const overrideShift = new Map<string, Shift>();
+  for (const o of input.extraShifts || []) {
+    if (o.day !== day) continue;
+    const d = doctorById.get(o.doctorId);
+    // النقل لأطباء القروب فقط (group_a/group_b)؛ البورد/الـ AGD لهم منطقهم الخاص
+    if (!d || (d.groupTemplate.key !== 'group_a' && d.groupTemplate.key !== 'group_b')) continue;
+    overrideShift.set(o.doctorId, o.shift);
+  }
+  if (overrideShift.size) {
+    const tModes = input.traineeModes || {};
+    for (const d of data.doctors) {
+      if (tModes[d.id] !== 'beginner') continue;
+      const sup = d.supervisorDoctorId;
+      if (sup && overrideShift.has(sup)) overrideShift.set(d.id, overrideShift.get(sup)!);
+    }
+    // أزِل مَن وجهته الشفت الآخر، وأضِف مَن وجهته هذا الشفت وليس فيه أصلاً
+    candidates = candidates.filter((c) => {
+      const s = overrideShift.get(c.id);
+      return s === undefined || s === shift;
+    });
     const present = new Set(candidates.map((c) => c.id));
-    for (const o of dayOverrides) {
-      if (o.shift !== shift || present.has(o.doctorId)) continue;
-      const d = doctorById.get(o.doctorId);
+    for (const [id, s] of overrideShift) {
+      if (s !== shift || present.has(id)) continue;
+      const d = doctorById.get(id);
       if (!d) continue;
       if (d.groupTemplate.key !== 'group_a' && d.groupTemplate.key !== 'group_b') continue;
       candidates.push(d);
@@ -1021,6 +1036,8 @@ export type PermissionMarker = {
   doctorName: string;
   day: WeekDay;
   kind: 'start' | 'end';
+  /** خانة EX حسب شفت الطبيب: 1=صباح، 2=مساء (الافتراضي 1) */
+  clinicNumber?: number;
 };
 
 /** علامة غياب (تفرّغ/مرضية) من نصّ الاستثناءات — تُكتب كغياب حقيقيّ مثل اليدويّ */
@@ -1029,6 +1046,8 @@ export type AbsenceMarker = {
   doctorName: string;
   day: WeekDay;
   status: 'vacation' | 'sick_leave';
+  /** خانة EX حسب شفت الطبيب: 1=صباح، 2=مساء (الافتراضي 1) */
+  clinicNumber?: number;
 };
 
 /**
@@ -1064,7 +1083,7 @@ async function saveSlots(
     week_start: weekStart,
     day_of_week: a.day,
     period: 0,
-    clinic_number: 1,
+    clinic_number: a.clinicNumber ?? 1, // 1=صباح، 2=مساء حسب شفت الطبيب
     doctor_id: a.doctorId,
     doctor_name: a.doctorName,
     role: 'clinic',
@@ -1076,7 +1095,7 @@ async function saveSlots(
     week_start: weekStart,
     day_of_week: m.day,
     period: 0,
-    clinic_number: 1,
+    clinic_number: m.clinicNumber ?? 1, // 1=صباح، 2=مساء حسب شفت الطبيب
     doctor_id: m.doctorId,
     doctor_name: m.doctorName,
     role: 'clinic',
@@ -1091,7 +1110,36 @@ async function saveSlots(
   return { success: true };
 }
 
+/**
+ * قارئ خفيف لخانات أسبوع محفوظ (بلا بناء) — يُستخدم لـ"يد القراءة": يجيب
+ * الذكاء عن أسئلة تفصيليّة («من في العيادة ٢ الأحد؟») من جدول مبنيّ.
+ */
+async function readWeekSlots(
+  clinicId: string,
+  weekStart: string,
+): Promise<{ slots: LoadedSlot[] | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('schedule_slots')
+    .select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
+    .eq('clinic_id', clinicId)
+    .eq('week_start', weekStart);
+  if (error) return { slots: null, error: `فشل تحميل الجدول: ${error.message}` };
+  const slots: LoadedSlot[] = (data || []).map((s: any) => ({
+    id: s.id,
+    weekStart: s.week_start,
+    dayOfWeek: s.day_of_week,
+    period: s.period,
+    clinicNumber: s.clinic_number,
+    doctorId: s.doctor_id,
+    doctorName: s.doctor_name,
+    role: s.role,
+    status: s.status,
+  }));
+  return { slots, error: null };
+}
+
 export const schedule = {
   build,
   saveSlots,
+  readWeekSlots,
 };
