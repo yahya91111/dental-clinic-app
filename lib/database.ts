@@ -1686,16 +1686,18 @@ export async function getNotifications(recipientId: string, limit = 50): Promise
 }
 
 export async function getUnreadCount(recipientId: string): Promise<number> {
+  if (!recipientId) return 0; // أثناء تحميل المصادقة قد يكون المُعرّف فارغًا
   try {
-    const { count, error } = await supabase
+    // استعلام select بسيط أوثق من head-count (الأخير يُرجِع خطأً فارغًا أحيانًا)
+    const { data, error } = await supabase
       .from('notifications')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
       .eq('recipient_id', recipientId)
       .eq('is_read', false);
     if (error) throw error;
-    return count || 0;
-  } catch (error) {
-    console.error('Error getting unread count:', error);
+    return data?.length ?? 0;
+  } catch (error: any) {
+    console.error('Error getting unread count:', error?.message || error?.code || JSON.stringify(error));
     return 0;
   }
 }
