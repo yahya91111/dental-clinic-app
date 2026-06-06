@@ -1,9 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // AIChatModal — محادثة الذكاء وسط الشاشة (تصميم بسيط مؤقّت)
 // ═══════════════════════════════════════════════════════════════
-// حديث الذكاء مع المستخدم — منفصل تمامًا عن صفحة الإشعارات. يعرض داخل
-// المحادثة: طلبات الذكاء (تبديل/تغطية/تنبيه) ككروت موافق/رفض، ونتائجها
-// كرسائل، ومحادثة حرّة لطلب جديد. هذه الأنواع لا تظهر في الجرس إطلاقًا.
+// حديث الذكاء مع المستخدم — منفصل تمامًا عن صفحة الإشعارات.
+//
+// المحادثة (الرسائل + المُرسِل) **مشتركة** مع صفحة الذكاء الكاملة: نأخذها
+// من الأب (messages/onSend) فما يُكتب هنا أو هناك هو نفسه. أمّا طلبات الذكاء
+// المعلّقة (تبديل/تغطية) ونتائجها فتُحمَّل من قاعدة البيانات وتُعرض كرسائل.
+// هذه الأنواع لا تظهر في الجرس إطلاقًا.
 // ═══════════════════════════════════════════════════════════════
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,9 +14,9 @@ import {
   Modal, View, Text, ScrollView, TextInput, TouchableOpacity,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
-import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
 import { getNotifications, markAsRead } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
+import { ChatMessage } from './aiTypes';
 import { scale } from '../lib/scale';
 
 type Props = {
@@ -21,6 +24,10 @@ type Props = {
   onClose: () => void;
   user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
   clinicId?: string | null;
+  /** المحادثة المشتركة مع صفحة الذكاء الكاملة */
+  messages: ChatMessage[];
+  onSend: (text: string) => void;
+  isLoading?: boolean;
 };
 
 type ConvoNotif = {
@@ -41,77 +48,49 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
   return (data || []).filter((n: ConvoNotif) => AI_CHAT_TYPES.includes(n.type) && (isPending(n) || !n.is_read)).length;
 }
 
-export default function AIChatModal({ visible, onClose, user, clinicId }: Props) {
-  const [messages, setMessages] = useState<V2Message[]>([]);
+export default function AIChatModal({ visible, onClose, user, clinicId, messages, onSend, isLoading }: Props) {
   const [convo, setConvo] = useState<ConvoNotif[]>([]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
-    // أنواع محادثة الذكاء فقط، من الأقدم للأحدث (تسلسل المحادثة)
     const items = ((data || []) as ConvoNotif[]).filter((n) => AI_CHAT_TYPES.includes(n.type)).reverse();
     setConvo(items);
-    // علّم النتائج/المحلولة المقروءة (يُطفئ اللون الأحمر؛ الطلبات المعلّقة تبقى)
     items.filter((n) => !isPending(n) && !n.is_read).forEach((n) => markAsRead(n.id));
   }, [user?.id]);
 
-  useEffect(() => { if (visible) loadConvo(); }, [visible, loadConvo]);
-
-  const v2User: V2User = {
-    id: user.id, name: user.name, role: user.role,
-    clinicId: user.clinicId || undefined, clinicName: user.clinicName,
-  };
+  // حمّل الطلبات عند الفتح، وأعد التحميل عند تغيّر المحادثة (قد ينشئ ردّ الذكاء طلبًا)
+  useEffect(() => { if (visible) loadConvo(); }, [visible, messages.length, loadConvo]);
 
   async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
     setBusyId(n.id);
     try {
-      let reply = '';
       if (n.type === 'coverage_request') {
-        const res = decision === 'accept'
-          ? await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name })
-          : await notifEngine.rejectCoverage({ notificationId: n.id });
-        reply = res.success ? (decision === 'accept' ? 'وافقتَ — تمّ التبديل.' : 'رفضتَ الطلب.') : `تعذّر: ${res.error}`;
+        if (decision === 'accept') await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name });
+        else await notifEngine.rejectCoverage({ notificationId: n.id });
       } else if (n.type === 'swap_request') {
-        const res = decision === 'accept'
-          ? await notifEngine.acceptSwap({ notificationId: n.id, targetId: user.id, targetRole: user.role, targetName: user.name })
-          : await notifEngine.rejectSwap({ notificationId: n.id, targetName: user.name });
-        reply = res.success ? (decision === 'accept' ? 'وافقتَ — تمّ التبديل.' : 'اعتذرتَ عن التبديل.') : `تعذّر: ${res.error}`;
+        if (decision === 'accept') await notifEngine.acceptSwap({ notificationId: n.id, targetId: user.id, targetRole: user.role, targetName: user.name });
+        else await notifEngine.rejectSwap({ notificationId: n.id, targetName: user.name });
       } else {
         const { updateNotificationAction } = await import('../lib/database');
         await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
-        reply = decision === 'accept' ? 'تمّ.' : 'رُفض.';
       }
-      setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
       await loadConvo();
-    } catch (e) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
     } finally {
       setBusyId(null);
     }
   }
 
-  async function handleSend() {
+  function handleSend() {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || isLoading) return;
     setInput('');
-    const history: V2Message[] = [...messages, { role: 'user', content: text }];
-    setMessages(history);
-    setLoading(true);
-    try {
-      const res = await sendMessageV2({ messages: history, user: v2User, clinicId: clinicId || undefined });
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.success ? res.message : (res.message || 'تعذّر تنفيذ الطلب.') }]);
-      await loadConvo();
-    } catch (e) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
-    } finally {
-      setLoading(false);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
-    }
+    onSend(text);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
   return (
@@ -132,7 +111,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
               contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
               onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {/* محادثة الذكاء: الطلبات (موافق/رفض) ونتائجها — كلّها رسائل من الذكاء */}
+              {/* طلبات الذكاء ونتائجها (من قاعدة البيانات) */}
               {convo.map((n) => {
                 if (isPending(n)) {
                   const busy = busyId === n.id;
@@ -167,13 +146,13 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
                 <Text style={styles.empty}>لا توجد طلبات. اكتب طلبك بالأسفل.</Text>
               )}
 
-              {/* المحادثة الحرّة */}
-              {messages.map((m, i) => (
-                <View key={i} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
+              {/* المحادثة المشتركة */}
+              {messages.map((m) => (
+                <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
                   <Text style={[styles.msgTxt, m.role === 'user' && styles.msgTxtUser]}>{m.content}</Text>
                 </View>
               ))}
-              {loading && <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />}
+              {isLoading && <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />}
             </ScrollView>
 
             <View style={styles.inputRow}>
@@ -187,7 +166,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
                 textAlign="right"
                 onSubmitEditing={handleSend}
               />
-              <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={loading}>
+              <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={isLoading}>
                 <Text style={styles.sendTxt}>إرسال</Text>
               </TouchableOpacity>
             </View>

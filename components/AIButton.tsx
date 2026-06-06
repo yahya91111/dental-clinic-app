@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AIOrb, AIState } from './AIOrb';
 import AIChatModal, { countUnreadAIChat } from './AIChatModal';
+import { ChatMessage } from './aiTypes';
 
 type Props = {
   user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
@@ -19,9 +20,13 @@ type Props = {
   orbState?: AIState;
   /** فعل النقرة الخاصّ بالصفحة؛ إن غاب فالنقرة تفتح المحادثة */
   onPress?: () => void;
+  /** المحادثة المشتركة مع صفحة الذكاء الكاملة */
+  messages: ChatMessage[];
+  onSend: (text: string) => void;
+  isLoading?: boolean;
 };
 
-export default function AIButton({ user, clinicId, orbState, onPress }: Props) {
+export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, isLoading }: Props) {
   const [showChat, setShowChat] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const openChat = () => setShowChat(true);
@@ -55,6 +60,9 @@ export default function AIButton({ user, clinicId, orbState, onPress }: Props) {
         onClose={() => setShowChat(false)}
         user={user}
         clinicId={clinicId ?? user.clinicId}
+        messages={messages}
+        onSend={onSend}
+        isLoading={isLoading}
       />
     </>
   );

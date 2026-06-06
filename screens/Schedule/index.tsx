@@ -618,6 +618,9 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           onPress={() => setShowAIPanel(true)}
           user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
           clinicId={clinicId}
+          messages={aiMessages}
+          onSend={handleAISend}
+          isLoading={aiLoading}
         />
       )}
 
