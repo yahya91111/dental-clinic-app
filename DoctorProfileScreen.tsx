@@ -10,6 +10,7 @@ import DentalDepartmentsScreen from './DentalDepartmentsScreen';
 import DoctorsScreen from './DoctorsScreen';
 import ComingSoonScreen from './ComingSoonScreen';
 import ScheduleScreen from './screens/Schedule';
+import NotificationsTestScreen from './components/NotificationsTestScreen';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
@@ -880,12 +881,11 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     );
   }
 
-  // Requests screen
+  // Requests screen — مؤقّتًا: شاشة إشعارات للتجربة (التصميم النهائيّ لاحقًا)
   if (currentScreen === 'requests') {
     return (
-      <ComingSoonScreen 
+      <NotificationsTestScreen
         onBack={() => setCurrentScreen('profile')}
-        title="Requests"
       />
     );
   }
