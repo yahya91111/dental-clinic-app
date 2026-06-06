@@ -52,34 +52,48 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   const [convo, setConvo] = useState<ConvoNotif[]>([]);
   const [input, setInput] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
-    const items = ((data || []) as ConvoNotif[]).filter((n) => AI_CHAT_TYPES.includes(n.type)).reverse();
+    // فقط الطلبات المعلّقة + النتائج الجديدة (غير المقروءة) — لا نعرض المحلول/القديم
+    const items = ((data || []) as ConvoNotif[])
+      .filter((n) => isPending(n) || (n.type === 'request_result' && !n.is_read))
+      .reverse();
     setConvo(items);
-    items.filter((n) => !isPending(n) && !n.is_read).forEach((n) => markAsRead(n.id));
+    // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر؛ الطلبات المعلّقة تبقى حتّى الاختيار)
+    items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
   }, [user?.id]);
 
   // حمّل الطلبات عند الفتح، وأعد التحميل عند تغيّر المحادثة (قد ينشئ ردّ الذكاء طلبًا)
-  useEffect(() => { if (visible) loadConvo(); }, [visible, messages.length, loadConvo]);
+  useEffect(() => { if (visible) { setNote(''); loadConvo(); } }, [visible, messages.length, loadConvo]);
 
   async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
     setBusyId(n.id);
     try {
+      let msg = '';
       if (n.type === 'coverage_request') {
-        if (decision === 'accept') await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name });
-        else await notifEngine.rejectCoverage({ notificationId: n.id });
+        const res = decision === 'accept'
+          ? await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name })
+          : await notifEngine.rejectCoverage({ notificationId: n.id });
+        msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'رفضتَ الطلب.') : `تعذّر: ${res.error || ''}`;
       } else if (n.type === 'swap_request') {
-        if (decision === 'accept') await notifEngine.acceptSwap({ notificationId: n.id, targetId: user.id, targetRole: user.role, targetName: user.name });
-        else await notifEngine.rejectSwap({ notificationId: n.id, targetName: user.name });
+        const res = decision === 'accept'
+          ? await notifEngine.acceptSwap({ notificationId: n.id, targetId: user.id, targetRole: user.role, targetName: user.name })
+          : await notifEngine.rejectSwap({ notificationId: n.id, targetName: user.name });
+        msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'اعتذرتَ عن التبديل.') : `تعذّر: ${res.error || ''}`;
       } else {
         const { updateNotificationAction } = await import('../lib/database');
         await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
+        msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
       }
+      setNote(msg);
       await loadConvo();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
     } finally {
       setBusyId(null);
     }
@@ -144,6 +158,13 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
 
               {convo.length === 0 && messages.length === 0 && (
                 <Text style={styles.empty}>لا توجد طلبات. اكتب طلبك بالأسفل.</Text>
+              )}
+
+              {/* نتيجة آخر قبول/رفض */}
+              {!!note && (
+                <View style={[styles.msg, styles.msgAI]}>
+                  <Text style={styles.msgTxt}>{note}</Text>
+                </View>
               )}
 
               {/* المحادثة المشتركة */}
