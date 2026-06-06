@@ -566,9 +566,71 @@ export async function swapInSchedule(
         .eq('id', r.id);
       if (error) return fail(error.message);
     }
+
+    // الظلّ: المتدرّب المبتدئ ملتصق بمدرّبه، فينتقل معه إلى مواضعه الجديدة.
+    await moveShadowTrainees({ clinicId, weekStart, day, doctorIds, periodsInScope, preRows: rows });
     return ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
+/**
+ * بعد تبديل أطباء، ينقل المتدرّب المبتدئ (الظلّ) ليتبع مدرّبه. الظلّ مُمثَّل
+ * كنسخة من خانات المدرّب (نفس الفترة/العيادة/الدور). نتعرّف عليه بمطابقة خاناته
+ * تمامًا لخانات مدرّبه قبل التبديل (المتدرّب المستقلّ له مكانه فلا يُطابق فلا يُنقل).
+ * موضع المدرّب الجديد = موضع سَلَفه القديم في حلقة التبديل.
+ */
+async function moveShadowTrainees(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  doctorIds: string[];
+  periodsInScope: number[];
+  preRows: Row[];
+}): Promise<void> {
+  const { clinicId, weekStart, day, doctorIds, periodsInScope, preRows } = args;
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const swapped = new Set(doctorIds);
+  const shadows = (members || []).filter(
+    (m: { work_status?: string; supervisor_doctor_id?: string | null }) =>
+      m.work_status === 'trainee' && m.supervisor_doctor_id && swapped.has(m.supervisor_doctor_id),
+  ) as { doctor_id: string; doctor_name: string; supervisor_doctor_id: string }[];
+  if (shadows.length === 0) return;
+
+  const inScope = (r: Row) =>
+    r.period > 0 && r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator')
+    && periodsInScope.includes(r.period);
+  const posOf = (docId: string) =>
+    preRows.filter((r) => r.doctor_id === docId && inScope(r))
+      .map((r) => ({ period: r.period, clinic_number: r.clinic_number, role: r.role }));
+  const key = (p: { period: number; clinic_number: number; role: string }) =>
+    `${p.period}|${p.clinic_number}|${p.role}`;
+  const predecessorOf = (supId: string) => {
+    const i = doctorIds.indexOf(supId);
+    return doctorIds[(i - 1 + doctorIds.length) % doctorIds.length]!;
+  };
+
+  for (const t of shadows) {
+    const supPos = posOf(t.supervisor_doctor_id);
+    const tPos = posOf(t.doctor_id);
+    // ظلّ فعليّ فقط: خاناته مطابقة تمامًا لخانات مدرّبه قبل التبديل
+    if (supPos.length === 0 || tPos.length !== supPos.length) continue;
+    const supSet = new Set(supPos.map(key));
+    if (!tPos.every((p) => supSet.has(key(p)))) continue;
+
+    // مواضع المدرّب الجديدة = مواضع سَلَفه القديمة
+    const newPos = posOf(predecessorOf(t.supervisor_doctor_id));
+    const tOldIds = preRows.filter((r) => r.doctor_id === t.doctor_id && inScope(r)).map((r) => r.id);
+    await deleteRows(tOldIds);
+    await insertRows(
+      newPos.map((p) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: p.period, clinic_number: p.clinic_number,
+        doctor_id: t.doctor_id, doctor_name: t.doctor_name,
+        role: p.role, status: 'active', source: 'request',
+      })),
+    );
   }
 }
 
