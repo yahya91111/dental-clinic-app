@@ -450,7 +450,7 @@ export async function acceptSwap(args: {
   targetId: string;
   targetRole?: string;
   targetName?: string;
-}): Promise<NotifResult & { requesterId?: string; requesterName?: string }> {
+}): Promise<NotifResult & { requesterId?: string; requesterName?: string; resultSent?: boolean; resultError?: string }> {
   try {
     const notif = await loadNotif(args.notificationId);
     if (!notif) return fail('الطلب غير موجود.');
@@ -468,13 +468,13 @@ export async function acceptSwap(args: {
 
     // ردّ للطالب: تمّت الموافقة
     const who = args.targetName || d.target_name;
-    await sendInfo({
+    const res = await sendInfo({
       clinicId: d.clinic_id, recipientId: d.requester_id,
       senderId: args.targetId, senderName: who,
       type: NotifType.REQUEST_RESULT, title: 'تمّ التبديل',
       body: `وافق ${who ? 'د.' + who : 'الطرف الآخر'} على التبديل يوم ${DAY_AR[d.day]} — تمّ.`,
     });
-    return { success: true, requesterId: d.requester_id, requesterName: d.requester_name };
+    return { success: true, requesterId: d.requester_id, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -484,7 +484,7 @@ export async function acceptSwap(args: {
 export async function rejectSwap(args: {
   notificationId: string;
   targetName?: string;
-}): Promise<NotifResult & { requesterId?: string; requesterName?: string }> {
+}): Promise<NotifResult & { requesterId?: string; requesterName?: string; resultSent?: boolean; resultError?: string }> {
   try {
     const notif = await loadNotif(args.notificationId);
     if (!notif) return fail('الطلب غير موجود.');
@@ -496,13 +496,13 @@ export async function rejectSwap(args: {
 
     // ردّ للطالب: اعتذر الطرف الآخر
     const who = args.targetName || d.target_name;
-    await sendInfo({
+    const res = await sendInfo({
       clinicId: d.clinic_id, recipientId: d.requester_id,
       senderName: who,
       type: NotifType.REQUEST_RESULT, title: 'رُفض التبديل',
       body: `اعتذر ${who ? 'د.' + who : 'الطرف الآخر'} عن التبديل يوم ${DAY_AR[d.day]}.`,
     });
-    return { success: true, requesterId: d.requester_id, requesterName: d.requester_name };
+    return { success: true, requesterId: d.requester_id, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }

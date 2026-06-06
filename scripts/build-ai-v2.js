@@ -28,6 +28,7 @@ const OUTPUT_FILE = path.join(V2_ROOT, '_compiled.ts');
 const FILES = [
   { name: 'CORE_PROMPT_V2', file: 'core_prompt.md' },
   { name: 'TEAM_LEADER_PROMPT_V2', file: 'team_leader_prompt.md' },
+  { name: 'DOCTOR_PROMPT_V2', file: 'doctor_prompt.md' },
   { name: 'SCHEDULE_ASSISTANT_V2', file: 'schedule_assistant.md' },
   { name: 'REQUESTS_ASSISTANT_V2', file: 'requests_assistant.md' },
   { name: 'NOTIFICATIONS_ASSISTANT_V2', file: 'notifications_assistant.md' },

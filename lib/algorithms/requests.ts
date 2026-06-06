@@ -188,6 +188,16 @@ export async function setScheduleStatus(
     const rows = await loadDay(clinicId, weekStart, day);
     const mine = rows.filter((r) => r.doctor_id === doctorId);
 
+    // الشفت الفعليّ من مكان الطبيب في الجدول (الفترات ٣/٤ = مساء)، لا من قيمة
+    // الذكاء (التي قد تكون افتراضيّة). هكذا يقع في EX الجهة الصحيحة.
+    const myActive = mine.filter(
+      (r) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'),
+    );
+    const effShift: Shift =
+      myActive.some((r) => r.period >= 3) ? 'evening'
+        : myActive.some((r) => r.period <= 2) ? 'morning'
+          : shift;
+
     // أزل أيّ حالة EX سابقة لنفس الطبيب/اليوم (تفادي التكرار)
     const oldStatusRows = mine.filter((r) => r.status !== 'active' && r.period === 0);
     await deleteRows(oldStatusRows.map((r) => r.id));
@@ -209,12 +219,38 @@ export async function setScheduleStatus(
         })),
       );
       await deleteRows(placed.map((r) => r.id));
+
+      // المتدرّب الظلّ (المبتدئ) ملتصق بمدرّبه: عند غياب المدرّب يصبح احتياطيًّا
+      // (EX) — مطابقةً لخوارزميّة البناء (auto-EX عند فقد المدرّب). نتعرّف على
+      // الظلّ بمطابقة خاناته تمامًا لخانات مدرّبه (المتدرّب المستقلّ لا يُطابق).
+      const { data: members } = await getAllGroupMembers(clinicId);
+      const supKeys = new Set(placed.map((r) => `${r.period}|${r.clinic_number}|${r.role}`));
+      const shadows = ((members || []) as {
+        doctor_id: string; doctor_name: string; work_status?: string; supervisor_doctor_id?: string | null;
+      }[]).filter((m) => m.work_status === 'trainee' && m.supervisor_doctor_id === doctorId);
+      for (const t of shadows) {
+        const tSlots = rows.filter(
+          (r) => r.doctor_id === t.doctor_id && r.period > 0 && r.status === 'active'
+            && (r.role === 'clinic' || r.role === 'delegator'),
+        );
+        const tKeys = tSlots.map((r) => `${r.period}|${r.clinic_number}|${r.role}`);
+        if (placed.length === 0 || tSlots.length !== placed.length || !tKeys.every((k) => supKeys.has(k))) continue;
+        await deleteRows(tSlots.map((r) => r.id));
+        const tOldEx = rows.filter((r) => r.doctor_id === t.doctor_id && r.period === 0);
+        await deleteRows(tOldEx.map((r) => r.id));
+        await insertRows([{
+          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+          period: 0, clinic_number: exCellOf(effShift),
+          doctor_id: t.doctor_id, doctor_name: t.doctor_name,
+          role: 'clinic', status: 'extra', source: 'request',
+        }]);
+      }
     }
 
-    // اكتب صفّ الحالة (period=0، جهة EX حسب الشفت)
+    // اكتب صفّ الحالة (period=0، جهة EX حسب الشفت الفعليّ)
     await insertRows([{
       clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-      period: 0, clinic_number: exCellOf(shift),
+      period: 0, clinic_number: exCellOf(effShift),
       doctor_id: doctorId, doctor_name: doctorName,
       role: 'clinic', status, source: 'request',
     }]);

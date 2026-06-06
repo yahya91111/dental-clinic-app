@@ -14,7 +14,7 @@ import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
 import { getPermissions } from './permissions';
-import { getUnreadCount, getNotifications as fetchNotifications, markAsRead, markAllAsRead, createNotification } from './lib/database';
+import { getUnreadCount, getNotifications as fetchNotifications, markAsRead, markAllAsRead, createNotification, subscribeToNotifications } from './lib/database';
 import { registerForPushNotifications, addNotificationResponseListener, addNotificationReceivedListener } from './lib/pushNotifications';
 
 //  Simple Badge Component - Text Only (No Background)
@@ -142,10 +142,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       setUnreadNotifications(count);
     };
     fetchUnread();
+    // وصول فوريّ (Realtime): يحدّث العدّاد لحظة إنشاء أيّ إشعار للمستخدم
+    const unsub = subscribeToNotifications(user.id, fetchUnread);
+    // فحص دوريّ احتياطيّ (في حال انقطاع/إعادة اتّصال)
     const interval = setInterval(fetchUnread, 30000);
 
     return () => {
       clearInterval(interval);
+      unsub();
       notifSub.remove();
       responseSub.remove();
     };

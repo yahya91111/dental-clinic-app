@@ -140,6 +140,16 @@ async function getTeamLeaderId(clinicId: string): Promise<string | null> {
   return (data as { id?: string } | null)?.id ?? null;
 }
 
+/** كلّ معرّفات القادة في العيادة (لاستثنائهم من البثّ — يُبلَّغون تلقائيًّا) */
+async function getTeamLeaderIds(clinicId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('doctors')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('role', 'team_leader');
+  return ((data as { id: string }[] | null) || []).map((r) => r.id).filter(Boolean);
+}
+
 /** قروب الطبيب الحاليّ (group_id) من عضويّاته */
 async function findDoctorGroupId(clinicId: string, doctorId: string): Promise<string | null> {
   const { getAllGroupMembers } = await import('../database');
@@ -208,10 +218,13 @@ export async function dispatchNotificationTool(
           if (subjId) groupId = await findDoctorGroupId(ctx.clinicId, subjId);
           if (!groupId) return 'Tool error: تعذّر تحديد الشفت (القروب).';
         }
-        const recipientIds = await notifications.resolveAudience(ctx.clinicId, audience, {
+        const audienceIds = await notifications.resolveAudience(ctx.clinicId, audience, {
           groupId: groupId ?? undefined,
           excludeId: subject?.id ?? sender.id,
         });
+        // استثنِ القادة من البثّ — يصلهم إشعارهم التلقائيّ الخاصّ فلا يُكرَّر
+        const leaderIds = new Set(await getTeamLeaderIds(ctx.clinicId));
+        const recipientIds = audienceIds.filter((id) => !leaderIds.has(id));
         if (recipientIds.length === 0) return 'لا يوجد من يُبلَّغ.';
         const res = await notifications.broadcast({
           clinicId: ctx.clinicId, recipientIds,

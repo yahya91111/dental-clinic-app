@@ -1669,6 +1669,30 @@ export async function deletePromptTemplate(id: string): Promise<DatabaseResponse
 // NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * اشتراك فوريّ (Realtime) على إشعارات مستخدمٍ بعينه. يستدعي onChange فور
+ * إدراج/تحديث أيّ إشعار له — فيصل الإشعار لحظيًّا والتطبيق مفتوح (يعمل في
+ * Expo Go أيضًا). يُرجِع دالّة لإلغاء الاشتراك. يتطلّب تفعيل Realtime على
+ * جدول notifications في لوحة Supabase.
+ */
+export function subscribeToNotifications(recipientId: string, onChange: () => void): () => void {
+  if (!recipientId) return () => {};
+  const channel = supabase
+    .channel(`notifications:${recipientId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${recipientId}` },
+      () => onChange(),
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${recipientId}` },
+      () => onChange(),
+    )
+    .subscribe();
+  return () => { try { supabase.removeChannel(channel); } catch { /* تجاهل */ } };
+}
+
 export async function getNotifications(recipientId: string, limit = 50): Promise<DatabaseResponse<any[]>> {
   try {
     const { data, error } = await supabase
@@ -1679,8 +1703,11 @@ export async function getNotifications(recipientId: string, limit = 50): Promise
       .limit(limit);
     if (error) throw error;
     return { data: data || [], error: null };
-  } catch (error) {
-    console.error('Error loading notifications:', error);
+  } catch (error: any) {
+    const msg = error?.message || error?.code || '';
+    if (!/network request failed|failed to fetch/i.test(String(msg))) {
+      console.error('Error loading notifications:', error);
+    }
     return { data: null, error: error as Error };
   }
 }
@@ -1699,7 +1726,11 @@ export async function getUnreadCount(recipientId: string): Promise<number> {
     if (error) throw error;
     return data?.length ?? 0;
   } catch (error: any) {
-    console.error('Error getting unread count:', error?.message || error?.code || JSON.stringify(error));
+    // فشل الشبكة عابر (انقطاع/خمول) — لا نُزعج بـERROR، نُرجِع 0 بهدوء
+    const msg = error?.message || error?.code || '';
+    if (!/network request failed|failed to fetch/i.test(String(msg))) {
+      console.error('Error getting unread count:', msg || JSON.stringify(error));
+    }
     return 0;
   }
 }
@@ -1724,6 +1755,9 @@ export async function createNotification(notification: {
       .select()
       .single();
     if (error) throw error;
+    // ملاحظة: الدفع (push) يُرسله مُحفِّز قاعدة البيانات
+    // trigger_push_on_notification عند الإدراج — لا نُكرّره هنا في الـJS
+    // (التكرار كان يسبّب رنّتين). صمت gap_alert يُدار في المُحفِّز.
     return { data, error: null };
   } catch (error) {
     console.error('Error creating notification:', error);
@@ -1794,6 +1828,14 @@ export async function deleteNotification(notificationId: string): Promise<Databa
 
 export async function savePushToken(userId: string, clinicId: string, token: string, platform: string): Promise<DatabaseResponse<null>> {
   try {
+    // رمز واحد لكلّ مستخدم على نفس المنصّة: احذف رموزه القديمة المختلفة أولًا
+    // (رموز Expo القديمة تبقى وتسبّب رنينًا مكرّرًا على نفس الجهاز).
+    await supabase
+      .from('push_tokens')
+      .delete()
+      .eq('user_id', userId)
+      .eq('platform', platform)
+      .neq('token', token);
     const { error } = await supabase
       .from('push_tokens')
       .upsert({ user_id: userId, clinic_id: clinicId, token, platform }, { onConflict: 'user_id,token' });

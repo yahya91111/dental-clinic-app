@@ -14,6 +14,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { V2Tool, V2ToolContext } from './tools';
+import { supabase } from '../supabase';
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
 
@@ -43,9 +44,9 @@ export const REQUESTS_TOOLS: V2Tool[] = [
           type: 'string',
           enum: ['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'],
         },
-        shift: { type: 'string', enum: ['morning', 'evening'], description: 'شفت الطبيب ذلك اليوم (لتحديد جهة EX).' },
+        shift: { type: 'string', enum: ['morning', 'evening'], description: 'شفت الطبيب ذلك اليوم (لتحديد جهة EX). اختياريّ — افتراضيّ صباح.' },
       },
-      required: ['weekStart', 'day', 'doctorIndex', 'status', 'shift'],
+      required: ['weekStart', 'day', 'doctorIndex', 'status'],
     },
   },
   {
@@ -121,6 +122,24 @@ export const REQUESTS_TOOLS: V2Tool[] = [
     },
   },
   {
+    name: 'announce_to',
+    description:
+      'يُبلِغ جمهورًا بحدثٍ للعلم فقط: الشفت (قروب الطبيب) أو المركز (الجميع). ' +
+      'استدعِها بعد اختيار المستخدم «الشفت» أو «المركز» عقب تسجيل غيابه (لا تستدعِها مع «لا داعي»).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        audience: { type: 'string', enum: ['shift', 'center'], description: 'الشفت أو المركز.' },
+        message: { type: 'string', description: 'نصّ الإبلاغ بالعربيّة.' },
+        subjectDoctorIndex: {
+          type: 'integer',
+          description: 'صاحب الحدث (لتحديد قروبه عند audience=shift، ويُستثنى من المُبلَّغين).',
+        },
+      },
+      required: ['audience', 'message'],
+    },
+  },
+  {
     name: 'set_clinic_count',
     description: 'يغيّر عدد عيادات العيادة (يؤثّر على الحاليّ والقادم بلا إعادة توزيع). الليدر فأعلى.',
     input_schema: {
@@ -187,6 +206,16 @@ function actorOf(ctx: V2ToolContext): { id: string; role: string } | null {
   return { id: ctx.user.id, role: ctx.user.role };
 }
 
+/** كلّ قادة الفريق في العيادة (قد يكونون أكثر من واحد) — للإبلاغ التلقائيّ */
+async function getTeamLeaderIds(clinicId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('doctors')
+    .select('id, role')
+    .eq('clinic_id', clinicId)
+    .eq('role', 'team_leader');
+  return ((data as { id: string }[] | null) || []).map((r) => r.id).filter(Boolean);
+}
+
 async function getClinicCount(clinicId: string): Promise<number> {
   const { getScheduleSettings } = await import('../database');
   const { data } = await getScheduleSettings(clinicId);
@@ -240,11 +269,42 @@ export async function dispatchRequestTool(
           shift,
         });
         if (!res.success) return `Tool error: ${res.error}`;
-        let out = `تمّ: ${STATUS_AR[String(status)]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${r.weekStart}).`;
-        if (res.gaps && res.gaps.length > 0) {
-          out += ` نقص تغطية: ${res.gaps.map((g) => `عيادة ${g.clinicNumber} فترة ${g.period}`).join('، ')}.`;
+
+        // إبلاغ الليدر تلقائيًّا وبصمت عند غياب (لا يراه الذكاء فلا يرويه):
+        //  • إشعار للعلم بأنّ الطبيب سجّل غيابه.
+        //  • إن نتج نقص → كرت حلول للّيدر (يخاطبه الذكاء عند فتحه).
+        const ABSENCE = ['sick_leave', 'vacation', 'permission_start', 'permission_end'];
+        if (ABSENCE.includes(String(status))) {
+          try {
+            const { notifications } = await import('../algorithms/notifications');
+            const leaderIds = Array.from(new Set(await getTeamLeaderIds(ctx.clinicId)))
+              .filter((id) => id !== actor.id);
+            for (const leaderId of leaderIds) {
+              // إشعار «علم» واحد لكلّ قائد (جرس + رنّة)
+              await notifications.notifyLeaderOfRequest({
+                clinicId: ctx.clinicId, leaderId,
+                senderId: doc.id, senderName: doc.name,
+                summary: `${STATUS_AR[String(status)]} يوم ${DAY_AR[r.day]} (${r.weekStart})`,
+              });
+              // كرت النقص → يحمّر زرّ الذكاء بصمت (لا push، لا رنّة) لعرض الحلول
+              for (const g of res.gaps || []) {
+                await notifications.alertLeaderGap({
+                  clinicId: ctx.clinicId, leaderId,
+                  weekStart: String(r.weekStart), day: r.day,
+                  gap: { clinicNumber: g.clinicNumber, period: g.period, shift: g.shift ?? shift },
+                  absentDoctorName: doc.name,
+                  senderId: doc.id, senderName: doc.name,
+                });
+              }
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.log('[absence→leader] failed', e instanceof Error ? e.message : e);
+          }
         }
-        return out;
+
+        // لا نُرجِع ذكرَ النقص للذكاء — التغطية/الليدر تُدار بصمت
+        return `تمّ: ${STATUS_AR[String(status)]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${r.weekStart}).`;
       }
 
       case 'cancel_schedule_status': {
@@ -356,6 +416,12 @@ export async function dispatchRequestTool(
         const supervisor = ws === 'trainee' ? resolveDoctor(ctx, r.supervisorIndex) : null;
         const res = await requests.setDoctorGroupStatus(actor, groupId, doc.id, ws, supervisor?.id ?? null);
         return res.success ? `تمّ ضبط حالة ${doc.name} على ${ws}.` : `Tool error: ${res.error}`;
+      }
+
+      case 'announce_to': {
+        // الإبلاغ بعد تسجيل الغياب — نفوّضه لموزّع الإشعارات (نفس المنطق)
+        const { dispatchNotificationTool } = await import('./tools_notifications');
+        return dispatchNotificationTool('announce_to', input, ctx);
       }
 
       default:

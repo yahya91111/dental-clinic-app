@@ -21,6 +21,7 @@ import {
   NOTIFICATIONS_ASSISTANT_V2,
   CORE_PROMPT_V2,
   TEAM_LEADER_PROMPT_V2,
+  DOCTOR_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
 import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview } from './tools';
@@ -245,7 +246,9 @@ export async function sendMessageV2(
       },
       {
         type: 'text',
-        text: TEAM_LEADER_PROMPT_V2,
+        // طبقة الدور حسب دور المستخدم: الطبيب العاديّ يأخذ طبقته، ومن هو
+        // قائد فأعلى يأخذ طبقة القيادة (الصلاحيّات تُفرض في الكود أيضًا).
+        text: opts.user.role === 'doctor' ? DOCTOR_PROMPT_V2 : TEAM_LEADER_PROMPT_V2,
         cache_control: { type: 'ephemeral', ttl: '1h' },
       },
       {
@@ -317,6 +320,7 @@ export async function sendMessageV2(
     // eslint-disable-next-line no-console
     console.log(`[AI V2] task=${task} (tools=${activeTools.length})`);
     let allText = '';
+    let lastNonEmptyText = '';
     let inputTokensTotal = 0;
     let outputTokensTotal = 0;
     let roundsUsed = 0;
@@ -362,9 +366,9 @@ export async function sendMessageV2(
       );
 
       const toolResults: Array<Record<string, unknown>> = [];
-      // نصّ هذه الجولة وحدها. النصّ قبل استدعاء أداة = تمهيد ("سأبني الآن…")
-      // يُهمَل؛ نُبقي فقط نصّ الجولة المنهية (الإجابة النهائية) لمنع التصاق
-      // التمهيد بالنتيجة في رسالة المستخدم.
+      // نصّ هذه الجولة وحدها. عادةً النصّ قبل أداة تمهيد ("سأبني الآن…") نتجاوزه،
+      // لكن قد تحمل جولة الأداة الإجابة النهائية ("تمّ التسجيل") ثمّ تأتي جولة
+      // فارغة بعدها — فنحتفظ بآخر نصّ غير فارغ لئلّا تضيع الإجابة.
       let roundText = '';
 
       for (const block of data.content || []) {
@@ -390,9 +394,13 @@ export async function sendMessageV2(
         }
       }
 
-      // انتهاء الدورة: لا أدوات → هذه الجولة هي الإجابة النهائية
+      // احتفظ بآخر نصّ غير فارغ عبر الجولات (قد يكون الإجابة النهائية)
+      if (roundText.trim()) lastNonEmptyText = roundText;
+
+      // انتهاء الدورة: لا أدوات → هذه الجولة هي الإجابة النهائية. إن كانت فارغة
+      // فالإجابة جاءت في جولة الأداة السابقة → استعملها بدل ترك الردّ فارغًا.
       if (data.stop_reason !== 'tool_use' || toolResults.length === 0) {
-        allText = roundText;
+        allText = roundText.trim() ? roundText : lastNonEmptyText;
         break;
       }
 

@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AIOrb, AIState } from './AIOrb';
 import AIChatModal, { countUnreadAIChat } from './AIChatModal';
+import { subscribeToNotifications } from '../lib/database';
 import { ChatMessage } from './aiTypes';
 
 type Props = {
@@ -36,15 +37,22 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
     setPendingCount(await countUnreadAIChat(user.id));
   }, [user?.id]);
 
-  // فحص دوريّ خفيف لإظهار النقطة الحمراء عند وصول طلب
+  // وصول فوريّ (Realtime) + فحص دوريّ احتياطيّ (شبكة متقطّعة/إعادة اتّصال)
   useEffect(() => {
     refreshPending();
-    const t = setInterval(refreshPending, 20000);
-    return () => clearInterval(t);
-  }, [refreshPending]);
+    const unsub = user?.id ? subscribeToNotifications(user.id, refreshPending) : () => {};
+    const t = setInterval(refreshPending, 30000);
+    return () => { clearInterval(t); unsub(); };
+  }, [refreshPending, user?.id]);
 
   // عند إغلاق المحادثة، حدّث العدّاد (قد بُتّ في طلبات)
   useEffect(() => { if (!showChat) refreshPending(); }, [showChat, refreshPending]);
+
+  // سؤال معلّق: آخر رسالة من الذكاء تحمل خيارات [..] ولم يُجَب عنها بعد →
+  // يبقى الزرّ أحمر إشارةً إلى وجود سؤال ينتظر ردًّا (حتى لو أُغلقت المحادثة).
+  const last = messages[messages.length - 1];
+  const hasPendingQuestion =
+    !!last && last.role === 'assistant' && /\[[^\]\n]{1,30}\]/.test(last.content);
 
   return (
     <>
@@ -53,7 +61,7 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
         onPress={onPress || openChat}
         onLongPress={openChat}
         delayLongPress={400}
-        alert={pendingCount > 0}
+        alert={pendingCount > 0 || hasPendingQuestion}
       />
       <AIChatModal
         visible={showChat}

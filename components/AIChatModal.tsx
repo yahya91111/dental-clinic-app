@@ -14,7 +14,7 @@ import {
   Modal, View, Text, ScrollView, TextInput, TouchableOpacity,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
-import { getNotifications, markAsRead } from '../lib/database';
+import { getNotifications, markAsRead, subscribeToNotifications } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
 import { ChatMessage } from './aiTypes';
 import { scale } from '../lib/scale';
@@ -33,6 +33,7 @@ type Props = {
 type ConvoNotif = {
   id: string; type: string; title: string; body: string;
   action_type?: string | null; action_status?: string | null; is_read?: boolean;
+  created_at?: string;
 };
 
 // أنواع «محادثة الذكاء» — مكانها الجات لا صفحة الإشعارات
@@ -40,6 +41,16 @@ const AI_CHAT_TYPES = ['swap_request', 'coverage_request', 'gap_alert', 'request
 const isActionType = (t: string) => t === 'coverage_request' || t === 'swap_request' || t === 'gap_alert';
 const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
+
+/** يفصل خيارات [نعم] [لا] من نصّ رسالة الذكاء لعرضها كأزرار قابلة للنقر */
+function parseChoices(content: string): { text: string; choices: string[] } {
+  const choices: string[] = [];
+  const re = /\[([^\]\n]{1,30})\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) choices.push(m[1].trim());
+  const text = content.replace(re, '').replace(/[ \t]+\n/g, '\n').trim();
+  return { text, choices };
+}
 
 /** عدد عناصر محادثة الذكاء غير المقروءة (طلب معلّق أو نتيجة جديدة) — للون الزرّ الأحمر */
 export async function countUnreadAIChat(userId: string): Promise<number> {
@@ -58,17 +69,25 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
-    // فقط الطلبات المعلّقة + النتائج الجديدة (غير المقروءة) — لا نعرض المحلول/القديم
+    // الطلبات المعلّقة + النتائج الجديدة فقط (تختفي الموافقة/الرفض بعد قراءتها)
     const items = ((data || []) as ConvoNotif[])
       .filter((n) => isPending(n) || (n.type === 'request_result' && !n.is_read))
       .reverse();
     setConvo(items);
-    // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر؛ الطلبات المعلّقة تبقى حتّى الاختيار)
+    // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر وتختفي عند الفتح التالي)
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
   }, [user?.id]);
 
   // حمّل الطلبات عند الفتح، وأعد التحميل عند تغيّر المحادثة (قد ينشئ ردّ الذكاء طلبًا)
   useEffect(() => { if (visible) { setNote(''); loadConvo(); } }, [visible, messages.length, loadConvo]);
+
+  // تحديث فوريّ (Realtime) والمحادثة مفتوحة: يصل الردّ (موافقة/رفض) فورًا دون
+  // الحاجة للخروج والدخول.
+  useEffect(() => {
+    if (!visible || !user?.id) return;
+    const unsub = subscribeToNotifications(user.id, loadConvo);
+    return unsub;
+  }, [visible, user?.id, loadConvo]);
 
   async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
@@ -85,6 +104,10 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
           ? await notifEngine.acceptSwap({ notificationId: n.id, targetId: user.id, targetRole: user.role, targetName: user.name })
           : await notifEngine.rejectSwap({ notificationId: n.id, targetName: user.name });
         msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'اعتذرتَ عن التبديل.') : `تعذّر: ${res.error || ''}`;
+        // إن نجح الإجراء لكن تعذّر إبلاغ الطالب — أظهره بدل ابتلاعه بصمت
+        if (res.success && res.resultSent === false) {
+          msg += ` (لكن تعذّر إبلاغ الطالب: ${res.resultError || 'سبب غير معروف'})`;
+        }
       } else {
         const { updateNotificationAction } = await import('../lib/database');
         await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
@@ -107,6 +130,15 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
+  // دمج الرسائل المشتركة مع طلبات/نتائج الذكاء وترتيبها زمنيًّا تصاعديًّا
+  type Merged =
+    | { kind: 'msg'; ts: number; m: ChatMessage }
+    | { kind: 'notif'; ts: number; n: ConvoNotif };
+  const mergedItems: Merged[] = [
+    ...messages.map((m): Merged => ({ kind: 'msg', ts: m.timestamp || 0, m })),
+    ...convo.map((n): Merged => ({ kind: 'notif', ts: n.created_at ? new Date(n.created_at).getTime() : 0, n })),
+  ].sort((a, b) => a.ts - b.ts);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -125,8 +157,39 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
               contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
               onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {/* طلبات الذكاء ونتائجها (من قاعدة البيانات) */}
-              {convo.map((n) => {
+              {/* المحادثة المشتركة + طلبات الذكاء ونتائجها، مدموجة ومرتّبة زمنيًّا
+                  (فالموافقة تظهر تحت الطلب لا فوقه) */}
+              {mergedItems.map((it) => {
+                if (it.kind === 'msg') {
+                  const m = it.m;
+                  // رسائل الذكاء قد تحمل خيارات [..] → اعرضها كأزرار للنقر السريع
+                  const { text, choices } = m.role === 'assistant'
+                    ? parseChoices(m.content)
+                    : { text: m.content, choices: [] as string[] };
+                  const isLast = it === mergedItems[mergedItems.length - 1];
+                  return (
+                    <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
+                      {!!text && (
+                        <Text style={[styles.msgTxt, m.role === 'user' && styles.msgTxtUser]}>{text}</Text>
+                      )}
+                      {choices.length > 0 && isLast && (
+                        <View style={styles.chipRow}>
+                          {choices.map((c, i) => (
+                            <TouchableOpacity
+                              key={`${m.id}-${i}`}
+                              style={styles.chip}
+                              disabled={isLoading}
+                              onPress={() => onSend(c)}
+                            >
+                              <Text style={styles.chipTxt}>{c}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                }
+                const n = it.n;
                 if (isPending(n)) {
                   const busy = busyId === n.id;
                   return (
@@ -156,23 +219,16 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 );
               })}
 
-              {convo.length === 0 && messages.length === 0 && (
+              {mergedItems.length === 0 && (
                 <Text style={styles.empty}>لا توجد طلبات. اكتب طلبك بالأسفل.</Text>
               )}
 
-              {/* نتيجة آخر قبول/رفض */}
+              {/* نتيجة آخر قبول/رفض (تغذية فوريّة للطرف الذي اتّخذ القرار) */}
               {!!note && (
                 <View style={[styles.msg, styles.msgAI]}>
                   <Text style={styles.msgTxt}>{note}</Text>
                 </View>
               )}
-
-              {/* المحادثة المشتركة */}
-              {messages.map((m) => (
-                <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
-                  <Text style={[styles.msgTxt, m.role === 'user' && styles.msgTxtUser]}>{m.content}</Text>
-                </View>
-              ))}
               {isLoading && <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />}
             </ScrollView>
 
@@ -215,6 +271,13 @@ const styles = StyleSheet.create({
   closeTxt: { fontSize: scale(14), fontWeight: '700', color: '#2D8C8C' },
   body: { flex: 1, backgroundColor: '#F7F9FA' },
   empty: { textAlign: 'center', color: '#8A9A9A', marginTop: scale(30), fontSize: scale(14) },
+  chipRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(8), marginTop: scale(10) },
+  chip: {
+    paddingVertical: scale(8), paddingHorizontal: scale(14),
+    borderRadius: scale(20), backgroundColor: '#EAF4F4',
+    borderWidth: 1, borderColor: '#2D8C8C',
+  },
+  chipTxt: { color: '#1F6B6B', fontSize: scale(13), fontWeight: '800' },
   reqActions: { flexDirection: 'row-reverse', gap: scale(10), marginTop: scale(11) },
   actBtn: { flex: 1, paddingVertical: scale(9), borderRadius: scale(10), alignItems: 'center' },
   accept: { backgroundColor: '#2D8C8C' },
