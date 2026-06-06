@@ -2376,6 +2376,13 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               paddingHorizontal: scale(16),
               paddingTop: scale(8),
             }}>
+              {/* خلفيّة معتمة تغطّي الصفحة الرئيسيّة خلفها تمامًا */}
+              <LinearGradient
+                colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+              />
               {/* Tabs */}
               <View style={{
                 flexDirection: 'row',
