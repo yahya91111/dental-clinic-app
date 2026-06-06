@@ -160,6 +160,23 @@ function buildDoctorRosterBlock(
 }
 
 /**
+ * يبني كتلة "تاريخ اليوم" — غير مُخزَّنة بالكاش (متغيّرة يوميًّا). يحتاجها الذكاء
+ * ليحلّ «اليوم»، «غدًا»، «الخميس الجاي»، والتواريخ النسبيّة. أيام العمل أحد–خميس.
+ */
+function buildTodayBlock(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+  return (
+    `\nToday's date: ${y}-${m}-${d} (${weekday}). ` +
+    `Resolve "today", "tomorrow", "this/next <weekday>", and any relative date ` +
+    `from it. Work days are Sunday–Thursday; the week starts on Sunday.\n`
+  );
+}
+
+/**
  * يبني فهرس المعرفة — أسطر صغيرة (اسم + متى تُجلب) تُحقن في system prompt
  * كي يعرف الذكاء ما هي الوثائق المتاحة فيستدعي fetch_knowledge بالاسم عند
  * الحاجة. الأجسام نفسها لا تُحمّل إلا عند الجلب (توفير توكن). يتوسّع تلقائياً:
@@ -238,6 +255,12 @@ export async function sendMessageV2(
     systemBlocks.push({
       type: 'text',
       text: buildUserIdentityBlock(opts.user),
+    });
+
+    // تاريخ اليوم (غير مُخزَّن بالكاش — متغيّر) لحلّ التواريخ النسبيّة
+    systemBlocks.push({
+      type: 'text',
+      text: buildTodayBlock(),
     });
 
     // دفتر الأطباء (مرقّم) — يُحمّل مرّة واحدة: يُعرَض بالأرقام للذكاء، ويُمرَّر
