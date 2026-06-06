@@ -468,6 +468,43 @@ export async function findCoverageCandidates(
   return out;
 }
 
+/**
+ * مرشّحو تغطيةٍ من شفتٍ كامل (للتصعيد إلى الشفت الآخر حين يفشل نفس الشفت).
+ * أطباء لهم خانات في الشفت المستهدف، يُستثنى طبيب التخفيف والمُستأذِن في فترة
+ * النقص والطبيب الغائب نفسه. القبول يُطبّق تبديلًا لليوم كامل (خانة بخانة).
+ */
+export async function findShiftCandidates(
+  clinicId: string,
+  weekStart: string,
+  day: WeekDay,
+  targetShift: Shift,
+  opts: { excludeDoctorId?: string; gapPeriod?: number } = {},
+): Promise<CoverageCandidate[]> {
+  const rows = await loadDay(clinicId, weekStart, day);
+  const permAbs = permissionAbsences(rows);
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const lightDuty = new Set(
+    (members || []).filter((m: { work_status?: string }) => m.work_status === 'light_duty')
+      .map((m: { doctor_id: string }) => m.doctor_id),
+  );
+  const periods = shiftPeriods(targetShift);
+  const inShift = rows.filter(
+    (r) => r.role === 'clinic' && r.status === 'active' && periods.includes(r.period),
+  );
+
+  const seen = new Set<string>();
+  const out: CoverageCandidate[] = [];
+  for (const r of inShift) {
+    if (seen.has(r.doctor_id)) continue;
+    if (r.doctor_id === opts.excludeDoctorId) continue;        // الغائب نفسه
+    if (lightDuty.has(r.doctor_id)) continue;                  // طبيب تخفيف
+    if (opts.gapPeriod != null && permAbs.get(r.doctor_id)?.has(opts.gapPeriod)) continue;
+    seen.add(r.doctor_id);
+    out.push({ doctorId: r.doctor_id, doctorName: r.doctor_name, clinicNumber: r.clinic_number, period: r.period });
+  }
+  return out;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // أ — تبديل أطباء في الجدول
 // ═══════════════════════════════════════════════════════════════
@@ -542,7 +579,7 @@ export const requests = {
   // ب
   setScheduleStatus, cancelStatus, placeInClinic, findPlacementOptions,
   // كشف النقص + مرشّحو التغطية (تُسلَّم للإشعارات)
-  detectGaps, findCoverageCandidates,
+  detectGaps, findCoverageCandidates, findShiftCandidates,
   // ج
   setClinicCount, moveDoctorGroup, setDoctorGroupStatus,
   // د

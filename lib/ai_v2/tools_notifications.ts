@@ -28,9 +28,10 @@ export const NOTIFICATION_TOOLS: V2Tool[] = [
   {
     name: 'send_coverage_request',
     description:
-      'يُرسل طلب تغطية لنقصٍ إلى زملاء الفترة الأخرى من نفس الشفت (يُستثنى طبيب ' +
-      'التخفيف والمُستأذِن في فترة النقص). يبقى 24 ساعة؛ أوّل موافقة تُطبّق التبديل ' +
-      'وتُلغي الباقي. استدعِها فقط بعد موافقة الطبيب على الإرسال.',
+      'يُرسل طلب تغطية لنقصٍ. stage=same_shift (الافتراضيّ): زملاء الفترة الأخرى من ' +
+      'نفس الشفت. stage=other_shift (التصعيد بعد فشل نفس الشفت): زملاء الشفت الآخر ' +
+      '(تبديل لليوم كامل). يُستثنى طبيب التخفيف والمُستأذِن في فترة النقص. يبقى 24 ' +
+      'ساعة؛ أوّل موافقة تُطبّق التبديل وتُلغي الباقي. بعد موافقة الطبيب على الإرسال.',
     input_schema: {
       type: 'object',
       properties: {
@@ -40,6 +41,10 @@ export const NOTIFICATION_TOOLS: V2Tool[] = [
         period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فترة النقص.' },
         shift: { type: 'string', enum: ['morning', 'evening'], description: 'شفت النقص.' },
         absentDoctorIndex: { type: 'integer', description: 'رقم الطبيب الغائب صاحب الفترة.' },
+        stage: {
+          type: 'string', enum: ['same_shift', 'other_shift'],
+          description: 'same_shift افتراضيًّا؛ other_shift للتصعيد بعد رفض نفس الشفت.',
+        },
       },
       required: ['weekStart', 'day', 'clinicNumber', 'period', 'shift', 'absentDoctorIndex'],
     },
@@ -166,20 +171,29 @@ export async function dispatchNotificationTool(
           period: Number(r.period),
           shift: asShift(r.shift),
         };
-        const candidates = await requests.findCoverageCandidates(
-          ctx.clinicId, String(r.weekStart), r.day, gap,
-        );
+        const stage = r.stage === 'other_shift' ? 'other_shift' : 'same_shift';
+        const candidates =
+          stage === 'other_shift'
+            ? await requests.findShiftCandidates(
+                ctx.clinicId, String(r.weekStart), r.day,
+                gap.shift === 'morning' ? 'evening' : 'morning',
+                { excludeDoctorId: absent.id, gapPeriod: gap.period },
+              )
+            : await requests.findCoverageCandidates(ctx.clinicId, String(r.weekStart), r.day, gap);
         if (candidates.length === 0) {
-          return 'لا يوجد زملاء مؤهَّلون للتغطية في هذا الشفت.';
+          return stage === 'other_shift'
+            ? 'لا يوجد زملاء مؤهَّلون في الشفت الآخر.'
+            : 'لا يوجد زملاء مؤهَّلون للتغطية في هذا الشفت.';
         }
         const res = await notifications.openCoverageRequests({
           clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
           gap, absentDoctorId: absent.id, absentDoctorName: absent.name,
-          candidates, stage: 'same_shift',
+          candidates, stage,
           senderId: sender.id, senderName: sender.name,
         });
+        const where = stage === 'other_shift' ? 'الشفت الآخر' : 'زملاء الفترة الأخرى';
         return res.success
-          ? `أرسلتُ طلب التغطية إلى ${res.sent} من زملاء الفترة الأخرى (يبقى 24 ساعة).`
+          ? `أرسلتُ طلب التغطية إلى ${res.sent} من ${where} (يبقى 24 ساعة).`
           : `Tool error: ${res.error}`;
       }
 

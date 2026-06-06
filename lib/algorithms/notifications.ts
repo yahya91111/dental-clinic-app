@@ -300,13 +300,18 @@ export async function acceptCoverage(args: {
     if (notif.action_status && notif.action_status !== 'pending') return fail('عولِج هذا الطلب مسبقًا.');
     if (isExpired(d)) return fail('انتهت مهلة الطلب.');
 
-    // التبديل: الغائب ↔ المُغطّي على نطاق الشفت (تبديل دائريّ للهويّات)
+    // التبديل: الغائب ↔ المُغطّي خانةً بخانة. نفس الشفت → نطاق الشفت؛ الشفت
+    // الآخر → اليوم كامل (كلٌّ يأخذ مكان الآخر مهما كان شفته/فترته/مكانه).
+    const scope =
+      d.stage === 'other_shift'
+        ? { kind: 'day' as const }
+        : { kind: 'shift' as const, shift: d.gap.shift };
     const swap = await swapInSchedule(
       { id: args.accepterId, role: args.accepterRole || 'doctor' },
       {
         clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
         doctorIds: [d.absent_doctor_id, args.accepterId],
-        scope: { kind: 'shift', shift: d.gap.shift },
+        scope,
       },
     );
     if (!swap.success) return fail(swap.error || 'تعذّر تطبيق التبديل.');
