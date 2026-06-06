@@ -1,11 +1,9 @@
 // ═══════════════════════════════════════════════════════════════
 // AIChatModal — محادثة الذكاء وسط الشاشة (تصميم بسيط مؤقّت)
 // ═══════════════════════════════════════════════════════════════
-// حديث الذكاء مع المستخدم — منفصل تمامًا عن صفحة الإشعارات. يعرض:
-//   • الطلبات المعلّقة (تبديل/تغطية/تنبيه) ككروت ذكاء مع موافق/رفض.
-//   • محادثة حرّة: يكتب المستخدم طلبًا جديدًا فيردّ الذكاء.
-// القبول/الرفض مربوط بمحرّك الإشعارات؛ الطلب الجديد عبر sendMessageV2.
-// التجميل لاحقًا.
+// حديث الذكاء مع المستخدم — منفصل تمامًا عن صفحة الإشعارات. يعرض داخل
+// المحادثة: طلبات الذكاء (تبديل/تغطية/تنبيه) ككروت موافق/رفض، ونتائجها
+// كرسائل، ومحادثة حرّة لطلب جديد. هذه الأنواع لا تظهر في الجرس إطلاقًا.
 // ═══════════════════════════════════════════════════════════════
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,7 +12,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
-import { getNotifications } from '../lib/database';
+import { getNotifications, markAsRead } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
 import { scale } from '../lib/scale';
 
@@ -25,47 +23,50 @@ type Props = {
   clinicId?: string | null;
 };
 
-type PendingNotif = {
+type ConvoNotif = {
   id: string; type: string; title: string; body: string;
-  action_type?: string | null; action_status?: string | null;
+  action_type?: string | null; action_status?: string | null; is_read?: boolean;
 };
 
-const isActionType = (t: string) =>
-  t === 'coverage_request' || t === 'swap_request' || t === 'gap_alert';
-
+// أنواع «محادثة الذكاء» — مكانها الجات لا صفحة الإشعارات
+const AI_CHAT_TYPES = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
+const isActionType = (t: string) => t === 'coverage_request' || t === 'swap_request' || t === 'gap_alert';
 const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
 
-/** عدد الطلبات المعلّقة (للنقطة الحمراء على زرّ الذكاء) */
-export async function countPendingRequests(userId: string): Promise<number> {
+/** عدد عناصر محادثة الذكاء غير المقروءة (طلب معلّق أو نتيجة جديدة) — للون الزرّ الأحمر */
+export async function countUnreadAIChat(userId: string): Promise<number> {
   if (!userId) return 0;
   const { data } = await getNotifications(userId, 50);
-  return (data || []).filter(isPending).length;
+  return (data || []).filter((n: ConvoNotif) => AI_CHAT_TYPES.includes(n.type) && (isPending(n) || !n.is_read)).length;
 }
 
 export default function AIChatModal({ visible, onClose, user, clinicId }: Props) {
   const [messages, setMessages] = useState<V2Message[]>([]);
-  const [pending, setPending] = useState<PendingNotif[]>([]);
+  const [convo, setConvo] = useState<ConvoNotif[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const loadPending = useCallback(async () => {
+  const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
-    const items = (data || []).filter((n: PendingNotif) => isPending(n));
-    setPending(items as PendingNotif[]);
+    // أنواع محادثة الذكاء فقط، من الأقدم للأحدث (تسلسل المحادثة)
+    const items = ((data || []) as ConvoNotif[]).filter((n) => AI_CHAT_TYPES.includes(n.type)).reverse();
+    setConvo(items);
+    // علّم النتائج/المحلولة المقروءة (يُطفئ اللون الأحمر؛ الطلبات المعلّقة تبقى)
+    items.filter((n) => !isPending(n) && !n.is_read).forEach((n) => markAsRead(n.id));
   }, [user?.id]);
 
-  useEffect(() => { if (visible) loadPending(); }, [visible, loadPending]);
+  useEffect(() => { if (visible) loadConvo(); }, [visible, loadConvo]);
 
   const v2User: V2User = {
     id: user.id, name: user.name, role: user.role,
     clinicId: user.clinicId || undefined, clinicName: user.clinicName,
   };
 
-  async function handleDecision(n: PendingNotif, decision: 'accept' | 'reject') {
+  async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
     setBusyId(n.id);
     try {
@@ -86,7 +87,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
         reply = decision === 'accept' ? 'تمّ.' : 'رُفض.';
       }
       setMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
-      await loadPending();
+      await loadConvo();
     } catch (e) {
       setMessages((prev) => [...prev, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
     } finally {
@@ -104,7 +105,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
     try {
       const res = await sendMessageV2({ messages: history, user: v2User, clinicId: clinicId || undefined });
       setMessages((prev) => [...prev, { role: 'assistant', content: res.success ? res.message : (res.message || 'تعذّر تنفيذ الطلب.') }]);
-      await loadPending(); // قد ينشئ الطلب الجديد طلبات معلّقة جديدة
+      await loadConvo();
     } catch (e) {
       setMessages((prev) => [...prev, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
     } finally {
@@ -116,12 +117,8 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.center}
-        >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.center}>
           <View style={styles.card}>
-            {/* Header */}
             <View style={styles.header}>
               <Text style={styles.headerTitle}>الذكاء</Text>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
@@ -135,35 +132,42 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
               contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
               onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {/* الطلبات المعلّقة — تظهر كرسائل من الذكاء داخل المحادثة */}
-              {pending.map((n) => {
-                const busy = busyId === n.id;
+              {/* محادثة الذكاء: الطلبات (موافق/رفض) ونتائجها — كلّها رسائل من الذكاء */}
+              {convo.map((n) => {
+                if (isPending(n)) {
+                  const busy = busyId === n.id;
+                  return (
+                    <View key={n.id} style={[styles.msg, styles.msgAI]}>
+                      <Text style={styles.msgTxt}>{n.body}</Text>
+                      <View style={styles.reqActions}>
+                        {busy ? (
+                          <ActivityIndicator color="#2D8C8C" />
+                        ) : (
+                          <>
+                            <TouchableOpacity style={[styles.actBtn, styles.accept]} onPress={() => handleDecision(n, 'accept')}>
+                              <Text style={styles.actTxt}>موافق</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.actBtn, styles.reject]} onPress={() => handleDecision(n, 'reject')}>
+                              <Text style={styles.actTxt}>رفض</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                      </View>
+                    </View>
+                  );
+                }
                 return (
                   <View key={n.id} style={[styles.msg, styles.msgAI]}>
                     <Text style={styles.msgTxt}>{n.body}</Text>
-                    <View style={styles.reqActions}>
-                      {busy ? (
-                        <ActivityIndicator color="#2D8C8C" />
-                      ) : (
-                        <>
-                          <TouchableOpacity style={[styles.actBtn, styles.accept]} onPress={() => handleDecision(n, 'accept')}>
-                            <Text style={styles.actTxt}>موافق</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={[styles.actBtn, styles.reject]} onPress={() => handleDecision(n, 'reject')}>
-                            <Text style={styles.actTxt}>رفض</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
                   </View>
                 );
               })}
 
-              {pending.length === 0 && messages.length === 0 && (
+              {convo.length === 0 && messages.length === 0 && (
                 <Text style={styles.empty}>لا توجد طلبات. اكتب طلبك بالأسفل.</Text>
               )}
 
-              {/* المحادثة */}
+              {/* المحادثة الحرّة */}
               {messages.map((m, i) => (
                 <View key={i} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
                   <Text style={[styles.msgTxt, m.role === 'user' && styles.msgTxtUser]}>{m.content}</Text>
@@ -172,7 +176,6 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
               {loading && <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />}
             </ScrollView>
 
-            {/* الإدخال */}
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.input}
@@ -212,12 +215,6 @@ const styles = StyleSheet.create({
   closeTxt: { fontSize: scale(14), fontWeight: '700', color: '#2D8C8C' },
   body: { flex: 1, backgroundColor: '#F7F9FA' },
   empty: { textAlign: 'center', color: '#8A9A9A', marginTop: scale(30), fontSize: scale(14) },
-  reqCard: {
-    backgroundColor: '#FFFFFF', borderRadius: scale(14), padding: scale(13),
-    marginBottom: scale(10), borderWidth: scale(1.5), borderColor: '#2D8C8C',
-  },
-  reqTitle: { fontSize: scale(14), fontWeight: '800', color: '#1A2B2B', textAlign: 'right', marginBottom: scale(3) },
-  reqBody: { fontSize: scale(13), color: '#42514F', textAlign: 'right', lineHeight: scale(19) },
   reqActions: { flexDirection: 'row-reverse', gap: scale(10), marginTop: scale(11) },
   actBtn: { flex: 1, paddingVertical: scale(9), borderRadius: scale(10), alignItems: 'center' },
   accept: { backgroundColor: '#2D8C8C' },

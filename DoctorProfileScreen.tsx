@@ -2426,7 +2426,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     <Text style={{ fontSize: scale(13), color: '#9CA3AF' }}>Loading...</Text>
                   </View>
                 ) : (() => {
+                  // محادثة الذكاء (طلبات تبديل/تغطية/نتائجها) لا تظهر هنا — مكانها الجات
+                  const AI_CHAT_TYPES = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
                   const filtered = notifications.filter(n => {
+                    if (AI_CHAT_TYPES.includes(n.type)) return false;
                     if (notifTab === 'unread') return !n.is_read;
                     if (notifTab === 'read') return n.is_read;
                     if (notifTab === 'announcements') return n.type === 'admin_message' || n.type === 'general';

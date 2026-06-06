@@ -11,7 +11,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { AIOrb, AIState } from './AIOrb';
-import AIChatModal, { countPendingRequests } from './AIChatModal';
+import AIChatModal, { countUnreadAIChat } from './AIChatModal';
 
 type Props = {
   user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
@@ -28,7 +28,7 @@ export default function AIButton({ user, clinicId, orbState, onPress }: Props) {
 
   const refreshPending = useCallback(async () => {
     if (!user?.id) return;
-    setPendingCount(await countPendingRequests(user.id));
+    setPendingCount(await countUnreadAIChat(user.id));
   }, [user?.id]);
 
   // فحص دوريّ خفيف لإظهار النقطة الحمراء عند وصول طلب

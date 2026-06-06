@@ -36,6 +36,9 @@ export const THREADS: { d: string; color: string; w: number }[] = [
   { color: '#E9D5FF', d: 'M22 36 C 60 60, 60 60, 98 84 M22 84 C 60 60, 60 60, 98 36', w: 1.3 },
 ];
 
+// لوحة حمراء تُستعمل حين يكون هناك محادثة بانتظار الردّ (الزرّ كلّه أحمر)
+const RED_PALETTE = ['#E5342B', '#FF5A4D', '#C81E14', '#FF7A6E', '#B91C1C', '#FF8A7E'];
+
 const FLECKS = [
   { cx: 60, cy: 18, fill: '#E9D5FF' },
   { cx: 100, cy: 60, fill: '#A855F7' },
@@ -88,7 +91,7 @@ export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400, a
         <Animated.View
           style={{
             transform: [{ rotate }],
-            shadowColor: '#A855F7',
+            shadowColor: alert ? '#E5342B' : '#A855F7',
             shadowOffset: { width: 0, height: 0 },
             shadowOpacity: 0.9,
             shadowRadius: scale(10),
@@ -97,7 +100,7 @@ export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400, a
         >
           <Svg width={size} height={size} viewBox="0 0 120 120">
             {THREADS.map((t, i) => (
-              <Path key={i} d={t.d} stroke={t.color} strokeWidth={t.w} strokeLinecap="round" fill="none" opacity={0.9} />
+              <Path key={i} d={t.d} stroke={alert ? RED_PALETTE[i % RED_PALETTE.length] : t.color} strokeWidth={t.w} strokeLinecap="round" fill="none" opacity={0.9} />
             ))}
           </Svg>
         </Animated.View>
@@ -106,21 +109,10 @@ export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400, a
         <Animated.View style={{ position: 'absolute', transform: [{ rotate: fleckRotate }] }}>
           <Svg width={size} height={size} viewBox="0 0 120 120">
             {FLECKS.map((f, i) => (
-              <Circle key={i} cx={f.cx} cy={f.cy} r={2.4} fill={f.fill} />
+              <Circle key={i} cx={f.cx} cy={f.cy} r={2.4} fill={alert ? '#FFD2CD' : f.fill} />
             ))}
           </Svg>
         </Animated.View>
-
-        {/* نقطة حمراء: دلالة على طلب/رسالة بانتظار الردّ */}
-        {alert && (
-          <Animated.View
-            style={{
-              position: 'absolute', top: scale(6), right: scale(6),
-              width: scale(14), height: scale(14), borderRadius: scale(7),
-              backgroundColor: '#E5342B', borderWidth: scale(2), borderColor: '#FFFFFF',
-            }}
-          />
-        )}
       </Animated.View>
     </TouchableOpacity>
   );

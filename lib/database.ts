@@ -1688,12 +1688,14 @@ export async function getNotifications(recipientId: string, limit = 50): Promise
 export async function getUnreadCount(recipientId: string): Promise<number> {
   if (!recipientId) return 0; // أثناء تحميل المصادقة قد يكون المُعرّف فارغًا
   try {
-    // استعلام select بسيط أوثق من head-count (الأخير يُرجِع خطأً فارغًا أحيانًا)
+    // استعلام select بسيط أوثق من head-count (الأخير يُرجِع خطأً فارغًا أحيانًا).
+    // نستثني أنواع محادثة الذكاء (مكانها الجات لا الجرس).
     const { data, error } = await supabase
       .from('notifications')
       .select('id')
       .eq('recipient_id', recipientId)
-      .eq('is_read', false);
+      .eq('is_read', false)
+      .not('type', 'in', '("swap_request","coverage_request","gap_alert","request_result")');
     if (error) throw error;
     return data?.length ?? 0;
   } catch (error: any) {
