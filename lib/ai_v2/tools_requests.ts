@@ -296,6 +296,25 @@ export async function dispatchRequestTool(
           r.scope === 'shift' ? { kind: 'shift' as const, shift: (r.shift === 'evening' ? 'evening' : 'morning') as 'morning' | 'evening' }
             : r.scope === 'period' ? { kind: 'period' as const, period: Number(r.period) }
               : { kind: 'day' as const };
+
+        // القرار حتميّ في الكود: إن كان الطالب أحد طرفَي تبديلٍ ثنائيّ (أيًّا كان
+        // دوره، حتى الليدر) → يحتاج موافقة الطرف الآخر، فنرسل طلبًا ولا نطبّق.
+        // غير ذلك (ليدر يبدّل آخرين، أو تبديل جماعيّ) → فوريّ عبر المحرّك.
+        const actorIsParty = docs.some((d) => d.id === actor.id);
+        if (actorIsParty && docs.length === 2) {
+          const other = docs.find((d) => d.id !== actor.id)!;
+          const { notifications } = await import('../algorithms/notifications');
+          const sent = await notifications.openSwapRequest({
+            clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
+            requesterId: actor.id, requesterName: ctx.user?.name || '',
+            targetId: other.id, targetName: other.name,
+            scope, doctorIds: docs.map((d) => d.id),
+          });
+          return sent.success
+            ? `أرسلتُ طلب التبديل إلى ${other.name} يوم ${DAY_AR[r.day]} (ينتظر موافقته).`
+            : `Tool error: ${sent.error}`;
+        }
+
         const res = await requests.swapInSchedule(actor, {
           clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
           doctorIds: docs.map((d) => d.id), scope,
