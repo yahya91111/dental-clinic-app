@@ -18,16 +18,18 @@
 import {
   SCHEDULE_ASSISTANT_V2,
   REQUESTS_ASSISTANT_V2,
+  NOTIFICATIONS_ASSISTANT_V2,
   CORE_PROMPT_V2,
   TEAM_LEADER_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
 import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview } from './tools';
 import { REQUESTS_TOOLS, dispatchRequestTool } from './tools_requests';
+import { NOTIFICATION_TOOLS, dispatchNotificationTool } from './tools_notifications';
 export type { SchedulePreview } from './tools';
 
-// ─── التوجيه بين المساعدين (جدول / طلبات) ──────────────────────
-export type V2Task = 'schedule' | 'requests';
+// ─── التوجيه بين المساعدين (جدول / طلبات / إشعارات) ─────────────
+export type V2Task = 'schedule' | 'requests' | 'notifications';
 
 type TaskBundle = {
   prompt: string;
@@ -38,6 +40,7 @@ type TaskBundle = {
 const TASK_BUNDLES: Record<V2Task, TaskBundle> = {
   schedule: { prompt: SCHEDULE_ASSISTANT_V2, tools: V2_TOOLS, dispatch: dispatchV2Tool },
   requests: { prompt: REQUESTS_ASSISTANT_V2, tools: REQUESTS_TOOLS, dispatch: dispatchRequestTool },
+  notifications: { prompt: NOTIFICATIONS_ASSISTANT_V2, tools: NOTIFICATION_TOOLS, dispatch: dispatchNotificationTool },
 };
 
 // بوّابة تصنيف خفيفة للمحادثة الحرّة (بلا زرّ): تستنبط النيّة من آخر رسالة.
@@ -56,7 +59,9 @@ function classifyTask(messages: V2Message[]): V2Task {
 }
 
 function resolveTask(opts: SendMessageV2Options): V2Task {
-  if (opts.task === 'schedule' || opts.task === 'requests') return opts.task;
+  // التوجيه الصريح من سياق الواجهة (زرّ/كرت) مقدَّم على التصنيف الحرّ.
+  // الإشعارات لا تُصنَّف من النصّ الحرّ — تُختار صراحةً عند فتح كرت إشعار.
+  if (opts.task === 'schedule' || opts.task === 'requests' || opts.task === 'notifications') return opts.task;
   return classifyTask(opts.messages);
 }
 
