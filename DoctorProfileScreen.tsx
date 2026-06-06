@@ -10,7 +10,6 @@ import DentalDepartmentsScreen from './DentalDepartmentsScreen';
 import DoctorsScreen from './DoctorsScreen';
 import ComingSoonScreen from './ComingSoonScreen';
 import ScheduleScreen from './screens/Schedule';
-import NotificationsTestScreen from './components/NotificationsTestScreen';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
@@ -881,11 +880,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     );
   }
 
-  // Requests screen — مؤقّتًا: شاشة إشعارات للتجربة (التصميم النهائيّ لاحقًا)
+  // Requests screen
   if (currentScreen === 'requests') {
     return (
-      <NotificationsTestScreen
+      <ComingSoonScreen
         onBack={() => setCurrentScreen('profile')}
+        title="Requests"
       />
     );
   }
@@ -2418,43 +2418,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                 ))}
               </View>
 
-              {/* TEST: Add sample notifications */}
-              <TouchableOpacity
-                onPress={async () => {
-                  if (!user?.id) { Alert.alert('Error', 'User ID not found'); return; }
-                  const types = [
-                    { type: 'swap_request', title: 'طلب تبديل', body: 'د.أحمد يريد تبديل فترة P1 يوم الأحد مع فترتك P2', action_type: 'accept_reject', action_status: 'pending' },
-                    { type: 'swap_request', title: 'طلب تبديل', body: 'د.خالد يريد تبديل فترة P3 يوم الثلاثاء مع فترتك P4', action_type: 'accept_reject', action_status: 'pending' },
-                    { type: 'schedule_change', title: 'تغيير بالجدول', body: 'تم تغيير جدولك ليوم الثلاثاء - العيادة 2 بدل العيادة 3' },
-                    { type: 'ai_alert', title: 'تنبيه الذكاء', body: 'العيادة 3 فارغة يوم الأربعاء فترة P4' },
-                    { type: 'admin_message', title: 'تعميم إداري', body: 'اجتماع عام يوم الخميس الساعة 2 ظهراً في القاعة الرئيسية' },
-                    { type: 'general', title: 'تحديث النظام', body: 'تم تحديث نظام الجدولة - يرجى مراجعة جدولك' },
-                  ];
-                  const sample = types[Math.floor(Math.random() * types.length)];
-                  await createNotification({ recipient_id: user.id, clinic_id: user.clinicId, sender_name: 'د.أحمد', ...sample });
-                  const { data } = await fetchNotifications(user.id);
-                  setNotifications(data || []);
-                  const count = await getUnreadCount(user.id);
-                  setUnreadNotifications(count);
-                }}
-                activeOpacity={0.7}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: scale(6),
-                  paddingVertical: scale(10),
-                  marginBottom: scale(12),
-                  borderRadius: scale(12),
-                  backgroundColor: 'rgba(139,92,246,0.15)',
-                  borderWidth: scale(1),
-                  borderColor: 'rgba(139,92,246,0.3)',
-                }}
-              >
-                <Ionicons name="add-circle-outline" size={scale(16)} color="#8B5CF6" />
-                <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#8B5CF6' }}>Add Test Notification</Text>
-              </TouchableOpacity>
-
               {/* Notifications List */}
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(40) }}>
                 {loadingNotifs ? (
@@ -2539,41 +2502,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: scale(8), marginTop: scale(10) }}>
                             <TouchableOpacity
                               onPress={async () => {
+                                if (!user?.id) return;
                                 const { updateNotificationAction } = await import('./lib/database');
-                                await updateNotificationAction(notif.id, 'accepted');
-
-                                // Perform swap if it's a swap_request
-                                if (notif.type === 'swap_request' && notif.data) {
-                                  const d = notif.data;
-                                  // Step 1: Update requester's slot → put target doctor there
-                                  await supabase.from('schedule_slots')
-                                    .update({ doctor_id: d.to_doctor_id, doctor_name: d.to_doctor_name })
-                                    .eq('clinic_id', d.clinic_id).eq('week_start', d.week_start)
-                                    .eq('day_of_week', d.day).eq('period', d.from_period)
-                                    .eq('clinic_number', d.from_clinic_number)
-                                    .eq('doctor_id', d.from_doctor_id);
-
-                                  // Step 2: Update target's slot → put requester there
-                                  await supabase.from('schedule_slots')
-                                    .update({ doctor_id: d.from_doctor_id, doctor_name: d.from_doctor_name })
-                                    .eq('clinic_id', d.clinic_id).eq('week_start', d.week_start)
-                                    .eq('day_of_week', d.day).eq('period', d.to_period)
-                                    .eq('clinic_number', d.to_clinic_number)
-                                    .eq('doctor_id', d.to_doctor_id);
-
-                                  // Notify the requester
-                                  await createNotification({
-                                    clinic_id: d.clinic_id,
-                                    recipient_id: d.from_doctor_id,
-                                    sender_id: d.to_doctor_id,
-                                    sender_name: d.to_doctor_name,
-                                    type: 'schedule_change',
-                                    title: 'Swap Accepted',
-                                    body: `${d.to_doctor_name} accepted your swap request for ${d.day}`,
-                                  });
-
-                                  // Push notification sent automatically by database trigger
-                                }
+                                const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
+                                try {
+                                  // المحرّك يطبّق التبديل/التغطية ويُلغي الأشقّاء عند التغطية
+                                  if (notif.type === 'coverage_request') {
+                                    await notifEngine.acceptCoverage({ notificationId: notif.id, accepterId: user.id, accepterRole: user.role });
+                                  } else if (notif.type === 'swap_request') {
+                                    await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role });
+                                  } else {
+                                    await updateNotificationAction(notif.id, 'accepted');
+                                  }
+                                } catch (e) { /* أبقِ الواجهة متّسقة */ }
 
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
                               }}
@@ -2584,23 +2525,16 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                             <TouchableOpacity
                               onPress={async () => {
                                 const { updateNotificationAction } = await import('./lib/database');
-                                await updateNotificationAction(notif.id, 'rejected');
-
-                                // Notify the requester about rejection
-                                if (notif.type === 'swap_request' && notif.data) {
-                                  const d = notif.data;
-                                  await createNotification({
-                                    clinic_id: d.clinic_id,
-                                    recipient_id: d.from_doctor_id,
-                                    sender_id: d.to_doctor_id,
-                                    sender_name: d.to_doctor_name,
-                                    type: 'schedule_change',
-                                    title: 'Swap Rejected',
-                                    body: `${d.to_doctor_name} rejected your swap request for ${d.day}`,
-                                  });
-
-                                  // Push notification sent automatically by database trigger
-                                }
+                                const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
+                                try {
+                                  if (notif.type === 'coverage_request') {
+                                    await notifEngine.rejectCoverage({ notificationId: notif.id });
+                                  } else if (notif.type === 'swap_request') {
+                                    await notifEngine.rejectSwap({ notificationId: notif.id });
+                                  } else {
+                                    await updateNotificationAction(notif.id, 'rejected');
+                                  }
+                                } catch (e) { /* أبقِ الواجهة متّسقة */ }
 
                                 setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
                               }}
