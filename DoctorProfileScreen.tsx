@@ -10,7 +10,6 @@ import DentalDepartmentsScreen from './DentalDepartmentsScreen';
 import DoctorsScreen from './DoctorsScreen';
 import ComingSoonScreen from './ComingSoonScreen';
 import ScheduleScreen from './screens/Schedule';
-import AIChatModal from './components/AIChatModal';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabaseClient';
@@ -77,7 +76,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifTab, setNotifTab] = useState<'unread' | 'read' | 'announcements'>('unread');
   const [loadingNotifs, setLoadingNotifs] = useState(false);
-  const [showAIChat, setShowAIChat] = useState(false); // محادثة الذكاء (ضغطة مطوّلة)
   const notifFadeAnim = React.useRef(new Animated.Value(0)).current;
 
   // Real-time data from database
@@ -2369,34 +2367,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               </>
             )}
           </ScrollView>
-
-          {/* زرّ الذكاء العائم (مؤقّت للتجربة) — ضغطة مطوّلة سريعة تفتح المحادثة */}
-          {!notificationsVisible && (
-            <TouchableOpacity
-              onLongPress={() => setShowAIChat(true)}
-              delayLongPress={400}
-              activeOpacity={0.85}
-              style={{
-                position: 'absolute', bottom: scale(28), right: scale(20),
-                width: scale(58), height: scale(58), borderRadius: scale(29),
-                backgroundColor: '#2D8C8C', alignItems: 'center', justifyContent: 'center',
-                elevation: 6, shadowColor: '#000', shadowOpacity: 0.2,
-                shadowRadius: scale(6), shadowOffset: { width: 0, height: scale(3) },
-              }}
-            >
-              <Ionicons name="sparkles" size={scale(24)} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
-          {/* محادثة الذكاء — وسط الشاشة */}
-          {user && (
-            <AIChatModal
-              visible={showAIChat}
-              onClose={() => setShowAIChat(false)}
-              user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
-              clinicId={user.clinicId}
-            />
-          )}
 
           {/* Notifications Overlay */}
           {notificationsVisible && (

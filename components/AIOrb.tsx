@@ -9,6 +9,8 @@ interface AIOrbProps {
   state?: AIState;
   size?: number;
   onPress: () => void;
+  onLongPress?: () => void;
+  delayLongPress?: number;
 }
 
 // Tangled "thread ball" — purple strands woven into a sphere.
@@ -40,7 +42,7 @@ const FLECKS = [
   { cx: 18, cy: 60, fill: '#C084FC' },
 ];
 
-export function AIOrb({ size = 64, onPress }: AIOrbProps) {
+export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400 }: AIOrbProps) {
   const spin = useRef(new Animated.Value(0)).current;
   const fleckSpin = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
@@ -68,6 +70,8 @@ export function AIOrb({ size = 64, onPress }: AIOrbProps) {
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={delayLongPress}
       style={{ position: 'absolute', bottom: scale(100), right: scale(20), zIndex: 1000 }}
     >
       <Animated.View

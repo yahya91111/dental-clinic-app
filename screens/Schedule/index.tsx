@@ -11,6 +11,7 @@ import { WeekStrip } from './WeekStrip';
 import { DoctorsTab } from './DoctorsTab';
 import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings } from '../../lib/database';
 import { AIOrb, AIState } from '../../components/AIOrb';
+import AIButton from '../../components/AIButton';
 import { ChatMessage } from '../../components/aiTypes';
 import { AISchedulePanel, PanelAction } from '../../components/AISchedulePanel';
 import { WizardResult } from '../../components/ScheduleWizard';
@@ -610,9 +611,14 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* AI Orb */}
-      {!showAIPanel && (
-        <AIOrb state={aiState} onPress={() => setShowAIPanel(true)} />
+      {/* AI Orb — زرّ الذكاء الموحّد: نقرة تفتح لوحة الجدول، ضغطة مطوّلة تفتح المحادثة */}
+      {!showAIPanel && user && (
+        <AIButton
+          orbState={aiState}
+          onPress={() => setShowAIPanel(true)}
+          user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
+          clinicId={clinicId}
+        />
       )}
 
       {/* AI hub: cinematic reveal + orbiting quick actions + in-page chat */}
