@@ -1715,6 +1715,7 @@ export async function createNotification(notification: {
   data?: any;
   action_type?: string;
   action_status?: string;
+  is_read?: boolean;
 }): Promise<DatabaseResponse<any>> {
   try {
     const { data, error } = await supabase

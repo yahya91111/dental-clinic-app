@@ -72,6 +72,7 @@ async function sendInfo(args: {
     title: args.title,
     body: args.body,
     data: args.data,
+    is_read: false, // يصل غير مقروء دائمًا (يحمّر الزرّ حتّى يُقرأ)
   });
   return error ? fail(error.message) : ok();
 }
@@ -98,6 +99,7 @@ async function sendAction(args: {
     data: args.data,
     action_type: 'accept_reject',
     action_status: 'pending',
+    is_read: false,
   });
   return { id: data?.id, error: error?.message };
 }
