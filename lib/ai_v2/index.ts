@@ -54,9 +54,15 @@ const REQUEST_HINTS = [
 const SCHEDULE_HINTS = ['ابن الجدول', 'ابنِ الجدول', 'انشئ جدول', 'أنشئ جدول', 'وزّع', 'وزع', 'بناء الجدول', 'اعمل جدول', 'سوّ الجدول'];
 
 function classifyTask(messages: V2Message[]): V2Task {
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  if (SCHEDULE_HINTS.some((h) => lastUser.includes(h))) return 'schedule';
-  if (REQUEST_HINTS.some((h) => lastUser.includes(h))) return 'requests';
+  // امسح رسائل المستخدم من الأحدث للأقدم؛ أوّل رسالة تحمل إشارة تحسم المهمّة.
+  // هذا يُبقي المهمّة ثابتة عبر ردود التأكيد القصيرة («نعم/أكّد/تمام») التي لا
+  // إشارة فيها — وإلّا عادت للافتراضيّ وضاع سياق الطلب عند التأكيد.
+  const userMsgs = messages.filter((m) => m.role === 'user');
+  for (let i = userMsgs.length - 1; i >= 0; i--) {
+    const t = userMsgs[i]?.content ?? '';
+    if (SCHEDULE_HINTS.some((h) => t.includes(h))) return 'schedule';
+    if (REQUEST_HINTS.some((h) => t.includes(h))) return 'requests';
+  }
   return 'schedule';
 }
 
