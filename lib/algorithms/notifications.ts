@@ -38,6 +38,7 @@ export const NotifType = {
   COVERAGE_REQUEST: 'coverage_request', // action: طلب تغطية نقص (24س)
   SWAP_REQUEST: 'swap_request',         // action: تبديل طبيبين (موافقة)
   GAP_ALERT: 'gap_alert',               // action: تنبيه الليدر بنقصٍ يحتاج تصرّفًا
+  REQUEST_RESULT: 'request_result',     // info: ردّ للطالب (تمّت الموافقة/الرفض)
 } as const;
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -291,6 +292,7 @@ export async function acceptCoverage(args: {
   notificationId: string;
   accepterId: string;
   accepterRole?: string;
+  accepterName?: string;
 }): Promise<NotifResult & { absentDoctorId?: string; absentDoctorName?: string }> {
   try {
     const notif = await loadNotif(args.notificationId);
@@ -327,6 +329,13 @@ export async function acceptCoverage(args: {
       .filter('data->>coverage_group', 'eq', d.coverage_group)
       .neq('id', args.notificationId);
 
+    // ردّ للطالب (الغائب): تمّت تغطية فترتك
+    await sendInfo({
+      clinicId: d.clinic_id, recipientId: d.absent_doctor_id,
+      senderId: args.accepterId, senderName: args.accepterName,
+      type: NotifType.REQUEST_RESULT, title: 'تمّت التغطية',
+      body: `وافق ${args.accepterName ? 'د.' + args.accepterName : 'زميلك'} وتمّت تغطية فترتك يوم ${DAY_AR[d.day]}.`,
+    });
     return { success: true, absentDoctorId: d.absent_doctor_id, absentDoctorName: d.absent_doctor_name };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -350,6 +359,14 @@ export async function rejectCoverage(args: {
       .eq('id', args.notificationId);
 
     const outcome = await sweepCoverageGroup(d.coverage_group);
+    // عند نفاد كلّ المرشّحين: أبلِغ الطالب (الغائب) أنّ التغطية لم تكتمل
+    if (outcome === 'exhausted' && d?.absent_doctor_id) {
+      await sendInfo({
+        clinicId: d.clinic_id, recipientId: d.absent_doctor_id,
+        type: NotifType.REQUEST_RESULT, title: 'لم تكتمل التغطية',
+        body: `لم يوافق أحد على تغطية فترتك يوم ${DAY_AR[d.day]}.`,
+      });
+    }
     return { success: true, allExhausted: outcome === 'exhausted', groupId: d.coverage_group, coverage: d };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -394,6 +411,7 @@ type SwapData = {
   doctor_ids: string[];
   scope: { kind: 'day' } | { kind: 'shift'; shift: Shift } | { kind: 'period'; period: number };
   requester_id: string; requester_name: string;
+  target_id?: string; target_name?: string;
 };
 
 /** يرسل طلب تبديلٍ إلى الطرف الآخر لأخذ موافقته (action) */
@@ -412,6 +430,7 @@ export async function openSwapRequest(args: {
     clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
     doctor_ids: args.doctorIds, scope: args.scope,
     requester_id: args.requesterId, requester_name: args.requesterName,
+    target_id: args.targetId, target_name: args.targetName,
   };
   const { id, error } = await sendAction({
     clinicId: args.clinicId, recipientId: args.targetId,
@@ -428,6 +447,7 @@ export async function acceptSwap(args: {
   notificationId: string;
   targetId: string;
   targetRole?: string;
+  targetName?: string;
 }): Promise<NotifResult & { requesterId?: string; requesterName?: string }> {
   try {
     const notif = await loadNotif(args.notificationId);
@@ -443,15 +463,25 @@ export async function acceptSwap(args: {
       .from('notifications')
       .update({ action_status: 'accepted', is_read: true })
       .eq('id', args.notificationId);
+
+    // ردّ للطالب: تمّت الموافقة
+    const who = args.targetName || d.target_name;
+    await sendInfo({
+      clinicId: d.clinic_id, recipientId: d.requester_id,
+      senderId: args.targetId, senderName: who,
+      type: NotifType.REQUEST_RESULT, title: 'تمّ التبديل',
+      body: `وافق ${who ? 'د.' + who : 'الطرف الآخر'} على التبديل يوم ${DAY_AR[d.day]} — تمّ.`,
+    });
     return { success: true, requesterId: d.requester_id, requesterName: d.requester_name };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
 }
 
-/** رفض تبديلٍ: يثبّته مرفوضًا ويُرجِع صاحب الطلب لإبلاغه */
+/** رفض تبديلٍ: يثبّته مرفوضًا ويُبلِغ الطالب بالاعتذار */
 export async function rejectSwap(args: {
   notificationId: string;
+  targetName?: string;
 }): Promise<NotifResult & { requesterId?: string; requesterName?: string }> {
   try {
     const notif = await loadNotif(args.notificationId);
@@ -461,6 +491,15 @@ export async function rejectSwap(args: {
       .from('notifications')
       .update({ action_status: 'rejected', is_read: true })
       .eq('id', args.notificationId);
+
+    // ردّ للطالب: اعتذر الطرف الآخر
+    const who = args.targetName || d.target_name;
+    await sendInfo({
+      clinicId: d.clinic_id, recipientId: d.requester_id,
+      senderName: who,
+      type: NotifType.REQUEST_RESULT, title: 'رُفض التبديل',
+      body: `اعتذر ${who ? 'د.' + who : 'الطرف الآخر'} عن التبديل يوم ${DAY_AR[d.day]}.`,
+    });
     return { success: true, requesterId: d.requester_id, requesterName: d.requester_name };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');

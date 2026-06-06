@@ -2508,9 +2508,9 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                 try {
                                   // المحرّك يطبّق التبديل/التغطية ويُلغي الأشقّاء عند التغطية
                                   if (notif.type === 'coverage_request') {
-                                    await notifEngine.acceptCoverage({ notificationId: notif.id, accepterId: user.id, accepterRole: user.role });
+                                    await notifEngine.acceptCoverage({ notificationId: notif.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name });
                                   } else if (notif.type === 'swap_request') {
-                                    await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role });
+                                    await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role, targetName: user.name });
                                   } else {
                                     await updateNotificationAction(notif.id, 'accepted');
                                   }
@@ -2530,7 +2530,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                   if (notif.type === 'coverage_request') {
                                     await notifEngine.rejectCoverage({ notificationId: notif.id });
                                   } else if (notif.type === 'swap_request') {
-                                    await notifEngine.rejectSwap({ notificationId: notif.id });
+                                    await notifEngine.rejectSwap({ notificationId: notif.id, targetName: user?.name });
                                   } else {
                                     await updateNotificationAction(notif.id, 'rejected');
                                   }
