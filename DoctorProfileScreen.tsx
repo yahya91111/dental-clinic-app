@@ -1537,9 +1537,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         <View style={styles.content}>
 
           {/* 3D Floating Cards - Staggered Layout */}
-          <ScrollView 
+          {/* تُخفى أثناء فتح الإشعارات حتى تظهر خلفيّة الرئيسيّة نفسها خلف الـ Overlay */}
+          <ScrollView
             key={`cards-${currentScreen}-${animKey}`}
-            style={styles.cardsScrollView}
+            style={[styles.cardsScrollView, notificationsVisible && { display: 'none' }]}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.cardsContainer}
           >
@@ -2376,13 +2377,6 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               paddingHorizontal: scale(16),
               paddingTop: scale(8),
             }}>
-              {/* خلفيّة معتمة تغطّي الصفحة الرئيسيّة خلفها تمامًا */}
-              <LinearGradient
-                colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFillObject}
-              />
               {/* Tabs */}
               <View style={{
                 flexDirection: 'row',
