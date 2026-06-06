@@ -9,9 +9,9 @@
 //   • نقرة → onPress الخاصّ بالصفحة (مثلًا لوحة الجدول)؛ وإن لم يُمرَّر تفتح المحادثة.
 // ═══════════════════════════════════════════════════════════════
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AIOrb, AIState } from './AIOrb';
-import AIChatModal from './AIChatModal';
+import AIChatModal, { countPendingRequests } from './AIChatModal';
 
 type Props = {
   user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
@@ -23,7 +23,23 @@ type Props = {
 
 export default function AIButton({ user, clinicId, orbState, onPress }: Props) {
   const [showChat, setShowChat] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const openChat = () => setShowChat(true);
+
+  const refreshPending = useCallback(async () => {
+    if (!user?.id) return;
+    setPendingCount(await countPendingRequests(user.id));
+  }, [user?.id]);
+
+  // فحص دوريّ خفيف لإظهار النقطة الحمراء عند وصول طلب
+  useEffect(() => {
+    refreshPending();
+    const t = setInterval(refreshPending, 20000);
+    return () => clearInterval(t);
+  }, [refreshPending]);
+
+  // عند إغلاق المحادثة، حدّث العدّاد (قد بُتّ في طلبات)
+  useEffect(() => { if (!showChat) refreshPending(); }, [showChat, refreshPending]);
 
   return (
     <>
@@ -32,6 +48,7 @@ export default function AIButton({ user, clinicId, orbState, onPress }: Props) {
         onPress={onPress || openChat}
         onLongPress={openChat}
         delayLongPress={400}
+        alert={pendingCount > 0}
       />
       <AIChatModal
         visible={showChat}

@@ -33,6 +33,16 @@ type PendingNotif = {
 const isActionType = (t: string) =>
   t === 'coverage_request' || t === 'swap_request' || t === 'gap_alert';
 
+const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
+  isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
+
+/** عدد الطلبات المعلّقة (للنقطة الحمراء على زرّ الذكاء) */
+export async function countPendingRequests(userId: string): Promise<number> {
+  if (!userId) return 0;
+  const { data } = await getNotifications(userId, 50);
+  return (data || []).filter(isPending).length;
+}
+
 export default function AIChatModal({ visible, onClose, user, clinicId }: Props) {
   const [messages, setMessages] = useState<V2Message[]>([]);
   const [pending, setPending] = useState<PendingNotif[]>([]);
@@ -44,11 +54,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
   const loadPending = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
-    const items = (data || []).filter(
-      (n: PendingNotif) => isActionType(n.type)
-        && n.action_type === 'accept_reject'
-        && (!n.action_status || n.action_status === 'pending'),
-    );
+    const items = (data || []).filter((n: PendingNotif) => isPending(n));
     setPending(items as PendingNotif[]);
   }, [user?.id]);
 
@@ -129,13 +135,12 @@ export default function AIChatModal({ visible, onClose, user, clinicId }: Props)
               contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
               onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             >
-              {/* الطلبات المعلّقة (كروت ذكاء) */}
+              {/* الطلبات المعلّقة — تظهر كرسائل من الذكاء داخل المحادثة */}
               {pending.map((n) => {
                 const busy = busyId === n.id;
                 return (
-                  <View key={n.id} style={styles.reqCard}>
-                    <Text style={styles.reqTitle}>{n.title}</Text>
-                    <Text style={styles.reqBody}>{n.body}</Text>
+                  <View key={n.id} style={[styles.msg, styles.msgAI]}>
+                    <Text style={styles.msgTxt}>{n.body}</Text>
                     <View style={styles.reqActions}>
                       {busy ? (
                         <ActivityIndicator color="#2D8C8C" />

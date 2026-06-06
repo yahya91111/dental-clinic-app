@@ -11,6 +11,7 @@ interface AIOrbProps {
   onPress: () => void;
   onLongPress?: () => void;
   delayLongPress?: number;
+  alert?: boolean; // نقطة حمراء عند وجود طلب/رسالة
 }
 
 // Tangled "thread ball" — purple strands woven into a sphere.
@@ -42,7 +43,7 @@ const FLECKS = [
   { cx: 18, cy: 60, fill: '#C084FC' },
 ];
 
-export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400 }: AIOrbProps) {
+export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400, alert }: AIOrbProps) {
   const spin = useRef(new Animated.Value(0)).current;
   const fleckSpin = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
@@ -109,6 +110,17 @@ export function AIOrb({ size = 64, onPress, onLongPress, delayLongPress = 400 }:
             ))}
           </Svg>
         </Animated.View>
+
+        {/* نقطة حمراء: دلالة على طلب/رسالة بانتظار الردّ */}
+        {alert && (
+          <Animated.View
+            style={{
+              position: 'absolute', top: scale(6), right: scale(6),
+              width: scale(14), height: scale(14), borderRadius: scale(7),
+              backgroundColor: '#E5342B', borderWidth: scale(2), borderColor: '#FFFFFF',
+            }}
+          />
+        )}
       </Animated.View>
     </TouchableOpacity>
   );
