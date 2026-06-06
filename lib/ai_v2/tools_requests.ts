@@ -101,8 +101,9 @@ export const REQUESTS_TOOLS: V2Tool[] = [
   {
     name: 'swap_doctors',
     description:
-      'يبدّل خانات طبيبين أو أكثر (تبديل متسلسل دائريّ) ضمن نطاق فترة/شفت/يوم. ' +
-      'الليدر فوري؛ طلب الطبيب يحتاج موافقة الطرف الآخر (تُدار خارج الأداة).',
+      'يبدّل خانات طبيبين أو أكثر (تبديل متسلسل دائريّ). النطاق الافتراضيّ هو ' +
+      'اليوم كامل — لا تسأل عن الشفت/الفترة؛ مرّر scope=day إلا إن حدّد المستخدم ' +
+      'صراحةً شفتًا أو فترة. الليدر فوريّ؛ طلب الطبيب يحتاج موافقة الطرف الآخر.',
     input_schema: {
       type: 'object',
       properties: {
@@ -112,11 +113,11 @@ export const REQUESTS_TOOLS: V2Tool[] = [
           type: 'array', items: { type: 'integer' },
           description: 'أرقام الأطباء مرتّبين؛ كلٌّ يأخذ مكان التالي.',
         },
-        scope: { type: 'string', enum: ['day', 'shift', 'period'] },
+        scope: { type: 'string', enum: ['day', 'shift', 'period'], description: 'افتراضيًّا day (اليوم كامل).' },
         shift: { type: 'string', enum: ['morning', 'evening'], description: 'فقط لو scope=shift.' },
         period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فقط لو scope=period.' },
       },
-      required: ['weekStart', 'day', 'doctorIndexes', 'scope'],
+      required: ['weekStart', 'day', 'doctorIndexes'],
     },
   },
   {
