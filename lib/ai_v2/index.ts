@@ -18,7 +18,6 @@
 import {
   SCHEDULE_ASSISTANT_V2,
   REQUESTS_ASSISTANT_V2,
-  NOTIFICATIONS_ASSISTANT_V2,
   CORE_PROMPT_V2,
   TEAM_LEADER_PROMPT_V2,
   DOCTOR_PROMPT_V2,
@@ -26,11 +25,12 @@ import {
 } from './_compiled';
 import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview } from './tools';
 import { REQUESTS_TOOLS, dispatchRequestTool } from './tools_requests';
-import { NOTIFICATION_TOOLS, dispatchNotificationTool } from './tools_notifications';
 export type { SchedulePreview } from './tools';
 
-// ─── التوجيه بين المساعدين (جدول / طلبات / إشعارات) ─────────────
-export type V2Task = 'schedule' | 'requests' | 'notifications';
+// ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
+// مهمّة الإشعارات أُلغيت: التغطية والإشعارات صارت ضمن «الطلبات» (المحرّك يكتشف
+// ويحسب، والذكاء يصوغ). طبقة الإرسال تبقى في lib/algorithms/notifications.ts.
+export type V2Task = 'schedule' | 'requests';
 
 type TaskBundle = {
   prompt: string;
@@ -41,7 +41,6 @@ type TaskBundle = {
 const TASK_BUNDLES: Record<V2Task, TaskBundle> = {
   schedule: { prompt: SCHEDULE_ASSISTANT_V2, tools: V2_TOOLS, dispatch: dispatchV2Tool },
   requests: { prompt: REQUESTS_ASSISTANT_V2, tools: REQUESTS_TOOLS, dispatch: dispatchRequestTool },
-  notifications: { prompt: NOTIFICATIONS_ASSISTANT_V2, tools: NOTIFICATION_TOOLS, dispatch: dispatchNotificationTool },
 };
 
 // بوّابة تصنيف خفيفة للمحادثة الحرّة (بلا زرّ): تستنبط النيّة من آخر رسالة.
@@ -51,6 +50,9 @@ const REQUEST_HINTS = [
   'انقل', 'نقل القروب', 'عدد العياد', 'احتياط', 'تخفيف', 'متدرّب',
   // مسح/حذف/تفريغ الجدول (صياغات متعدّدة) — تقع في مهمّة الطلبات لا بناء الجدول
   'امسح', 'مسح الجدول', 'احذف', 'حذف الجدول', 'فرّغ', 'فرغ الجدول', 'الغِ الجدول', 'الغاء الجدول',
+  // التغطية صارت ضمن الطلبات: النقص ومبادرة الليدر بنصّ حرّ
+  'النقص يحتاج تغطية', 'تغطية', 'غطّي', 'غطي', 'يغطّي', 'يغطي', 'غطّها', 'غطها', 'تغطّي',
+  'عيادة فاضية', 'عياده فاضيه', 'عيادة فارغة', 'عياده فارغه', 'فاضية', 'فارغة', 'نواقص', 'النواقص',
 ];
 const SCHEDULE_HINTS = ['ابن الجدول', 'ابنِ الجدول', 'انشئ جدول', 'أنشئ جدول', 'وزّع', 'وزع', 'بناء الجدول', 'اعمل جدول', 'سوّ الجدول'];
 
@@ -69,8 +71,7 @@ function classifyTask(messages: V2Message[]): V2Task {
 
 function resolveTask(opts: SendMessageV2Options): V2Task {
   // التوجيه الصريح من سياق الواجهة (زرّ/كرت) مقدَّم على التصنيف الحرّ.
-  // الإشعارات لا تُصنَّف من النصّ الحرّ — تُختار صراحةً عند فتح كرت إشعار.
-  if (opts.task === 'schedule' || opts.task === 'requests' || opts.task === 'notifications') return opts.task;
+  if (opts.task === 'schedule' || opts.task === 'requests') return opts.task;
   return classifyTask(opts.messages);
 }
 

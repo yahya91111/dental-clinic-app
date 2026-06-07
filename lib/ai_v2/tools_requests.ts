@@ -14,6 +14,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { V2Tool, V2ToolContext } from './tools';
+import type { CoverageCard } from '../algorithms/requests';
 import { supabase } from '../supabase';
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
@@ -32,13 +33,19 @@ export const REQUESTS_TOOLS: V2Tool[] = [
   {
     name: 'set_schedule_status',
     description:
-      'يجعل طبيبًا في يومٍ: مرضية/تفرّغ/استئذان(بداية/نهاية)/احتياط. يُطبَّق فورًا. ' +
-      'يعمل على أسبوع محفوظ أو فارغ (يحترمه البناء لاحقًا). الطبيب لنفسه؛ الليدر لأيّ أحد.',
+      'يجعل طبيبًا في يومٍ أو عدّة أيّام: مرضية/تفرّغ/استئذان(بداية/نهاية)/احتياط. يُطبَّق ' +
+      'فورًا. يعمل على أسبوع محفوظ أو فارغ (يحترمه البناء لاحقًا). الطبيب لنفسه؛ الليدر لأيّ أحد. ' +
+      'لعدّة أيّام: مرِّر days=[...] دفعةً واحدة (لا تنادِ الأداة لكلّ يوم) — يُرسَل إشعار ليدر ' +
+      'واحد مجمَّع للمدى، وتأكيد واحد.',
     input_schema: {
       type: 'object',
       properties: {
         weekStart: { type: 'string', description: 'بداية الأسبوع (أحد) YYYY-MM-DD.' },
-        day: { type: 'string', enum: [...DAYS] },
+        day: { type: 'string', enum: [...DAYS], description: 'يومٌ واحد. استعمل days للأكثر من يوم.' },
+        days: {
+          type: 'array', items: { type: 'string', enum: [...DAYS] },
+          description: 'عدّة أيّام دفعةً واحدة (مثلًا [sunday,monday,tuesday]). يُغني عن day.',
+        },
         doctorIndex: { type: 'integer', description: 'رقم الطبيب من القائمة المرقّمة.' },
         status: {
           type: 'string',
@@ -46,7 +53,7 @@ export const REQUESTS_TOOLS: V2Tool[] = [
         },
         shift: { type: 'string', enum: ['morning', 'evening'], description: 'شفت الطبيب ذلك اليوم (لتحديد جهة EX). اختياريّ — افتراضيّ صباح.' },
       },
-      required: ['weekStart', 'day', 'doctorIndex', 'status'],
+      required: ['weekStart', 'doctorIndex', 'status'],
     },
   },
   {
@@ -186,6 +193,55 @@ export const REQUESTS_TOOLS: V2Tool[] = [
       required: ['doctorIndex', 'workStatus'],
     },
   },
+  {
+    name: 'scan_open_gaps',
+    description:
+      'يفحص يومًا ويُرجِع كلّ النواقص المكشوفة جاهزةً للعرض على الليدر: لكلّ نقص ' +
+      'مكان الغائب + الخيارات المحسوبة (يستلم فترتين / الاحتياطي). استعملها فور بدء ' +
+      'تغطية يومٍ — لا تحسب الخيارات بنفسك ولا تخترعها؛ المحرّك يحسبها.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string', description: 'بداية الأسبوع (أحد) YYYY-MM-DD.' },
+        day: { type: 'string', enum: [...DAYS] },
+      },
+      required: ['weekStart', 'day'],
+    },
+  },
+  {
+    name: 'cover_gap',
+    description:
+      'يطبّق تغطية نقصٍ بوضع الطبيب المختار في عيادة النقص وفترته. استعملها بعد أن ' +
+      'يكتب الليدر اسم من يغطّي. يرفض المحرّك إن كان الطبيب مشغولًا بنفس الفترة.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS] },
+        clinicNumber: { type: 'integer', description: 'عيادة النقص.' },
+        period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فترة النقص.' },
+        doctorIndex: { type: 'integer', description: 'رقم الطبيب الذي سيغطّي.' },
+      },
+      required: ['weekStart', 'day', 'clinicNumber', 'period', 'doctorIndex'],
+    },
+  },
+  {
+    name: 'notify_doctors',
+    description:
+      'يُرسل إشعارًا للعلم إلى أطباء محدّدين بأرقامهم. استعملها بعد التغطية حين يطلب ' +
+      'الليدر إشعار شخصٍ أو أشخاصٍ بأسمائهم.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doctorIndexes: {
+          type: 'array', items: { type: 'integer' },
+          description: 'أرقام الأطباء المراد إشعارهم.',
+        },
+        message: { type: 'string', description: 'نصّ الإشعار بالعربيّة.' },
+      },
+      required: ['doctorIndexes', 'message'],
+    },
+  },
 ];
 
 // ─── أدوات مساعدة ──────────────────────────────────────────────
@@ -204,6 +260,15 @@ const isDay = (d: unknown): d is (typeof DAYS)[number] =>
 function actorOf(ctx: V2ToolContext): { id: string; role: string } | null {
   if (!ctx.user) return null;
   return { id: ctx.user.id, role: ctx.user.role };
+}
+
+function senderOf(ctx: V2ToolContext): { id?: string; name?: string } {
+  return { id: ctx.user?.id, name: ctx.user?.name };
+}
+
+/** رقم الطبيب في الدفتر من معرّفه (للعرض الداخليّ #n مع cover_gap) */
+function indexOfId(ctx: V2ToolContext, id: string): number {
+  return (ctx.roster ?? []).findIndex((d) => d.id === id) + 1;
 }
 
 /** كلّ قادة الفريق في العيادة (قد يكونون أكثر من واحد) — للإبلاغ التلقائيّ */
@@ -256,45 +321,72 @@ export async function dispatchRequestTool(
       case 'set_schedule_status': {
         const doc = resolveDoctor(ctx, r.doctorIndex);
         if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
+        // يومٌ واحد (day) أو عدّة أيّام (days) — نوحّدها في قائمة مرتّبة بلا تكرار.
+        const rawDays = Array.isArray(r.days) && r.days.length ? r.days : r.day != null ? [r.day] : [];
+        const dayList = DAYS.filter((d) => rawDays.includes(d)); // ترتيب أحد→خميس، صالح فقط
+        if (dayList.length === 0) return 'Tool error: لم تُحدَّد أيّام صالحة.';
         const status = r.status;
         const shift = r.shift === 'evening' ? 'evening' : 'morning';
         if (!['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'].includes(String(status))) {
           return 'Tool error: الحالة غير صالحة.';
         }
-        const res = await requests.setScheduleStatus(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-          doctorId: doc.id, doctorName: doc.name,
-          status: status as 'sick_leave' | 'vacation' | 'permission_start' | 'permission_end' | 'extra',
-          shift,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
+
+        // سجّل كلّ يوم (التغطية تُدار يومًا بيوم لاحقًا عبر بطاقات المحرّك).
+        const doneDays: (typeof DAYS)[number][] = [];
+        for (const d of dayList) {
+          const res = await requests.setScheduleStatus(actor, {
+            clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: d,
+            doctorId: doc.id, doctorName: doc.name,
+            status: status as 'sick_leave' | 'vacation' | 'permission_start' | 'permission_end' | 'extra',
+            shift,
+          });
+          if (!res.success) return `Tool error: ${res.error} (يوم ${DAY_AR[d]})`;
+          doneDays.push(d);
+        }
 
         // إبلاغ الليدر تلقائيًّا وبصمت عند غياب (لا يراه الذكاء فلا يرويه):
-        //  • إشعار للعلم بأنّ الطبيب سجّل غيابه.
-        //  • إن نتج نقص → كرت حلول للّيدر (يخاطبه الذكاء عند فتحه).
+        //  • إشعار «علم» واحد مجمَّع للمدى كلّه (جرس + رنّة واحدة).
+        //  • كرت نقص لكلّ يوم على حدة → التغطية يومًا بيوم في نفس المحادثة.
         const ABSENCE = ['sick_leave', 'vacation', 'permission_start', 'permission_end'];
+        const daysAr = doneDays.map((d) => DAY_AR[d]).join('، ');
         if (ABSENCE.includes(String(status))) {
           try {
             const { notifications } = await import('../algorithms/notifications');
-            const leaderIds = Array.from(new Set(await getTeamLeaderIds(ctx.clinicId)))
-              .filter((id) => id !== actor.id);
-            for (const leaderId of leaderIds) {
-              // إشعار «علم» واحد لكلّ قائد (جرس + رنّة)
+            const allLeaders = Array.from(new Set(await getTeamLeaderIds(ctx.clinicId)));
+            // كرت التغطية يذهب لكلّ القادة (مهمّة قيادة، حتى لو القائد هو الفاعل)؛
+            // إشعار «العلم» يستثني الفاعل (لا نُخبره أنّه سجّل بنفسه).
+            const infoLeaders = allLeaders.filter((id) => id !== actor.id);
+            // احسب بطاقات التغطية لكلّ يوم **مرّة واحدة** — المحرّك يكتب الافتتاحيّة
+            // الحتميّة (renderCoverageBrief) فتُعرَض كما هي، والذكاء يُكمل فقط.
+            const dayCards: Array<{ day: (typeof DAYS)[number]; cards: CoverageCard[] }> = [];
+            for (const gDay of doneDays) {
+              const cards = await requests.scanCoverage(ctx.clinicId, String(r.weekStart), gDay);
+              if (cards.length) dayCards.push({ day: gDay, cards });
+            }
+            const totalCards = dayCards.reduce((s, x) => s + x.cards.length, 0);
+            // eslint-disable-next-line no-console
+            console.log(`[coverage] leaders=${allLeaders.length} info=${infoLeaders.length} cards=${totalCards} days=${doneDays.join(',')}`);
+            for (const leaderId of infoLeaders) {
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
-                summary: `${STATUS_AR[String(status)]} يوم ${DAY_AR[r.day]} (${r.weekStart})`,
+                summary: `${STATUS_AR[String(status)]} ${doneDays.length > 1 ? 'أيّام' : 'يوم'} ${daysAr} (${r.weekStart})`,
               });
-              // كرت النقص → يحمّر زرّ الذكاء بصمت (لا push، لا رنّة) لعرض الحلول
-              for (const g of res.gaps || []) {
-                await notifications.alertLeaderGap({
-                  clinicId: ctx.clinicId, leaderId,
-                  weekStart: String(r.weekStart), day: r.day,
-                  gap: { clinicNumber: g.clinicNumber, period: g.period, shift: g.shift ?? shift },
-                  absentDoctorName: doc.name,
-                  senderId: doc.id, senderName: doc.name,
-                });
+            }
+            // كرت تغطية بنصّ افتتاحيّ حتميّ لكلّ نقص (يحمّر زرّ الذكاء بصمت)
+            for (const leaderId of allLeaders) {
+              for (const { day: gDay, cards } of dayCards) {
+                for (const c of cards) {
+                  await notifications.alertLeaderCoverage({
+                    clinicId: ctx.clinicId, leaderId,
+                    weekStart: String(r.weekStart), day: gDay,
+                    gap: { clinicNumber: c.clinicNumber, period: c.period, shift: c.shift },
+                    brief: requests.renderCoverageBrief(gDay, c),
+                    absentDoctorName: c.absentName ?? undefined,
+                    twoPeriods: c.twoPeriods, reserves: c.reserves,
+                    senderId: doc.id, senderName: doc.name,
+                  });
+                }
               }
             }
           } catch (e) {
@@ -303,8 +395,10 @@ export async function dispatchRequestTool(
           }
         }
 
-        // لا نُرجِع ذكرَ النقص للذكاء — التغطية/الليدر تُدار بصمت
-        return `تمّ: ${STATUS_AR[String(status)]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${r.weekStart}).`;
+        // تأكيد واحد مجمَّع — لا نُرجِع ذكرَ النقص للذكاء (التغطية تُدار بصمت)
+        return doneDays.length > 1
+          ? `تمّ: ${STATUS_AR[String(status)]} لـ${doc.name} أيّام ${daysAr} (${r.weekStart}).`
+          : `تمّ: ${STATUS_AR[String(status)]} لـ${doc.name} يوم ${daysAr} (${r.weekStart}).`;
       }
 
       case 'cancel_schedule_status': {
@@ -419,9 +513,90 @@ export async function dispatchRequestTool(
       }
 
       case 'announce_to': {
-        // الإبلاغ بعد تسجيل الغياب — نفوّضه لموزّع الإشعارات (نفس المنطق)
-        const { dispatchNotificationTool } = await import('./tools_notifications');
-        return dispatchNotificationTool('announce_to', input, ctx);
+        const { notifications } = await import('../algorithms/notifications');
+        const sender = senderOf(ctx);
+        const audience = r.audience === 'center' ? 'center' : 'shift';
+        const message = String(r.message || '').trim();
+        if (!message) return 'Tool error: نصّ الإبلاغ فارغ.';
+        const subject = r.subjectDoctorIndex != null ? resolveDoctor(ctx, r.subjectDoctorIndex) : null;
+        let groupId: string | null = null;
+        if (audience === 'shift') {
+          const subjId = subject?.id ?? sender.id;
+          if (subjId) groupId = await findDoctorGroupId(ctx.clinicId, subjId);
+          if (!groupId) return 'Tool error: تعذّر تحديد الشفت (القروب).';
+        }
+        const audienceIds = await notifications.resolveAudience(ctx.clinicId, audience, {
+          groupId: groupId ?? undefined,
+          excludeId: subject?.id ?? sender.id,
+        });
+        // استثنِ القادة من البثّ — يصلهم إشعارهم التلقائيّ الخاصّ فلا يُكرَّر
+        const leaderIds = new Set(await getTeamLeaderIds(ctx.clinicId));
+        const recipientIds = audienceIds.filter((id) => !leaderIds.has(id));
+        if (recipientIds.length === 0) return 'لا يوجد من يُبلَّغ.';
+        const res = await notifications.broadcast({
+          clinicId: ctx.clinicId, recipientIds,
+          senderId: sender.id, senderName: sender.name,
+          title: 'إشعار', body: message,
+        });
+        return res.success
+          ? `أبلغتُ ${recipientIds.length} ${audience === 'center' ? 'في المركز' : 'في الشفت'}.`
+          : `Tool error: ${res.error}`;
+      }
+
+      case 'scan_open_gaps': {
+        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
+        const cards = await requests.scanCoverage(ctx.clinicId, String(r.weekStart), r.day);
+        if (cards.length === 0) return `لا نواقص مكشوفة يوم ${DAY_AR[r.day]}.`;
+        const fmt = (x: { id: string; name: string }) => `${x.name} (#${indexOfId(ctx, x.id)})`;
+        const lines = cards.map((c) => {
+          const opts: string[] = [];
+          if (c.twoPeriods) opts.push(`يستلم فترتين: ${fmt(c.twoPeriods)}`);
+          if (c.reserves.length) opts.push(`الاحتياطي: ${c.reserves.map(fmt).join('، ')}`);
+          const where = `العيادة ${c.clinicNumber} الفترة ${c.period}`;
+          const place = c.absentName ? ` — مكان د. ${c.absentName}` : '';
+          const choices = opts.length ? opts.join(' | ') : 'لا مرشّح جاهز — اسأل القائد مَن يغطّي';
+          return `${where}${place} → ${choices}`;
+        });
+        return `نواقص يوم ${DAY_AR[r.day]} (الأرقام #n للاستعمال الداخليّ مع cover_gap):\n${lines.join('\n')}`;
+      }
+
+      case 'cover_gap': {
+        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
+        const doc = resolveDoctor(ctx, r.doctorIndex);
+        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        const res = await requests.placeInClinic(actor, {
+          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
+          doctorId: doc.id, doctorName: doc.name,
+          clinicNumber: Number(r.clinicNumber), periods: [Number(r.period)],
+        });
+        if (!res.success) return `Tool error: ${res.error}`;
+        // أنهِ كرت النقص المطابق (يخفت زرّ الذكاء، لا يبقى معلّقًا بعد التغطية)
+        try {
+          const { notifications } = await import('../algorithms/notifications');
+          await notifications.resolveGapAlert({
+            clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
+            clinicNumber: Number(r.clinicNumber), period: Number(r.period),
+          });
+        } catch { /* الإنهاء ثانويّ — لا يكسر التغطية */ }
+        return `تمّ: غطّى ${doc.name} عيادة ${r.clinicNumber} الفترة ${r.period} يوم ${DAY_AR[r.day]}.`;
+      }
+
+      case 'notify_doctors': {
+        const { notifications } = await import('../algorithms/notifications');
+        const sender = senderOf(ctx);
+        const idxs = Array.isArray(r.doctorIndexes) ? r.doctorIndexes : [];
+        const docs = idxs.map((n) => resolveDoctor(ctx, n)).filter((d): d is Resolved => d != null);
+        if (docs.length === 0) return 'Tool error: لا يوجد أطباء صالحون للإشعار.';
+        const message = String(r.message || '').trim();
+        if (!message) return 'Tool error: نصّ الإشعار فارغ.';
+        const res = await notifications.broadcast({
+          clinicId: ctx.clinicId, recipientIds: docs.map((d) => d.id),
+          senderId: sender.id, senderName: sender.name,
+          title: 'إشعار', body: message,
+        });
+        return res.success
+          ? `أبلغتُ ${docs.map((d) => d.name).join('، ')}.`
+          : `Tool error: ${res.error}`;
       }
 
       default:

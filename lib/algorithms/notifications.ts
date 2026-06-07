@@ -534,9 +534,67 @@ export async function alertLeaderGap(args: {
     body: `العيادة ${args.gap.clinicNumber} الفترة ${periodLabel(args.gap.period)} يوم ${DAY_AR[args.day]} بلا تغطية${reason}.`,
     data: {
       clinic_id: args.clinicId, week_start: args.weekStart, day: args.day, gap: args.gap,
+      absent_doctor_name: args.absentDoctorName,
     },
   });
   return { success: !error, error, id };
+}
+
+/**
+ * يفتح كرت تغطيةٍ للّيدر بنصٍّ افتتاحيّ **حتميّ جاهز** (يكتبه المحرّك ويُعرَض كما
+ * هو). الذكاء لا يصوغ الافتتاحيّة — يقرؤها ويُكمل. صامت (لا رنّة) كنوع gap_alert.
+ */
+export async function alertLeaderCoverage(args: {
+  clinicId: string;
+  leaderId: string;
+  weekStart: string;
+  day: WeekDay;
+  gap: Gap;
+  brief: string;
+  absentDoctorName?: string;
+  twoPeriods?: { id: string; name: string } | null;
+  reserves?: { id: string; name: string }[];
+  senderId?: string;
+  senderName?: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  const { id, error } = await sendAction({
+    clinicId: args.clinicId, recipientId: args.leaderId,
+    senderId: args.senderId, senderName: args.senderName,
+    type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
+    body: args.brief,
+    data: {
+      clinic_id: args.clinicId, week_start: args.weekStart, day: args.day, gap: args.gap,
+      absent_doctor_name: args.absentDoctorName,
+      two_periods: args.twoPeriods ?? null,
+      reserves: args.reserves ?? [],
+    },
+  });
+  return { success: !error, error, id };
+}
+
+/**
+ * يُنهي كروت النقص المطابقة (نفس العيادة/الفترة/اليوم/الأسبوع) بعد التغطية
+ * الفعليّة — كي يخفت زرّ الذكاء ولا يبقى الكرت معلّقًا.
+ */
+export async function resolveGapAlert(args: {
+  clinicId: string; weekStart: string; day: WeekDay; clinicNumber: number; period: number;
+}): Promise<void> {
+  const { data } = await supabase
+    .from('notifications')
+    .select('id, data, action_status')
+    .eq('clinic_id', args.clinicId)
+    .eq('type', NotifType.GAP_ALERT);
+  const rows = (data || []) as { id: string; data: any; action_status: string | null }[];
+  for (const r of rows) {
+    const pending = !r.action_status || r.action_status === 'pending';
+    if (!pending) continue;
+    if (
+      r.data?.week_start === args.weekStart && r.data?.day === args.day &&
+      r.data?.gap?.clinicNumber === args.clinicNumber && r.data?.gap?.period === args.period
+    ) {
+      await supabase.from('notifications').update({ action_status: 'accepted', is_read: true }).eq('id', r.id);
+    }
+  }
 }
 
 // ─── تجميع التصدير ─────────────────────────────────────────────
@@ -547,6 +605,6 @@ export const notifications = {
   openCoverageRequests, acceptCoverage, rejectCoverage, sweepCoverageGroup,
   // تبديل بموافقة
   openSwapRequest, acceptSwap, rejectSwap,
-  // تصعيد للّيدر
-  alertLeaderGap,
+  // تصعيد للّيدر + الافتتاحيّة الحتميّة + إنهاء الكرت بعد التغطية
+  alertLeaderGap, alertLeaderCoverage, resolveGapAlert,
 };

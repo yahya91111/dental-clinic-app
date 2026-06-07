@@ -90,12 +90,15 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiPreviewSaving, setAiPreviewSaving] = useState(false);
   const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
 
-  const handleAISend = async (text: string) => {
+  const handleAISend = async (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean }) => {
     if (!user) return;
 
-    // Add user message
-    const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: text, timestamp: Date.now() };
-    setAiMessages(prev => [...prev, userMsg]);
+    // رسالة المستخدم: المخفيّة (تشغيل تلقائيّ) تدخل سياق الذكاء فقط ولا تُعرَض
+    // كأنّ المستخدم كتبها — فيظهر ردّ الذكاء وكأنّه هو من بدأ.
+    if (!opts?.hidden) {
+      const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: text, timestamp: Date.now() };
+      setAiMessages(prev => [...prev, userMsg]);
+    }
     aiHistoryRef.current.push({ role: 'user', content: text });
 
     setAiLoading(true);
@@ -108,7 +111,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     const contextData =
       `Selected week start (Sunday): ${formatWeekStart(selectedWeekStart)}\n` +
       `Clinic count: ${clinicCount}\n` +
-      `Currently viewing: ${tabLabel}`;
+      `Currently viewing: ${tabLabel}` +
+      (opts?.contextData ? `\n${opts.contextData}` : '');
 
     const v2User: V2User = {
       id: user.id,
@@ -123,6 +127,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       user: v2User,
       clinicId: clinicId || undefined,
       contextData,
+      task: opts?.task,
     });
 
     setAiLoading(false);

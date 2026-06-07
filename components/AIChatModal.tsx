@@ -26,14 +26,14 @@ type Props = {
   clinicId?: string | null;
   /** المحادثة المشتركة مع صفحة الذكاء الكاملة */
   messages: ChatMessage[];
-  onSend: (text: string) => void;
+  onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean }) => void;
   isLoading?: boolean;
 };
 
 type ConvoNotif = {
   id: string; type: string; title: string; body: string;
   action_type?: string | null; action_status?: string | null; is_read?: boolean;
-  created_at?: string;
+  created_at?: string; data?: any;
 };
 
 // أنواع «محادثة الذكاء» — مكانها الجات لا صفحة الإشعارات
@@ -89,6 +89,41 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     return unsub;
   }, [visible, user?.id, loadConvo]);
 
+  // التغطية: المحرّك يكتب الافتتاحيّة (كرت gap_alert بنصٍّ حتميّ جاهز) فتُعرَض
+  // كفقاعة ظاهرة. لا تشغيل خفيّ ولا نداء للذكاء للبدء. حين يكتب الليدر اسمًا
+  // نُرسل ردّه لمهمّة «الطلبات» مع **سياق التغطية** (إحداثيّات النقص + المرشّحون)
+  // المستنبط من كروت النقص المعلّقة — فيفهم الذكاء وينفّذ cover_gap مباشرةً.
+  const buildCoverageContext = useCallback((): string | undefined => {
+    const gaps = convo.filter((n) => n.type === 'gap_alert' && isPending(n));
+    if (gaps.length === 0) return undefined;
+    // نُضمّن نصّ المحرّك الافتتاحيّ نفسه (n.body) مصوغًا كأنّه رسالة الذكاء
+    // السابقة — فيُرسَّخ ردّ القائد («نعم/الأول/اسم»)، مع إحداثيّات التنفيذ.
+    const cards = gaps.map((n, i) => {
+      const d = n.data || {};
+      const g = d.gap || {};
+      return (
+        `【بطاقة ${i + 1}】\n${n.body}\n` +
+        `(للتنفيذ عبر cover_gap: الأسبوع=${d.week_start}، اليوم=${d.day}، ` +
+        `العيادة=${g.clinicNumber}، الفترة=${g.period})`
+      );
+    });
+    return (
+      'أنت (الذكاء) عرضتَ للتوّ على القائد بطاقة/بطاقات التغطية التالية، والقائد الآن ' +
+      'يردّ عليها في الرسالة القادمة. فسّر ردّه — اسم طبيب، أو رقم خيار، أو «الأول/الثاني»، ' +
+      'أو «الاحتياطي» — على أنّه اختيار من يغطّي، ونفّذ cover_gap فورًا بإحداثيّات البطاقة ' +
+      'المعنيّة ثمّ أكّد بسطر واحد. إن كان الردّ غامضًا (أيّ بطاقة؟) فاسأل سؤالًا قصيرًا. ' +
+      'لا تُعِد عرض البطاقات. هذه البطاقات:\n\n' +
+      cards.join('\n\n')
+    );
+  }, [convo]);
+
+  // إرسال إدخال الليدر: لو ثمّة نواقص معلّقة → وجّهه لمهمّة الطلبات مع سياق التغطية.
+  const sendInput = useCallback((text: string) => {
+    const cov = buildCoverageContext();
+    if (cov) onSend(text, { task: 'requests', contextData: cov });
+    else onSend(text);
+  }, [buildCoverageContext, onSend]);
+
   async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
     setBusyId(n.id);
@@ -126,7 +161,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     const text = input.trim();
     if (!text || isLoading) return;
     setInput('');
-    onSend(text);
+    sendInput(text);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
@@ -179,7 +214,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                               key={`${m.id}-${i}`}
                               style={styles.chip}
                               disabled={isLoading}
-                              onPress={() => onSend(c)}
+                              onPress={() => sendInput(c)}
                             >
                               <Text style={styles.chipTxt}>{c}</Text>
                             </TouchableOpacity>
@@ -190,6 +225,15 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                   );
                 }
                 const n = it.n;
+                // كرت التغطية (gap_alert): نصّ المحرّك الحتميّ — يُعرَض كفقاعة
+                // ذكاء ظاهرة (لا أزرار موافق/رفض). الليدر يردّ بالكتابة فيغطّي الذكاء.
+                if (n.type === 'gap_alert') {
+                  return (
+                    <View key={n.id} style={[styles.msg, styles.msgAI]}>
+                      <Text style={styles.msgTxt}>{n.body}</Text>
+                    </View>
+                  );
+                }
                 if (isPending(n)) {
                   const busy = busyId === n.id;
                   return (

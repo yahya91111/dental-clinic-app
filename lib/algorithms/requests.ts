@@ -333,6 +333,25 @@ export async function placeInClinic(
     const rows = await loadDay(clinicId, weekStart, day);
     const mine = rows.filter((r) => r.doctor_id === doctorId);
 
+    // حارس التعارض: الطبيب لا يكون في عيادتين بنفس الفترة. إن كان له تكليف
+    // فعليّ في عيادة أخرى ضمن إحدى الفترات المطلوبة → ارفض بوضوح (لا تُكرِّر
+    // اسمه في مكانين). تغطية «يستلم فترتين» لا تتعارض لأنها نفس العيادة.
+    const myActiveClinic = mine.filter(
+      (r) => r.role === 'clinic' && r.status === 'active' && r.period > 0,
+    );
+    const conflictP = periods.find((p) =>
+      myActiveClinic.some((r) => r.period === p && r.clinic_number !== clinicNumber),
+    );
+    if (conflictP != null) {
+      const busy = myActiveClinic.find(
+        (r) => r.period === conflictP && r.clinic_number !== clinicNumber,
+      )!;
+      return fail(
+        `${doctorName} مشغول في الفترة ${conflictP} بعيادة ${busy.clinic_number} — ` +
+        `لا يمكن أن يكون في عيادتين بنفس الفترة. اختر من يستلم فترتين أو احتياطيًّا متفرّغًا.`,
+      );
+    }
+
     // أزل حالته الغائبة وصفوف الحفظ (سيدخل العيادة فعليًّا)
     await deleteRows(
       mine.filter((r) => r.role === PREV_ROLE || (r.period === 0 && r.status !== 'active')).map((r) => r.id),
@@ -350,6 +369,34 @@ export async function placeInClinic(
         role: 'clinic', status: 'active', source: 'request',
       }));
     await insertRows(toAdd);
+
+    // التريني الظلّ يتبع مدرّبه إلى الخانة الجديدة (يُسجَّل معه في التغطية).
+    // نتعرّف عليه: متدرّب خاناته تطابق خانات المدرّب تمامًا (المستقلّ لا يُطابق).
+    const { data: members } = await getAllGroupMembers(clinicId);
+    const myKeys = mine
+      .filter((r) => r.role === 'clinic' && r.status === 'active' && r.period > 0)
+      .map((r) => `${r.period}|${r.clinic_number}`);
+    const mySet = new Set(myKeys);
+    const shadows = ((members || []) as {
+      doctor_id: string; doctor_name: string; work_status?: string; supervisor_doctor_id?: string | null;
+    }[]).filter((m) => m.work_status === 'trainee' && m.supervisor_doctor_id === doctorId);
+    for (const t of shadows) {
+      const tRows = rows.filter((r) => r.doctor_id === t.doctor_id && r.role === 'clinic' && r.status === 'active' && r.period > 0);
+      const tKeys = tRows.map((r) => `${r.period}|${r.clinic_number}`);
+      if (myKeys.length === 0 || tKeys.length !== mySet.size || !tKeys.every((k) => mySet.has(k))) continue;
+      // أزِل حالة المتدرّب الغائبة/الحفظ ثمّ أضِفه في نفس الخانات الجديدة
+      const tStatus = rows.filter((r) => r.doctor_id === t.doctor_id && (r.role === PREV_ROLE || (r.period === 0 && r.status !== 'active')));
+      await deleteRows(tStatus.map((r) => r.id));
+      const tExisting = new Set(tRows.map((r) => `${r.period}|${r.clinic_number}`));
+      await insertRows(
+        periods.filter((p) => !tExisting.has(`${p}|${clinicNumber}`)).map((p) => ({
+          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+          period: p, clinic_number: clinicNumber,
+          doctor_id: t.doctor_id, doctor_name: t.doctor_name,
+          role: 'clinic', status: 'active', source: 'request',
+        })),
+      );
+    }
     return ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -541,6 +588,150 @@ export async function findShiftCandidates(
   return out;
 }
 
+/**
+ * خيارات تغطية نقصٍ تُعرَض على الليدر (ديناميكيّة — لا تُذكر خيارات غير متاحة):
+ *  - reserves   : الاحتياطيّون (EX) في جهة شفت النقص.
+ *  - twoPeriods : الطبيب في نفس عيادة النقص لكن في الفترة الأخرى (يمدّد لفترتين).
+ *  - neighboring: أطباء العيادات الأخرى في **نفس فترة النقص** (العيادة المجاورة).
+ * يُستثنى دائمًا طبيب التخفيف والمُستأذِن في فترة النقص.
+ */
+export type CoverageOptions = {
+  reserves: { id: string; name: string }[];
+  twoPeriods: { id: string; name: string } | null;
+  neighboring: { id: string; name: string }[];
+};
+
+export async function getCoverageOptions(
+  clinicId: string,
+  weekStart: string,
+  day: WeekDay,
+  gap: Gap,
+): Promise<CoverageOptions> {
+  const rows = await loadDay(clinicId, weekStart, day);
+  const permAbs = permissionAbsences(rows);
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const lightDuty = new Set(
+    (members || []).filter((m: { work_status?: string }) => m.work_status === 'light_duty')
+      .map((m: { doctor_id: string }) => m.doctor_id),
+  );
+  const uniq = (list: { id: string; name: string }[]) => {
+    const seen = new Set<string>();
+    return list.filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)));
+  };
+
+  const exCol = exCellOf(gap.shift);
+  const [p1, p2] = shiftPeriods(gap.shift);
+  const other = gap.period === p1 ? p2 : p1;
+  const clinic = rows.filter((r) => r.role === 'clinic' && r.status === 'active' && r.period > 0);
+
+  // التريني الظلّ (يطابق خانات مدرّبه) يُستبعَد من الاقتراحات — لا يُغطّي وحده.
+  // المتدرّب المستقلّ (لا يطابق) يبقى عاديًّا.
+  const keysOf = (docId: string) =>
+    new Set(clinic.filter((r) => r.doctor_id === docId).map((r) => `${r.period}|${r.clinic_number}|${r.role}`));
+  const shadowIds = new Set<string>();
+  for (const m of (members || []) as { doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null }[]) {
+    if (m.work_status !== 'trainee' || !m.supervisor_doctor_id) continue;
+    const tKeys = [...keysOf(m.doctor_id)];
+    const supKeys = keysOf(m.supervisor_doctor_id);
+    if (tKeys.length > 0 && tKeys.length === supKeys.size && tKeys.every((k) => supKeys.has(k))) {
+      shadowIds.add(m.doctor_id);
+    }
+  }
+  const blocked = (id: string, p: number) =>
+    lightDuty.has(id) || shadowIds.has(id) || !!permAbs.get(id)?.has(p);
+
+  // الاحتياطيّون: علامة احتياط (status=extra) period=0 على جهة الشفت
+  const reserves = uniq(
+    rows.filter((r) => r.period === 0 && r.status === 'extra' && r.clinic_number === exCol
+      && !lightDuty.has(r.doctor_id) && !shadowIds.has(r.doctor_id))
+      .map((r) => ({ id: r.doctor_id, name: r.doctor_name })),
+  );
+
+  // فترتين: من في نفس عيادة النقص الفترة الأخرى (يمدّد ليغطّي فترة النقص)
+  const ext = clinic.find(
+    (r) => r.clinic_number === gap.clinicNumber && r.period === other && !blocked(r.doctor_id, gap.period),
+  );
+  const twoPeriods = ext ? { id: ext.doctor_id, name: ext.doctor_name } : null;
+
+  // العيادة المجاورة: أطباء عيادات أخرى في نفس فترة النقص
+  const neighboring = uniq(
+    clinic.filter(
+      (r) => r.clinic_number !== gap.clinicNumber && r.period === gap.period && !blocked(r.doctor_id, gap.period),
+    ).map((r) => ({ id: r.doctor_id, name: r.doctor_name })),
+  );
+
+  return { reserves, twoPeriods, neighboring };
+}
+
+/**
+ * بطاقة تغطية جاهزة للعرض على الليدر: نقصٌ واحد + مكان الغائب + الخيارات
+ * المحسوبة (يستلم فترتين / الاحتياطي). الذكاء يصوغها بأسلوبه فقط، لا يحسبها.
+ */
+export type CoverageCard = {
+  clinicNumber: number;
+  period: number;
+  shift: Shift;
+  absentName: string | null;
+  twoPeriods: { id: string; name: string } | null;
+  reserves: { id: string; name: string }[];
+};
+
+/**
+ * يفحص يومًا ويُرجِع لكلّ نقصٍ بطاقةً مكتملة: مكان الغائب (من صفّ الحفظ
+ * PREV_ROLE الذي كُتب وقت الغياب) + الخيارات المتاحة. هذا قلب «المايسترو»:
+ * المحرّك يكتشف ويحسب كلّ شيء، والذكاء يتكلّم به فقط.
+ */
+export async function scanCoverage(
+  clinicId: string,
+  weekStart: string,
+  day: WeekDay,
+): Promise<CoverageCard[]> {
+  const { data: settings } = await getScheduleSettings(clinicId);
+  const clinicCount = settings?.clinic_count ?? 2;
+  const gaps = await detectGaps(clinicId, weekStart, day, clinicCount);
+  if (gaps.length === 0) return [];
+  const rows = await loadDay(clinicId, weekStart, day);
+  const prev = rows.filter((r) => r.role === PREV_ROLE);
+  const cards: CoverageCard[] = [];
+  for (const g of gaps) {
+    const owner = prev.find((r) => r.clinic_number === g.clinicNumber && r.period === g.period);
+    const opts = await getCoverageOptions(clinicId, weekStart, day, g);
+    cards.push({
+      clinicNumber: g.clinicNumber, period: g.period, shift: g.shift,
+      absentName: owner?.doctor_name ?? null,
+      twoPeriods: opts.twoPeriods, reserves: opts.reserves,
+    });
+  }
+  return cards;
+}
+
+// ─── صياغة الافتتاحيّة الحتميّة (المحرّك يكتب الرسالة، لا الذكاء) ──
+const DAY_AR_BRIEF: Record<string, string> = {
+  sunday: 'الأحد', monday: 'الاثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
+};
+const PERIOD_AR_BRIEF: Record<number, string> = { 1: 'الأولى', 2: 'الثانية', 3: 'الثالثة', 4: 'الرابعة' };
+
+/**
+ * يصوغ نصّ الافتتاحيّة لنقصٍ واحد — ثابتٌ حتميّ يكتبه المحرّك ويُعرَض كما هو
+ * (الذكاء لا يلمسه فلا يخطئ في اليوم/العيادة/الفترة). ديناميكيّ: لا يذكر خيارًا
+ * غير متاح (لا «احتياطي» إن لم يوجد احتياطيّون).
+ */
+export function renderCoverageBrief(day: WeekDay, card: CoverageCard): string {
+  const head =
+    `نقص يوم ${DAY_AR_BRIEF[day] ?? day}\n` +
+    `العيادة ${card.clinicNumber} · الفترة ${PERIOD_AR_BRIEF[card.period] ?? card.period}` +
+    (card.absentName ? ` — مكان د. ${card.absentName}` : '');
+  const opts: string[] = [];
+  if (card.twoPeriods) opts.push(`د. ${card.twoPeriods.name} يستلم الفترتين`);
+  if (card.reserves.length) {
+    opts.push(`الاحتياطي يغطّي: ${card.reserves.map((r) => `د. ${r.name}`).join(' أو ')}`);
+  }
+  const body = opts.length
+    ? 'هل تريد:\n' + opts.map((o, i) => `${i + 1}. ${o}`).join('\n') + '\nأم لديك حلّ آخر؟ اكتب اسم من يغطّي.'
+    : 'لا يوجد مرشّح جاهز — اكتب اسم من يغطّي.';
+  return `${head}\n\n${body}`;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // أ — تبديل أطباء في الجدول
 // ═══════════════════════════════════════════════════════════════
@@ -676,8 +867,8 @@ export const requests = {
   swapInSchedule,
   // ب
   setScheduleStatus, cancelStatus, placeInClinic, findPlacementOptions,
-  // كشف النقص + مرشّحو التغطية (تُسلَّم للإشعارات)
-  detectGaps, findCoverageCandidates, findShiftCandidates,
+  // كشف النقص + مرشّحو التغطية + بطاقة التغطية الجاهزة + الافتتاحيّة الحتميّة
+  detectGaps, findCoverageCandidates, findShiftCandidates, getCoverageOptions, scanCoverage, renderCoverageBrief,
   // ج
   setClinicCount, moveDoctorGroup, setDoctorGroupStatus,
   // د

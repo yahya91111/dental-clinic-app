@@ -23,7 +23,7 @@ type Props = {
   onPress?: () => void;
   /** المحادثة المشتركة مع صفحة الذكاء الكاملة */
   messages: ChatMessage[];
-  onSend: (text: string) => void;
+  onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean }) => void;
   isLoading?: boolean;
 };
 
