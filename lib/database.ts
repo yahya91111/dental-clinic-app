@@ -1724,6 +1724,8 @@ export async function getUnreadCount(recipientId: string): Promise<number> {
       .eq('is_read', false)
       .not('type', 'in', '("swap_request","coverage_request","gap_alert","request_result")');
     if (error) throw error;
+    // eslint-disable-next-line no-console
+    console.log(`[bell-count] recipient=${recipientId.slice(0, 8)} unread=${data?.length ?? 0}`);
     return data?.length ?? 0;
   } catch (error: any) {
     // فشل الشبكة عابر (انقطاع/خمول) — لا نُزعج بـERROR، نُرجِع 0 بهدوء
@@ -1804,6 +1806,25 @@ export async function updateNotificationAction(notificationId: string, actionSta
     return { data: null, error: null };
   } catch (error) {
     console.error('Error updating notification action:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+/** يحدّث حقل data للإشعار (دمجٌ كامل — مرّر الكائن النهائيّ). يُستعمل لتخزين خيط
+ *  محادثة كرت التغطية فلا يُعاد توليده عند كلّ فتح (توفير توكن). */
+export async function updateNotificationData(
+  notificationId: string,
+  data: Record<string, unknown>,
+): Promise<DatabaseResponse<null>> {
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ data })
+      .eq('id', notificationId);
+    if (error) throw error;
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error updating notification data:', error);
     return { data: null, error: error as Error };
   }
 }

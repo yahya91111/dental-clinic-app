@@ -24,7 +24,7 @@ import {
   KNOWLEDGE_INDEX,
 } from './_compiled';
 import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview } from './tools';
-import { REQUESTS_TOOLS, dispatchRequestTool } from './tools_requests';
+import { REQUESTS_TOOLS_V2, dispatchRequestToolV2 } from './tools_requests_v2';
 export type { SchedulePreview } from './tools';
 
 // ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
@@ -40,7 +40,7 @@ type TaskBundle = {
 
 const TASK_BUNDLES: Record<V2Task, TaskBundle> = {
   schedule: { prompt: SCHEDULE_ASSISTANT_V2, tools: V2_TOOLS, dispatch: dispatchV2Tool },
-  requests: { prompt: REQUESTS_ASSISTANT_V2, tools: REQUESTS_TOOLS, dispatch: dispatchRequestTool },
+  requests: { prompt: REQUESTS_ASSISTANT_V2, tools: REQUESTS_TOOLS_V2, dispatch: dispatchRequestToolV2 },
 };
 
 // بوّابة تصنيف خفيفة للمحادثة الحرّة (بلا زرّ): تستنبط النيّة من آخر رسالة.

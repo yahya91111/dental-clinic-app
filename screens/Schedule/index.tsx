@@ -90,7 +90,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiPreviewSaving, setAiPreviewSaving] = useState(false);
   const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
 
-  const handleAISend = async (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean }) => {
+  const handleAISend = async (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean; freshConversation?: boolean }) => {
     if (!user) return;
 
     // رسالة المستخدم: المخفيّة (تشغيل تلقائيّ) تدخل سياق الذكاء فقط ولا تُعرَض
@@ -149,6 +149,21 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
 
     // Reset state after delay
     setTimeout(() => setAiState('idle'), 2000);
+  };
+
+  // مسح محادثة الذكاء: فقاعات الذاكرة + كروت محادثة الذكاء من قاعدة البيانات
+  const handleClearConversation = async () => {
+    setAiMessages([]);
+    aiHistoryRef.current = [];
+    if (!user?.id) return;
+    try {
+      const { getNotifications, deleteNotification } = await import('../../lib/database');
+      const { data } = await getNotifications(user.id, 50);
+      const types = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
+      const ids = ((data || []) as { id: string; type: string }[])
+        .filter((n) => types.includes(n.type)).map((n) => n.id);
+      for (const id of ids) await deleteNotification(id);
+    } catch { /* المسح تنظيفٌ لا حرج في فشله */ }
   };
 
   // حفظ معاينة الشات كما هي (بعد أيّ تبديل يدويّ) — يكتب الخانات + علامات الغياب/الاستئذان
@@ -625,6 +640,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           clinicId={clinicId}
           messages={aiMessages}
           onSend={handleAISend}
+          onClearConversation={handleClearConversation}
           isLoading={aiLoading}
         />
       )}

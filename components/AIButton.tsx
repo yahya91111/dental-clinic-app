@@ -23,11 +23,13 @@ type Props = {
   onPress?: () => void;
   /** المحادثة المشتركة مع صفحة الذكاء الكاملة */
   messages: ChatMessage[];
-  onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean }) => void;
+  onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean; freshConversation?: boolean }) => void;
+  /** مسح المحادثة (فقاعات + كروت) — اختياريّ */
+  onClearConversation?: () => void | Promise<void>;
   isLoading?: boolean;
 };
 
-export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, isLoading }: Props) {
+export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, onClearConversation, isLoading }: Props) {
   const [showChat, setShowChat] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const openChat = () => setShowChat(true);
@@ -70,6 +72,7 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
         clinicId={clinicId ?? user.clinicId}
         messages={messages}
         onSend={onSend}
+        onClearConversation={onClearConversation}
         isLoading={isLoading}
       />
     </>

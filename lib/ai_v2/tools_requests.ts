@@ -319,12 +319,17 @@ export async function dispatchRequestTool(
   try {
     switch (name) {
       case 'set_schedule_status': {
+        // eslint-disable-next-line no-console
+        console.log('[set_schedule_status INPUT]', JSON.stringify({ day: r.day, days: r.days, weekStart: r.weekStart, doctorIndex: r.doctorIndex, status: r.status }));
         const doc = resolveDoctor(ctx, r.doctorIndex);
         if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
         // يومٌ واحد (day) أو عدّة أيّام (days) — نوحّدها في قائمة مرتّبة بلا تكرار.
         const rawDays = Array.isArray(r.days) && r.days.length ? r.days : r.day != null ? [r.day] : [];
         const dayList = DAYS.filter((d) => rawDays.includes(d)); // ترتيب أحد→خميس، صالح فقط
-        if (dayList.length === 0) return 'Tool error: لم تُحدَّد أيّام صالحة.';
+        if (dayList.length === 0) {
+          return 'Tool error: لم تُحدَّد أيّام. مرّر day بقيمة إنجليزيّة (sunday/monday/' +
+            'tuesday/wednesday/thursday) لليوم المقصود في هذا الأسبوع — لا تتركه فارغًا ولا تسأل عن الأسبوع.';
+        }
         const status = r.status;
         const shift = r.shift === 'evening' ? 'evening' : 'morning';
         if (!['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'].includes(String(status))) {

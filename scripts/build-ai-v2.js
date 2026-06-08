@@ -30,7 +30,7 @@ const FILES = [
   { name: 'TEAM_LEADER_PROMPT_V2', file: 'team_leader_prompt.md' },
   { name: 'DOCTOR_PROMPT_V2', file: 'doctor_prompt.md' },
   { name: 'SCHEDULE_ASSISTANT_V2', file: 'schedule_assistant.md' },
-  { name: 'REQUESTS_ASSISTANT_V2', file: 'requests_assistant.md' },
+  { name: 'REQUESTS_ASSISTANT_V2', file: 'requests_assistant_v2.md' },
 ];
 
 /**

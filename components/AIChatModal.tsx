@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { getNotifications, markAsRead, subscribeToNotifications } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
+import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
 import { ChatMessage } from './aiTypes';
 import { scale } from '../lib/scale';
 
@@ -26,7 +27,9 @@ type Props = {
   clinicId?: string | null;
   /** المحادثة المشتركة مع صفحة الذكاء الكاملة */
   messages: ChatMessage[];
-  onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean }) => void;
+  onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean; freshConversation?: boolean }) => void;
+  /** مسح المحادثة (فقاعات الذاكرة + كروت قاعدة البيانات) */
+  onClearConversation?: () => void | Promise<void>;
   isLoading?: boolean;
 };
 
@@ -56,10 +59,229 @@ function parseChoices(content: string): { text: string; choices: string[] } {
 export async function countUnreadAIChat(userId: string): Promise<number> {
   if (!userId) return 0;
   const { data } = await getNotifications(userId, 50);
-  return (data || []).filter((n: ConvoNotif) => AI_CHAT_TYPES.includes(n.type) && (isPending(n) || !n.is_read)).length;
+  return (data || []).filter((n: ConvoNotif) => {
+    // gap_alert: تغطية v2 (data.v===2) تُحمّر الزرّ ما دامت معلّقةً وغير مقروءة. بمجرّد
+    // فتح القائد للكرت تُعلَّم مقروءةً فيهدأ الأوربّ، ويبقى الكرت للمرجع. القديمة بلا v2 تُستثنى.
+    if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n) && !n.is_read;
+    return AI_CHAT_TYPES.includes(n.type) && (isPending(n) || !n.is_read);
+  }).length;
 }
 
-export default function AIChatModal({ visible, onClose, user, clinicId, messages, onSend, isLoading }: Props) {
+const DAY_AR_SEED: Record<string, string> = {
+  sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
+};
+
+/**
+ * يبني سياق التغذية الخفيّ لنقصِ تغطية (v2): حقائق منظَّمة + تعليمات صياغة. الذكاء
+ * يصوغ الرسالة بصوته كأنّه لاحظ النقص بنفسه — لا يذكر أنّها مُعطاة له ولا يذكر فترات.
+ */
+type SeedDoc = { name: string };
+type SeedGap = {
+  kind: string;
+  clinicNumber?: number;
+  twoPeriodColleague?: SeedDoc | null;
+  candidates?: SeedDoc[];
+  clinicColleague?: SeedDoc | null;
+  optionA?: { cover: SeedDoc; coverClinic: number; backfill: SeedDoc | null }[];
+  optionB?: { clinicNumber: number; a: SeedDoc; b: SeedDoc }[];
+};
+
+function buildCoverageSeed(n: ConvoNotif): string {
+  const d = n.data || {};
+  const c = d.coverage || {};
+  const dayAr = DAY_AR_SEED[c.day || d.day] || c.day || d.day || '';
+  const gaps: SeedGap[] = c.gaps || [];
+  const reserves: SeedDoc[] = c.reserves || [];
+  const reserveStr = reserves.length ? reserves.map((x) => `د. ${x.name}`).join(' أو ') : '';
+
+  // حلول كلّ نقص — نصًّا، بلا أقواس
+  const solutionBlocks = gaps.map((g) => {
+    if (g.kind === 'delegator_combo') {
+      // عيادة الغائب + الدليقيتر معًا → **خياران منفصلان مُسمّيان** (الأول/الثاني)
+      const A = g.optionA || [];
+      const B = g.optionB || [];
+      const lines: string[] = [`نقص مركّب: عيادة ${g.clinicNumber} + الدليقيتر (يُغطّيان معًا). اعرض خيارين منفصلين:`];
+
+      if (A.length) {
+        const a0 = A[0];
+        const back0 = a0.backfill ? ` ويستلم د. ${a0.backfill.name} عيادة ${a0.coverClinic} كاملة` : '';
+        lines.push(`**الخيار الأول:** د. ${a0.cover.name} يحلّ محلّ الغائب (عيادته + الدليقيتر)،${back0}.`);
+        const altA = A.slice(1).map((o) => `د. ${o.cover.name}`);
+        if (altA.length) lines.push(`   (بدائل المُغطّي: ${altA.join('، ')})`);
+      }
+      if (B.length) {
+        const b0 = B[0];
+        const col = g.clinicColleague ? `د. ${g.clinicColleague.name} يستلم عيادة ${g.clinicNumber} كاملة، و` : '';
+        lines.push(`**الخيار الثاني:** ${col}عيادة ${b0.clinicNumber} (د. ${b0.a.name} ود. ${b0.b.name}) تتولّى الدليقيتر بالتناوب.`);
+        const altB = B.slice(1).map((o) => `عيادة ${o.clinicNumber}`);
+        if (altB.length) lines.push(`   (بدائل عيادة الدليقيتر: ${altB.join('، ')})`);
+      }
+      if (reserveStr) lines.push(`أو الاحتياطي: ${reserveStr}.`);
+      // تعليمات تنفيذ هذا النقص المركّب (مهمّ — الذكاء ينفّذ كلّ الخطوات بأداة واحدة)
+      lines.push(
+        'التنفيذ: «الخيار الأول» → apply_coverage_option(option=A, coverDoctorIndex=المُغطّي المختار). ' +
+        '«الخيار الثاني» → apply_coverage_option(option=B, delegatorClinicNumber=رقم عيادة الدليقيتر). ' +
+        'أداةٌ واحدة تطبّق كلّ النقلات — لا تستعمل cover_gap هنا.',
+      );
+      return lines.join('\n');
+    }
+    if (g.kind === 'delegator') {
+      const names = (g.candidates || []).map((x) => `د. ${x.name}`);
+      const opts: string[] = [];
+      if (names.length) opts.push(`${names.join(' أو ')} (متفرّغون في تلك الفترة)`);
+      if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
+      return `- الدليقيتر: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
+    }
+    const opts: string[] = [];
+    if (g.twoPeriodColleague) opts.push(`د. ${g.twoPeriodColleague.name} (زميله في العيادة) يستلم الفترتين`);
+    if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
+    return `- عيادة ${g.clinicNumber}: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
+  });
+
+  return [
+    'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): نشأ نقصٌ في الجدول بغياب طبيب. تكلّم مع القائد',
+    'كأنّك لاحظتَ النقص بنفسك. اذكر اليوم وأماكن النقص (بلا فترات)، ثمّ اعرض الحلول/الخيارات',
+    'أدناه واسأله ماذا يريد. **اعرض الحلول كنصّ (نقاط)؛ لا أقواس [ ] ولا أزرار.** لا تذكر',
+    'حلًّا غير موجود. عند ردّ القائد نفّذ بالأداة المناسبة (لا تذكر فترةً، ولا تستعمل',
+    'place_in_clinic): نقصٌ مركّب (عيادة+دليقيتر) → **apply_coverage_option** حسب تعليماته',
+    'أدناه؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap** بالغائب والموقع والمُغطّي.',
+    '',
+    `الأسبوع: ${d.week_start || ''}`,
+    `اليوم: ${dayAr}`,
+    c.absentName ? `الطبيب الغائب: د. ${c.absentName}` : '',
+    'الحلول:',
+    ...solutionBlocks,
+  ].filter(Boolean).join('\n');
+}
+
+/** عنوان الكرت الثابت (من حقائق المحرّك): اليوم + أماكن النقص، بلا حلول وبلا فترات. */
+function coverageTitle(n: ConvoNotif): string {
+  const c = n.data?.coverage || {};
+  const dayAr = DAY_AR_SEED[c.day || n.data?.day] || c.day || '';
+  const gaps: { kind: string; clinicNumber?: number }[] = c.gaps || [];
+  const locs = gaps.map((g) =>
+    g.kind === 'delegator' ? 'الدليقيتر'
+      : g.kind === 'delegator_combo' ? `عيادة ${g.clinicNumber} + الدليقيتر`
+        : `عيادة ${g.clinicNumber}`,
+  ).join('، ');
+  return `نقص — ${dayAr}${locs ? ` (${locs})` : ''}`;
+}
+
+const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل صياغة الذكاء داخل الكرت (لا تُعرَض)
+
+/**
+ * كرت تغطية مستقلّ: عنوانٌ ثابت من المحرّك، ونقره يفتح **خيطًا خاصًّا** يصوغ فيه
+ * الذكاء الحلول بسياق هذا النقص وحده (sendMessageV2 بحقائقه). يحلّ تشويش تعدّد
+ * الطلبات: كلّ كرت حديثه منفصل. أوّل فتح يُعلّم الكرت مقروءًا فيهدأ الأوربّ.
+ */
+function CoverageCard({ notif, user, clinicId, onSeen }: {
+  notif: ConvoNotif;
+  user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
+  clinicId?: string | null;
+  onSeen: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [history, setHistory] = useState<V2Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [reply, setReply] = useState('');
+  const startedRef = useRef(false);
+
+  // يحفظ الخيط في بيانات الإشعار (دمجٌ مع الحقائق) فلا يُعاد توليده عند كلّ فتح
+  const persist = useCallback(async (h: V2Message[]) => {
+    try {
+      const { updateNotificationData } = await import('../lib/database');
+      await updateNotificationData(notif.id, { ...(notif.data || {}), thread: h });
+    } catch { /* الحفظ تحسينٌ لا حرج في فشله */ }
+  }, [notif.id, notif.data]);
+
+  const runTurn = useCallback(async (h: V2Message[]) => {
+    setHistory(h);
+    setLoading(true);
+    try {
+      const v2User: V2User = {
+        id: user.id, name: user.name, role: user.role,
+        clinicId: user.clinicId || undefined, clinicName: user.clinicName,
+      };
+      const res = await sendMessageV2({
+        messages: h, user: v2User,
+        clinicId: clinicId || user.clinicId || undefined,
+        contextData: buildCoverageSeed(notif), task: 'requests',
+      });
+      const text = res.success ? res.message : (res.error || 'تعذّر تنفيذ الطلب.');
+      const next: V2Message[] = [...h, { role: 'assistant', content: text }];
+      setHistory(next);
+      persist(next);
+    } catch (e) {
+      setHistory([...h, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [notif, user, clinicId, persist]);
+
+  const onToggle = useCallback(async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !startedRef.current) {
+      startedRef.current = true;
+      try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأوربّ لاحقًا */ }
+      // خيطٌ محفوظ سابقًا؟ حمّله بلا نداء للذكاء (توفير توكن). وإلّا ابدأ التوليد.
+      const saved = Array.isArray(notif.data?.thread) ? (notif.data!.thread as V2Message[]) : null;
+      if (saved && saved.length) setHistory(saved);
+      else runTurn([{ role: 'user', content: SEED_TRIGGER }]);
+    }
+  }, [expanded, notif.id, notif.data, onSeen, runTurn]);
+
+  const send = useCallback((text: string) => {
+    const t = text.trim();
+    if (!t || loading) return;
+    setReply('');
+    runTurn([...history, { role: 'user', content: t }]);
+  }, [history, loading, runTurn]);
+
+  // ما يُعرَض: تجاوز رسالة التشغيل الخفيّة (index 0)، وآخر ردّ يحمل خياراته كأزرار
+  const shown = history.filter((m, i) => !(i === 0 && m.role === 'user' && m.content === SEED_TRIGGER));
+
+  return (
+    <View style={styles.covCard}>
+      <TouchableOpacity style={styles.covHead} onPress={onToggle} activeOpacity={0.7}>
+        <Text style={styles.covCaret}>{expanded ? '▾' : '▸'}</Text>
+        <Text style={styles.covTitle}>{coverageTitle(notif)}</Text>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={styles.covBody}>
+          {/* عرض نصّيّ فقط — الذكاء يقترح الحلول، بلا أزرار قابلة للنقر (القائد يردّ كتابةً) */}
+          {shown.map((m, i) => {
+            const isAI = m.role === 'assistant';
+            return (
+              <View key={i} style={[styles.msg, isAI ? styles.msgAI : styles.msgUser]}>
+                <Text style={[styles.msgTxt, !isAI && styles.msgTxtUser]}>{m.content}</Text>
+              </View>
+            );
+          })}
+          {loading && <ActivityIndicator color="#2D8C8C" style={{ marginVertical: scale(6) }} />}
+
+          <View style={styles.covInputRow}>
+            <TextInput
+              style={styles.covInput}
+              value={reply}
+              onChangeText={setReply}
+              placeholder="ردّك…"
+              placeholderTextColor="#9AA7A7"
+              textAlign="right"
+              onSubmitEditing={() => send(reply)}
+            />
+            <TouchableOpacity style={styles.sendBtn} onPress={() => send(reply)} disabled={loading}>
+              <Text style={styles.sendTxt}>إرسال</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+export default function AIChatModal({ visible, onClose, user, clinicId, messages, onSend, onClearConversation, isLoading }: Props) {
   const [convo, setConvo] = useState<ConvoNotif[]>([]);
   const [input, setInput] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -89,40 +311,11 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     return unsub;
   }, [visible, user?.id, loadConvo]);
 
-  // التغطية: المحرّك يكتب الافتتاحيّة (كرت gap_alert بنصٍّ حتميّ جاهز) فتُعرَض
-  // كفقاعة ظاهرة. لا تشغيل خفيّ ولا نداء للذكاء للبدء. حين يكتب الليدر اسمًا
-  // نُرسل ردّه لمهمّة «الطلبات» مع **سياق التغطية** (إحداثيّات النقص + المرشّحون)
-  // المستنبط من كروت النقص المعلّقة — فيفهم الذكاء وينفّذ cover_gap مباشرةً.
-  const buildCoverageContext = useCallback((): string | undefined => {
-    const gaps = convo.filter((n) => n.type === 'gap_alert' && isPending(n));
-    if (gaps.length === 0) return undefined;
-    // نُضمّن نصّ المحرّك الافتتاحيّ نفسه (n.body) مصوغًا كأنّه رسالة الذكاء
-    // السابقة — فيُرسَّخ ردّ القائد («نعم/الأول/اسم»)، مع إحداثيّات التنفيذ.
-    const cards = gaps.map((n, i) => {
-      const d = n.data || {};
-      const g = d.gap || {};
-      return (
-        `【بطاقة ${i + 1}】\n${n.body}\n` +
-        `(للتنفيذ عبر cover_gap: الأسبوع=${d.week_start}، اليوم=${d.day}، ` +
-        `العيادة=${g.clinicNumber}، الفترة=${g.period})`
-      );
-    });
-    return (
-      'أنت (الذكاء) عرضتَ للتوّ على القائد بطاقة/بطاقات التغطية التالية، والقائد الآن ' +
-      'يردّ عليها في الرسالة القادمة. فسّر ردّه — اسم طبيب، أو رقم خيار، أو «الأول/الثاني»، ' +
-      'أو «الاحتياطي» — على أنّه اختيار من يغطّي، ونفّذ cover_gap فورًا بإحداثيّات البطاقة ' +
-      'المعنيّة ثمّ أكّد بسطر واحد. إن كان الردّ غامضًا (أيّ بطاقة؟) فاسأل سؤالًا قصيرًا. ' +
-      'لا تُعِد عرض البطاقات. هذه البطاقات:\n\n' +
-      cards.join('\n\n')
-    );
-  }, [convo]);
-
-  // إرسال إدخال الليدر: لو ثمّة نواقص معلّقة → وجّهه لمهمّة الطلبات مع سياق التغطية.
+  // إرسال إدخال المستخدم العاديّ (المحادثة المشتركة). كروت التغطية لها خيطها
+  // المستقلّ داخل الكرت (CoverageCard) فلا تمرّ من هنا.
   const sendInput = useCallback((text: string) => {
-    const cov = buildCoverageContext();
-    if (cov) onSend(text, { task: 'requests', contextData: cov });
-    else onSend(text);
-  }, [buildCoverageContext, onSend]);
+    onSend(text);
+  }, [onSend]);
 
   async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
@@ -165,6 +358,12 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
+  async function handleClear() {
+    try { await onClearConversation?.(); } catch { /* تجاهل */ }
+    setConvo([]); setNote('');
+    await loadConvo();
+  }
+
   // دمج الرسائل المشتركة مع طلبات/نتائج الذكاء وترتيبها زمنيًّا تصاعديًّا
   type Merged =
     | { kind: 'msg'; ts: number; m: ChatMessage }
@@ -181,9 +380,16 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
           <View style={styles.card}>
             <View style={styles.header}>
               <Text style={styles.headerTitle}>الذكاء</Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Text style={styles.closeTxt}>إغلاق</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(4) }}>
+                {!!onClearConversation && (
+                  <TouchableOpacity onPress={handleClear} style={styles.closeBtn}>
+                    <Text style={[styles.closeTxt, { color: '#C0493B' }]}>مسح المحادثة</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                  <Text style={styles.closeTxt}>إغلاق</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView
@@ -225,13 +431,18 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                   );
                 }
                 const n = it.n;
-                // كرت التغطية (gap_alert): نصّ المحرّك الحتميّ — يُعرَض كفقاعة
-                // ذكاء ظاهرة (لا أزرار موافق/رفض). الليدر يردّ بالكتابة فيغطّي الذكاء.
+                // كرت التغطية (gap_alert v2): كرتٌ بعنوان ثابت من المحرّك؛ نقره يفتح
+                // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
                 if (n.type === 'gap_alert') {
+                  if (n.data?.v !== 2 || !n.data?.coverage) return null;
                   return (
-                    <View key={n.id} style={[styles.msg, styles.msgAI]}>
-                      <Text style={styles.msgTxt}>{n.body}</Text>
-                    </View>
+                    <CoverageCard
+                      key={n.id}
+                      notif={n}
+                      user={user}
+                      clinicId={clinicId ?? user.clinicId}
+                      onSeen={loadConvo}
+                    />
                   );
                 }
                 if (isPending(n)) {
@@ -345,4 +556,25 @@ const styles = StyleSheet.create({
   },
   sendBtn: { backgroundColor: '#2D8C8C', borderRadius: scale(12), paddingHorizontal: scale(16), justifyContent: 'center', minHeight: scale(42) },
   sendTxt: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '800' },
+  // كرت التغطية (gap_alert v2)
+  covCard: {
+    alignSelf: 'stretch', borderRadius: scale(14), marginBottom: scale(10),
+    backgroundColor: '#FFF8EC', borderWidth: 1, borderColor: '#E6B566', overflow: 'hidden',
+  },
+  covHead: {
+    flexDirection: 'row-reverse', alignItems: 'center', gap: scale(8),
+    paddingHorizontal: scale(12), paddingVertical: scale(11),
+  },
+  covCaret: { fontSize: scale(14), color: '#B07A1E', fontWeight: '800' },
+  covTitle: { flex: 1, fontSize: scale(14), fontWeight: '800', color: '#7A4E0A', textAlign: 'right' },
+  covBody: {
+    paddingHorizontal: scale(10), paddingBottom: scale(10),
+    borderTopWidth: 1, borderTopColor: '#F0DDB8', backgroundColor: '#FFFCF5',
+  },
+  covInputRow: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: scale(8), marginTop: scale(6) },
+  covInput: {
+    flex: 1, maxHeight: scale(90), minHeight: scale(40),
+    backgroundColor: '#FFFFFF', borderRadius: scale(10), borderWidth: 1, borderColor: '#E3E7E8',
+    paddingHorizontal: scale(12), paddingVertical: scale(9), fontSize: scale(14), color: '#1A2B2B',
+  },
 });
