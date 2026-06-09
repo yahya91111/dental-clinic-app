@@ -302,8 +302,9 @@ export async function dispatchRequestToolV2(
 
         // إشعار القائد عند الغياب — واحد لكلّ قائد، يستثني الفاعل:
         //  • إشعار العلم (طلب جديد) يصل **دائمًا** — سجلٌّ في صفحة الإشعارات.
-        //  • وإن أحدث الغياب نقصًا (عيادة/دليقيتر) → **إضافةً** كرت تغطية في الأوربّ
-        //    يحمل الحقائق المنظَّمة، يصوغ الذكاء حلولها بصوته عند فتح القائد للكرت.
+        //  • وكرت التغطية في الأوربّ **يُجمَع** لكلّ أيّام غياب الطبيب نفسه في الأسبوع
+        //    في كرتٍ واحد (طبيّة ٣ أيّام = كرتٌ واحد، يومًا بيوم). اليوم بلا نقص يُذكَر
+        //    «مغطّى» إن انضمّ لكرتٍ فيه نقص، ووحده لا يُنشئ كرتًا.
         const ABSENCE = ['sick_leave', 'vacation', 'permission_start', 'permission_end'];
         if (ABSENCE.includes(status)) {
           try {
@@ -313,20 +314,22 @@ export async function dispatchRequestToolV2(
               clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
               doctorId: doc.id, doctorName: doc.name,
             });
-            const hasGap = !!brief && brief.gaps.length > 0;
+            const dayHasGap = !!brief && brief.gaps.length > 0;
+            const dayBrief = brief ?? { day: r.day, absentName: doc.name, gaps: [], reserves: [] };
             for (const leaderId of leaders) {
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
-                summary: `${STATUS_AR[status]} يوم ${DAY_AR[r.day]} (${r.weekStart})`,
+                summary: `${STATUS_AR[status]} يوم ${DAY_AR[r.day]}`,
+                weekStart: String(r.weekStart), day: r.day,
               });
-              if (hasGap) {
-                await notifications.notifyLeaderCoverage({
-                  clinicId: ctx.clinicId, leaderId,
-                  weekStart: String(r.weekStart), day: r.day, coverage: brief,
-                  senderId: doc.id, senderName: doc.name,
-                });
-              }
+              await notifications.upsertLeaderCoverage({
+                clinicId: ctx.clinicId, leaderId,
+                weekStart: String(r.weekStart), day: r.day,
+                absentDoctorId: doc.id, absentDoctorName: doc.name,
+                dayBrief, dayHasGap,
+                senderId: doc.id, senderName: doc.name,
+              });
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -379,9 +382,11 @@ export async function dispatchRequestToolV2(
           clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
           doctorId: doc.id, restoreToPrevPlace: true,
         });
-        return res.success
-          ? `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]} وإرجاعه إلى مكانه.`
-          : `Tool error: ${res.error}`;
+        if (!res.success) return `Tool error: ${res.error}`;
+        // كن صادقًا: لا تدّعِ الإرجاع إن لم يوجد مكانٌ محفوظ (لم يكن منسَّبًا وقت الغياب).
+        return res.restored
+          ? `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]} وإرجاعه إلى مكانه في العيادة.`
+          : `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]}. (لا مكان محفوظ لإرجاعه — لم يكن منسَّبًا في العيادة وقت الغياب.)`;
       }
 
       case 'place_in_clinic': {

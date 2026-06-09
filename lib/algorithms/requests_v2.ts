@@ -188,6 +188,19 @@ export async function setScheduleStatus(
           : shift; // آخر ملاذ: ما مرّره الذكاء (وإلّا صباح افتراضيًّا)
     }
 
+    // ── قاعدة ثابتة (idempotency): إعادة تطبيق **نفس** الغياب على طبيبٍ غائبٍ
+    // أصلًا (غير منسَّب في عيادة) = لا عمل. لا نلمس الجدول ولا المكان المحفوظ
+    // (prev_placement) — هكذا لا يضيع المكان مهما تكرّر الطلب. نُعيد فقط أماكن
+    // النقص محسوبةً من المكان المحفوظ كي لا تفقد تغطية القائد. ──
+    const stillPlaced = mine.some(
+      (r) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'),
+    );
+    const alreadySameStatus = mine.some((r) => r.period === 0 && r.status === status);
+    if (REMOVES_FROM_CLINIC.has(status) && alreadySameStatus && !stillPlaced) {
+      const prev = mine.filter((r) => r.role === PREV_ROLE);
+      return { success: true, gaps: gapsFrom(prev) };
+    }
+
     // أزِل أيّ حالة EX سابقة لنفس الطبيب/اليوم (تفادي التكرار)
     const oldStatusRows = mine.filter((r) => r.status !== 'active' && r.period === 0);
     await deleteRows(oldStatusRows.map((r) => r.id));
@@ -198,17 +211,22 @@ export async function setScheduleStatus(
         (r) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'),
       );
       gaps = gapsFrom(placed); // أماكن النقص قبل حذف الخانات (عيادة + دليقيتر، بلا فترات)
-      const oldPrev = mine.filter((r) => r.role === PREV_ROLE);
-      await deleteRows(oldPrev.map((r) => r.id));
-      await insertRows(
-        placed.map((r) => ({
-          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-          period: r.period, clinic_number: r.clinic_number,
-          doctor_id: doctorId, doctor_name: doctorName,
-          role: PREV_ROLE, status: 'active', source: 'request',
-        })),
-      );
-      await deleteRows(placed.map((r) => r.id));
+      // احفظ المكان **فقط** إن كان الطبيب منسَّبًا فعلًا الآن. إن كان غائبًا أصلًا
+      // (placed فارغ — كإعادة تطبيق الطبيّة) فلا تلمس الحفظ القديم وإلّا ضاع مكانه
+      // فلا يجد الإلغاء ما يُرجِعه.
+      if (placed.length > 0) {
+        const oldPrev = mine.filter((r) => r.role === PREV_ROLE);
+        await deleteRows(oldPrev.map((r) => r.id));
+        await insertRows(
+          placed.map((r) => ({
+            clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+            period: r.period, clinic_number: r.clinic_number,
+            doctor_id: doctorId, doctor_name: doctorName,
+            role: PREV_ROLE, status: 'active', source: 'request',
+          })),
+        );
+        await deleteRows(placed.map((r) => r.id));
+      }
 
       // المتدرّب الظلّ (المبتدئ الملتصق بمدرّبه): عند غياب المدرّب يصبح احتياطيًّا
       // (EX) — مطابقةً لخوارزميّة البناء. نتعرّف عليه بمطابقة خاناته تمامًا لخانات
@@ -264,7 +282,7 @@ export async function cancelStatus(
     doctorId: string;
     restoreToPrevPlace?: boolean;
   },
-): Promise<RequestResult> {
+): Promise<RequestResult & { restored?: boolean }> {
   const { clinicId, weekStart, day, doctorId, restoreToPrevPlace } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة إلغاء حالة هذا الطبيب.');
   try {
@@ -275,6 +293,7 @@ export async function cancelStatus(
     await deleteRows(mine.filter((r) => r.period === 0 && r.status !== 'active').map((r) => r.id));
 
     const prev = mine.filter((r) => r.role === PREV_ROLE);
+    let restored = false;
     if (restoreToPrevPlace && prev.length > 0) {
       await insertRows(
         prev.map((r) => ({
@@ -284,9 +303,10 @@ export async function cancelStatus(
           role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
         })),
       );
+      restored = true;
     }
     await deleteRows(prev.map((r) => r.id));
-    return ok();
+    return { success: true, restored };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }

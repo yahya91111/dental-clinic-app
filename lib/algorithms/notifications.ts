@@ -43,6 +43,10 @@ export const NotifType = {
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
+// نافذة «الجلسة الواحدة»: طلباتٌ تُقدَّم معًا تصل خلال ثوانٍ (نداءات متتابعة). ما بعد
+// هذه النافذة = جلسةٌ جديدة → كرت/إشعار مستقلّ، لا دمج مع السابق.
+const BATCH_WINDOW_MS = 90 * 1000;
+
 // ─── تسميات عربيّة للصياغة ─────────────────────────────────────
 const DAY_AR: Record<WeekDay, string> = {
   sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء',
@@ -50,6 +54,13 @@ const DAY_AR: Record<WeekDay, string> = {
 };
 const periodLabel = (p: number): string =>
   ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة'][p] || `${p}`;
+
+/** «د. اسم» مرّة واحدة فقط — الأسماء المخزَّنة قد تحمل اللقب أصلاً (لا «د.د.»). */
+const dr = (name?: string): string => {
+  const n = (name || '').trim();
+  if (!n) return '';
+  return /^د\s*\./.test(n) ? n : `د.${n}`;
+};
 
 // ─── مُرسِلات أساسيّة ───────────────────────────────────────────
 /** إشعار إعلاميّ (بلا action) — كرت في صفحة الإشعارات */
@@ -161,6 +172,9 @@ export async function notifyScheduleCreated(args: {
 
 /**
  * إبلاغ الليدر بطلبٍ أو إلغاءٍ قدّمه طبيب (للعلم، تلقائيّ).
+ * **يُجمَع**: عدّة طلبات/أيّام من الطبيب نفسه في الأسبوع نفسه → إشعار علمٍ **واحد** غير
+ * مقروء، تُلحَق به بقيّة السطور (الأحد، الإثنين، الثلاثاء…) بدل إشعارٍ لكلّ يوم.
+ * التجميع بـ (القائد، الطبيب، الأسبوع) ما دام الإشعار غير مقروء. يحتاج day للتمييز.
  * ملاحظة: تبديل طبيبين متّفقين لا يُستدعى هنا (لا إزعاج للّيدر).
  */
 export async function notifyLeaderOfRequest(args: {
@@ -168,18 +182,58 @@ export async function notifyLeaderOfRequest(args: {
   leaderId: string;
   senderId: string;
   senderName: string;
-  summary: string; // «استئذان نهاية الدوام يوم الأحد» — يصوغها المساعد
+  summary: string;     // «مرضية يوم الأحد» — يصوغها المساعد
+  weekStart?: string;  // للتجميع (طلبات نفس الأسبوع)
+  day?: string;        // مفتاح التمييز (لا يتكرّر السطر لو أُعيد نفس اليوم)
 }): Promise<NotifResult> {
-  return sendInfo({
-    clinicId: args.clinicId,
-    recipientId: args.leaderId,
-    senderId: args.senderId,
-    senderName: args.senderName,
-    type: NotifType.REQUEST_INFO,
-    title: 'طلب جديد',
-    body: `${args.senderName}: ${args.summary}`,
-    data: { summary: args.summary },
-  });
+  try {
+    const now = Date.now();
+    // إشعار علمٍ غير مقروء لنفس (القائد، الطبيب، الأسبوع) **ومن نفس الجلسة**؟ أَلحِق به.
+    // خارج النافذة الزمنيّة = طلبٌ جديد منفصل → إشعار جديد.
+    const { data: rows } = await supabase
+      .from('notifications')
+      .select('id, data, is_read')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('sender_id', args.senderId)
+      .eq('type', NotifType.REQUEST_INFO)
+      .eq('is_read', false);
+    const existing = ((rows || []) as { id: string; data: any; is_read: boolean }[]).find(
+      (r) =>
+        (r.data?.week_start ?? '') === (args.weekStart ?? '') &&
+        now - (r.data?.batch_at ?? 0) < BATCH_WINDOW_MS,
+    );
+
+    if (existing) {
+      const items: { day?: string; summary: string }[] = Array.isArray(existing.data?.items)
+        ? existing.data.items.slice()
+        : existing.data?.summary
+          ? [{ summary: existing.data.summary as string }]
+          : [];
+      const i = args.day != null ? items.findIndex((x) => x.day === args.day) : -1;
+      const entry = { day: args.day, summary: args.summary };
+      if (i >= 0) items[i] = entry; else items.push(entry);
+      const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`;
+      await supabase
+        .from('notifications')
+        .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now }, body, is_read: false })
+        .eq('id', existing.id);
+      return ok();
+    }
+
+    return sendInfo({
+      clinicId: args.clinicId,
+      recipientId: args.leaderId,
+      senderId: args.senderId,
+      senderName: args.senderName,
+      type: NotifType.REQUEST_INFO,
+      title: 'طلب جديد',
+      body: `${args.senderName}: ${args.summary}`,
+      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now },
+    });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
 }
 
 /** إبلاغ جمهورٍ (شفت/مركز) بحدثٍ — للعلم فقط (بعد سؤال «أبلغ المعنيّين؟») */
@@ -252,7 +306,7 @@ export async function openCoverageRequests(args: {
     const title = 'طلب تغطية';
     const body =
       `تغطية العيادة ${args.gap.clinicNumber} الفترة ${periodLabel(args.gap.period)} ` +
-      `يوم ${DAY_AR[args.day]} — تبديل مع د.${args.absentDoctorName}؟`;
+      `يوم ${DAY_AR[args.day]} — تبديل مع ${dr(args.absentDoctorName)}؟`;
 
     let sent = 0;
     for (const c of args.candidates) {
@@ -336,7 +390,7 @@ export async function acceptCoverage(args: {
       clinicId: d.clinic_id, recipientId: d.absent_doctor_id,
       senderId: args.accepterId, senderName: args.accepterName,
       type: NotifType.REQUEST_RESULT, title: 'تمّت التغطية',
-      body: `وافق ${args.accepterName ? 'د.' + args.accepterName : 'زميلك'} وتمّت تغطية فترتك يوم ${DAY_AR[d.day]}.`,
+      body: `وافق ${args.accepterName ? dr(args.accepterName) : 'زميلك'} وتمّت تغطية فترتك يوم ${DAY_AR[d.day]}.`,
     });
     return { success: true, absentDoctorId: d.absent_doctor_id, absentDoctorName: d.absent_doctor_name };
   } catch (e) {
@@ -438,7 +492,7 @@ export async function openSwapRequest(args: {
     clinicId: args.clinicId, recipientId: args.targetId,
     senderId: args.requesterId, senderName: args.requesterName,
     type: NotifType.SWAP_REQUEST, title: 'طلب تبديل',
-    body: `يطلب د.${args.requesterName} التبديل معك يوم ${DAY_AR[args.day]}.`,
+    body: `يطلب ${dr(args.requesterName)} التبديل معك يوم ${DAY_AR[args.day]}.`,
     data,
   });
   return { success: !error, error, id };
@@ -472,7 +526,7 @@ export async function acceptSwap(args: {
       clinicId: d.clinic_id, recipientId: d.requester_id,
       senderId: args.targetId, senderName: who,
       type: NotifType.REQUEST_RESULT, title: 'تمّ التبديل',
-      body: `وافق ${who ? 'د.' + who : 'الطرف الآخر'} على التبديل يوم ${DAY_AR[d.day]} — تمّ.`,
+      body: `وافق ${who ? dr(who) : 'الطرف الآخر'} على التبديل يوم ${DAY_AR[d.day]} — تمّ.`,
     });
     return { success: true, requesterId: d.requester_id, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
   } catch (e) {
@@ -500,7 +554,7 @@ export async function rejectSwap(args: {
       clinicId: d.clinic_id, recipientId: d.requester_id,
       senderName: who,
       type: NotifType.REQUEST_RESULT, title: 'رُفض التبديل',
-      body: `اعتذر ${who ? 'د.' + who : 'الطرف الآخر'} عن التبديل يوم ${DAY_AR[d.day]}.`,
+      body: `اعتذر ${who ? dr(who) : 'الطرف الآخر'} عن التبديل يوم ${DAY_AR[d.day]}.`,
     });
     return { success: true, requesterId: d.requester_id, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
   } catch (e) {
@@ -526,7 +580,7 @@ export async function alertLeaderGap(args: {
   senderId?: string;
   senderName?: string;
 }): Promise<{ success: boolean; error?: string; id?: string }> {
-  const reason = args.absentDoctorName ? ` (غياب د.${args.absentDoctorName})` : '';
+  const reason = args.absentDoctorName ? ` (غياب ${dr(args.absentDoctorName)})` : '';
   const { id, error } = await sendAction({
     clinicId: args.clinicId, recipientId: args.leaderId,
     senderId: args.senderId, senderName: args.senderName,
@@ -592,13 +646,102 @@ export async function notifyLeaderCoverage(args: {
     clinicId: args.clinicId, recipientId: args.leaderId,
     senderId: args.senderId, senderName: args.senderName,
     type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
-    body: `نقصٌ يوم ${DAY_AR[args.day]}${c?.absentName ? ` بغياب د.${c.absentName}` : ''}.`,
+    body: `نقصٌ يوم ${DAY_AR[args.day]}${c?.absentName ? ` بغياب ${dr(c.absentName)}` : ''}.`,
     data: {
       v: 2, clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
       coverage: args.coverage,
     },
   });
   return { success: !error, error, id };
+}
+
+/** نصّ جسم كرت النقص (للعرض في القائمة): اسم الغائب + أيّام النقص الفعليّة. */
+function coverageBody(absentName: string, days: { day: WeekDay; gaps?: unknown[] }[]): string {
+  const gapDays = days
+    .filter((d) => (d.gaps?.length || 0) > 0)
+    .map((d) => DAY_AR[d.day] || d.day);
+  return gapDays.length
+    ? `نقصٌ بغياب ${dr(absentName)} — ${gapDays.join('، ')}.`
+    : `نقصٌ بغياب ${dr(absentName)}.`;
+}
+
+/**
+ * v2 متعدّد الأيّام — يجمع كلّ أيّام غياب الطبيب نفسه (في الأسبوع نفسه) في **كرتٍ
+ * واحد** للقائد: لو وُجد كرتٌ معلّق لنفس (القائد، الأسبوع، الطبيب الغائب) أَلحَق هذا
+ * اليوم بـ data.days[] (يستبدل إن تكرّر) وأبطل الخيط المحفوظ كي يُعيد الذكاء صياغة كلّ
+ * الأيّام دفعةً واحدة؛ وإلّا أنشأ كرتًا جديدًا — **فقط إن كان لهذا اليوم نقصٌ فعليّ**
+ * (يومٌ بلا نقص وحده لا يستحقّ تنبيهًا، لكنه يُذكَر «مغطّى» إن انضمّ لكرتٍ فيه نقص).
+ * dayBrief = CoverageBrief (gaps فارغة = يومٌ بلا نقص). صامت كـ gap_alert.
+ */
+export async function upsertLeaderCoverage(args: {
+  clinicId: string;
+  leaderId: string;
+  weekStart: string;
+  day: WeekDay;
+  absentDoctorId: string;
+  absentDoctorName: string;
+  dayBrief: { day: WeekDay; gaps?: unknown[] } & Record<string, unknown>;
+  dayHasGap: boolean;
+  senderId?: string;
+  senderName?: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  try {
+    const now = Date.now();
+    // كرت نقصٍ معلّق (v2) لنفس القائد/الأسبوع/الطبيب الغائب **ومن نفس الجلسة**؟
+    // خارج النافذة الزمنيّة = طلبٌ جديد منفصل → كرت جديد.
+    const { data: rows } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('type', NotifType.GAP_ALERT);
+    const existing = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find(
+      (r) => {
+        const d = r.data || {};
+        const pending = !r.action_status || r.action_status === 'pending';
+        const recent = now - (d.batch_at ?? 0) < BATCH_WINDOW_MS;
+        return pending && d.v === 2 && d.week_start === args.weekStart && d.absent_doctor_id === args.absentDoctorId && recent;
+      },
+    );
+
+    if (existing) {
+      const days: { day: WeekDay }[] = Array.isArray(existing.data?.days) ? existing.data.days.slice() : [];
+      const i = days.findIndex((x) => x.day === args.day);
+      if (i >= 0) days[i] = args.dayBrief; else days.push(args.dayBrief);
+      const nextData = { ...existing.data, days, batch_at: now };
+      delete (nextData as Record<string, unknown>).thread; // أبطِل الخيط ليُعاد التوليد بكلّ الأيّام
+      // لو لم يبقَ أيّ نقص فعليّ (استُبدلت كلّ الأيّام بنسخٍ مغطّاة) → أغلِق الكرت كي لا
+      // يبقى معلّقًا كاذبًا «نقص» بلا نقص.
+      const anyGap = (days as { gaps?: unknown[] }[]).some((d) => (d.gaps?.length || 0) > 0);
+      await supabase
+        .from('notifications')
+        .update({
+          data: nextData,
+          body: coverageBody(args.absentDoctorName, days as { day: WeekDay; gaps?: unknown[] }[]),
+          is_read: !anyGap,                            // نقصٌ جديد → يحمرّ؛ لا نقص → يهدأ
+          action_status: anyGap ? 'pending' : 'accepted',
+        })
+        .eq('id', existing.id);
+      return { success: true, id: existing.id };
+    }
+
+    // لا كرت سابق → أنشئ فقط إن كان لهذا اليوم نقصٌ فعليّ
+    if (!args.dayHasGap) return { success: true };
+    const { id, error } = await sendAction({
+      clinicId: args.clinicId, recipientId: args.leaderId,
+      senderId: args.senderId, senderName: args.senderName,
+      type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
+      body: coverageBody(args.absentDoctorName, [args.dayBrief]),
+      data: {
+        v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
+        absent_doctor_id: args.absentDoctorId, absent_doctor_name: args.absentDoctorName,
+        days: [args.dayBrief], batch_at: now,
+      },
+    });
+    return { success: !error, error, id };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
 }
 
 /**
@@ -634,6 +777,6 @@ export const notifications = {
   openCoverageRequests, acceptCoverage, rejectCoverage, sweepCoverageGroup,
   // تبديل بموافقة
   openSwapRequest, acceptSwap, rejectSwap,
-  // تصعيد للّيدر + الافتتاحيّة الحتميّة + إنهاء الكرت بعد التغطية
-  alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, resolveGapAlert,
+  // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
+  alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, upsertLeaderCoverage, resolveGapAlert,
 };

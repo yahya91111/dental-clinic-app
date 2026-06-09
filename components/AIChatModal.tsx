@@ -71,6 +71,13 @@ const DAY_AR_SEED: Record<string, string> = {
   sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
 };
 
+/** «د. اسم» مرّة واحدة فقط — الأسماء المخزَّنة قد تحمل اللقب أصلاً (لا «د.د.»). */
+const dr = (name?: string): string => {
+  const n = (name || '').trim();
+  if (!n) return '';
+  return /^د\s*\./.test(n) ? n : `د. ${n}`;
+};
+
 /**
  * يبني سياق التغذية الخفيّ لنقصِ تغطية (v2): حقائق منظَّمة + تعليمات صياغة. الذكاء
  * يصوغ الرسالة بصوته كأنّه لاحظ النقص بنفسه — لا يذكر أنّها مُعطاة له ولا يذكر فترات.
@@ -86,85 +93,94 @@ type SeedGap = {
   optionB?: { clinicNumber: number; a: SeedDoc; b: SeedDoc }[];
 };
 
+type SeedDay = { day: string; absentName?: string; gaps?: SeedGap[]; reserves?: SeedDoc[] };
+
+/** أيّام الكرت: data.days[] الجديد، أو coverage المفرد القديم (توافق رجعيّ). */
+function coverageDays(d: Record<string, any>): SeedDay[] {
+  if (Array.isArray(d.days)) return d.days as SeedDay[];
+  if (d.coverage) return [d.coverage as SeedDay];
+  return [];
+}
+
+/** حلول نقصٍ واحد — نصًّا، بلا أقواس. */
+function gapSolution(g: SeedGap, reserveStr: string): string {
+  if (g.kind === 'delegator_combo') {
+    // عيادة الغائب + الدليقيتر معًا → **خياران منفصلان مُسمّيان** (الأول/الثاني)
+    const A = g.optionA || [];
+    const B = g.optionB || [];
+    const lines: string[] = [`  نقص مركّب: عيادة ${g.clinicNumber} + الدليقيتر (يُغطّيان معًا). خياران منفصلان:`];
+    if (A.length) {
+      const a0 = A[0];
+      const back0 = a0.backfill ? ` ويستلم ${dr(a0.backfill.name)} عيادة ${a0.coverClinic} كاملة` : '';
+      lines.push(`  **الخيار الأول:** ${dr(a0.cover.name)} يحلّ محلّ الغائب (عيادته + الدليقيتر)،${back0}.`);
+      const altA = A.slice(1).map((o) => dr(o.cover.name));
+      if (altA.length) lines.push(`     (بدائل المُغطّي: ${altA.join('، ')})`);
+    }
+    if (B.length) {
+      const b0 = B[0];
+      const col = g.clinicColleague ? `${dr(g.clinicColleague.name)} يستلم عيادة ${g.clinicNumber} كاملة، و` : '';
+      lines.push(`  **الخيار الثاني:** ${col}عيادة ${b0.clinicNumber} (${dr(b0.a.name)} و${dr(b0.b.name)}) تتولّى الدليقيتر بالتناوب.`);
+      const altB = B.slice(1).map((o) => `عيادة ${o.clinicNumber}`);
+      if (altB.length) lines.push(`     (بدائل عيادة الدليقيتر: ${altB.join('، ')})`);
+    }
+    if (reserveStr) lines.push(`  أو الاحتياطي: ${reserveStr}.`);
+    return lines.join('\n');
+  }
+  if (g.kind === 'delegator') {
+    const names = (g.candidates || []).map((x) => dr(x.name));
+    const opts: string[] = [];
+    if (names.length) opts.push(`${names.join(' أو ')} (متفرّغون في تلك الفترة)`);
+    if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
+    return `  - الدليقيتر: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
+  }
+  const opts: string[] = [];
+  if (g.twoPeriodColleague) opts.push(`${dr(g.twoPeriodColleague.name)} (زميله في العيادة) يستلم الفترتين`);
+  if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
+  return `  - عيادة ${g.clinicNumber}: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
+}
+
 function buildCoverageSeed(n: ConvoNotif): string {
   const d = n.data || {};
-  const c = d.coverage || {};
-  const dayAr = DAY_AR_SEED[c.day || d.day] || c.day || d.day || '';
-  const gaps: SeedGap[] = c.gaps || [];
-  const reserves: SeedDoc[] = c.reserves || [];
-  const reserveStr = reserves.length ? reserves.map((x) => `د. ${x.name}`).join(' أو ') : '';
+  const days = coverageDays(d);
+  const absentName = d.absent_doctor_name || days.find((x) => x.absentName)?.absentName || '';
 
-  // حلول كلّ نقص — نصًّا، بلا أقواس
-  const solutionBlocks = gaps.map((g) => {
-    if (g.kind === 'delegator_combo') {
-      // عيادة الغائب + الدليقيتر معًا → **خياران منفصلان مُسمّيان** (الأول/الثاني)
-      const A = g.optionA || [];
-      const B = g.optionB || [];
-      const lines: string[] = [`نقص مركّب: عيادة ${g.clinicNumber} + الدليقيتر (يُغطّيان معًا). اعرض خيارين منفصلين:`];
-
-      if (A.length) {
-        const a0 = A[0];
-        const back0 = a0.backfill ? ` ويستلم د. ${a0.backfill.name} عيادة ${a0.coverClinic} كاملة` : '';
-        lines.push(`**الخيار الأول:** د. ${a0.cover.name} يحلّ محلّ الغائب (عيادته + الدليقيتر)،${back0}.`);
-        const altA = A.slice(1).map((o) => `د. ${o.cover.name}`);
-        if (altA.length) lines.push(`   (بدائل المُغطّي: ${altA.join('، ')})`);
-      }
-      if (B.length) {
-        const b0 = B[0];
-        const col = g.clinicColleague ? `د. ${g.clinicColleague.name} يستلم عيادة ${g.clinicNumber} كاملة، و` : '';
-        lines.push(`**الخيار الثاني:** ${col}عيادة ${b0.clinicNumber} (د. ${b0.a.name} ود. ${b0.b.name}) تتولّى الدليقيتر بالتناوب.`);
-        const altB = B.slice(1).map((o) => `عيادة ${o.clinicNumber}`);
-        if (altB.length) lines.push(`   (بدائل عيادة الدليقيتر: ${altB.join('، ')})`);
-      }
-      if (reserveStr) lines.push(`أو الاحتياطي: ${reserveStr}.`);
-      // تعليمات تنفيذ هذا النقص المركّب (مهمّ — الذكاء ينفّذ كلّ الخطوات بأداة واحدة)
-      lines.push(
-        'التنفيذ: «الخيار الأول» → apply_coverage_option(option=A, coverDoctorIndex=المُغطّي المختار). ' +
-        '«الخيار الثاني» → apply_coverage_option(option=B, delegatorClinicNumber=رقم عيادة الدليقيتر). ' +
-        'أداةٌ واحدة تطبّق كلّ النقلات — لا تستعمل cover_gap هنا.',
-      );
-      return lines.join('\n');
-    }
-    if (g.kind === 'delegator') {
-      const names = (g.candidates || []).map((x) => `د. ${x.name}`);
-      const opts: string[] = [];
-      if (names.length) opts.push(`${names.join(' أو ')} (متفرّغون في تلك الفترة)`);
-      if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
-      return `- الدليقيتر: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
-    }
-    const opts: string[] = [];
-    if (g.twoPeriodColleague) opts.push(`د. ${g.twoPeriodColleague.name} (زميله في العيادة) يستلم الفترتين`);
-    if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
-    return `- عيادة ${g.clinicNumber}: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
+  // كتلة لكلّ يوم: «يوم الأحد: …حلول» أو «يوم الثلاثاء: لا نقص — مغطّى».
+  const dayBlocks = days.map((c) => {
+    const dayAr = DAY_AR_SEED[c.day] || c.day || '';
+    const gaps: SeedGap[] = c.gaps || [];
+    const reserves: SeedDoc[] = c.reserves || [];
+    const reserveStr = reserves.length ? reserves.map((x) => dr(x.name)).join(' أو ') : '';
+    if (!gaps.length) return `• يوم ${dayAr}: لا نقص — اليوم مغطّى، لا حاجة لإجراء.`;
+    return [`• يوم ${dayAr}:`, ...gaps.map((g) => gapSolution(g, reserveStr))].join('\n');
   });
 
   return [
-    'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): نشأ نقصٌ في الجدول بغياب طبيب. تكلّم مع القائد',
-    'كأنّك لاحظتَ النقص بنفسك. اذكر اليوم وأماكن النقص (بلا فترات)، ثمّ اعرض الحلول/الخيارات',
-    'أدناه واسأله ماذا يريد. **اعرض الحلول كنصّ (نقاط)؛ لا أقواس [ ] ولا أزرار.** لا تذكر',
-    'حلًّا غير موجود. عند ردّ القائد نفّذ بالأداة المناسبة (لا تذكر فترةً، ولا تستعمل',
-    'place_in_clinic): نقصٌ مركّب (عيادة+دليقيتر) → **apply_coverage_option** حسب تعليماته',
-    'أدناه؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap** بالغائب والموقع والمُغطّي.',
+    'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): غاب طبيبٌ في يومٍ أو أكثر، وقد ينشأ نقصٌ في بعض',
+    'الأيّام. تكلّم مع القائد كأنّك لاحظتَ ذلك بنفسك.',
+    '',
+    `**القائمة أدناه فيها ${days.length} ${days.length === 2 ? 'يومان' : 'أيّام'}. يجب أن يحتوي ردّك على`,
+    `${days.length} فقرات — فقرةٌ لكلّ يوم بالترتيب، تبدأ بـ«يوم …». لا تدمج يومين، ولا تُسقط أيّ`,
+    'يوم، ولا تكتفِ بآخر يوم.** لليوم الذي فيه نقص اذكر مكانه (بلا فترات) ثمّ حلوله؛ ولليوم بلا',
+    'نقص قل إنّه مغطّى ولا حاجة لإجراء. **اعرض الحلول كنصّ (نقاط)؛ لا أقواس [ ] ولا أزرار.** لا',
+    'تذكر حلًّا غير موجود. عند ردّ القائد على يومٍ نفّذ بالأداة المناسبة **لذلك اليوم** (مرّر day',
+    'الصحيح، لا تذكر فترةً، ولا تستعمل place_in_clinic): نقصٌ مركّب (عيادة+دليقيتر) →',
+    '**apply_coverage_option**؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap**.',
     '',
     `الأسبوع: ${d.week_start || ''}`,
-    `اليوم: ${dayAr}`,
-    c.absentName ? `الطبيب الغائب: د. ${c.absentName}` : '',
-    'الحلول:',
-    ...solutionBlocks,
+    absentName ? `الطبيب الغائب: ${dr(absentName)}` : '',
+    `الأيّام والحلول (${days.length}):`,
+    ...dayBlocks,
   ].filter(Boolean).join('\n');
 }
 
-/** عنوان الكرت الثابت (من حقائق المحرّك): اليوم + أماكن النقص، بلا حلول وبلا فترات. */
+/** عنوان الكرت الثابت: الطبيب الغائب + أيّام النقص (بلا حلول وبلا فترات). */
 function coverageTitle(n: ConvoNotif): string {
-  const c = n.data?.coverage || {};
-  const dayAr = DAY_AR_SEED[c.day || n.data?.day] || c.day || '';
-  const gaps: { kind: string; clinicNumber?: number }[] = c.gaps || [];
-  const locs = gaps.map((g) =>
-    g.kind === 'delegator' ? 'الدليقيتر'
-      : g.kind === 'delegator_combo' ? `عيادة ${g.clinicNumber} + الدليقيتر`
-        : `عيادة ${g.clinicNumber}`,
-  ).join('، ');
-  return `نقص — ${dayAr}${locs ? ` (${locs})` : ''}`;
+  const d = n.data || {};
+  const days = coverageDays(d);
+  const absentName = d.absent_doctor_name || days.find((x) => x.absentName)?.absentName || '';
+  const gapDays = days.filter((c) => (c.gaps?.length || 0) > 0).map((c) => DAY_AR_SEED[c.day] || c.day);
+  const list = gapDays.join('، ');
+  return `نقص${absentName ? ` — ${dr(absentName)}` : ''}${list ? `: ${list}` : ''}`;
 }
 
 const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل صياغة الذكاء داخل الكرت (لا تُعرَض)
@@ -434,7 +450,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 // كرت التغطية (gap_alert v2): كرتٌ بعنوان ثابت من المحرّك؛ نقره يفتح
                 // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
                 if (n.type === 'gap_alert') {
-                  if (n.data?.v !== 2 || !n.data?.coverage) return null;
+                  if (n.data?.v !== 2 || coverageDays(n.data).length === 0) return null;
                   return (
                     <CoverageCard
                       key={n.id}

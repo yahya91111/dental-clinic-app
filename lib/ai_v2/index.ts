@@ -236,66 +236,44 @@ export async function sendMessageV2(
   const bundle = TASK_BUNDLES[task];
 
   try {
-    // Layered system prompt — كل طبقة لها cache key مستقل.
-    // النواة + الدور مشتركان دائمًا (يبقيان مُخزَّنين)، وبلوك المساعد يتغيّر
-    // حسب المهمّة ولكلّ مساعد كاشه الخاصّ.
-    const systemBlocks: Array<Record<string, unknown>> = [
-      {
-        type: 'text',
-        text: CORE_PROMPT_V2,
-        cache_control: { type: 'ephemeral', ttl: '1h' },
-      },
-      {
-        type: 'text',
-        // طبقة الدور حسب دور المستخدم: الطبيب العاديّ يأخذ طبقته، ومن هو
-        // قائد فأعلى يأخذ طبقة القيادة (الصلاحيّات تُفرض في الكود أيضًا).
-        text: opts.user.role === 'doctor' ? DOCTOR_PROMPT_V2 : TEAM_LEADER_PROMPT_V2,
-        cache_control: { type: 'ephemeral', ttl: '1h' },
-      },
-      {
-        type: 'text',
-        text: bundle.prompt,
-        cache_control: { type: 'ephemeral', ttl: '1h' },
-      },
-    ];
+    const CC = { type: 'ephemeral', ttl: '1h' } as const; // علامة كاش (TTL ساعة)
 
-    // فهرس المعرفة (ثابت، يُخزَّن بالكاش) — يخبر الذكاء بالوثائق المتاحة فقط
-    const knowledgeIndexBlock = buildKnowledgeIndexBlock();
-    if (knowledgeIndexBlock) {
-      systemBlocks.push({
-        type: 'text',
-        text: knowledgeIndexBlock,
-        cache_control: { type: 'ephemeral', ttl: '1h' },
-      });
-    }
-
-    systemBlocks.push({
-      type: 'text',
-      text: buildUserIdentityBlock(opts.user),
-    });
-
-    // تاريخ اليوم (غير مُخزَّن بالكاش — متغيّر) لحلّ التواريخ النسبيّة
-    systemBlocks.push({
-      type: 'text',
-      text: buildTodayBlock(),
-    });
-
-    // دفتر الأطباء (مرقّم) — يُحمّل مرّة واحدة: يُعرَض بالأرقام للذكاء، ويُمرَّر
-    // للأدوات كي تترجم الأرقام إلى معرّفات (لا نُحمّل الذكاء نسخ المعرّفات).
+    // دفتر الأطباء — نُحمّله أوّلًا لأنّه ثابت لكلّ عيادة فنضعه داخل البادئة المُخزَّنة.
     let rosterForTools: { id: string; name: string; groupKey?: string }[] = [];
+    let rosterBlockText = '';
     if (opts.clinicId) {
       try {
         const { loadDoctorRoster } = await import('../algorithms/schedule');
         const { doctors } = await loadDoctorRoster(opts.clinicId);
         if (doctors && doctors.length > 0) {
           rosterForTools = doctors.map((d) => ({ id: d.id, name: d.name, groupKey: d.groupTemplate.key }));
-          systemBlocks.push({ type: 'text', text: buildDoctorRosterBlock(doctors) });
+          rosterBlockText = buildDoctorRosterBlock(doctors);
         }
       } catch {
         /* عند الفشل: لا دفتر، ولا حقن */
       }
     }
+    const knowledgeIndexBlock = buildKnowledgeIndexBlock();
 
+    // البادئة الثابتة بترتيب «ثابت ← متغيّر»، و٤ نقاط كاش فقط (حدّ المزوّد):
+    //   ① الأدوات (أدناه)  ② النواة  ③ المساعد(+الدور)  ④ الروستر(+المعرفة+الهوية)
+    // ما بعد ④ متغيّر فلا يُخزَّن: تاريخ اليوم + كتلة السياق + الرسائل.
+    const systemBlocks: Array<Record<string, unknown>> = [
+      { type: 'text', text: CORE_PROMPT_V2, cache_control: CC }, // ② مشترك للجميع
+      { type: 'text', text: opts.user.role === 'doctor' ? DOCTOR_PROMPT_V2 : TEAM_LEADER_PROMPT_V2 },
+      { type: 'text', text: bundle.prompt, cache_control: CC },  // ③ مشترك لكلّ مهمّة/دور
+    ];
+    if (knowledgeIndexBlock) systemBlocks.push({ type: 'text', text: knowledgeIndexBlock });
+    systemBlocks.push({ type: 'text', text: buildUserIdentityBlock(opts.user) });
+    // ④ آخر نقطة كاش: على الروستر إن وُجد، وإلّا على آخر كتلة ثابتة (الهوية)
+    if (rosterBlockText) {
+      systemBlocks.push({ type: 'text', text: rosterBlockText, cache_control: CC });
+    } else {
+      systemBlocks[systemBlocks.length - 1].cache_control = CC;
+    }
+
+    // ── ما بعد البادئة المُخزَّنة: كتل متغيّرة (لا كاش) ──
+    systemBlocks.push({ type: 'text', text: buildTodayBlock() }); // تاريخ اليوم (يوميّ)
     if (opts.contextData) {
       systemBlocks.push({
         type: 'text',
@@ -318,6 +296,11 @@ export async function sendMessageV2(
 
     const activeTools = bundle.tools;
     const toolsEnabled = activeTools.length > 0;
+    // ① خزّن الأدوات بالكاش: العلامة على آخر أداة تُخزّن كلّ كتلة الأدوات (ثابتة دائمًا).
+    //    نستنسخ فلا نلوّث bundle.tools المشترك.
+    const toolsForApi = toolsEnabled
+      ? activeTools.map((t, i) => (i === activeTools.length - 1 ? { ...t, cache_control: CC } : t))
+      : undefined;
     // eslint-disable-next-line no-console
     console.log(`[AI V2] task=${task} (tools=${activeTools.length})`);
     let allText = '';
@@ -341,7 +324,7 @@ export async function sendMessageV2(
           model: DEFAULT_MODEL,
           max_tokens: MAX_TOKENS,
           system: systemBlocks,
-          tools: toolsEnabled ? activeTools : undefined,
+          tools: toolsForApi,
           messages: conversation,
         }),
       });
@@ -363,7 +346,8 @@ export async function sendMessageV2(
       // eslint-disable-next-line no-console
       console.log(
         `[AI V2 round ${round + 1}] stop=${data.stop_reason} ` +
-          `in=${data.usage?.input_tokens ?? '?'} out=${data.usage?.output_tokens ?? '?'}`,
+          `in=${data.usage?.input_tokens ?? '?'} out=${data.usage?.output_tokens ?? '?'} ` +
+          `cacheWrite=${data.usage?.cache_creation_input_tokens ?? 0} cacheRead=${data.usage?.cache_read_input_tokens ?? 0}`,
       );
 
       const toolResults: Array<Record<string, unknown>> = [];
