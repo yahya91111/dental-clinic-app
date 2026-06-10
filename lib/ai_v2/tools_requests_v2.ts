@@ -113,6 +113,8 @@ function reshapeInfo(
  * بعد أيّ تغطية: أعد حساب حقائق اليوم (المعادلة من جديد) وحدّث كروت **كلّ**
  * القادة بها — يدعم التغطية الجزئيّة: ما بقي نقصًا يظهر بمرشّحيه الفعليّين
  * المحدَّثين لا البائتين، وما غُطّي كاملًا يسقط (يُغلق الكرت إن لم يبقَ شيء).
+ * يُنعِش **كلّ غائبي اليوم** لا المُغطَّى وحده: المُغطّي صار مشغولًا فقد يسقط من
+ * اقتراحات غائبٍ آخر في الكرت نفسه (اليوم الواحد قد يجمع أكثر من غائب).
  */
 async function refreshCoverageCards(
   clinicId: string,
@@ -123,13 +125,18 @@ async function refreshCoverageCards(
   try {
     const { requestsV2 } = await import('../algorithms/requests_v2');
     const { notifications } = await import('../algorithms/notifications');
-    const brief = await requestsV2.computeCoverageBrief({
-      clinicId, weekStart, day, doctorId: absent.id, doctorName: absent.name,
-    });
-    await notifications.resolveCoverageV2({
-      clinicId, weekStart, day, absentDoctorId: absent.id,
-      covered: { kind: 'fresh', gaps: brief?.gaps ?? [], reserves: brief?.reserves ?? [] },
-    });
+    const briefs = await requestsV2.computeDayCoverageBriefs({ clinicId, weekStart, day });
+    const ids = new Set(briefs.map((b) => b.absentId));
+    // المُغطَّى نفسه قد لا يبقى له صفّ غياب (استُهلك حفظه) — أدرِجه موجزًا فارغًا
+    const all = ids.has(absent.id)
+      ? briefs
+      : [...briefs, { day, absentId: absent.id, absentName: absent.name, gaps: [], reserves: [] }];
+    for (const b of all) {
+      await notifications.resolveCoverageV2({
+        clinicId, weekStart, day, absentDoctorId: b.absentId,
+        covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
+      });
+    }
   } catch { /* تحديث الكروت لا يُفشل التغطية */ }
 }
 
@@ -526,17 +533,42 @@ export async function dispatchRequestToolV2(
         //    «مغطّى» إن انضمّ لكرتٍ فيه نقص، ووحده لا يُنشئ كرتًا.
         //  • كرت التغطية يصل **حتى للقائد الغائب نفسه**: غيابه نقصٌ كغياب أيّ طبيب،
         //    وعليه أن يرى النقص والحلول.
-        const ABSENCE = ['sick_leave', 'vacation', 'permission_start', 'permission_end'];
+        //  • «احتياط» (قائد فقط — المحرّك يرفضه من غيره) يُخرج الطبيب من عيادته فعلًا،
+        //    فيُعامَل غيابًا كاملًا: إشعار العلم وكرت التغطية كالمرضية بالضبط.
+        const ABSENCE = ['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'];
         if (ABSENCE.includes(status)) {
           try {
             const { notifications } = await import('../algorithms/notifications');
+            // استئذانٌ ناجح = الطبيب داخل عيادته (التحويل من مرضية ونحوها يُعيده إلى
+            // مكانه أوّلًا أو يفشل) → يومُ غيابه السابق لم يعد نقصًا. أسقِطه من كروت
+            // كلّ القادة صراحةً — تحديث الكرت وحده لا يطال كرتًا خارج نافذة التجميع.
+            if (status === 'permission_start' || status === 'permission_end') {
+              await notifications.resolveCoverageV2({
+                clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+                absentDoctorId: doc.id, covered: { kind: 'all' },
+              });
+            }
             const leaders = await getTeamLeaderIds(ctx.clinicId);
-            const brief = await requestsV2.computeCoverageBrief({
+            // اليوم كاملًا — كلّ غائبيه: غيابان بنفس اليوم يجتمعان في كرتٍ واحد
+            // بأسمائهما (upsertLeaderCoverage يضمّ غياب يومٍ فيه نقصٌ معلّق إلى
+            // كرته)، ومرشّحو كلّ موجزٍ محسوبون بعد آخِر غياب لا قبله.
+            const briefs = await requestsV2.computeDayCoverageBriefs({
               clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-              doctorId: doc.id, doctorName: doc.name,
             });
-            const dayHasGap = !!brief && brief.gaps.length > 0;
-            const dayBrief = brief ?? { day: r.day, absentName: doc.name, gaps: [], reserves: [] };
+            const mineBrief = briefs.find((b) => b.absentId === doc.id)
+              ?? { day: r.day, absentId: doc.id, absentName: doc.name, gaps: [], reserves: [] };
+            const dayHasGap = mineBrief.gaps.length > 0;
+            const dayBrief = mineBrief;
+            // أنعِش بنود الغائبين الآخرين في كروتهم القائمة: الغائب الجديد لم يعد
+            // مرشّحًا لتغطيتهم — لا اقتراحات بائتة (تحديثٌ فقط، لا كروت جديدة).
+            for (const b of briefs) {
+              if (b.absentId === doc.id) continue;
+              await notifications.resolveCoverageV2({
+                clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+                absentDoctorId: b.absentId,
+                covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
+              });
+            }
             for (const leaderId of leaders) {
               if (leaderId !== actor.id) {
                 await notifications.notifyLeaderOfRequest({

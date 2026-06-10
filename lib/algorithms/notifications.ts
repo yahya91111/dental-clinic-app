@@ -655,21 +655,29 @@ export async function notifyLeaderCoverage(args: {
   return { success: !error, error, id };
 }
 
-/** نصّ جسم كرت النقص (للعرض في القائمة): اسم الغائب + أيّام النقص الفعليّة. */
-function coverageBody(absentName: string, days: { day: WeekDay; gaps?: unknown[] }[]): string {
-  const gapDays = days
-    .filter((d) => (d.gaps?.length || 0) > 0)
-    .map((d) => DAY_AR[d.day] || d.day);
+/** نصّ جسم كرت النقص (للعرض في القائمة): أسماء الغائبين (الكرت قد يجمع أكثر من
+ *  غائب لليوم نفسه — كلّ بندٍ يحمل absentName) + أيّام النقص الفعليّة. */
+function coverageBody(
+  absentName: string,
+  days: { day: WeekDay; gaps?: unknown[]; absentName?: string }[],
+): string {
+  const gapEntries = days.filter((d) => (d.gaps?.length || 0) > 0);
+  const names = [...new Set(gapEntries.map((d) => dr(d.absentName || absentName)).filter(Boolean))];
+  const nameStr = names.length ? names.join(' و') : dr(absentName);
+  const gapDays = [...new Set(gapEntries.map((d) => DAY_AR[d.day] || d.day))];
   return gapDays.length
-    ? `نقصٌ بغياب ${dr(absentName)} — ${gapDays.join('، ')}.`
-    : `نقصٌ بغياب ${dr(absentName)}.`;
+    ? `نقصٌ بغياب ${nameStr} — ${gapDays.join('، ')}.`
+    : `نقصٌ بغياب ${nameStr}.`;
 }
 
 /**
- * v2 متعدّد الأيّام — يجمع كلّ أيّام غياب الطبيب نفسه (في الأسبوع نفسه) في **كرتٍ
- * واحد** للقائد: لو وُجد كرتٌ معلّق لنفس (القائد، الأسبوع، الطبيب الغائب) أَلحَق هذا
- * اليوم بـ data.days[] (يستبدل إن تكرّر) وأبطل الخيط المحفوظ كي يُعيد الذكاء صياغة كلّ
- * الأيّام دفعةً واحدة؛ وإلّا أنشأ كرتًا جديدًا — **فقط إن كان لهذا اليوم نقصٌ فعليّ**
+ * v2 متعدّد الأيّام **ومتعدّد الغائبين** — كرتٌ واحد للقائد:
+ *  • أيّام غياب الطبيب نفسه (في الأسبوع نفسه ومن نفس الجلسة الزمنيّة) تُلحَق بكرته.
+ *  • وغيابُ طبيبٍ **آخر في يومٍ فيه نقصٌ معلّق أصلًا** ينضمّ إلى الكرت نفسه (بلا قيد
+ *    النافذة): طبيبان مرضية بنفس اليوم = كرتٌ واحد بأسمائهما، فيُقترح حلّ اليوم مرّةً
+ *    واحدة. كلّ بندٍ في days[] يحمل (اليوم + هويّة غائبه) — اليوم قد يتكرّر بغائبَين.
+ * يستبدل بند (اليوم، الغائب) إن تكرّر، ويُبطل الخيط المحفوظ كي يُعيد الذكاء صياغة
+ * الكلّ دفعةً واحدة؛ وإلّا أنشأ كرتًا جديدًا — **فقط إن كان لهذا اليوم نقصٌ فعليّ**
  * (يومٌ بلا نقص وحده لا يستحقّ تنبيهًا، لكنه يُذكَر «مغطّى» إن انضمّ لكرتٍ فيه نقص).
  * dayBrief = CoverageBrief (gaps فارغة = يومٌ بلا نقص). صامت كـ gap_alert.
  */
@@ -687,27 +695,51 @@ export async function upsertLeaderCoverage(args: {
 }): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
     const now = Date.now();
-    // كرت نقصٍ معلّق (v2) لنفس القائد/الأسبوع/الطبيب الغائب **ومن نفس الجلسة**؟
-    // خارج النافذة الزمنيّة = طلبٌ جديد منفصل → كرت جديد.
     const { data: rows } = await supabase
       .from('notifications')
       .select('id, data, action_status')
       .eq('clinic_id', args.clinicId)
       .eq('recipient_id', args.leaderId)
       .eq('type', NotifType.GAP_ALERT);
-    const existing = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find(
+    const cards = ((rows || []) as { id: string; data: any; action_status: string | null }[]).filter(
       (r) => {
         const d = r.data || {};
         const pending = !r.action_status || r.action_status === 'pending';
-        const recent = now - (d.batch_at ?? 0) < BATCH_WINDOW_MS;
-        return pending && d.v === 2 && d.week_start === args.weekStart && d.absent_doctor_id === args.absentDoctorId && recent;
+        return pending && d.v === 2 && !d.placement && d.week_start === args.weekStart;
       },
     );
+    // مالك البند: البنود الجديدة تحمل absentId؛ القديمة (بندٌ واحد لغائب الكرت) لا.
+    const entryOwner = (x: Record<string, unknown>, d: any) =>
+      String((x as { absentId?: string }).absentId || d?.absent_doctor_id || '');
+    // ١) غيابٌ فيه نقص + كرتٌ معلّق فيه نقصٌ لليوم نفسه → انضمام (بلا قيد النافذة)
+    // ٢) وإلّا: كرت الغائب نفسه من نفس الجلسة (النافذة الزمنيّة) — تجميع متعدّد الأيّام
+    const sameDayCard = args.dayHasGap
+      ? cards.find((r) =>
+        (Array.isArray(r.data?.days) ? (r.data.days as { day: WeekDay; gaps?: unknown[] }[]) : [])
+          .some((x) => x.day === args.day && (x.gaps?.length || 0) > 0))
+      : undefined;
+    const ownCard = cards.find(
+      (r) => r.data?.absent_doctor_id === args.absentDoctorId
+        && now - (r.data?.batch_at ?? 0) < BATCH_WINDOW_MS,
+    );
+    const existing = sameDayCard || ownCard;
 
     if (existing) {
       const days: { day: WeekDay }[] = Array.isArray(existing.data?.days) ? existing.data.days.slice() : [];
-      const i = days.findIndex((x) => x.day === args.day);
-      if (i >= 0) days[i] = args.dayBrief; else days.push(args.dayBrief);
+      const i = days.findIndex(
+        (x) => x.day === args.day && entryOwner(x, existing.data) === args.absentDoctorId,
+      );
+      if (i >= 0) days[i] = args.dayBrief;
+      else if (
+        args.dayHasGap
+        || existing.data?.absent_doctor_id === args.absentDoctorId
+        || days.some((x) => entryOwner(x, existing.data) === args.absentDoctorId)
+      ) {
+        days.push(args.dayBrief);
+      } else {
+        // يومٌ بلا نقص لغائبٍ لا قصّة له في هذا الكرت — لا يُضاف ضجيجًا ولا يُمسّ الكرت
+        return { success: true, id: existing.id };
+      }
       const nextData = { ...existing.data, days, batch_at: now };
       delete (nextData as Record<string, unknown>).thread; // أبطِل الخيط ليُعاد التوليد بكلّ الأيّام
       // لو لم يبقَ أيّ نقص فعليّ (استُبدلت كلّ الأيّام بنسخٍ مغطّاة) → أغلِق الكرت كي لا
@@ -865,10 +897,14 @@ export async function resolveCoverageV2(args: {
       const d = r.data || {};
       const pending = !r.action_status || r.action_status === 'pending';
       if (!pending || d.v !== 2) continue;
-      if (d.week_start !== args.weekStart || d.absent_doctor_id !== args.absentDoctorId) continue;
-      const days: { day: WeekDay; gaps?: { kind?: string; clinicNumber?: number }[] }[] =
+      if (d.week_start !== args.weekStart) continue;
+      const days: { day: WeekDay; absentId?: string; gaps?: { kind?: string; clinicNumber?: number }[] }[] =
         Array.isArray(d.days) ? d.days.slice() : [];
-      const i = days.findIndex((x) => x.day === args.day);
+      // الكرت قد يجمع أكثر من غائب — البند المستهدَف هو (اليوم، هذا الغائب) بعينه.
+      // البنود القديمة بلا absentId مالكها غائب الكرت (absent_doctor_id).
+      const i = days.findIndex(
+        (x) => x.day === args.day && (x.absentId || d.absent_doctor_id) === args.absentDoctorId,
+      );
       if (i < 0) continue;
       if (args.covered.kind === 'all') {
         // أُلغيت الحالة — لا غياب أصلًا → اليوم كلّه يسقط من الكرت

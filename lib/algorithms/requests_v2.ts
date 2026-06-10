@@ -171,6 +171,10 @@ export async function setScheduleStatus(
 ): Promise<StatusResult> {
   const { clinicId, weekStart, day, doctorId, doctorName, status, shift } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة تغيير حالة هذا الطبيب.');
+  // الاحتياط صلاحيّة القائد فأعلى حصرًا — الطبيب لا يجعل نفسه (ولا غيره) احتياطًا.
+  if (status === 'extra' && !isLeaderPlus(actor.role)) {
+    return fail('جعل طبيبٍ احتياطًا صلاحيّة للقائد فأعلى فقط.');
+  }
   let gaps: GapLocation[] = [];
   try {
     const rows = await loadDay(clinicId, weekStart, day);
@@ -213,6 +217,36 @@ export async function setScheduleStatus(
     if (REMOVES_FROM_CLINIC.has(status) && alreadySameStatus && !stillPlaced) {
       const prev = mine.filter((r) => r.role === PREV_ROLE);
       return { success: true, gaps: gapsFrom(prev) };
+    }
+
+    // ── تحويل حالةٍ تُخرج من العيادة (مرضية/تفرّغ/احتياط) إلى استئذان ──
+    // الاستئذان حالةُ مَن هو **داخل** العيادة (يتأخّر أو يخرج مبكّرًا). كان خارجها
+    // بحالةٍ سابقة؟ أعِده أوّلًا إلى مكانه المحفوظ ثمّ ضَع علامة الاستئذان — كما لو
+    // سُجّل الاستئذان من البداية، فلا حالة هجينة (لافتة استئذان وهو غائبٌ كلّيًّا).
+    // مكانه مُغطًّى (الحفظ مُزِّق وقت التغطية)؟ لا إرجاع فوق المُغطّي — يُحدَّد مكانه أوّلًا.
+    const toPermission = status === 'permission_start' || status === 'permission_end';
+    const wasOut = mine.some(
+      (r) => r.period === 0 && REMOVES_FROM_CLINIC.has(r.status as ScheduleStatus),
+    );
+    if (toPermission && wasOut && !stillPlaced) {
+      const prevRows = mine.filter((r) => r.role === PREV_ROLE);
+      if (prevRows.length === 0) {
+        return fail(
+          `مكان ${doctorName} السابق مُغطًّى — أرجِعه أوّلًا إلى مكانٍ يُحدَّد ` +
+          `(place_in_clinic) ثمّ سجّل الاستئذان.`,
+        );
+      }
+      await insertRows(
+        prevRows.map((r) => ({
+          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+          period: r.period, clinic_number: r.clinic_number,
+          doctor_id: doctorId, doctor_name: doctorName,
+          role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
+        })),
+      );
+      await deleteRows(prevRows.map((r) => r.id));
+      // شفته الفعليّ الآن من مكانه المستعاد، لا من استنتاجٍ قديمٍ وهو غائب
+      effShift = prevRows.some((r) => r.period >= 3) ? 'evening' : 'morning';
     }
 
     // أزِل أيّ حالة EX سابقة لنفس الطبيب/اليوم (تفادي التكرار)
@@ -414,6 +448,7 @@ export type CoverageGap =
 /** كلّ ما يحتاجه الذكاء لِيتكلّم عن نقصٍ نتج عن غياب طبيب. */
 export type CoverageBrief = {
   day: WeekDay;
+  absentId: string;                          // هويّة الغائب — الكرت قد يجمع أكثر من غائب
   absentName: string;
   gaps: CoverageGap[];                       // عيادة/دليقيتر — بلا فترات
   reserves: { id: string; name: string }[];  // الاحتياطيّون المتاحون
@@ -451,7 +486,14 @@ export async function computeCoverageBrief(args: {
     const sk = keysOf(m.supervisor_doctor_id);
     if (tk.length > 0 && tk.length === sk.size && tk.every((k) => sk.has(k))) shadowIds.add(m.doctor_id);
   }
-  const blocked = (id: string) => id === doctorId || lightDuty.has(id) || shadowIds.has(id);
+  // المريض/المتفرّغ غائبٌ عن العمل — لا يُذكَر مُغطّيًا في أيّ اقتراحٍ أبدًا
+  // (دفاعٌ مزدوج: التنفيذ يرفضه أيضًا).
+  const absentIds = new Set(
+    rows
+      .filter((r) => r.period === 0 && (r.status === 'sick_leave' || r.status === 'vacation'))
+      .map((r) => r.doctor_id),
+  );
+  const blocked = (id: string) => id === doctorId || lightDuty.has(id) || shadowIds.has(id) || absentIds.has(id);
 
   const uniqDoc = (list: { id: string; name: string }[]) => {
     const seen = new Set<string>();
@@ -659,7 +701,33 @@ export async function computeCoverageBrief(args: {
     }
   }
 
-  return { day, absentName: doctorName, gaps, reserves };
+  return { day, absentId: doctorId, absentName: doctorName, gaps, reserves };
+}
+
+/**
+ * موجزات التغطية لِيومٍ كامل — **كلّ** غائبي اليوم (مرضية/تفرّغ/احتياط) موجزٌ لكلٍّ
+ * منهم، محسوبٌ **بعد آخِر غياب** لا قبله (الغائبون يستبعد بعضهم بعضًا من المرشّحين
+ * تلقائيًّا). غائبٌ لم يبقَ له حفظٌ (غُطّي مكانه) → موجزه بلا نقص. نقيّ حسابيّ.
+ */
+export async function computeDayCoverageBriefs(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+}): Promise<CoverageBrief[]> {
+  const rows = await loadDay(args.clinicId, args.weekStart, args.day);
+  const seen = new Set<string>();
+  const out: CoverageBrief[] = [];
+  for (const r of rows) {
+    if (r.period !== 0 || !REMOVES_FROM_CLINIC.has(r.status as ScheduleStatus)) continue;
+    if (seen.has(r.doctor_id)) continue;
+    seen.add(r.doctor_id);
+    const brief = await computeCoverageBrief({
+      clinicId: args.clinicId, weekStart: args.weekStart, day: args.day,
+      doctorId: r.doctor_id, doctorName: r.doctor_name,
+    });
+    out.push(brief ?? { day: args.day, absentId: r.doctor_id, absentName: r.doctor_name, gaps: [], reserves: [] });
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1031,6 +1099,22 @@ export async function placeAsDelegator(
  *  - عيادة N: يضع المُغطّي في فترات الغائب بتلك العيادة (يستلم فتراته)، مع حارس
  *    «لا عيادتين بنفس الفترة».
  */
+// ── حارس غياب المُغطّي ─────────────────────────────────────────
+// المريض/المتفرّغ غائبٌ عن العمل كلّه فلا يغطّي شيئًا. صاحب الاستئذان حاضرٌ
+// جزئيًّا: استئذان البداية → غائب عن الفترة الأولى من الشفت (1/3)، واستئذان
+// النهاية → غائب عن الثانية (2/4) — يغطّي فقط الفترات التي هو حاضرٌ فيها.
+// «احتياط» ليس غيابًا هنا: الاحتياطيّ مُغطٍّ مرغوب.
+function covererAbsence(rows: Row[], coverDoctorId: string): { hardAr: string | null; blocked: Set<number> } {
+  const st = rows.filter(
+    (r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status !== 'active' && r.status !== 'extra',
+  );
+  const hard = st.find((r) => r.status === 'sick_leave' || r.status === 'vacation');
+  const blocked = new Set<number>();
+  if (st.some((r) => r.status === 'permission_start')) { blocked.add(1); blocked.add(3); }
+  if (st.some((r) => r.status === 'permission_end')) { blocked.add(2); blocked.add(4); }
+  return { hardAr: hard ? (hard.status === 'sick_leave' ? 'مرضيّة' : 'تفرّغ') : null, blocked };
+}
+
 export async function coverGap(
   actor: Actor,
   args: {
@@ -1055,15 +1139,22 @@ export async function coverGap(
     );
     const assignedAt = (P: number) => new Set(activeAssign.filter((r) => r.period === P).map((r) => r.doctor_id));
 
+    // المُغطّي نفسه غائب؟ المريض/المتفرّغ يُرفض كلّيًّا، والمستأذن تُحجب فترة استئذانه.
+    const cAbs = covererAbsence(rows, coverDoctorId);
+    if (cAbs.hardAr) {
+      return fail(`${coverDoctorName} عنده ${cAbs.hardAr} هذا اليوم — غائبٌ عن العمل ولا يصلح مُغطّيًا.`);
+    }
+
     if (target.kind === 'delegator') {
       const delPeriods = [...new Set(
         prev.filter((r) => r.role === 'delegator' || r.clinic_number === 0).map((r) => r.period),
       )];
       if (delPeriods.length === 0) return fail('لا يوجد نقص دليقيتر لهذا الطبيب.');
-      // الفترة التي يكون فيها المُغطّي فارغًا (من فترات الدليقيتر الناقصة)
-      const freePeriod = delPeriods.find((P) => !assignedAt(P).has(coverDoctorId));
+      // الفترة التي يكون فيها المُغطّي فارغًا وحاضرًا (من فترات الدليقيتر الناقصة)
+      const freePeriod = delPeriods.find((P) => !assignedAt(P).has(coverDoctorId) && !cAbs.blocked.has(P));
       if (freePeriod == null) {
-        return fail(`${coverDoctorName} مشغول في فترة الدليقيتر — اختر طبيبًا متفرّغًا في تلك الفترة من نفس الشفت.`);
+        const permHit = delPeriods.some((P) => cAbs.blocked.has(P));
+        return fail(`${coverDoctorName} ${permHit ? 'مستأذنٌ أو مشغول' : 'مشغول'} في فترة الدليقيتر — اختر طبيبًا متفرّغًا وحاضرًا في تلك الفترة من نفس الشفت.`);
       }
       const exists = rows.some(
         (r) => r.doctor_id === coverDoctorId && r.role === 'delegator' && r.period === freePeriod && r.status === 'active',
@@ -1110,13 +1201,15 @@ export async function coverGap(
     // والفترات الباقية تبقى نقصًا محفوظًا (صفوف الحفظ لا تُمزَّق إلّا لما غُطّي).
     const myBusy = activeAssign.filter((r) => r.doctor_id === coverDoctorId);
     const coverable = periods.filter(
-      (p) => !myBusy.some((r) => r.period === p && !(r.role === 'clinic' && r.clinic_number === clinicNumber)),
+      (p) => !cAbs.blocked.has(p)
+        && !myBusy.some((r) => r.period === p && !(r.role === 'clinic' && r.clinic_number === clinicNumber)),
     );
     if (coverable.length === 0) {
       const busy = myBusy.find((r) => periods.includes(r.period));
+      const permHit = periods.some((p) => cAbs.blocked.has(p));
       return fail(
-        `${coverDoctorName} مشغول في فترات النقص كلّها` +
-        `${busy ? ` (${busy.role === 'clinic' ? `عيادة ${busy.clinic_number}` : 'الدليقيتر'})` : ''} — اختر طبيبًا متفرّغًا.`,
+        `${coverDoctorName} ${permHit ? 'مستأذنٌ أو مشغول' : 'مشغول'} في فترات النقص كلّها` +
+        `${busy ? ` (${busy.role === 'clinic' ? `عيادة ${busy.clinic_number}` : 'الدليقيتر'})` : ''} — اختر طبيبًا متفرّغًا وحاضرًا.`,
       );
     }
     const myClinic = myBusy.filter((r) => r.role === 'clinic');
@@ -1318,6 +1411,15 @@ export async function applyCoverageOption(
 
     if (option === 'A') {
       if (!args.coverDoctorId) return fail('اختر الطبيب المُغطّي (الخيار الأول).');
+      // المُغطّي غائب؟ المريض/المتفرّغ يُرفض، والمستأذن لا يصلح هنا لأنّ الخيار
+      // الأوّل يحتاج حضوره الفترتين معًا (عيادة + دليقيتر).
+      const cAbs = covererAbsence(rows, args.coverDoctorId);
+      if (cAbs.hardAr) {
+        return fail(`المُغطّي عنده ${cAbs.hardAr} هذا اليوم — غائبٌ عن العمل ولا يصلح مُغطّيًا.`);
+      }
+      if (cAbs.blocked.has(aP) || cAbs.blocked.has(bP)) {
+        return fail('المُغطّي مستأذنٌ في إحدى فترتَي النقص — هذا الخيار يحتاج حضوره الفترتين معًا.');
+      }
       const coverSlot = activeClinic.find((r) => r.doctor_id === args.coverDoctorId && r.period === aP);
       // المُغطّي قد يكون **احتياطيًّا** (صفّ EX حالة extra، بلا عيادة) — مقبول:
       // يأخذ مكان الغائب كاملًا بلا عيادةٍ يتركها ولا زميلٍ يستلمها.
@@ -1358,6 +1460,13 @@ export async function applyCoverageOption(
       const D = Number(args.delegatorClinicNumber);
       const a = docAtClinic(D, aP), b = docAtClinic(D, bP);
       if (!a || !b) return fail('العيادة المختارة لا تملك طبيبين للتناوب على الدليقيتر.');
+      // المنقولون مستأذنون في فترة نقلتهم؟ المستأذن لا يُوضَع في فترةٍ هو غائب عنها.
+      if (covererAbsence(rows, colleague.doctor_id).blocked.has(aP)) {
+        return fail('زميل الغائب مستأذنٌ في فترة النقص — لا يمكنه استلام العيادة كاملة.');
+      }
+      if (covererAbsence(rows, a.doctor_id).blocked.has(bP) || covererAbsence(rows, b.doctor_id).blocked.has(aP)) {
+        return fail('أحد طبيبَي العيادة المختارة مستأذنٌ في فترة التناوب — اختر عيادةً أخرى.');
+      }
       inserts.push(clinicRow(C, aP, colleague.doctor_id, colleague.doctor_name)); // الزميل يكمل عيادة الغائب
       const colDeleg = activeDeleg.find((r) => r.doctor_id === colleague.doctor_id); // يترك دليقيتره
       if (colDeleg) deleteIds.push(colDeleg.id);
@@ -1438,7 +1547,7 @@ export async function setDoctorGroupStatus(
 
 // ─── تجميع التصدير (ينمو مع كلّ قدرة جديدة) ────────────────────
 export const requestsV2 = {
-  setScheduleStatus, cancelStatus, computeCoverageBrief,
+  setScheduleStatus, cancelStatus, computeCoverageBrief, computeDayCoverageBriefs,
   swapInSchedule,
   placeInClinic, placeAsDelegator, coverGap, applyCoverageOption, reshapeGap,
   clearWeek,

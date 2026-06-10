@@ -106,7 +106,9 @@ type SeedGap = {
   optionB?: { clinicNumber: number; a: SeedDoc; b: SeedDoc }[];
 };
 
-type SeedDay = { day: string; absentName?: string; gaps?: SeedGap[]; reserves?: SeedDoc[] };
+// الكرت قد يجمع أكثر من غائب — بندٌ لكلّ (يوم، غائب)؛ البنود القديمة بلا absentId
+// مالكها غائب الكرت (data.absent_doctor_id).
+type SeedDay = { day: string; absentId?: string; absentName?: string; gaps?: SeedGap[]; reserves?: SeedDoc[] };
 
 /** أيّام الكرت: data.days[] الجديد، أو coverage المفرد القديم (توافق رجعيّ). */
 function coverageDays(d: Record<string, any>): SeedDay[] {
@@ -212,34 +214,40 @@ function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
     ].join('\n');
   }
   const days = coverageDays(d);
-  const absentName = d.absent_doctor_name || days.find((x) => x.absentName)?.absentName || '';
+  const rawNames = [...new Set(days.map((x) => x.absentName).filter(Boolean))] as string[];
+  const multi = rawNames.length > 1;
+  const absentName = rawNames.length
+    ? rawNames.map((x) => dr(x)).join(' و')
+    : dr(String(d.absent_doctor_name || ''));
 
-  // كتلة لكلّ يوم: «يوم الأحد: …حلول» أو «يوم الثلاثاء: لا نقص — مغطّى».
+  // كتلة لكلّ بند (يوم، غائب): «يوم الأحد — غياب فلان: …حلول» أو «لا نقص — مغطّى».
   const dayBlocks = days.map((c) => {
     const dayAr = DAY_AR_SEED[c.day] || c.day || '';
+    const who = multi && c.absentName ? ` — غياب ${dr(c.absentName)}` : '';
     const gaps: SeedGap[] = c.gaps || [];
     const reserves: SeedDoc[] = c.reserves || [];
     const reserveStr = reserves.length ? reserves.map((x) => dr(x.name)).join(' أو ') : '';
-    if (!gaps.length) return `• يوم ${dayAr}: لا نقص — اليوم مغطّى، لا حاجة لإجراء.`;
-    return [`• يوم ${dayAr}:`, ...gaps.map((g) => gapSolution(g, reserveStr))].join('\n');
+    if (!gaps.length) return `• يوم ${dayAr}${who}: لا نقص — اليوم مغطّى، لا حاجة لإجراء.`;
+    return [`• يوم ${dayAr}${who}:`, ...gaps.map((g) => gapSolution(g, reserveStr))].join('\n');
   });
 
   return [
-    'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): غاب طبيبٌ في يومٍ أو أكثر، وقد ينشأ نقصٌ في بعض',
-    'الأيّام. تكلّم مع القائد كأنّك لاحظتَ ذلك بنفسك.',
+    'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): غاب طبيبٌ أو أكثر في يومٍ أو أكثر، وقد ينشأ نقصٌ',
+    'في بعض الأيّام. تكلّم مع القائد كأنّك لاحظتَ ذلك بنفسك.',
     '',
-    `**القائمة أدناه فيها ${days.length} ${days.length === 2 ? 'يومان' : 'أيّام'}. يجب أن يحتوي ردّك على`,
-    `${days.length} فقرات — فقرةٌ لكلّ يوم بالترتيب، تبدأ بـ«يوم …». لا تدمج يومين، ولا تُسقط أيّ`,
-    'يوم، ولا تكتفِ بآخر يوم.** لليوم الذي فيه نقص اذكر مكانه (بلا فترات) ثمّ حلوله؛ ولليوم بلا',
+    `**القائمة أدناه فيها ${days.length} ${days.length === 2 ? 'بندان' : 'بنود'} (بندٌ لكلّ غائبٍ في يوم). يجب أن يحتوي ردّك على`,
+    `${days.length} فقرات — فقرةٌ لكلّ بند بالترتيب، تبدأ بـ«يوم …». لا تدمج بندين، ولا تُسقط أيّ`,
+    'بند، ولا تكتفِ بآخر بند.** للبند الذي فيه نقص اذكر مكانه (بلا فترات) ثمّ حلوله؛ وللبند بلا',
     'نقص قل إنّه مغطّى ولا حاجة لإجراء. **اعرض الحلول كنصّ (نقاط)؛ لا أقواس [ ] ولا أزرار.** لا',
-    'تذكر حلًّا غير موجود. عند ردّ القائد على يومٍ نفّذ بالأداة المناسبة **لذلك اليوم** (مرّر day',
-    'الصحيح، لا تذكر فترةً، ولا تستعمل place_in_clinic): نقصٌ مركّب (عيادة+دليقيتر) →',
-    '**apply_coverage_option**؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap**؛',
+    'تذكر حلًّا غير موجود. اليوم الواحد قد يجمع غائبَين أو أكثر — سمِّ صاحب كلّ نقص في فقرته،',
+    'وعند التنفيذ مرّر رقم **صاحب ذلك النقص** للأداة لا غائبًا آخر. عند ردّ القائد على بندٍ نفّذ',
+    'بالأداة المناسبة **لذلك اليوم** (مرّر day الصحيح، لا تذكر فترةً، ولا تستعمل place_in_clinic):',
+    'نقصٌ مركّب (عيادة+دليقيتر) → **apply_coverage_option**؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap**؛',
     'اختار أحد خيارات «إعادة توزيع اليوم» → **reshape_day** بالمنفرد المختار (soloDoctorIndex) — المحرّك ينفّذ كلّ النقلات.',
     '',
     `الأسبوع: ${d.week_start || ''}`,
-    absentName ? `الطبيب الغائب: ${dr(absentName)}` : '',
-    `الأيّام والحلول (${days.length}):`,
+    absentName ? `${multi ? 'الأطبّاء الغائبون' : 'الطبيب الغائب'}: ${absentName}` : '',
+    `البنود والحلول (${days.length}):`,
     ...dayBlocks,
   ].filter(Boolean).join('\n');
 }
@@ -253,10 +261,16 @@ function coverageTitle(n: ConvoNotif): string {
     return `عودة تحتاج مكانًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
   }
   const days = coverageDays(d);
-  const absentName = d.absent_doctor_name || days.find((x) => x.absentName)?.absentName || '';
-  const gapDays = days.filter((c) => (c.gaps?.length || 0) > 0).map((c) => DAY_AR_SEED[c.day] || c.day);
+  const gapEntries = days.filter((c) => (c.gaps?.length || 0) > 0);
+  const rawNames = [...new Set(
+    (gapEntries.length ? gapEntries : days).map((x) => x.absentName).filter(Boolean),
+  )] as string[];
+  const absentName = rawNames.length
+    ? rawNames.map((x) => dr(x)).join(' و')
+    : dr(String(d.absent_doctor_name || ''));
+  const gapDays = [...new Set(gapEntries.map((c) => DAY_AR_SEED[c.day] || c.day))];
   const list = gapDays.join('، ');
-  return `نقص${absentName ? ` — ${dr(absentName)}` : ''}${list ? `: ${list}` : ''}`;
+  return `نقص${absentName ? ` — ${absentName}` : ''}${list ? `: ${list}` : ''}`;
 }
 
 /**
@@ -266,8 +280,12 @@ function coverageTitle(n: ConvoNotif): string {
  */
 type CovBtn = { label: string; choice: CoverageChoice };
 
-function buildCoverageButtons(d: Record<string, any>): { day: string; dayAr: string; btns: CovBtn[] }[] {
-  const out: { day: string; dayAr: string; btns: CovBtn[] }[] = [];
+type CovBtnGroup = { day: string; dayAr: string; absentId: string; absentName: string; btns: CovBtn[] };
+
+function buildCoverageButtons(d: Record<string, any>): CovBtnGroup[] {
+  const topId = String(d.absent_doctor_id || '');
+  const topName = String(d.absent_doctor_name || '');
+  const out: CovBtnGroup[] = [];
   for (const c of coverageDays(d)) {
     const gaps: SeedGap[] = c.gaps || [];
     if (!gaps.length) continue;
@@ -356,7 +374,13 @@ function buildCoverageButtons(d: Record<string, any>): { day: string; dayAr: str
         }
       }
     }
-    if (btns.length) out.push({ day: c.day, dayAr: DAY_AR_SEED[c.day] || c.day, btns });
+    if (btns.length) {
+      out.push({
+        day: c.day, dayAr: DAY_AR_SEED[c.day] || c.day,
+        absentId: String(c.absentId || topId), absentName: String(c.absentName || topName),
+        btns,
+      });
+    }
   }
   return out;
 }
@@ -463,25 +487,27 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   // ستُعيد البيانات القديمة فوق المحدَّثة.
   const [covBusy, setCovBusy] = useState<string | null>(null);
   const [doneDays, setDoneDays] = useState<Record<string, boolean>>({});
-  const handleChoice = useCallback(async (day: string, label: string, choice: CoverageChoice) => {
+  // كلّ مجموعة أزرار تحمل غائبها (الكرت قد يجمع أكثر من غائب لليوم نفسه) —
+  // التنفيذ والشطب يستهدفان بند (اليوم، الغائب) بعينه.
+  const handleChoice = useCallback(async (
+    day: string, absent: { id: string; name: string }, label: string, choice: CoverageChoice,
+  ) => {
     if (covBusy || loading) return;
-    setCovBusy(`${day}|${label}`);
+    setCovBusy(`${day}|${absent.id}|${label}`);
     try {
       const { applyCoverageChoice } = await import('../lib/ai_v2/tools_requests_v2');
       const cid = clinicId || user.clinicId;
       if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
       const d = notif.data || {};
-      const absentId = String(d.absent_doctor_id || '');
-      const absentName = String(d.absent_doctor_name || coverageDays(d).find((x) => x.absentName)?.absentName || '');
-      if (!absentId) throw new Error('بيانات الكرت ناقصة.');
+      if (!absent.id) throw new Error('بيانات الكرت ناقصة.');
       const res = await applyCoverageChoice({
         clinicId: cid,
         actor: { id: user.id, name: user.name, role: user.role },
         weekStart: String(d.week_start || ''), day,
-        absent: { id: absentId, name: absentName }, choice,
+        absent, choice,
       });
       const text = res.success ? (res.info || 'تمّ.') : (res.error || 'تعذّر التنفيذ.');
-      if (res.success) setDoneDays((p) => ({ ...p, [day]: true }));
+      if (res.success) setDoneDays((p) => ({ ...p, [`${day}|${absent.id}`]: true }));
       setHistory((h) => [...h, { role: 'assistant', content: text }]);
       onSeen(); // يجلب بيانات الكرت بعد شطب النقص (يُغلق إن لم يبقَ نقص)
     } catch (e) {
@@ -491,10 +517,11 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
     }
   }, [covBusy, loading, clinicId, user, notif.data, onSeen]);
 
-  // مجموعات الأزرار من حقائق الكرت — يومٌ نُفّذ حلُّه يسقط فورًا
+  // مجموعات الأزرار من حقائق الكرت — بندٌ نُفّذ حلُّه يسقط فورًا
   const covButtonDays = status === 'pending'
-    ? buildCoverageButtons(notif.data || {}).filter((g) => !doneDays[g.day])
+    ? buildCoverageButtons(notif.data || {}).filter((g) => !doneDays[`${g.day}|${g.absentId}`])
     : [];
+  const covMultiAbsent = new Set(covButtonDays.map((g) => g.absentId)).size > 1;
 
   // ما يُعرَض: تجاوز رسالة التشغيل الخفيّة (index 0)، وآخر ردّ يحمل خياراته كأزرار
   const shown = history.filter((m, i) => !(i === 0 && m.role === 'user' && m.content === SEED_TRIGGER));
@@ -539,11 +566,15 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
           {/* أزرار الحلول — تحت نصّ الذكاء مباشرةً، مجموعة لكلّ يوم؛ الضغط ينفّذ
               بالكود فورًا (بلا نموذج)، والكتابة الحرّة تبقى لما هو خارج الخيارات */}
           {!loading && shown.some((m) => m.role === 'assistant') && covButtonDays.map((g) => (
-            <View key={g.day} style={styles.covBtnGroup}>
-              {covButtonDays.length > 1 && <Text style={styles.covBtnDay}>يوم {g.dayAr}:</Text>}
+            <View key={`${g.day}|${g.absentId}`} style={styles.covBtnGroup}>
+              {covButtonDays.length > 1 && (
+                <Text style={styles.covBtnDay}>
+                  يوم {g.dayAr}{covMultiAbsent && g.absentName ? ` — غياب ${dr(g.absentName)}` : ''}:
+                </Text>
+              )}
               <View style={styles.chipRow}>
                 {g.btns.map((b) => {
-                  const k = `${g.day}|${b.label}`;
+                  const k = `${g.day}|${g.absentId}|${b.label}`;
                   const busy = covBusy === k;
                   return busy ? (
                     <ActivityIndicator key={k} color="#2D8C8C" style={{ marginVertical: scale(4) }} />
@@ -552,7 +583,7 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
                       key={k}
                       style={styles.chip}
                       disabled={!!covBusy}
-                      onPress={() => handleChoice(g.day, b.label, b.choice)}
+                      onPress={() => handleChoice(g.day, { id: g.absentId, name: g.absentName }, b.label, b.choice)}
                     >
                       <Text style={styles.chipTxt}>{b.label}</Text>
                     </TouchableOpacity>
