@@ -1796,7 +1796,8 @@ export async function markAllAsRead(recipientId: string): Promise<DatabaseRespon
   }
 }
 
-export async function updateNotificationAction(notificationId: string, actionStatus: 'accepted' | 'rejected'): Promise<DatabaseResponse<null>> {
+// ignored/done: قرارا السحب اليدويّان على كرت التغطية (تجاهلٌ شخصيّ / حُلّت يدويًّا)
+export async function updateNotificationAction(notificationId: string, actionStatus: 'accepted' | 'rejected' | 'ignored' | 'done'): Promise<DatabaseResponse<null>> {
   try {
     const { error } = await supabase
       .from('notifications')

@@ -12,11 +12,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, ScrollView, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet,
+  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, PanResponder,
 } from 'react-native';
 import { getNotifications, markAsRead, subscribeToNotifications } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
 import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
+import type { CoverageChoice } from '../lib/ai_v2/tools_requests_v2';
 import { ChatMessage } from './aiTypes';
 import { scale } from '../lib/scale';
 
@@ -67,6 +68,14 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
   }).length;
 }
 
+/** أحد الأسبوع الحاليّ — لإبقاء كروت التغطية المُنهاة ظاهرةً خلال أسبوعها فقط */
+function currentSunday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay());
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 const DAY_AR_SEED: Record<string, string> = {
   sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
 };
@@ -82,12 +91,16 @@ const dr = (name?: string): string => {
  * يبني سياق التغذية الخفيّ لنقصِ تغطية (v2): حقائق منظَّمة + تعليمات صياغة. الذكاء
  * يصوغ الرسالة بصوته كأنّه لاحظ النقص بنفسه — لا يذكر أنّها مُعطاة له ولا يذكر فترات.
  */
-type SeedDoc = { name: string };
+type SeedDoc = { id?: string; name: string };
 type SeedGap = {
   kind: string;
   clinicNumber?: number;
   twoPeriodColleague?: SeedDoc | null;
   candidates?: SeedDoc[];
+  fullCandidates?: SeedDoc[];                              // متفرّغون في كلّ الفترات الشاغرة
+  partials?: { period?: number; candidates?: SeedDoc[] }[]; // لا حلّ كامل → مرشّحو كلّ فترة
+  // إعادة توزيع اليوم — كلّ الخيارات (كلّ خيار: منفردٌ بالعيادة + بقيّة نقلاته)
+  reshapeOptions?: { moves?: { doctor?: SeedDoc; period?: number; clinic?: number; from?: string }[] }[];
   clinicColleague?: SeedDoc | null;
   optionA?: { cover: SeedDoc; coverClinic: number; backfill: SeedDoc | null }[];
   optionB?: { clinicNumber: number; a: SeedDoc; b: SeedDoc }[];
@@ -135,12 +148,69 @@ function gapSolution(g: SeedGap, reserveStr: string): string {
   }
   const opts: string[] = [];
   if (g.twoPeriodColleague) opts.push(`${dr(g.twoPeriodColleague.name)} (زميله في العيادة) يستلم الفترتين`);
+  for (const f of g.fullCandidates || []) opts.push(`${dr(f.name)} (متفرّغ) يستلمها كاملة`);
+  // إعادة توزيع اليوم — كلّ خيار: طبيبٌ ينفرد بالعيادة وزميله يستلم عيادتهما كاملة،
+  // والدليقيتر يبقى بالتناوب إن أمكن وإلّا ذاب
+  for (const ro of g.reshapeOptions || []) {
+    const rsMoves = ro.moves || [];
+    const rsMain = dr(rsMoves.find((m) => m.clinic === g.clinicNumber)?.doctor?.name);
+    if (!rsMain) continue;
+    const rsTails = [...new Set(
+      rsMoves.filter((m) => (m.clinic ?? 0) > 0 && m.clinic !== g.clinicNumber)
+        .map((m) => `يبقى ${dr(m.doctor?.name)} في عيادة ${m.clinic} كاملة`),
+    )];
+    const rsDelegs = [...new Set(
+      rsMoves.filter((m) => m.clinic === 0).map((m) => dr(m.doctor?.name)).filter(Boolean),
+    )];
+    if (rsDelegs.length) {
+      rsTails.push(rsDelegs.length > 1
+        ? `يتناوب ${rsDelegs.join(' و')} على الدليقيتر`
+        : `يستلم ${rsDelegs[0]} الدليقيتر`);
+    }
+    opts.push(`إعادة توزيع اليوم: يستلم ${rsMain} العيادة منفردًا` +
+      (rsTails.length ? ` و${rsTails.join(' و')}` : ''));
+  }
   if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
+  // لا حلّ كامل؟ المعادلة تقترح تغطيةً جزئيّة: متفرّغ كلّ فترةٍ على حدة
+  const partialNames = [...new Set(
+    (g.partials || []).flatMap((p) => (p.candidates || []).map((x) => dr(x.name))),
+  )];
+  if (!opts.length && partialNames.length) {
+    return `  - عيادة ${g.clinicNumber}: لا أحد متاحًا لليوم كاملًا؛ تغطية جزئيّة ممكنة: ${partialNames.join(' أو ')} (كلٌّ في وقته المتاح)`;
+  }
   return `  - عيادة ${g.clinicNumber}: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
 }
 
-function buildCoverageSeed(n: ConvoNotif): string {
+function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
   const d = n.data || {};
+  // كرت «عودة تحتاج مكانًا»: أُلغيت حالةٌ ومكان صاحبها مُغطًّى — الذكاء يسأل القائد
+  // أين يوضَع العائد (بلا اقتراحات) وينفّذ أمره كما هو. العائد قد يكون القائد نفسه
+  // (ألغى حالته بنفسه) — حينها يُخاطَب مباشرةً: «أين تريد أن تعود؟».
+  if (d.placement) {
+    const p = d.placement as { day?: string; doctor_id?: string; doctor_name?: string; status_ar?: string };
+    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
+    const self = !!selfId && p.doctor_id === selfId;
+    return [
+      self
+        ? 'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): القائد الذي تخاطبه ألغى حالته بنفسه،'
+        : 'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): أُلغيت حالة طبيب، ومكانه السابق صار مُغطًّى',
+      self
+        ? 'ومكانه السابق صار مُغطًّى فلم يُعَد إليه تلقائيًّا. ابدأ أنت الحديث وخاطبه'
+        : 'فلم يُعَد إليه تلقائيًّا. ابدأ أنت الحديث مع القائد كأنّك لاحظتَ ذلك بنفسك:',
+      self
+        ? `مباشرةً (هو نفسه العائد): أخبره أنّ مكانه السابق مُغطًّى، واسأله **سطرًا واحدًا**`
+        : `أخبره أنّ ${p.status_ar || 'حالة'} ${dr(p.doctor_name)} يوم ${dayAr} أُلغيت وأنّ مكانه`,
+      self
+        ? 'أين يريد أن يعود — **بلا اقتراحات ولا خيارات**.'
+        : 'السابق مُغطًّى، واسأله **سطرًا واحدًا** أين يضعه — **بلا اقتراحات ولا خيارات**.',
+      'ثمّ نفّذ ما يطلبه كما هو (قد يكون مركّبًا بأكثر من نقلة — نفّذها كلّها بأدواتك،',
+      'ومرّر اليوم والأسبوع أدناه). أكّد بسطرٍ بعد التنفيذ.',
+      '',
+      `الأسبوع: ${d.week_start || ''}`,
+      `اليوم: ${p.day || ''} (${dayAr})`,
+      `الطبيب العائد: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
+    ].join('\n');
+  }
   const days = coverageDays(d);
   const absentName = d.absent_doctor_name || days.find((x) => x.absentName)?.absentName || '';
 
@@ -164,7 +234,8 @@ function buildCoverageSeed(n: ConvoNotif): string {
     'نقص قل إنّه مغطّى ولا حاجة لإجراء. **اعرض الحلول كنصّ (نقاط)؛ لا أقواس [ ] ولا أزرار.** لا',
     'تذكر حلًّا غير موجود. عند ردّ القائد على يومٍ نفّذ بالأداة المناسبة **لذلك اليوم** (مرّر day',
     'الصحيح، لا تذكر فترةً، ولا تستعمل place_in_clinic): نقصٌ مركّب (عيادة+دليقيتر) →',
-    '**apply_coverage_option**؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap**.',
+    '**apply_coverage_option**؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap**؛',
+    'اختار أحد خيارات «إعادة توزيع اليوم» → **reshape_day** بالمنفرد المختار (soloDoctorIndex) — المحرّك ينفّذ كلّ النقلات.',
     '',
     `الأسبوع: ${d.week_start || ''}`,
     absentName ? `الطبيب الغائب: ${dr(absentName)}` : '',
@@ -176,11 +247,118 @@ function buildCoverageSeed(n: ConvoNotif): string {
 /** عنوان الكرت الثابت: الطبيب الغائب + أيّام النقص (بلا حلول وبلا فترات). */
 function coverageTitle(n: ConvoNotif): string {
   const d = n.data || {};
+  if (d.placement) {
+    const p = d.placement as { day?: string; doctor_name?: string };
+    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
+    return `عودة تحتاج مكانًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
+  }
   const days = coverageDays(d);
   const absentName = d.absent_doctor_name || days.find((x) => x.absentName)?.absentName || '';
   const gapDays = days.filter((c) => (c.gaps?.length || 0) > 0).map((c) => DAY_AR_SEED[c.day] || c.day);
   const list = gapDays.join('، ');
   return `نقص${absentName ? ` — ${dr(absentName)}` : ''}${list ? `: ${list}` : ''}`;
+}
+
+/**
+ * أزرار التغطية — تُبنى **من حقائق الكرت نفسها** (بالهويّات) لا من نصّ الذكاء، فكلّ
+ * زرّ يطابق حلًّا ذكره النصّ حرفيًّا. الضغط يُنفَّذ بالكود مباشرةً (applyCoverageChoice)
+ * بلا أيّ نداءٍ للنموذج. الكتابة الحرّة تبقى متاحةً لما هو خارج الخيارات.
+ */
+type CovBtn = { label: string; choice: CoverageChoice };
+
+function buildCoverageButtons(d: Record<string, any>): { day: string; dayAr: string; btns: CovBtn[] }[] {
+  const out: { day: string; dayAr: string; btns: CovBtn[] }[] = [];
+  for (const c of coverageDays(d)) {
+    const gaps: SeedGap[] = c.gaps || [];
+    if (!gaps.length) continue;
+    const reserves = (c.reserves || []).filter((x): x is { id: string; name: string } => !!x.id);
+    const btns: CovBtn[] = [];
+    for (const g of gaps) {
+      if (g.kind === 'delegator_combo') {
+        const a0 = (g.optionA || [])[0];
+        if (a0?.cover?.id) {
+          btns.push({
+            label: `الخيار الأول — ${dr(a0.cover.name)}`,
+            choice: { kind: 'option_a', coverId: a0.cover.id, coverName: a0.cover.name },
+          });
+        }
+        const b0 = (g.optionB || [])[0];
+        if (b0) {
+          btns.push({
+            label: `الخيار الثاني — عيادة ${b0.clinicNumber} بالتناوب`,
+            choice: { kind: 'option_b', delegatorClinicNumber: b0.clinicNumber },
+          });
+        }
+        for (const rsv of reserves) {
+          btns.push({
+            label: `الاحتياطي ${dr(rsv.name)}`,
+            choice: { kind: 'option_a', coverId: rsv.id, coverName: rsv.name },
+          });
+        }
+      } else if (g.kind === 'delegator') {
+        for (const cand of (g.candidates || []).slice(0, 3)) {
+          if (!cand.id) continue;
+          btns.push({
+            label: `${dr(cand.name)} — الدليقيتر`,
+            choice: { kind: 'cover_gap', location: 'delegator', coverId: cand.id, coverName: cand.name },
+          });
+        }
+        for (const rsv of reserves) {
+          btns.push({
+            label: `الاحتياطي ${dr(rsv.name)} — الدليقيتر`,
+            choice: { kind: 'cover_gap', location: 'delegator', coverId: rsv.id, coverName: rsv.name },
+          });
+        }
+      } else {
+        // نقص عيادة بسيط — الزميل/المتفرّغ يستلمها، أو الاحتياطي، أو جزئيًّا
+        // (المحرّك يُغطّي تلقائيًّا الفترات المتاحة للمضغوط عليه — نفس النداء)
+        const where = gaps.length > 1 ? ` — عيادة ${g.clinicNumber}` : '';
+        const mate = g.twoPeriodColleague;
+        if (mate?.id) {
+          btns.push({
+            label: `${dr(mate.name)} يستلم الفترتين${where}`,
+            choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: mate.id, coverName: mate.name },
+          });
+        }
+        for (const f of (g.fullCandidates || []).filter((x): x is { id: string; name: string } => !!x.id)) {
+          btns.push({
+            label: `${dr(f.name)} يستلمها كاملة${where}`,
+            choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: f.id, coverName: f.name },
+          });
+        }
+        // إعادة توزيع اليوم — زرٌّ لكلّ خيار (يحمل المنفرد المختار)
+        for (const ro of g.reshapeOptions || []) {
+          const rsSolo = (ro.moves || []).find((m) => m.clinic === g.clinicNumber)?.doctor;
+          if (!rsSolo?.id) continue;
+          btns.push({
+            label: `إعادة توزيع اليوم: ${dr(rsSolo.name)} منفردًا${where}`,
+            choice: { kind: 'reshape', clinicNumber: g.clinicNumber, soloId: rsSolo.id },
+          });
+        }
+        for (const rsv of reserves) {
+          btns.push({
+            label: `الاحتياطي ${dr(rsv.name)}${where}`,
+            choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: rsv.id, coverName: rsv.name },
+          });
+        }
+        // حلول جزئيّة — تظهر فقط حين لا حلّ كامل (هكذا يبنيها المحرّك)
+        const seenPartial = new Set(btns.map((b) => b.label));
+        for (const p of g.partials || []) {
+          for (const cand of (p.candidates || []).filter((x): x is { id: string; name: string } => !!x.id)) {
+            const label = `${dr(cand.name)} — وقته المتاح${where}`;
+            if (seenPartial.has(label)) continue;
+            seenPartial.add(label);
+            btns.push({
+              label,
+              choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: cand.id, coverName: cand.name },
+            });
+          }
+        }
+      }
+    }
+    if (btns.length) out.push({ day: c.day, dayAr: DAY_AR_SEED[c.day] || c.day, btns });
+  }
+  return out;
 }
 
 const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل صياغة الذكاء داخل الكرت (لا تُعرَض)
@@ -202,6 +380,31 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   const [reply, setReply] = useState('');
   const startedRef = useRef(false);
 
+  // حالة الكرت: معلّق (أحمر — تذكير) / متجاهَل (هذا القائد فقط) / تمّ (حُلّ يدويًّا
+  // أو أغلقه المحرّك تلقائيًّا بعد تنفيذ التغطية = accepted)
+  const status: 'pending' | 'ignored' | 'done' =
+    !notif.action_status || notif.action_status === 'pending' ? 'pending'
+      : notif.action_status === 'ignored' ? 'ignored' : 'done';
+
+  // سحب الكرت (مثل محادثات الواتساب): يمينًا تظهر خيارات «تجاهل» و«تمّ»، يسارًا تختفي
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderRelease: (_e, g) => {
+      if (g.dx > 36) setActionsOpen(true);
+      else if (g.dx < -36) setActionsOpen(false);
+    },
+  })).current;
+
+  const mark = useCallback(async (s: 'ignored' | 'done') => {
+    setActionsOpen(false);
+    try {
+      const { updateNotificationAction } = await import('../lib/database');
+      await updateNotificationAction(notif.id, s);
+      onSeen();
+    } catch { /* يُعاد المحاولة بسحبٍ آخر */ }
+  }, [notif.id, onSeen]);
+
   // يحفظ الخيط في بيانات الإشعار (دمجٌ مع الحقائق) فلا يُعاد توليده عند كلّ فتح
   const persist = useCallback(async (h: V2Message[]) => {
     try {
@@ -221,7 +424,7 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
       const res = await sendMessageV2({
         messages: h, user: v2User,
         clinicId: clinicId || user.clinicId || undefined,
-        contextData: buildCoverageSeed(notif), task: 'requests',
+        contextData: buildCoverageSeed(notif, user.id), task: 'requests',
       });
       const text = res.success ? res.message : (res.error || 'تعذّر تنفيذ الطلب.');
       const next: V2Message[] = [...h, { role: 'assistant', content: text }];
@@ -254,19 +457,75 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
     runTurn([...history, { role: 'user', content: t }]);
   }, [history, loading, runTurn]);
 
+  // ─── أزرار الحلول: تنفيذٌ بالكود مباشرةً، لا نداء للنموذج ───
+  // التأكيد يُضاف للخيط محليًّا فقط (لا persist): المحرّك يَشطب النقص من بيانات
+  // الكرت ويُبطل الخيط بنفسه (resolveCoverageV2)، وإعادة حفظ الخيط هنا كانت
+  // ستُعيد البيانات القديمة فوق المحدَّثة.
+  const [covBusy, setCovBusy] = useState<string | null>(null);
+  const [doneDays, setDoneDays] = useState<Record<string, boolean>>({});
+  const handleChoice = useCallback(async (day: string, label: string, choice: CoverageChoice) => {
+    if (covBusy || loading) return;
+    setCovBusy(`${day}|${label}`);
+    try {
+      const { applyCoverageChoice } = await import('../lib/ai_v2/tools_requests_v2');
+      const cid = clinicId || user.clinicId;
+      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+      const d = notif.data || {};
+      const absentId = String(d.absent_doctor_id || '');
+      const absentName = String(d.absent_doctor_name || coverageDays(d).find((x) => x.absentName)?.absentName || '');
+      if (!absentId) throw new Error('بيانات الكرت ناقصة.');
+      const res = await applyCoverageChoice({
+        clinicId: cid,
+        actor: { id: user.id, name: user.name, role: user.role },
+        weekStart: String(d.week_start || ''), day,
+        absent: { id: absentId, name: absentName }, choice,
+      });
+      const text = res.success ? (res.info || 'تمّ.') : (res.error || 'تعذّر التنفيذ.');
+      if (res.success) setDoneDays((p) => ({ ...p, [day]: true }));
+      setHistory((h) => [...h, { role: 'assistant', content: text }]);
+      onSeen(); // يجلب بيانات الكرت بعد شطب النقص (يُغلق إن لم يبقَ نقص)
+    } catch (e) {
+      setHistory((h) => [...h, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
+    } finally {
+      setCovBusy(null);
+    }
+  }, [covBusy, loading, clinicId, user, notif.data, onSeen]);
+
+  // مجموعات الأزرار من حقائق الكرت — يومٌ نُفّذ حلُّه يسقط فورًا
+  const covButtonDays = status === 'pending'
+    ? buildCoverageButtons(notif.data || {}).filter((g) => !doneDays[g.day])
+    : [];
+
   // ما يُعرَض: تجاوز رسالة التشغيل الخفيّة (index 0)، وآخر ردّ يحمل خياراته كأزرار
   const shown = history.filter((m, i) => !(i === 0 && m.role === 'user' && m.content === SEED_TRIGGER));
 
+  // الألوان مبدئيّة (التصميم لاحقًا): معلّق = كهرمانيّ، متجاهَل = رماديّ، تمّ = أخضر
+  const statusTag = status === 'done' ? ' · تمّ' : status === 'ignored' ? ' · متجاهَل' : '';
+
   return (
-    <View style={styles.covCard}>
+    <View
+      style={[styles.covCard, status === 'ignored' && styles.covIgnored, status === 'done' && styles.covDone]}
+      {...pan.panHandlers}
+    >
       <TouchableOpacity style={styles.covHead} onPress={onToggle} activeOpacity={0.7}>
         <Text style={styles.covCaret}>{expanded ? '▾' : '▸'}</Text>
-        <Text style={styles.covTitle}>{coverageTitle(notif)}</Text>
+        <Text style={styles.covTitle}>{coverageTitle(notif) + statusTag}</Text>
       </TouchableOpacity>
+
+      {actionsOpen && (
+        <View style={styles.covActions}>
+          <TouchableOpacity style={[styles.covActBtn, styles.covActDone]} onPress={() => mark('done')}>
+            <Text style={styles.covActTxt}>تمّ</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.covActBtn, styles.covActIgnore]} onPress={() => mark('ignored')}>
+            <Text style={styles.covActTxt}>تجاهل</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {expanded && (
         <View style={styles.covBody}>
-          {/* عرض نصّيّ فقط — الذكاء يقترح الحلول، بلا أزرار قابلة للنقر (القائد يردّ كتابةً) */}
+          {/* الذكاء يعرض الحلول نصًّا، والأزرار أسفله تُبنى من حقائق الكرت (كود لا نموذج) */}
           {shown.map((m, i) => {
             const isAI = m.role === 'assistant';
             return (
@@ -276,6 +535,32 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
             );
           })}
           {loading && <ActivityIndicator color="#2D8C8C" style={{ marginVertical: scale(6) }} />}
+
+          {/* أزرار الحلول — تحت نصّ الذكاء مباشرةً، مجموعة لكلّ يوم؛ الضغط ينفّذ
+              بالكود فورًا (بلا نموذج)، والكتابة الحرّة تبقى لما هو خارج الخيارات */}
+          {!loading && shown.some((m) => m.role === 'assistant') && covButtonDays.map((g) => (
+            <View key={g.day} style={styles.covBtnGroup}>
+              {covButtonDays.length > 1 && <Text style={styles.covBtnDay}>يوم {g.dayAr}:</Text>}
+              <View style={styles.chipRow}>
+                {g.btns.map((b) => {
+                  const k = `${g.day}|${b.label}`;
+                  const busy = covBusy === k;
+                  return busy ? (
+                    <ActivityIndicator key={k} color="#2D8C8C" style={{ marginVertical: scale(4) }} />
+                  ) : (
+                    <TouchableOpacity
+                      key={k}
+                      style={styles.chip}
+                      disabled={!!covBusy}
+                      onPress={() => handleChoice(g.day, b.label, b.choice)}
+                    >
+                      <Text style={styles.chipTxt}>{b.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
 
           <View style={styles.covInputRow}>
             <TextInput
@@ -304,12 +589,49 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   const [note, setNote] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
+  // أزرار الإبلاغ بعد غيابٍ ذاتيّ: الضغط يُنفَّذ **بالكود مباشرةً** (announceAbsence)
+  // — النموذج لا يسأل ولا يشارك. النتيجة تحلّ محلّ الأزرار (لكلّ رسالة على حدة).
+  const [annResults, setAnnResults] = useState<Record<string, string>>({});
+  const [annBusyId, setAnnBusyId] = useState<string | null>(null);
+  const handleAnnounce = useCallback(async (m: ChatMessage, choice: 'shift' | 'center' | 'none') => {
+    const offer = m.announceOffer;
+    if (!offer || annBusyId) return;
+    if (choice === 'none') {
+      setAnnResults((p) => ({ ...p, [m.id]: 'حسنًا — بلا إبلاغ.' }));
+      return;
+    }
+    setAnnBusyId(m.id);
+    try {
+      const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
+      const cid = clinicId || user.clinicId;
+      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+      const res = await announceAbsence({
+        clinicId: cid, sender: { id: user.id, name: user.name },
+        audience: choice, message: offer.message, subjectId: offer.subjectId,
+      });
+      setAnnResults((p) => ({
+        ...p,
+        [m.id]: res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}`,
+      }));
+    } catch (e) {
+      setAnnResults((p) => ({ ...p, [m.id]: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }));
+    } finally {
+      setAnnBusyId(null);
+    }
+  }, [annBusyId, clinicId, user]);
+
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
-    // الطلبات المعلّقة + النتائج الجديدة فقط (تختفي الموافقة/الرفض بعد قراءتها)
+    // الطلبات المعلّقة + النتائج الجديدة (تختفي الموافقة/الرفض بعد قراءتها).
+    // وكرت التغطية المُنهى (تمّ/متجاهَل/أغلقه المحرّك) يبقى ظاهرًا بلونه خلال أسبوعه
+    // فقط — المعلّق يبقى دائمًا (أحمر، تذكير).
+    const sunday = currentSunday();
     const items = ((data || []) as ConvoNotif[])
-      .filter((n) => isPending(n) || (n.type === 'request_result' && !n.is_read))
+      .filter((n) =>
+        isPending(n)
+        || (n.type === 'request_result' && !n.is_read)
+        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday))
       .reverse();
     setConvo(items);
     // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر وتختفي عند الفتح التالي)
@@ -443,6 +765,29 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                           ))}
                         </View>
                       )}
+                      {/* أزرار الإبلاغ بعد غيابٍ ذاتيّ — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
+                      {m.role === 'assistant' && !!m.announceOffer && (
+                        annResults[m.id] ? (
+                          <Text style={styles.annNote}>{annResults[m.id]}</Text>
+                        ) : annBusyId === m.id ? (
+                          <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
+                        ) : (
+                          <>
+                            <Text style={styles.annAsk}>هل تُبلَّغ الجهات؟</Text>
+                            <View style={styles.chipRow}>
+                              <TouchableOpacity style={styles.chip} onPress={() => handleAnnounce(m, 'shift')}>
+                                <Text style={styles.chipTxt}>الشفت</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.chip} onPress={() => handleAnnounce(m, 'center')}>
+                                <Text style={styles.chipTxt}>المركز</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.chip} onPress={() => handleAnnounce(m, 'none')}>
+                                <Text style={styles.chipTxt}>لا داعي</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        )
+                      )}
                     </View>
                   );
                 }
@@ -450,7 +795,8 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 // كرت التغطية (gap_alert v2): كرتٌ بعنوان ثابت من المحرّك؛ نقره يفتح
                 // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
                 if (n.type === 'gap_alert') {
-                  if (n.data?.v !== 2 || coverageDays(n.data).length === 0) return null;
+                  if (n.data?.v !== 2) return null;
+                  if (coverageDays(n.data).length === 0 && !n.data?.placement) return null;
                   return (
                     <CoverageCard
                       key={n.id}
@@ -549,6 +895,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#2D8C8C',
   },
   chipTxt: { color: '#1F6B6B', fontSize: scale(13), fontWeight: '800' },
+  // سؤال/نتيجة الإبلاغ (أزرار كود بعد غيابٍ ذاتيّ)
+  annAsk: { fontSize: scale(13), color: '#5A6B6B', textAlign: 'right', marginTop: scale(8), fontWeight: '700' },
+  annNote: { fontSize: scale(13), color: '#1F6B6B', textAlign: 'right', marginTop: scale(8), fontWeight: '700' },
   reqActions: { flexDirection: 'row-reverse', gap: scale(10), marginTop: scale(11) },
   actBtn: { flex: 1, paddingVertical: scale(9), borderRadius: scale(10), alignItems: 'center' },
   accept: { backgroundColor: '#2D8C8C' },
@@ -577,6 +926,16 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch', borderRadius: scale(14), marginBottom: scale(10),
     backgroundColor: '#FFF8EC', borderWidth: 1, borderColor: '#E6B566', overflow: 'hidden',
   },
+  covIgnored: { backgroundColor: '#F2F4F5', borderColor: '#C9D2D2' },
+  covDone: { backgroundColor: '#EDF7F0', borderColor: '#83BD95' },
+  covActions: {
+    flexDirection: 'row-reverse', gap: scale(8),
+    paddingHorizontal: scale(10), paddingBottom: scale(10),
+  },
+  covActBtn: { flex: 1, paddingVertical: scale(8), borderRadius: scale(10), alignItems: 'center' },
+  covActDone: { backgroundColor: '#2D8C8C' },
+  covActIgnore: { backgroundColor: '#8A9A9A' },
+  covActTxt: { color: '#FFFFFF', fontSize: scale(13), fontWeight: '800' },
   covHead: {
     flexDirection: 'row-reverse', alignItems: 'center', gap: scale(8),
     paddingHorizontal: scale(12), paddingVertical: scale(11),
@@ -587,6 +946,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(10), paddingBottom: scale(10),
     borderTopWidth: 1, borderTopColor: '#F0DDB8', backgroundColor: '#FFFCF5',
   },
+  // أزرار حلول التغطية — منسجمة مع نصّ الذكاء (نفس الـchip)، عنوان اليوم فوقها
+  covBtnGroup: { alignSelf: 'flex-end', maxWidth: '85%', marginBottom: scale(6) },
+  covBtnDay: { fontSize: scale(13), color: '#5A6B6B', textAlign: 'right', fontWeight: '700' },
   covInputRow: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: scale(8), marginTop: scale(6) },
   covInput: {
     flex: 1, maxHeight: scale(90), minHeight: scale(40),

@@ -40,6 +40,21 @@ const WEEK_DAYS_LIST: WeekDay[] = [
   'sunday', 'monday', 'tuesday', 'wednesday', 'thursday',
 ];
 
+/**
+ * عرض إبلاغ بعد تسجيل الطبيب غيابه لنفسه: الواجهة تعرض أزرار
+ * [الشفت] [المركز] [لا داعي] وتنفّذ الضغط **بالكود مباشرةً** (announceAbsence) —
+ * النموذج لا يسأل ولا يشارك في هذه الخطوة إطلاقًا (مبدأ المايسترو).
+ */
+export type AnnounceOffer = {
+  weekStart: string;
+  day: string;
+  /** نصّ الإبلاغ الجاهز (يُرسَل كما هو عند اختيار الشفت/المركز) */
+  message: string;
+  /** صاحب الغياب (يُستثنى من المستلمين ويحدّد قروب الشفت) */
+  subjectId: string;
+  subjectName: string;
+};
+
 export type V2Tool = {
   name: string;
   description: string;
@@ -64,6 +79,8 @@ export type V2ToolContext = {
   roster?: { id: string; name: string; groupKey?: string }[];
   /** تُستدعى عند بناء معاينة (dryRun) — تُمرّر الحزمة للواجهة لتعرضها وتحفظها */
   onPreview?: (preview: SchedulePreview) => void;
+  /** تُستدعى بعد تسجيل غيابٍ ذاتيّ — الواجهة تعرض أزرار الإبلاغ وتنفّذها بالكود */
+  onAnnounceOffer?: (offer: AnnounceOffer) => void;
 };
 
 /**

@@ -134,7 +134,11 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
 
     if (response.success) {
       setAiState('success');
-      const assistantMsg: ChatMessage = { id: `a${Date.now()}`, role: 'assistant', content: response.message, timestamp: Date.now() };
+      const assistantMsg: ChatMessage = {
+        id: `a${Date.now()}`, role: 'assistant', content: response.message, timestamp: Date.now(),
+        // غيابٌ ذاتيّ سُجّل هذه الرسالة؟ → أزرار الإبلاغ تظهر تحت الردّ وتنفَّذ بالكود
+        announceOffer: response.announceOffer,
+      };
       setAiMessages(prev => [...prev, assistantMsg]);
       aiHistoryRef.current.push({ role: 'assistant', content: response.message });
       // إن بنى الذكاء معاينة جدول هذه الرسالة → اعرضها (يحفظها المستخدم من صفحة المعاينة)

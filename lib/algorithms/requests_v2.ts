@@ -74,6 +74,11 @@ const REMOVES_FROM_CLINIC = new Set<ScheduleStatus>(['sick_leave', 'vacation', '
 // يُستعاد عند «العودة لنفس المكان».
 const PREV_ROLE = 'prev_placement';
 
+const DAY_AR: Record<string, string> = {
+  sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء',
+  wednesday: 'الأربعاء', thursday: 'الخميس',
+};
+
 // ─── طبقة الصلاحيّات ───────────────────────────────────────────
 const LEADER_PLUS = new Set(['team_leader', 'coordinator', 'super_admin', 'manager']);
 const isLeaderPlus = (role: string): boolean => LEADER_PLUS.has(role);
@@ -196,6 +201,15 @@ export async function setScheduleStatus(
       (r) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'),
     );
     const alreadySameStatus = mine.some((r) => r.period === 0 && r.status === status);
+    // «احتياط» لطبيبٍ احتياطٍ أصلًا = غالبًا خطأ توجيه من الذكاء (القصد أن **يغطّي**
+    // نقصًا لا أن يُسجَّل). لا نجاح صامتًا هنا — رسالة تصحيح تقوده للأداة الصحيحة.
+    if (status === 'extra' && alreadySameStatus && !stillPlaced) {
+      return fail(
+        `${doctorName} احتياطٌ أصلًا هذا اليوم — لا حاجة لتسجيله. إن كان القصد أن ` +
+        `يغطّي نقصَ غائبٍ فاستعمل أداة التغطية (apply_coverage_option للنقص المركّب ` +
+        `أو cover_gap للبسيط) ومرّر رقمه coverDoctorIndex.`,
+      );
+    }
     if (REMOVES_FROM_CLINIC.has(status) && alreadySameStatus && !stillPlaced) {
       const prev = mine.filter((r) => r.role === PREV_ROLE);
       return { success: true, gaps: gapsFrom(prev) };
@@ -272,6 +286,8 @@ export async function setScheduleStatus(
 /**
  * يلغي حالة طبيب ليومٍ (يُزيل صفّ EX). الطبيب لنفسه؛ الليدر لأيّ أحد.
  * restoreToPrevPlace=true: يعيده إلى مكانه قبل الغياب إن وُجد محفوظًا.
+ * covered=true: كانت حالته تُخرجه من العيادة ولا صفوف حفظٍ باقية — أي أنّ مكانه
+ * غُطّي فعلًا، فلا يُعاد تلقائيًّا؛ القائد يقرّر أين يوضَع.
  */
 export async function cancelStatus(
   actor: Actor,
@@ -282,7 +298,7 @@ export async function cancelStatus(
     doctorId: string;
     restoreToPrevPlace?: boolean;
   },
-): Promise<RequestResult & { restored?: boolean }> {
+): Promise<RequestResult & { restored?: boolean; covered?: boolean; canceledStatus?: string }> {
   const { clinicId, weekStart, day, doctorId, restoreToPrevPlace } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة إلغاء حالة هذا الطبيب.');
   try {
@@ -290,9 +306,35 @@ export async function cancelStatus(
     const mine = rows.filter((r) => r.doctor_id === doctorId);
 
     // أزِل صفّ الحالة (period=0 وحالته ليست active)
+    const statusRow = mine.find((r) => r.period === 0 && r.status !== 'active');
+    // حارس اليوم: لا حالة مسجّلة في اليوم المسمّى → ارفض واذكر أيّامه الفعليّة هذا
+    // الأسبوع — يصحّح نداءً مرّر يومًا خاطئًا بدل «إلغاء» لا شيء بنجاحٍ كاذب.
+    if (!statusRow) {
+      const { data: wk } = await supabase
+        .from('schedule_slots')
+        .select('day_of_week')
+        .eq('clinic_id', clinicId)
+        .eq('week_start', weekStart)
+        .eq('doctor_id', doctorId)
+        .eq('period', 0)
+        .neq('status', 'active');
+      const days = [...new Set(
+        ((wk || []) as { day_of_week: string }[]).map((r) => DAY_AR[r.day_of_week] || r.day_of_week),
+      )];
+      return fail(
+        days.length
+          ? `لا حالة مسجّلة يوم ${DAY_AR[day]} لهذا الطبيب. حالاته المسجّلة هذا الأسبوع: ` +
+            `${days.join('، ')} — مرّر اليوم الذي سمّاه المستخدم حرفيًّا.`
+          : `لا حالة مسجّلة لهذا الطبيب في هذا الأسبوع (${weekStart}).`,
+      );
+    }
     await deleteRows(mine.filter((r) => r.period === 0 && r.status !== 'active').map((r) => r.id));
 
     const prev = mine.filter((r) => r.role === PREV_ROLE);
+    // حالةٌ كانت تُخرجه من العيادة ولا حفظَ باقيًا = مكانه غُطّي (التغطية تمزّق الحفظ)
+    const covered = !!statusRow
+      && REMOVES_FROM_CLINIC.has(statusRow.status as ScheduleStatus)
+      && prev.length === 0;
     let restored = false;
     if (restoreToPrevPlace && prev.length > 0) {
       await insertRows(
@@ -306,7 +348,7 @@ export async function cancelStatus(
       restored = true;
     }
     await deleteRows(prev.map((r) => r.id));
-    return { success: true, restored };
+    return { success: true, restored, covered, canceledStatus: statusRow?.status };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -327,12 +369,37 @@ export async function cancelStatus(
  *    كانت كلّ العيادات منفردة (needsPair). */
 export type Doc = { id: string; name: string };
 
-/** نقصٌ مع حلوله (بلا فترات في العرض):
- *  - clinic: غياب طبيب عيادة فقط → زميله يستلم الفترتين.
- *  - delegator_combo: غياب طبيبٍ يجمع عيادة (ب_a) + دليقيتر (ب_b) → خياران (أ/ب).
- *  - delegator: نادر (دليقيتر فقط) → المتفرّغون في فترته. */
+/** نقصٌ مع حلوله — **المعادلة الواحدة** (تعمل مع أيّ عدد عيادات/أطبّاء بلا تعداد
+ *  سيناريوهات): مرشّحو أيّ خانة شاغرة في فترة P = المتفرّغون في P من نفس الشفت
+ *  + زميل الموقع نفسه + الاحتياطيّون − المحجوبون (الغائب/تخفيف/ظلّ). الحلّ
+ *  الكامل = طبيبٌ واحد في تقاطع مرشّحي كلّ الفترات الشاغرة؛ لا تقاطع؟ حلول
+ *  جزئيّة لكلّ فترةٍ على حدة.
+ *  - clinic: زميله يستلم الفترتين، أو متفرّغ في كلّ الفترات (fullCandidates)،
+ *    أو جزئيًّا متفرّغ كلّ فترة (partials — فقط حين لا حلّ كامل).
+ *  - delegator_combo: غياب طبيبٍ يجمع عيادة (ب_a) + دليقيتر (ب_b) → خياران (أ/ب)؛
+ *    خيار أ يشمل المتفرّغين في الفترتين (coverClinic=0 — لا عيادة يتركها).
+ *  - delegator: المتفرّغون في فترته (المعادلة نفسها). */
+/** «إعادة توزيع اليوم» بأقلّ حركة: العيادة قبل الدليقيتر — عند قلّة العدد يذوب
+ *  الدليقيتر وتُشغَل العيادة (مَن في عيادةٍ يبقى فيها؛ لا يُنقَل إلّا الضروريّ).
+ *  لكلّ فترةٍ شاغرة مانح بالأولويّة: دليقيتر تلك الفترة ← متفرّغ فيها ← احتياطي.
+ *  تُحسب فقط حين لا حلّ كاملًا، وتُعرض فقط إن سدّت كلّ الفترات. */
+export type ReshapeMove = {
+  doctor: Doc;
+  period: number;
+  clinic: number;                                    // العيادة الوجهة (0 = دليقيتر)
+  role?: 'clinic' | 'delegator';                     // الدور الوجهة (الافتراضيّ عيادة)
+  from: 'delegator' | 'free' | 'ex' | 'clinic';      // ما يتركه تلك الفترة
+  fromClinic?: number;                               // عيادة المصدر (from='clinic')
+};
+
 export type CoverageGap =
-  | { kind: 'clinic'; clinicNumber: number; twoPeriodColleague: Doc | null }
+  | {
+      kind: 'clinic'; clinicNumber: number; twoPeriodColleague: Doc | null;
+      fullCandidates?: Doc[];                              // متفرّغون في كلّ الفترات الشاغرة
+      partials?: { period: number; candidates: Doc[] }[];  // لا حلّ كامل → مرشّحو كلّ فترة
+      // إعادة توزيع اليوم — كلّ الخيارات الممكنة (كلّ خيار: منفردٌ بالعيادة + بقيّة نقلاته)
+      reshapeOptions?: { moves: ReshapeMove[] }[];
+    }
   | { kind: 'delegator'; candidates: Doc[] }
   | {
       kind: 'delegator_combo';
@@ -414,10 +481,22 @@ export async function computeCoverageBrief(args: {
     const c = clinic.find((x) => x.clinic_number === clinicNum && x.period === P && !blocked(x.doctor_id));
     return c ? { id: c.doctor_id, name: c.doctor_name } : null;
   };
+  // الدليقيتر النشط في فترةٍ معيّنة — مانح «إعادة التوزيع» (العيادة أهمّ منه عند الشحّ)
+  const delegAt = (P: number): Doc | null => {
+    const d = activeAssign.find((r) => r.role === 'delegator' && r.period === P && !blocked(r.doctor_id));
+    return d ? { id: d.doctor_id, name: d.doctor_name } : null;
+  };
 
   const gaps: CoverageGap[] = [];
   const absentShiftCols = new Set<number>(); // أعمدة EX لجهات شفت النقص (1 صباح / 2 مساء)
   for (const r of prev) absentShiftCols.add(r.period >= 3 ? 2 : 1);
+
+  // الاحتياطيّون في جهة (جهات) شفت النقص — بأسمائهم (تُحسب قبل الحلول لأنّها مانح فيها)
+  const reserves = uniqDoc(
+    rows
+      .filter((r) => r.period === 0 && r.status === 'extra' && absentShiftCols.has(r.clinic_number) && !blocked(r.doctor_id))
+      .map((r) => ({ id: r.doctor_id, name: r.doctor_name })),
+  );
 
   const prevClinicRows = prev.filter((r) => r.clinic_number > 0); // عيادة الغائب
   const prevDelegRows = prev.filter((r) => r.clinic_number === 0); // دليقيتر الغائب
@@ -440,6 +519,13 @@ export async function computeCoverageBrief(args: {
       if (X) optionA.push({ cover: X, coverClinic: D, backfill: Y });
       if (X && Y) optionB.push({ clinicNumber: D, a: X, b: Y });
     }
+    // المعادلة نفسها: متفرّغ في فترتَي النقص (ب_a وب_b) يحلّ محلّ الغائب كاملًا
+    // بلا عيادةٍ يتركها ولا زميلٍ يستلمها (coverClinic=0 = لا عيادة أصليّة)
+    const freeB = freeAt(bP);
+    for (const f of freeAt(aP)) {
+      if (!freeB.some((y) => y.id === f.id)) continue;
+      if (!optionA.some((o) => o.cover.id === f.id)) optionA.push({ cover: f, coverClinic: 0, backfill: null });
+    }
     gaps.push({ kind: 'delegator_combo', clinicNumber: C, clinicColleague, optionA, optionB });
   } else {
     // ── حالات بسيطة: عيادة فقط أو دليقيتر فقط ──
@@ -458,20 +544,120 @@ export async function computeCoverageBrief(args: {
         const mate = clinic.find(
           (c) => c.clinic_number === r.clinic_number && sp.includes(c.period) && !blocked(c.doctor_id),
         );
+        // المعادلة: مرشّحو كلّ فترةٍ شاغرة = المتفرّغون فيها من نفس الشفت.
+        // متفرّغٌ في **كلّ** الفترات الشاغرة → يستلم النقص كاملًا؛ لا زميل ولا
+        // حلّ كامل → حلول جزئيّة (مرشّحو كلّ فترةٍ على حدة).
+        const Ps = [...new Set(prev.filter((x) => x.clinic_number === r.clinic_number).map((x) => x.period))];
+        const perP = Ps.map((P) => freeAt(P));
+        const fullCandidates = (perP[0] || []).filter(
+          (x) => perP.every((l) => l.some((y) => y.id === x.id)) && x.id !== mate?.doctor_id,
+        );
+        const partials = !mate && fullCandidates.length === 0
+          ? Ps.map((P, i) => ({ period: P, candidates: perP[i] || [] })).filter((x) => x.candidates.length > 0)
+          : [];
+        // «إعادة توزيع اليوم» (لا حلّ كاملًا فقط) — **كلّ الخيارات الممكنة**:
+        // المرشّح للانفراد من أطبّاء العيادات **غير حاملي الدليقيتر** (لديهم
+        // مهامهم): ينفرد بالعيادة الشاغرة اليوم كاملًا، وما تركه من مقعده يستلمه
+        // زميله في عيادته نفسها (كان متفرّغًا تلك الفترة) فتبقى عيادتهما كاملة.
+        // لا زوج يصلح (مثلًا مخفّفٌ لا يستطيع الفترة الأخرى)؟ يُلجأ لحامل
+        // الدليقيتر: ينفرد، ومقعده يسدّه دليقيتر الفترة الأخرى، وفترات الدليقيتر
+        // التي خلت يتناوب عليها زوجٌ متقاسم **من عيادةٍ واحدة** إن أمكن وإلّا
+        // ذاب الدليقيتر — العيادة أهمّ.
+        let reshapeOptions: { moves: ReshapeMove[] }[] | undefined;
+        if (!mate && fullCandidates.length === 0) {
+          const options: { moves: ReshapeMove[] }[] = [];
+          const delegIds = new Set(
+            activeAssign.filter((x) => x.role === 'delegator').map((x) => x.doctor_id),
+          );
+          // ── المستوى الأوّل: أطبّاء الأزواج المتقاسمة (غير حاملي الدليقيتر) ──
+          const pairDocs = uniqDoc(
+            activeAssign
+              .filter((x) => x.role === 'clinic' && !delegIds.has(x.doctor_id) && !blocked(x.doctor_id))
+              .map((x) => ({ id: x.doctor_id, name: x.doctor_name })),
+          );
+          tier1: for (const X of pairDocs) {
+            const moves: ReshapeMove[] = [];
+            for (let i = 0; i < Ps.length; i++) {
+              const P = Ps[i]!;
+              const seat = activeAssign.find(
+                (x) => x.doctor_id === X.id && x.role === 'clinic' && x.period === P,
+              );
+              if (seat) {
+                // يترك مقعده — زميل عيادته نفسها المتفرّغ هذه الفترة يستلمه
+                const partner = freeAt(P).find((y) =>
+                  y.id !== X.id && activeAssign.some(
+                    (x) => x.doctor_id === y.id && x.role === 'clinic' && x.clinic_number === seat.clinic_number,
+                  ));
+                if (!partner) continue tier1;
+                moves.push({ doctor: X, period: P, clinic: r.clinic_number, from: 'clinic', fromClinic: seat.clinic_number });
+                moves.push({ doctor: partner, period: P, clinic: seat.clinic_number, from: 'free' });
+              } else if ((perP[i] || []).some((y) => y.id === X.id)) {
+                moves.push({ doctor: X, period: P, clinic: r.clinic_number, from: 'free' });
+              } else continue tier1;
+            }
+            options.push({ moves });
+          }
+          // ── المستوى الثاني (لا زوج يصلح): حامل الدليقيتر ينفرد ──
+          if (options.length === 0) {
+            const delegHolders = uniqDoc(
+              activeAssign
+                .filter((x) => x.role === 'delegator' && Ps.includes(x.period) && !blocked(x.doctor_id))
+                .map((x) => ({ id: x.doctor_id, name: x.doctor_name })),
+            );
+            tier2: for (const X of delegHolders) {
+              const moves: ReshapeMove[] = [];
+              for (let i = 0; i < Ps.length; i++) {
+                const P = Ps[i]!;
+                const isDeleg = activeAssign.some(
+                  (x) => x.doctor_id === X.id && x.role === 'delegator' && x.period === P,
+                );
+                const seat = activeAssign.find(
+                  (x) => x.doctor_id === X.id && x.role === 'clinic' && x.period === P,
+                );
+                if (isDeleg) {
+                  moves.push({ doctor: X, period: P, clinic: r.clinic_number, from: 'delegator' });
+                } else if (seat) {
+                  const dg = delegAt(P);
+                  if (!dg || dg.id === X.id) continue tier2;
+                  moves.push({ doctor: X, period: P, clinic: r.clinic_number, from: 'clinic', fromClinic: seat.clinic_number });
+                  moves.push({ doctor: dg, period: P, clinic: seat.clinic_number, from: 'delegator' });
+                } else if ((perP[i] || []).some((y) => y.id === X.id)) {
+                  moves.push({ doctor: X, period: P, clinic: r.clinic_number, from: 'free' });
+                } else continue tier2;
+              }
+              // فترات الدليقيتر التي خلت: يتناوب عليها زوجٌ من **عيادةٍ واحدة**
+              const vacatedPs = [...new Set(moves.filter((m) => m.from === 'delegator').map((m) => m.period))];
+              const usedIds = new Set(moves.map((m) => m.doctor.id));
+              const pairClinics = [...new Set(
+                activeAssign.filter((x) => x.role === 'clinic' && x.clinic_number !== r.clinic_number).map((x) => x.clinic_number),
+              )];
+              let delegMoves: ReshapeMove[] = [];
+              for (const E of pairClinics) {
+                const tryMoves: ReshapeMove[] = [];
+                for (const P of vacatedPs) {
+                  const f = freeAt(P).find((y) =>
+                    !usedIds.has(y.id) && activeAssign.some(
+                      (x) => x.doctor_id === y.id && x.role === 'clinic' && x.clinic_number === E,
+                    ));
+                  if (!f) { tryMoves.length = 0; break; }
+                  tryMoves.push({ doctor: f, period: P, clinic: 0, role: 'delegator', from: 'free' });
+                }
+                if (tryMoves.length === vacatedPs.length) { delegMoves = tryMoves; break; }
+              }
+              options.push({ moves: [...moves, ...delegMoves] });
+              break;
+            }
+          }
+          if (options.length) reshapeOptions = options;
+        }
         gaps.push({
           kind: 'clinic', clinicNumber: r.clinic_number,
           twoPeriodColleague: mate ? { id: mate.doctor_id, name: mate.doctor_name } : null,
+          fullCandidates, partials, reshapeOptions,
         });
       }
     }
   }
-
-  // الاحتياطيّون في جهة (جهات) شفت النقص — بأسمائهم
-  const reserves = uniqDoc(
-    rows
-      .filter((r) => r.period === 0 && r.status === 'extra' && absentShiftCols.has(r.clinic_number) && !blocked(r.doctor_id))
-      .map((r) => ({ id: r.doctor_id, name: r.doctor_name })),
-  );
 
   return { day, absentName: doctorName, gaps, reserves };
 }
@@ -670,7 +856,7 @@ export async function placeInClinic(
     clinicNumber: number;
     periods: number[]; // الفترات التي يُوضع فيها (مثلًا [1,2] صباح كامل)
   },
-): Promise<RequestResult> {
+): Promise<RequestResult & { displaced?: { name: string; periods: number[] }[] }> {
   const { clinicId, weekStart, day, doctorId, doctorName, clinicNumber, periods } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة تنسيب هذا الطبيب.');
   if (!Number.isInteger(clinicNumber) || clinicNumber < 1) return fail('رقم العيادة غير صالح.');
@@ -678,6 +864,27 @@ export async function placeInClinic(
   try {
     const rows = await loadDay(clinicId, weekStart, day);
     const mine = rows.filter((r) => r.doctor_id === doctorId);
+
+    // حارس الوجود: لا «إنشاء» عيادة من العدم — العيادة المطلوبة يجب أن تكون قائمة في
+    // جدول ذلك اليوم (صفوف فعليّة أو صفوف حفظ)، وفي الفترات المطلوبة تحديدًا.
+    const opPeriods = new Set(
+      rows.filter((r) => r.clinic_number === clinicNumber && r.period > 0).map((r) => r.period),
+    );
+    if (!opPeriods.size) {
+      const known = [...new Set(
+        rows.filter((r) => r.clinic_number > 0 && r.period > 0).map((r) => r.clinic_number),
+      )].sort((a, b) => a - b);
+      return fail(
+        `لا توجد عيادة ${clinicNumber} في جدول هذا اليوم. العيادات الموجودة: ${known.join('، ') || 'لا شيء'}.`,
+      );
+    }
+    const badPeriods = periods.filter((p) => !opPeriods.has(p));
+    if (badPeriods.length) {
+      return fail(
+        `عيادة ${clinicNumber} لا تعمل في الفترات ${badPeriods.join('، ')} هذا اليوم — ` +
+        `فتراتها: ${[...opPeriods].sort((a, b) => a - b).join('، ')}.`,
+      );
+    }
 
     // حارس التعارض: لا يكون الطبيب في عيادتين بنفس الفترة. إن كان له تكليف فعليّ في
     // عيادة أخرى ضمن إحدى الفترات المطلوبة → ارفض بوضوح.
@@ -691,6 +898,28 @@ export async function placeInClinic(
         `${doctorName} مشغول في الفترة ${conflictP} بعيادة ${busy.clinic_number} — ` +
         `لا يمكن أن يكون في عيادتين بنفس الفترة.`,
       );
+    }
+
+    // حارس الإشغال: الخانة المطلوبة يشغلها طبيب آخر؟ الليدر يُزيحه (حالة العائد بعد
+    // تغطية: المُغطّي استلم فترتين فيعود لفترته الأصليّة)؛ الطبيب لنفسه لا يُزيح أحدًا.
+    const occupants = rows.filter(
+      (r) => r.role === 'clinic' && r.status === 'active' && r.clinic_number === clinicNumber
+        && periods.includes(r.period) && r.doctor_id !== doctorId,
+    );
+    let displaced: { name: string; periods: number[] }[] = [];
+    if (occupants.length) {
+      if (!isLeaderPlus(actor.role)) {
+        const who = [...new Set(occupants.map((r) => r.doctor_name))].join('، ');
+        return fail(`المكان مشغول (${who}) — اختر مكانًا متاحًا.`);
+      }
+      await deleteRows(occupants.map((r) => r.id));
+      const byDoc = new Map<string, { name: string; periods: number[] }>();
+      for (const r of occupants) {
+        const e = byDoc.get(r.doctor_id) || { name: r.doctor_name, periods: [] };
+        e.periods.push(r.period);
+        byDoc.set(r.doctor_id, e);
+      }
+      displaced = [...byDoc.values()];
     }
 
     // أزِل حالته الغائبة وصفوف الحفظ (سيدخل العيادة فعليًّا)
@@ -710,9 +939,81 @@ export async function placeInClinic(
         role: 'clinic', status: 'active', source: 'request',
       }));
     await insertRows(toAdd);
-    // التريني الظلّ يلاصق مدرّبه في النقل
-    await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId], preRows: rows });
-    return ok();
+    // التريني الظلّ يلاصق مدرّبه في النقل (للموضوع وللمُزاحين كي تتبعهم ظلالهم)
+    await mirrorShadows({
+      clinicId, weekStart, day,
+      supervisorIds: [doctorId, ...occupants.map((r) => r.doctor_id)],
+      preRows: rows,
+    });
+    return { success: true, displaced };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
+/**
+ * يجعل طبيبًا دليقيترًا في يومٍ ما — في الفترة المسمّاة، أو تلقائيًّا في فترة
+ * الدليقيتر التي يكون فيها فارغًا. الدليقيتر الحاليّ في تلك الفترة يُزاح (تبقى له
+ * خاناته الأخرى). الليدر فأعلى (فيه إزاحة).
+ */
+export async function placeAsDelegator(
+  actor: Actor,
+  args: {
+    clinicId: string;
+    weekStart: string;
+    day: WeekDay;
+    doctorId: string;
+    doctorName: string;
+    period?: number;
+  },
+): Promise<RequestResult & { period?: number; replaced?: string }> {
+  const { clinicId, weekStart, day, doctorId, doctorName } = args;
+  if (!isLeaderPlus(actor.role)) return fail('تعيين الدليقيتر من صلاحيّة التيم ليدر فأعلى.');
+  try {
+    const rows = await loadDay(clinicId, weekStart, day);
+    const delegRows = rows.filter((r) => r.role === 'delegator' && r.status === 'active' && r.period > 0);
+    const delegPeriods = [...new Set(delegRows.map((r) => r.period))].sort((a, b) => a - b);
+    if (!delegPeriods.length) return fail('لا دليقيتر في جدول هذا اليوم.');
+
+    const busy = new Set(
+      rows
+        .filter((r) => r.doctor_id === doctorId && r.status === 'active' && r.period > 0
+          && (r.role === 'clinic' || r.role === 'delegator'))
+        .map((r) => r.period),
+    );
+    // الفترة: المسمّاة إن صحّت، وإلّا فترة الدليقيتر التي يكون الطبيب فارغًا فيها
+    let P = args.period;
+    if (P != null) {
+      if (!delegPeriods.includes(P)) {
+        return fail(`لا دليقيتر في الفترة ${P} هذا اليوم — فتراته: ${delegPeriods.join('، ')}.`);
+      }
+      if (busy.has(P)) {
+        return fail(`${doctorName} مشغول في الفترة ${P} — لا يكون في مكانين بنفس الفترة.`);
+      }
+    } else {
+      P = delegPeriods.find((p) => !busy.has(p));
+      if (P == null) {
+        return fail(`${doctorName} مشغول في كلّ فترات الدليقيتر (${delegPeriods.join('، ')}).`);
+      }
+    }
+
+    // أزِح الدليقيتر الحاليّ في هذه الفترة وضع الطبيب مكانه
+    const current = delegRows.filter((r) => r.period === P && r.doctor_id !== doctorId);
+    await deleteRows(current.map((r) => r.id));
+    if (!delegRows.some((r) => r.period === P && r.doctor_id === doctorId)) {
+      await insertRows([{
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: P, clinic_number: 0,
+        doctor_id: doctorId, doctor_name: doctorName,
+        role: 'delegator', status: 'active', source: 'request',
+      }]);
+    }
+    await mirrorShadows({
+      clinicId, weekStart, day,
+      supervisorIds: [doctorId, ...current.map((r) => r.doctor_id)],
+      preRows: rows,
+    });
+    return { success: true, period: P, replaced: current[0]?.doctor_name };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -737,11 +1038,11 @@ export async function coverGap(
     weekStart: string;
     day: WeekDay;
     absentDoctorId: string;
-    target: { kind: 'delegator' } | { kind: 'clinic'; clinicNumber: number };
+    target: { kind: 'delegator' } | { kind: 'clinic'; clinicNumber?: number };
     coverDoctorId: string;
     coverDoctorName: string;
   },
-): Promise<RequestResult> {
+): Promise<RequestResult & { clinicNumber?: number; coveredPeriods?: number[]; remainingPeriods?: number[] }> {
   const { clinicId, weekStart, day, absentDoctorId, target, coverDoctorId, coverDoctorName } = args;
   if (!isLeaderPlus(actor.role)) return fail('التغطية من صلاحيّة التيم ليدر فأعلى.');
   try {
@@ -776,27 +1077,51 @@ export async function coverGap(
         }]);
       }
       await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [coverDoctorId], preRows: rows });
+      // المكان غُطّي → مزّق صفّ حفظه (الفترة المغطّاة فقط) كي لا يُحسب نقصًا بعد الآن
+      // ولا يُعاد الغائب فوق المُغطّي عند إلغاء الحالة (كما تفعل التغطية المركّبة).
+      await deleteRows(prev.filter((r) => r.clinic_number === 0 && r.period === freePeriod).map((r) => r.id));
+      // المُغطّي كان احتياطيًّا؟ صار في مكانٍ فعليّ — أزِل صفّ احتياطه
+      await deleteRows(
+        rows.filter((r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
+      );
       return ok();
     }
 
     // عيادة N: المُغطّي يأخذ فترات الغائب في تلك العيادة. صفوف الحفظ كلّها role=PREV_ROLE،
     // فنُطابق بـ clinic_number (تحفظ رقم العيادة الأصليّ)، لا بـ role==='clinic'.
-    const clinicNumber = target.clinicNumber;
+    // رقم العيادة لم يصل (أو وصل تالفًا)؟ المحرّك يعرف مكان النقص من صفوف الحفظ —
+    // عيادة واحدة فيها نقص = لا لبس، فلا نُفشل العمليّة لنقص معلومة نملكها.
+    const gapClinics = [...new Set(prev.filter((r) => r.clinic_number > 0).map((r) => r.clinic_number))];
+    let clinicNumber = target.clinicNumber;
+    if (clinicNumber == null || !Number.isFinite(clinicNumber) || clinicNumber <= 0) {
+      if (gapClinics.length === 1) clinicNumber = gapClinics[0]!;
+      else if (gapClinics.length === 0) return fail('لا يوجد نقص عيادة لهذا الطبيب في هذا اليوم.');
+      else return fail(`أكثر من عيادة فيها نقص لهذا الطبيب (${gapClinics.join('، ')}) — مرّر clinicNumber لتحديد المقصودة.`);
+    }
     const periods = [...new Set(
       prev.filter((r) => r.clinic_number === clinicNumber && r.clinic_number !== 0).map((r) => r.period),
     )];
-    if (periods.length === 0) return fail(`لا يوجد نقص في عيادة ${clinicNumber} لهذا الطبيب.`);
-    const myClinic = activeAssign.filter((r) => r.doctor_id === coverDoctorId && r.role === 'clinic');
-    const conflictP = periods.find((p) => myClinic.some((r) => r.period === p && r.clinic_number !== clinicNumber));
-    if (conflictP != null) {
-      const busy = myClinic.find((r) => r.period === conflictP && r.clinic_number !== clinicNumber)!;
+    if (periods.length === 0) {
+      // كن دليلًا لا حاجزًا: اذكر مكان النقص الفعليّ كي يُصحَّح النداء التالي.
+      return fail(`لا يوجد نقص في عيادة ${clinicNumber} لهذا الطبيب${gapClinics.length ? ` — نقصه في عيادة ${gapClinics.join('، ')}` : ''}.`);
+    }
+    // المعادلة عند التنفيذ: المُغطّي يستلم كلّ فترةٍ هو متفرّغ فيها (لا عيادة أخرى
+    // ولا دليقيتر بنفس الفترة). كلّ الفترات مشغولة → فشل؛ بعضها → **تغطية جزئيّة**
+    // والفترات الباقية تبقى نقصًا محفوظًا (صفوف الحفظ لا تُمزَّق إلّا لما غُطّي).
+    const myBusy = activeAssign.filter((r) => r.doctor_id === coverDoctorId);
+    const coverable = periods.filter(
+      (p) => !myBusy.some((r) => r.period === p && !(r.role === 'clinic' && r.clinic_number === clinicNumber)),
+    );
+    if (coverable.length === 0) {
+      const busy = myBusy.find((r) => periods.includes(r.period));
       return fail(
-        `${coverDoctorName} مشغول في الفترة ${conflictP} بعيادة ${busy.clinic_number} — ` +
-        `لا يمكن أن يكون في عيادتين بنفس الفترة.`,
+        `${coverDoctorName} مشغول في فترات النقص كلّها` +
+        `${busy ? ` (${busy.role === 'clinic' ? `عيادة ${busy.clinic_number}` : 'الدليقيتر'})` : ''} — اختر طبيبًا متفرّغًا.`,
       );
     }
+    const myClinic = myBusy.filter((r) => r.role === 'clinic');
     const existing = new Set(myClinic.map((r) => `${r.period}|${r.clinic_number}`));
-    const toAdd = periods
+    const toAdd = coverable
       .filter((p) => !existing.has(`${p}|${clinicNumber}`))
       .map((p) => ({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
@@ -806,7 +1131,121 @@ export async function coverGap(
       }));
     await insertRows(toAdd);
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [coverDoctorId], preRows: rows });
-    return ok();
+    // ما غُطّي → مزّق صفوف حفظه كي لا يُحسب نقصًا بعد الآن ولا يُعاد الغائب
+    // فوق المُغطّي عند إلغاء الحالة (كما تفعل التغطية المركّبة).
+    await deleteRows(
+      prev.filter((r) => r.clinic_number === clinicNumber && coverable.includes(r.period)).map((r) => r.id),
+    );
+    // المُغطّي كان احتياطيًّا؟ صار في مكانٍ فعليّ — أزِل صفّ احتياطه
+    await deleteRows(
+      rows.filter((r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
+    );
+    // أرجِع الرقم المستنتَج + الفترات المتبقّية بلا تغطية (إن وُجدت) ليُذكَرا بصدق
+    return {
+      success: true, clinicNumber,
+      coveredPeriods: coverable,
+      remainingPeriods: periods.filter((p) => !coverable.includes(p)),
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// إعادة توزيع اليوم — سدّ نقص عيادةٍ بأقلّ حركة (ليدر فأعلى)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * ينفّذ خيار «إعادة توزيع اليوم» الذي حسبته المعادلة (computeCoverageBrief):
+ * طبيبٌ واحد يستلم العيادة الشاغرة منفردًا اليوم كاملًا، وزميله في عيادته يستلمها
+ * كاملة (أو عند اللجوء لحامل الدليقيتر: الدليقيتر يبقى بالتناوب لزوجٍ من عيادةٍ
+ * واحدة إن أمكن وإلّا ذاب — العيادة أهمّ). تُعاد الخطّة حسابها من الصفوف الحاليّة
+ * (لا من كرتٍ قد يكون بائتًا)، ويُختار الخيار بالمنفرد (soloDoctorId).
+ */
+export async function reshapeGap(
+  actor: Actor,
+  args: {
+    clinicId: string;
+    weekStart: string;
+    day: WeekDay;
+    absentDoctorId: string;
+    clinicNumber?: number;
+    soloDoctorId?: string;
+  },
+): Promise<RequestResult & { clinicNumber?: number; moves?: ReshapeMove[] }> {
+  const { clinicId, weekStart, day, absentDoctorId } = args;
+  if (!isLeaderPlus(actor.role)) return fail('التغطية من صلاحيّة التيم ليدر فأعلى.');
+  try {
+    const brief = await computeCoverageBrief({
+      clinicId, weekStart, day, doctorId: absentDoctorId, doctorName: '',
+    });
+    if (!brief) return fail('لا يوجد نقص محفوظ لهذا الطبيب في هذا اليوم.');
+    const clinicGaps = brief.gaps.filter(
+      (g): g is Extract<CoverageGap, { kind: 'clinic' }> => g.kind === 'clinic' && !!g.reshapeOptions?.length,
+    );
+    const gap = args.clinicNumber
+      ? clinicGaps.find((g) => g.clinicNumber === args.clinicNumber)
+      : clinicGaps.length === 1 ? clinicGaps[0] : undefined;
+    if (!gap || !gap.reshapeOptions?.length) {
+      return fail(clinicGaps.length > 1
+        ? `أكثر من عيادة فيها خطّة إعادة توزيع (${clinicGaps.map((g) => g.clinicNumber).join('، ')}) — مرّر clinicNumber.`
+        : 'لا خطّة إعادة توزيعٍ متاحة لهذا النقص — استعمل حلول التغطية الأخرى.');
+    }
+    const C = gap.clinicNumber;
+    // اختيار الخيار: بالمنفرد إن مُرِّر، وإلّا الوحيد؛ تعدّدٌ بلا تحديد → أسماء المنفردين
+    const soloOf = (o: { moves: ReshapeMove[] }) => o.moves.find((m) => m.clinic === C)?.doctor;
+    const chosen = args.soloDoctorId
+      ? gap.reshapeOptions.find((o) => soloOf(o)?.id === args.soloDoctorId)
+      : gap.reshapeOptions.length === 1 ? gap.reshapeOptions[0] : undefined;
+    if (!chosen) {
+      return fail(args.soloDoctorId
+        ? 'هذا الطبيب ليس من خيارات إعادة التوزيع الحاليّة — أعد عرض الخيارات.'
+        : `أكثر من خيار إعادة توزيع (المنفرد: ${gap.reshapeOptions.map((o) => soloOf(o)?.name).filter(Boolean).join('، ')}) — حدّد المنفرد.`);
+    }
+    const rows = await loadDay(clinicId, weekStart, day);
+    const prev = rows.filter((r) => r.role === PREV_ROLE && r.doctor_id === absentDoctorId);
+
+    const deleteIds: string[] = [];
+    const inserts: Record<string, unknown>[] = [];
+    const movedIds: string[] = [];
+    for (const m of chosen.moves) {
+      if (m.from === 'delegator') {
+        // يترك الدليقيتر تلك الفترة (يذوب الدليقيتر — العيادة أهمّ)
+        const drow = rows.find(
+          (r) => r.role === 'delegator' && r.status === 'active' && r.period === m.period && r.doctor_id === m.doctor.id,
+        );
+        if (drow) deleteIds.push(drow.id);
+      } else if (m.from === 'ex') {
+        // كان احتياطيًّا → صار في مكانٍ فعليّ
+        deleteIds.push(...rows
+          .filter((r) => r.doctor_id === m.doctor.id && r.period === 0 && r.status === 'extra')
+          .map((r) => r.id));
+      } else if (m.from === 'clinic') {
+        // يترك مقعد عيادته تلك الفترة (يسدّه دليقيترها في نقلةٍ أخرى من الخطّة)
+        const crow = rows.find(
+          (r) => r.role === 'clinic' && r.status === 'active' && r.period === m.period
+            && r.clinic_number === m.fromClinic && r.doctor_id === m.doctor.id,
+        );
+        if (crow) deleteIds.push(crow.id);
+      }
+      inserts.push({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: m.period, clinic_number: m.clinic,
+        doctor_id: m.doctor.id, doctor_name: m.doctor.name,
+        role: m.role === 'delegator' ? 'delegator' : 'clinic', status: 'active', source: 'request',
+      });
+      movedIds.push(m.doctor.id);
+    }
+    // كلّ فترات العيادة الشاغرة سُدَّت → مزّق صفوف حفظ الغائب لهذه العيادة
+    const coveredPs = new Set(chosen.moves.filter((m) => m.clinic === C).map((m) => m.period));
+    deleteIds.push(...prev
+      .filter((r) => r.clinic_number === C && coveredPs.has(r.period))
+      .map((r) => r.id));
+
+    await deleteRows(deleteIds);
+    await insertRows(inserts);
+    await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
+    return { success: true, clinicNumber: C, moves: chosen.moves };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -832,7 +1271,7 @@ export async function applyCoverageOption(
     coverDoctorId?: string; coverDoctorName?: string; // الخيار A
     delegatorClinicNumber?: number;                    // الخيار B
   },
-): Promise<RequestResult> {
+): Promise<RequestResult & { via?: 'cover_gap'; clinicNumber?: number }> {
   if (!isLeaderPlus(actor.role)) return fail('التغطية من صلاحيّة التيم ليدر فأعلى.');
   const { clinicId, weekStart, day, absentDoctorId, option } = args;
   try {
@@ -840,7 +1279,22 @@ export async function applyCoverageOption(
     const prev = rows.filter((r) => r.role === PREV_ROLE && r.doctor_id === absentDoctorId);
     const prevClinic = prev.find((r) => r.clinic_number > 0);
     const prevDeleg = prev.find((r) => r.clinic_number === 0);
-    if (!prevClinic || !prevDeleg) return fail('هذا ليس نقصًا مركّبًا (عيادة + دليقيتر).');
+    if (!prevClinic || !prevDeleg) {
+      // ليس مركّبًا — لا نُفشل بجفاف: نقصٌ بسيط ومعنا مُغطٍّ (خيار أ) → حوّل حتميًّا إلى
+      // تغطية مباشرة في مكان النقص الفعليّ. القصد واضح والمحرّك يملك كلّ المعلومات.
+      if (option === 'A' && args.coverDoctorId) {
+        const target = prevClinic
+          ? { kind: 'clinic' as const, clinicNumber: prevClinic.clinic_number }
+          : prevDeleg ? { kind: 'delegator' as const } : null;
+        if (!target) return fail('لا يوجد نقص محفوظ لهذا الطبيب في هذا اليوم.');
+        const res = await coverGap(actor, {
+          clinicId, weekStart, day, absentDoctorId, target,
+          coverDoctorId: args.coverDoctorId, coverDoctorName: args.coverDoctorName || '',
+        });
+        return { ...res, via: 'cover_gap' };
+      }
+      return fail('هذا ليس نقصًا مركّبًا (عيادة + دليقيتر) — استعمل cover_gap بالغائب والموقع والمُغطّي.');
+    }
     const C = prevClinic.clinic_number, aP = prevClinic.period, bP = prevDeleg.period;
 
     const activeClinic = rows.filter((r) => r.role === 'clinic' && r.status === 'active' && r.period > 0);
@@ -865,18 +1319,39 @@ export async function applyCoverageOption(
     if (option === 'A') {
       if (!args.coverDoctorId) return fail('اختر الطبيب المُغطّي (الخيار الأول).');
       const coverSlot = activeClinic.find((r) => r.doctor_id === args.coverDoctorId && r.period === aP);
-      if (!coverSlot) return fail('الطبيب المُغطّي ليس في الفترة المطلوبة من عيادته.');
-      const D = coverSlot.clinic_number;
-      const backfill = docAtClinic(D, bP);
-      const cName = args.coverDoctorName || coverSlot.doctor_name;
-      deleteIds.push(coverSlot.id); // يترك عيادته في ب_a
+      // المُغطّي قد يكون **احتياطيًّا** (صفّ EX حالة extra، بلا عيادة) — مقبول:
+      // يأخذ مكان الغائب كاملًا بلا عيادةٍ يتركها ولا زميلٍ يستلمها.
+      const coverEx = rows.filter(
+        (r) => r.doctor_id === args.coverDoctorId && r.period === 0 && r.status === 'extra',
+      );
+      // أو **متفرّغًا في فترتَي النقص** (المعادلة): حاضر في الشفت وغير مكلَّف في
+      // ب_a ولا ب_b — يأخذ مكان الغائب كاملًا بلا عيادةٍ يتركها ولا زميلٍ يستلمها.
+      const mine = rows.filter(
+        (r) => r.status === 'active' && r.period > 0 && r.doctor_id === args.coverDoctorId
+          && (r.role === 'clinic' || r.role === 'delegator'),
+      );
+      const sp = aP >= 3 ? [3, 4] : [1, 2];
+      const freeBoth = mine.some((r) => sp.includes(r.period))
+        && !mine.some((r) => r.period === aP || r.period === bP);
+      if (!coverSlot && coverEx.length === 0 && !freeBoth) {
+        return fail('الطبيب المُغطّي ليس في الفترة المطلوبة من عيادته وليس احتياطيًّا ولا متفرّغًا في فترتَي النقص.');
+      }
+      const cName = args.coverDoctorName || coverSlot?.doctor_name || coverEx[0]?.doctor_name || mine[0]!.doctor_name;
+      if (coverSlot) {
+        const D = coverSlot.clinic_number;
+        const backfill = docAtClinic(D, bP);
+        deleteIds.push(coverSlot.id); // يترك عيادته في ب_a
+        if (backfill) {
+          inserts.push(clinicRow(D, aP, backfill.doctor_id, backfill.doctor_name)); // زميله يستلم عيادتهما
+          movedIds.push(backfill.doctor_id);
+        }
+      } else if (coverEx.length > 0) {
+        deleteIds.push(...coverEx.map((r) => r.id)); // كان احتياطًا → صار في مكانٍ فعليّ
+      }
+      // متفرّغ في الفترتين: لا صفوف تُحذف — تكليفاته الأخرى في الشفت تبقى كما هي
       inserts.push(clinicRow(C, aP, args.coverDoctorId, cName));   // يأخذ عيادة الغائب
       inserts.push(delegatorRow(bP, args.coverDoctorId, cName));   // ويأخذ الدليقيتر
       movedIds.push(args.coverDoctorId);
-      if (backfill) {
-        inserts.push(clinicRow(D, aP, backfill.doctor_id, backfill.doctor_name)); // زميله يستلم عيادتهما
-        movedIds.push(backfill.doctor_id);
-      }
     } else {
       const colleague = docAtClinic(C, bP); // زميل الغائب في عيادته (يستلمها كاملة)
       if (!colleague) return fail('لا يوجد زميل في عيادة الغائب لاستلامها.');
@@ -965,7 +1440,7 @@ export async function setDoctorGroupStatus(
 export const requestsV2 = {
   setScheduleStatus, cancelStatus, computeCoverageBrief,
   swapInSchedule,
-  placeInClinic, coverGap, applyCoverageOption,
+  placeInClinic, placeAsDelegator, coverGap, applyCoverageOption, reshapeGap,
   clearWeek,
   setClinicCount, moveDoctorGroup, setDoctorGroupStatus,
 };

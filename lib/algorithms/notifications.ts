@@ -745,6 +745,173 @@ export async function upsertLeaderCoverage(args: {
 }
 
 /**
+ * v2 — كرت «عودة تحتاج مكانًا»: طبيبٌ ألغى حالته بنفسه ومكانه السابق مُغطًّى فلا
+ * يُعاد تلقائيًّا — كرتُ فعلٍ للقائد يفتح خيطًا يسأله فيه الذكاء أين يضع العائد
+ * (بلا اقتراحات) وينفّذ أمره. يُرسَل بدل إشعار العلم (لا الاثنين معًا — إشعار واحد
+ * لكلّ حدث). لا يُكرَّر: كرتٌ معلّق لنفس (القائد، الأسبوع، اليوم، الطبيب) يُكتفى به.
+ */
+export async function alertLeaderPlacement(args: {
+  clinicId: string;
+  leaderId: string;
+  weekStart: string;
+  day: WeekDay;
+  doctorId: string;
+  doctorName: string;
+  canceledStatusAr?: string;  // «مرضية» — لصياغة العنوان فقط
+  senderId?: string;
+  senderName?: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  try {
+    const { data: rows } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('type', NotifType.GAP_ALERT);
+    const dup = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find((r) => {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      return pending && d.v === 2 && d.placement
+        && d.week_start === args.weekStart
+        && d.placement.day === args.day
+        && d.placement.doctor_id === args.doctorId;
+    });
+    if (dup) return { success: true, id: dup.id };
+
+    const statusAr = args.canceledStatusAr || 'حالته';
+    // العائد قد يكون القائد المستلِم نفسه (ألغى حالته بنفسه) → خاطِبه مباشرة
+    const self = args.doctorId === args.leaderId;
+    const { id, error } = await sendAction({
+      clinicId: args.clinicId, recipientId: args.leaderId,
+      senderId: args.senderId, senderName: args.senderName,
+      type: NotifType.GAP_ALERT, title: 'عودة تحتاج مكانًا',
+      body: self
+        ? `ألغيتَ ${statusAr === 'حالته' ? 'حالتك' : 'ال' + statusAr} يوم ${DAY_AR[args.day]} ومكانك السابق مُغطًّى — حدّد أين تعود.`
+        : `أُلغيت ${statusAr === 'حالته' ? 'حالة' : statusAr} ${dr(args.doctorName)} يوم ${DAY_AR[args.day]} ومكانه مُغطًّى — حدّد أين يوضَع.`,
+      data: {
+        v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
+        placement: {
+          day: args.day, doctor_id: args.doctorId,
+          doctor_name: args.doctorName, status_ar: statusAr,
+        },
+        batch_at: Date.now(),
+      },
+    });
+    return { success: !error, error, id };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+/**
+ * v2 — بعد وضع العائد فعليًّا في مكانٍ (place_in_clinic) تُغلَق كروت «عودة تحتاج
+ * مكانًا» المطابقة عند **كلّ** القادة (قائدٌ يحلّ والبقيّة تُغلَق تلقائيًّا).
+ * فشله لا يُفشل التنسيب.
+ */
+export async function resolvePlacementV2(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  doctorId: string;
+}): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.GAP_ALERT);
+    const rows = (data || []) as { id: string; data: any; action_status: string | null }[];
+    for (const r of rows) {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      if (!pending || d.v !== 2 || !d.placement) continue;
+      if (d.week_start !== args.weekStart) continue;
+      if (d.placement.day !== args.day || d.placement.doctor_id !== args.doctorId) continue;
+      await supabase
+        .from('notifications')
+        .update({ action_status: 'accepted', is_read: true })
+        .eq('id', r.id);
+    }
+  } catch { /* إغلاق الكروت تحسينٌ — لا يُفشل التنسيب المنفَّذ */ }
+}
+
+/**
+ * v2 — بعد **تنفيذ** التغطية فعليًّا (cover_gap / apply_coverage_option) يُحدِّث كروت
+ * النقص عند **كلّ القادة** (قائدٌ واحد يحلّ، والبقيّة تُغلَق كروتهم تلقائيًّا):
+ * يَشطب النقصَ المُغطّى من يومه في data.days[]؛ فإن لم يبقَ نقصٌ في أيّ يوم
+ * أُغلق الكرت (accepted)، وإلّا بقي معلّقًا بالأيّام المتبقّية فقط. يُبطل الخيط
+ * المحفوظ كي يُعاد توليده بالحقائق الجديدة. فشله لا يُفشل التغطية.
+ */
+export async function resolveCoverageV2(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  absentDoctorId: string;
+  /** ما الذي غُطّي: عيادة (برقمها إن عُرف) / دليقيتر / النقص المركّب كاملًا /
+   *  اليوم كلّه يسقط من الكرت (إلغاء الحالة — لم يعد هناك غياب أصلًا) /
+   *  أو fresh: حقائق اليوم أُعيد حسابها بعد التغطية (المعادلة من جديد — يدعم
+   *  التغطية الجزئيّة: ما بقي نقصًا يظهر بمرشّحيه المحدَّثين لا البائتين) */
+  covered: { kind: 'clinic'; clinicNumber?: number } | { kind: 'delegator' } | { kind: 'combo' } | { kind: 'all' }
+    | { kind: 'fresh'; gaps: unknown[]; reserves?: unknown[] };
+}): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.GAP_ALERT);
+    const rows = (data || []) as { id: string; data: any; action_status: string | null }[];
+    for (const r of rows) {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      if (!pending || d.v !== 2) continue;
+      if (d.week_start !== args.weekStart || d.absent_doctor_id !== args.absentDoctorId) continue;
+      const days: { day: WeekDay; gaps?: { kind?: string; clinicNumber?: number }[] }[] =
+        Array.isArray(d.days) ? d.days.slice() : [];
+      const i = days.findIndex((x) => x.day === args.day);
+      if (i < 0) continue;
+      if (args.covered.kind === 'all') {
+        // أُلغيت الحالة — لا غياب أصلًا → اليوم كلّه يسقط من الكرت
+        days.splice(i, 1);
+      } else if (args.covered.kind === 'fresh') {
+        // استبدل حقائق اليوم بالمحسوبة حديثًا (لا نقص متبقٍّ → gaps فارغة واليوم يبقى «مغطّى»)
+        days[i] = {
+          ...days[i],
+          gaps: args.covered.gaps as { kind?: string; clinicNumber?: number }[],
+          ...(args.covered.reserves ? { reserves: args.covered.reserves } : {}),
+        } as (typeof days)[number];
+      } else {
+        // اشطب النقص المُغطّى وحده — وأبقِ ما سواه في نفس اليوم
+        const covered = args.covered;
+        const gaps = (days[i].gaps || []).filter((g) => {
+          if (covered.kind === 'combo') return g.kind !== 'delegator_combo';
+          if (covered.kind === 'delegator') return g.kind !== 'delegator';
+          if (g.kind !== 'clinic') return true;
+          // عيادة: يبقى فقط إن عُرف الرقمان واختلفا
+          return g.clinicNumber != null && covered.clinicNumber != null
+            && g.clinicNumber !== covered.clinicNumber;
+        });
+        days[i] = { ...days[i], gaps };
+      }
+      const nextData = { ...d, days };
+      delete (nextData as Record<string, unknown>).thread; // أعِد التوليد بالحقائق الجديدة
+      const anyGap = days.some((x) => (x.gaps?.length || 0) > 0);
+      await supabase
+        .from('notifications')
+        .update({
+          data: nextData,
+          body: days.length === 0
+            ? `أُلغي غياب ${dr(d.absent_doctor_name || '')} — لا نقص.`
+            : coverageBody(d.absent_doctor_name || '', days),
+          is_read: !anyGap,                              // بقي نقص بيومٍ آخر → يبقى أحمر
+          action_status: anyGap ? 'pending' : 'accepted', // لا نقص → أُغلق عند الجميع
+        })
+        .eq('id', r.id);
+    }
+  } catch { /* تحديث الكروت تحسينٌ — لا يُفشل التغطية المنفَّذة */ }
+}
+
+/**
  * يُنهي كروت النقص المطابقة (نفس العيادة/الفترة/اليوم/الأسبوع) بعد التغطية
  * الفعليّة — كي يخفت زرّ الذكاء ولا يبقى الكرت معلّقًا.
  */
@@ -778,5 +945,6 @@ export const notifications = {
   // تبديل بموافقة
   openSwapRequest, acceptSwap, rejectSwap,
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
-  alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, upsertLeaderCoverage, resolveGapAlert,
+  alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, upsertLeaderCoverage, resolveGapAlert, resolveCoverageV2,
+  alertLeaderPlacement, resolvePlacementV2,
 };

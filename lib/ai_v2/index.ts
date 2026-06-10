@@ -23,9 +23,9 @@ import {
   DOCTOR_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
-import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview } from './tools';
-import { REQUESTS_TOOLS_V2, dispatchRequestToolV2 } from './tools_requests_v2';
-export type { SchedulePreview } from './tools';
+import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type AnnounceOffer } from './tools';
+import { REQUESTS_TOOLS_V2, dispatchRequestToolV2, FINAL_MARK } from './tools_requests_v2';
+export type { SchedulePreview, AnnounceOffer } from './tools';
 
 // ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
 // مهمّة الإشعارات أُلغيت: التغطية والإشعارات صارت ضمن «الطلبات» (المحرّك يكتشف
@@ -79,6 +79,10 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+// مهمّة الطلبات حسّاسة للأخطاء السلوكيّة → نموذج أقوى لها وحدها (الباقي على الافتراضيّ).
+// للرجوع لهايكو: اجعلها DEFAULT_MODEL.
+const REQUESTS_MODEL = 'claude-sonnet-4-6';
+const modelForTask = (task: V2Task) => (task === 'requests' ? REQUESTS_MODEL : DEFAULT_MODEL);
 const MAX_TOKENS = 4096;
 const MAX_TOOL_ROUNDS = 10;
 
@@ -110,6 +114,8 @@ export type SendMessageV2Result = {
   error?: string;
   /** حزمة معاينة جدول (لو بنى الذكاء معاينة هذه الرسالة) — الواجهة تعرضها وتحفظها */
   preview?: SchedulePreview;
+  /** عرض إبلاغ بعد غيابٍ ذاتيّ — الواجهة تعرض أزراره وتنفّذها بالكود (لا بالنموذج) */
+  announceOffer?: AnnounceOffer;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -287,11 +293,14 @@ export async function sendMessageV2(
 
     // آخر معاينة بناها الذكاء هذه الرسالة (تُرجَّع للواجهة لتعرضها وتحفظها)
     let capturedPreview: SchedulePreview | undefined;
+    // وعرض الإبلاغ بعد غيابٍ ذاتيّ (الواجهة تعرض أزراره وتنفّذها بالكود)
+    let capturedAnnounce: AnnounceOffer | undefined;
     const toolCtx: V2ToolContext = {
       clinicId: opts.clinicId || '',
       user: opts.user,
       roster: rosterForTools,
       onPreview: (p) => { capturedPreview = p; },
+      onAnnounceOffer: (o) => { capturedAnnounce = o; },
     };
 
     const activeTools = bundle.tools;
@@ -302,7 +311,7 @@ export async function sendMessageV2(
       ? activeTools.map((t, i) => (i === activeTools.length - 1 ? { ...t, cache_control: CC } : t))
       : undefined;
     // eslint-disable-next-line no-console
-    console.log(`[AI V2] task=${task} (tools=${activeTools.length})`);
+    console.log(`[AI V2] task=${task} model=${modelForTask(task)} (tools=${activeTools.length})`);
     let allText = '';
     let lastNonEmptyText = '';
     let inputTokensTotal = 0;
@@ -321,7 +330,7 @@ export async function sendMessageV2(
           'anthropic-beta': 'extended-cache-ttl-2025-04-11',
         },
         body: JSON.stringify({
-          model: DEFAULT_MODEL,
+          model: modelForTask(task),
           max_tokens: MAX_TOKENS,
           system: systemBlocks,
           tools: toolsForApi,
@@ -355,6 +364,10 @@ export async function sendMessageV2(
       // لكن قد تحمل جولة الأداة الإجابة النهائية ("تمّ التسجيل") ثمّ تأتي جولة
       // فارغة بعدها — فنحتفظ بآخر نصّ غير فارغ لئلّا تضيع الإجابة.
       let roundText = '';
+      // نتائج «نهائيّة» (موسومة FINAL_MARK): نجاحات نصُّها صالح للعرض مباشرةً.
+      // إن كانت **كلّ** نتائج الجولة نهائيّةً → الكود يؤكّد بها وينهي بلا جولة نموذج.
+      const finalTexts: string[] = [];
+      let allFinal = true;
 
       for (const block of data.content || []) {
         if (block.type === 'text') {
@@ -365,10 +378,14 @@ export async function sendMessageV2(
             block.text.slice(0, 300),
           );
         } else if (block.type === 'tool_use' && toolsEnabled) {
-          const result = await bundle.dispatch(block.name, block.input, toolCtx);
+          const raw = await bundle.dispatch(block.name, block.input, toolCtx);
+          const isFinal = raw.startsWith(FINAL_MARK);
+          const result = isFinal ? raw.slice(FINAL_MARK.length) : raw;
+          if (isFinal) finalTexts.push(result);
+          else allFinal = false;
           // eslint-disable-next-line no-console
           console.log(
-            `[AI V2 round ${round + 1}] TOOL ${block.name} →`,
+            `[AI V2 round ${round + 1}] TOOL ${block.name}${isFinal ? ' [final]' : ''} →`,
             result.slice(0, 200),
           );
           toolResults.push({
@@ -386,6 +403,16 @@ export async function sendMessageV2(
       // فالإجابة جاءت في جولة الأداة السابقة → استعملها بدل ترك الردّ فارغًا.
       if (data.stop_reason !== 'tool_use' || toolResults.length === 0) {
         allText = roundText.trim() ? roundText : lastNonEmptyText;
+        break;
+      }
+
+      // **التأكيد من الكود لا من النموذج:** كلّ نداءات الجولة نجحت نجاحًا نهائيًّا
+      // → نعرض نصوص النتائج كما هي ونوفّر جولة التأكيد كاملة (نصف تكلفة الطلب).
+      // فشل أيّ نداء أو احتاج تصرّفًا → نُكمل للنموذج كالمعتاد ليتولّى الموقف كلّه.
+      if (allFinal && finalTexts.length > 0) {
+        allText = finalTexts.join('\n');
+        // eslint-disable-next-line no-console
+        console.log(`[AI V2 round ${round + 1}] FINAL: code-confirmed (${finalTexts.length}) — no model round`);
         break;
       }
 
@@ -412,6 +439,7 @@ export async function sendMessageV2(
       success: true,
       message: allText,
       preview: capturedPreview,
+      announceOffer: capturedAnnounce,
       usage: {
         inputTokens: inputTokensTotal,
         outputTokens: outputTokensTotal,
