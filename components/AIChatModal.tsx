@@ -40,9 +40,13 @@ type ConvoNotif = {
   created_at?: string; data?: any;
 };
 
-// أنواع «محادثة الذكاء» — مكانها الجات لا صفحة الإشعارات
-const AI_CHAT_TYPES = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
-const isActionType = (t: string) => t === 'coverage_request' || t === 'swap_request' || t === 'gap_alert';
+// أنواع «محادثة الذكاء» — مكانها الجات لا صفحة الإشعارات.
+// طلبات التبديل (swap_request) ونتائجها (request_result مع data.swap_v2) مكانها
+// **صفحة الإشعارات** حصرًا — لا تظهر هنا.
+const AI_CHAT_TYPES = ['coverage_request', 'gap_alert', 'request_result'];
+const inAIChat = (n: { type: string; data?: any }) =>
+  AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2);
+const isActionType = (t: string) => t === 'coverage_request' || t === 'gap_alert';
 const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
 
@@ -64,7 +68,7 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
     // gap_alert: تغطية v2 (data.v===2) تُحمّر الزرّ ما دامت معلّقةً وغير مقروءة. بمجرّد
     // فتح القائد للكرت تُعلَّم مقروءةً فيهدأ الأوربّ، ويبقى الكرت للمرجع. القديمة بلا v2 تُستثنى.
     if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n) && !n.is_read;
-    return AI_CHAT_TYPES.includes(n.type) && (isPending(n) || !n.is_read);
+    return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
 }
 
@@ -185,13 +189,61 @@ function gapSolution(g: SeedGap, reserveStr: string): string {
 
 function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
   const d = n.data || {};
+  // كرت «استئذان يحتاج ترتيبًا»: طبيبٌ استأذن وهو يستلم خانةً في فترةٍ يحجبها
+  // استئذانه — الذكاء يعرض الحال على القائد وينفّذ ما يأمر به (تبديل/نقل).
+  // يُغلَق الكرت تلقائيًّا متى زال التعارض.
+  if (d.perm_conflict) {
+    const p = d.perm_conflict as { day?: string; doctor_id?: string; doctor_name?: string; status_ar?: string };
+    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
+    const self = !!selfId && p.doctor_id === selfId;
+    return [
+      'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): طبيبٌ سجّل استئذانًا وهو يستلم خانةً في',
+      'الفترة التي يحجبها استئذانه — اسمه باقٍ في الجدول لكن يلزم تبديل فترة عمله',
+      '(أو نقله) كي لا تبقى عيادته معلّقةً وقت الاستئذان. ابدأ أنت الحديث مع القائد',
+      self
+        ? 'كأنّك لاحظتَ ذلك بنفسك — وهو نفسه صاحب الاستئذان فخاطبه مباشرةً: أخبره'
+        : `كأنّك لاحظتَ ذلك بنفسك: أخبره أنّ ${dr(p.doctor_name)} (${p.status_ar || 'استئذان'})`,
+      self
+        ? `أنّ استئذانه (${p.status_ar || 'استئذان'}) يوم ${dayAr} يتعارض مع استلامه، واسأله`
+        : `يوم ${dayAr} يستلم وقتَ استئذانه، واسأله **سطرًا واحدًا** كيف يرتّبه —`,
+      self
+        ? '**سطرًا واحدًا** كيف يرتّب فترته — **بلا اقتراحات ولا خيارات**.'
+        : '**بلا اقتراحات ولا خيارات**.',
+      'ثمّ نفّذ ما يطلبه كما هو بأدواتك (تبديل طبيبين → swap_doctors بهذا اليوم',
+      'والأسبوع أدناه). أكّد بسطرٍ بعد التنفيذ.',
+      '',
+      `الأسبوع: ${d.week_start || ''}`,
+      `اليوم: ${p.day || ''} (${dayAr})`,
+      `الطبيب المستأذن: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
+    ].join('\n');
+  }
   // كرت «عودة تحتاج مكانًا»: أُلغيت حالةٌ ومكان صاحبها مُغطًّى — الذكاء يسأل القائد
   // أين يوضَع العائد (بلا اقتراحات) وينفّذ أمره كما هو. العائد قد يكون القائد نفسه
   // (ألغى حالته بنفسه) — حينها يُخاطَب مباشرةً: «أين تريد أن تعود؟».
   if (d.placement) {
-    const p = d.placement as { day?: string; doctor_id?: string; doctor_name?: string; status_ar?: string };
+    const p = d.placement as { day?: string; doctor_id?: string; doctor_name?: string; status_ar?: string; converted?: boolean };
     const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
     const self = !!selfId && p.doctor_id === selfId;
+    // تحويل مرضيّةٍ/تفرّغٍ مُغطًّى إلى استئذان: حاضرٌ معظم اليوم لكن بلا مركز —
+    // نفس سؤال «أين يوضَع؟» بصياغة التحويل لا الإلغاء.
+    if (p.converted) {
+      return [
+        'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): طبيبٌ حوّل حالة غيابه (مرضية/تفرّغ) إلى',
+        'استئذانٍ — أي أنّه حاضرٌ معظم اليوم — لكنّ مكانه السابق غُطّي وقت غيابه فلا',
+        'يُعاد إليه تلقائيًّا. ابدأ أنت الحديث مع القائد كأنّك لاحظتَ ذلك بنفسك:',
+        self
+          ? 'وهو نفسه المحوِّل — أخبره أنّ مكانه السابق مُغطًّى واسأله **سطرًا واحدًا** أين'
+          : `أخبره أنّ ${dr(p.doctor_name)} حوّل حالته إلى استئذانٍ يوم ${dayAr} ومكانه السابق`,
+        self
+          ? 'يعود — **بلا اقتراحات ولا خيارات**.'
+          : 'مُغطًّى، واسأله **سطرًا واحدًا** أين يضعه — **بلا اقتراحات ولا خيارات**.',
+        'ثمّ نفّذ ما يطلبه كما هو بأدواتك (ومرّر اليوم والأسبوع أدناه). أكّد بسطرٍ بعد التنفيذ.',
+        '',
+        `الأسبوع: ${d.week_start || ''}`,
+        `اليوم: ${p.day || ''} (${dayAr})`,
+        `الطبيب المستأذن: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
+      ].join('\n');
+    }
     return [
       self
         ? 'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): القائد الذي تخاطبه ألغى حالته بنفسه،'
@@ -255,6 +307,11 @@ function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
 /** عنوان الكرت الثابت: الطبيب الغائب + أيّام النقص (بلا حلول وبلا فترات). */
 function coverageTitle(n: ConvoNotif): string {
   const d = n.data || {};
+  if (d.perm_conflict) {
+    const p = d.perm_conflict as { day?: string; doctor_name?: string };
+    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
+    return `استئذان يحتاج ترتيبًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
+  }
   if (d.placement) {
     const p = d.placement as { day?: string; doctor_name?: string };
     const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
@@ -651,6 +708,79 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     }
   }, [annBusyId, clinicId, user]);
 
+  // أزرار التبديل للقائد: [أرسل طلبًا]/[بدّل مباشرة] حين يكون طرفًا، و[أبلغهما]/[لا داعي]
+  // بعد تبديله اثنين، وأزرار اقتراحات الاستئذان المتعارض (زميل/فترة/شفت آخر) —
+  // الضغط يُنفَّذ **بالكود مباشرةً**، لا نداء للنموذج.
+  const [swapResults, setSwapResults] = useState<Record<string, string>>({});
+  const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
+  const handleSwapOffer = useCallback(async (
+    m: ChatMessage,
+    choice: 'request' | 'direct' | 'notify' | 'none' | 'perm_colleague' | 'perm_period' | 'perm_other',
+  ) => {
+    const offer = m.swapOffer;
+    if (!offer || swapBusyId) return;
+    if (choice === 'none') {
+      setSwapResults((p) => ({ ...p, [m.id]: 'حسنًا — بلا إبلاغ.' }));
+      return;
+    }
+    setSwapBusyId(m.id);
+    try {
+      const cid = clinicId || user.clinicId;
+      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+      const mod = await import('../lib/ai_v2/tools_requests_v2');
+      let res: { success: boolean; info?: string; error?: string } | null = null;
+      if (offer.kind === 'ask_mode' && choice === 'request') {
+        res = await mod.sendSwapRequestByCode({
+          clinicId: cid, requester: { id: user.id, name: user.name },
+          weekStart: offer.weekStart, day: offer.day,
+          targetId: offer.target.id, targetName: offer.target.name,
+        });
+      } else if (offer.kind === 'ask_mode' && choice === 'direct') {
+        res = await mod.directSwapByCode({
+          clinicId: cid, actor: { id: user.id, role: user.role },
+          weekStart: offer.weekStart, day: offer.day,
+          targetId: offer.target.id, targetName: offer.target.name,
+          actorName: user.name,
+        });
+      } else if (offer.kind === 'offer_notify' && choice === 'notify') {
+        res = await mod.notifySwappedPair({
+          clinicId: cid, sender: { id: user.id, name: user.name },
+          day: offer.day, a: offer.a, b: offer.b,
+        });
+      } else if (offer.kind === 'permission_fix' && choice === 'perm_colleague' && offer.colleague) {
+        res = await mod.sendSwapRequestByCode({
+          clinicId: cid, requester: { id: user.id, name: user.name },
+          weekStart: offer.weekStart, day: offer.day,
+          targetId: offer.colleague.id, targetName: offer.colleague.name,
+        });
+      } else if (offer.kind === 'permission_fix' && choice === 'perm_period' && offer.period) {
+        res = await mod.sendSwapRequestModeByCode({
+          clinicId: cid, requester: { id: user.id, name: user.name },
+          weekStart: offer.weekStart, day: offer.day,
+          mode: { kind: 'period', period: offer.period },
+          excludePeriods: offer.blocked,
+        });
+      } else if (offer.kind === 'permission_fix' && choice === 'perm_other') {
+        res = await mod.sendSwapRequestModeByCode({
+          clinicId: cid, requester: { id: user.id, name: user.name },
+          weekStart: offer.weekStart, day: offer.day,
+          mode: { kind: 'other_shift' },
+          excludePeriods: offer.blocked,
+        });
+      }
+      if (res) {
+        setSwapResults((p) => ({
+          ...p,
+          [m.id]: res!.success ? (res!.info || 'تمّ.') : `تعذّر: ${res!.error || ''}`,
+        }));
+      }
+    } catch (e) {
+      setSwapResults((p) => ({ ...p, [m.id]: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }));
+    } finally {
+      setSwapBusyId(null);
+    }
+  }, [swapBusyId, clinicId, user]);
+
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
@@ -661,7 +791,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     const items = ((data || []) as ConvoNotif[])
       .filter((n) =>
         isPending(n)
-        || (n.type === 'request_result' && !n.is_read)
+        || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
         || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday))
       .reverse();
     setConvo(items);
@@ -696,15 +826,6 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
           ? await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name })
           : await notifEngine.rejectCoverage({ notificationId: n.id });
         msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'رفضتَ الطلب.') : `تعذّر: ${res.error || ''}`;
-      } else if (n.type === 'swap_request') {
-        const res = decision === 'accept'
-          ? await notifEngine.acceptSwap({ notificationId: n.id, targetId: user.id, targetRole: user.role, targetName: user.name })
-          : await notifEngine.rejectSwap({ notificationId: n.id, targetName: user.name });
-        msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'اعتذرتَ عن التبديل.') : `تعذّر: ${res.error || ''}`;
-        // إن نجح الإجراء لكن تعذّر إبلاغ الطالب — أظهره بدل ابتلاعه بصمت
-        if (res.success && res.resultSent === false) {
-          msg += ` (لكن تعذّر إبلاغ الطالب: ${res.resultError || 'سبب غير معروف'})`;
-        }
       } else {
         const { updateNotificationAction } = await import('../lib/database');
         await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
@@ -819,6 +940,53 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                           </>
                         )
                       )}
+                      {/* أزرار التبديل للقائد — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
+                      {m.role === 'assistant' && !!m.swapOffer && (
+                        swapResults[m.id] ? (
+                          <Text style={styles.annNote}>{swapResults[m.id]}</Text>
+                        ) : swapBusyId === m.id ? (
+                          <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
+                        ) : m.swapOffer.kind === 'ask_mode' ? (
+                          <View style={styles.chipRow}>
+                            <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'request')}>
+                              <Text style={styles.chipTxt}>أرسل طلبًا</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'direct')}>
+                              <Text style={styles.chipTxt}>بدّل مباشرة</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : m.swapOffer.kind === 'permission_fix' ? (
+                          <View style={styles.chipRow}>
+                            {!!m.swapOffer.colleague && (
+                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_colleague')}>
+                                <Text style={styles.chipTxt}>{`بدّل مع ${m.swapOffer.colleague.name}`}</Text>
+                              </TouchableOpacity>
+                            )}
+                            {!!m.swapOffer.period && (
+                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_period')}>
+                                <Text style={styles.chipTxt}>اعرض على كلّ الفترة</Text>
+                              </TouchableOpacity>
+                            )}
+                            {m.swapOffer.otherShift && (
+                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_other')}>
+                                <Text style={styles.chipTxt}>اعرض على الشفت الآخر</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        ) : (
+                          <>
+                            <Text style={styles.annAsk}>هل يُبلَّغ الطرفان بالتبديل؟</Text>
+                            <View style={styles.chipRow}>
+                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'notify')}>
+                                <Text style={styles.chipTxt}>أبلغهما</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'none')}>
+                                <Text style={styles.chipTxt}>لا داعي</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        )
+                      )}
                     </View>
                   );
                 }
@@ -827,7 +995,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
                 if (n.type === 'gap_alert') {
                   if (n.data?.v !== 2) return null;
-                  if (coverageDays(n.data).length === 0 && !n.data?.placement) return null;
+                  if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict) return null;
                   return (
                     <CoverageCard
                       key={n.id}

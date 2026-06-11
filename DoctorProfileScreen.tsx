@@ -791,6 +791,11 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     // Load notifications
     if (user?.id) {
       setLoadingNotifs(true);
+      // إسقاط كسول لكروت التبديل المنتهية قبل العرض (لا مؤقّت خلفيّ)
+      try {
+        const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
+        await notifEngine.pruneExpiredSwaps(user.id);
+      } catch { /* تنظيف فقط */ }
       const { data } = await fetchNotifications(user.id);
       setNotifications(data || []);
       setLoadingNotifs(false);
@@ -2430,10 +2435,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     <Text style={{ fontSize: scale(13), color: '#9CA3AF' }}>Loading...</Text>
                   </View>
                 ) : (() => {
-                  // محادثة الذكاء (طلبات تبديل/تغطية/نتائجها) لا تظهر هنا — مكانها الجات
-                  const AI_CHAT_TYPES = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
+                  // محادثة الذكاء (تغطية/نتائجها) لا تظهر هنا — مكانها الجات.
+                  // أمّا **طلبات التبديل** ونتائجها (request_result مع data.swap_v2)
+                  // فمكانها هنا حصرًا (موافق/رفض من الإشعارات، لا من الذكاء).
+                  const AI_CHAT_TYPES = ['coverage_request', 'gap_alert', 'request_result'];
                   const filtered = notifications.filter(n => {
-                    if (AI_CHAT_TYPES.includes(n.type)) return false;
+                    if (AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2)) return false;
                     if (notifTab === 'unread') return !n.is_read;
                     if (notifTab === 'read') return n.is_read;
                     if (notifTab === 'announcements') return n.type === 'admin_message' || n.type === 'general';
@@ -2518,7 +2525,15 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                   if (notif.type === 'coverage_request') {
                                     await notifEngine.acceptCoverage({ notificationId: notif.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name });
                                   } else if (notif.type === 'swap_request') {
-                                    await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role, targetName: user.name });
+                                    // قبولٌ ذرّيّ: قد يفشل (سبقك زميل / انتهت المهلة / تغيّر
+                                    // الجدول) — أظهر السبب وأسقط الكرت بدل «تمت الموافقة» كاذبة.
+                                    const res = await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role, targetName: user.name });
+                                    if (!res.success) {
+                                      Alert.alert('طلب التبديل', res.error || 'تعذّر تنفيذ التبديل.');
+                                      const { data } = await fetchNotifications(user.id);
+                                      setNotifications(data || []);
+                                      return;
+                                    }
                                   } else {
                                     await updateNotificationAction(notif.id, 'accepted');
                                   }
@@ -2538,6 +2553,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                   if (notif.type === 'coverage_request') {
                                     await notifEngine.rejectCoverage({ notificationId: notif.id });
                                   } else if (notif.type === 'swap_request') {
+                                    // رفضٌ صامت للطالب؛ رفض آخر معلّقٍ يُطلق «لم يقبل أحد»
                                     await notifEngine.rejectSwap({ notificationId: notif.id, targetName: user?.name });
                                   } else {
                                     await updateNotificationAction(notif.id, 'rejected');

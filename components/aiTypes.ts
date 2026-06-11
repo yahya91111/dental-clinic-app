@@ -5,7 +5,7 @@
 // (AISchedulePanel). موضوع في ملفّ محايد حتى لا يملكه أيّ مكوّن.
 // ═══════════════════════════════════════════════════════════════
 
-import type { AnnounceOffer } from '../lib/ai_v2';
+import type { AnnounceOffer, SwapOffer } from '../lib/ai_v2';
 
 export interface ChatMessage {
   id: string;
@@ -14,4 +14,6 @@ export interface ChatMessage {
   timestamp: number;
   /** عرض إبلاغ بعد غيابٍ ذاتيّ — الواجهة تعرض أزراره وتنفّذها بالكود لا بالنموذج */
   announceOffer?: AnnounceOffer;
+  /** أزرار التبديل للقائد (طلب/مباشر، أو إبلاغ المبدَّلين) — تُنفَّذ بالكود */
+  swapOffer?: SwapOffer;
 }

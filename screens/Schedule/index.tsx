@@ -138,6 +138,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         id: `a${Date.now()}`, role: 'assistant', content: response.message, timestamp: Date.now(),
         // غيابٌ ذاتيّ سُجّل هذه الرسالة؟ → أزرار الإبلاغ تظهر تحت الردّ وتنفَّذ بالكود
         announceOffer: response.announceOffer,
+        // القائد طرفٌ في تبديل أو بدّل اثنين؟ → أزرار القرار/الإبلاغ تحت الردّ
+        swapOffer: response.swapOffer,
       };
       setAiMessages(prev => [...prev, assistantMsg]);
       aiHistoryRef.current.push({ role: 'assistant', content: response.message });

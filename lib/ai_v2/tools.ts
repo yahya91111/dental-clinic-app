@@ -55,6 +55,27 @@ export type AnnounceOffer = {
   subjectName: string;
 };
 
+/**
+ * عرض أزرارٍ بعد أداة التبديل (تُنفَّذ بالكود مباشرةً — النموذج لا يسأل):
+ *  • ask_mode: القائد طرفٌ في التبديل → [أرسل طلبًا] أو [بدّل مباشرة].
+ *  • offer_notify: القائد بدّل اثنين → [أبلغهما] أو [لا داعي].
+ *  • permission_fix: استأذن وهو يستلم وقت استئذانه → اقتراحات تبديل فترته:
+ *    [زميل عيادته] / [كلّ الفترة المكمّلة] / [الشفت الآخر] (الأخير قبل اليوم بيومٍ فأكثر).
+ */
+export type SwapOffer =
+  | { kind: 'ask_mode'; weekStart: string; day: string; target: { id: string; name: string } }
+  | {
+    kind: 'offer_notify'; weekStart: string; day: string;
+    a: { id: string; name: string }; b: { id: string; name: string };
+  }
+  | {
+    kind: 'permission_fix'; weekStart: string; day: string;
+    blocked: number[];                        // الفترات التي يحجبها الاستئذان
+    colleague?: { id: string; name: string }; // زميل نفس العيادة بالفترة المكمّلة
+    period?: number;                          // الفترة المكمّلة — هدف «كلّ الفترة»
+    otherShift: boolean;                      // يُعرض «الشفت الآخر» (يومٌ فأكثر قبل الموعد)
+  };
+
 export type V2Tool = {
   name: string;
   description: string;
@@ -81,6 +102,8 @@ export type V2ToolContext = {
   onPreview?: (preview: SchedulePreview) => void;
   /** تُستدعى بعد تسجيل غيابٍ ذاتيّ — الواجهة تعرض أزرار الإبلاغ وتنفّذها بالكود */
   onAnnounceOffer?: (offer: AnnounceOffer) => void;
+  /** تُستدعى بعد أداة التبديل حين يلزم قرارٌ من القائد — أزرارٌ تُنفَّذ بالكود */
+  onSwapOffer?: (offer: SwapOffer) => void;
 };
 
 /**

@@ -463,11 +463,11 @@ export async function dispatchRequestTool(
         if (actorIsParty && docs.length === 2) {
           const other = docs.find((d) => d.id !== actor.id)!;
           const { notifications } = await import('../algorithms/notifications');
-          const sent = await notifications.openSwapRequest({
+          // (ملفّ v1 محفوظ — يستعمل واجهة المجموعة الجديدة بهدفٍ واحد)
+          const sent = await notifications.openSwapGroup({
             clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
             requesterId: actor.id, requesterName: ctx.user?.name || '',
-            targetId: other.id, targetName: other.name,
-            scope, doctorIds: docs.map((d) => d.id),
+            targets: [{ id: other.id, name: other.name }],
           });
           return sent.success
             ? `أرسلتُ طلب التبديل إلى ${other.name} يوم ${DAY_AR[r.day]} (ينتظر موافقته).`

@@ -20,7 +20,6 @@ import { createNotification, getAllGroupMembers } from '../database';
 import {
   swapInSchedule,
   type WeekDay,
-  type Shift,
   type Gap,
   type CoverageCandidate,
 } from './requests';
@@ -459,104 +458,392 @@ export async function sweepCoverageGroup(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// طلب قرار — تبديل طبيبين (موافقة الطرف الآخر؛ لا إشعار للّيدر)
+// طلب قرار — طلب تبديل مراكز (v2): مجموعة كروت، أوّل موافقٍ يفوز
 // ═══════════════════════════════════════════════════════════════
+// الطلب الواحد قد يذهب لعدّة أطبّاء (كرتٌ لكلّ مستلم، يجمعها swap_group).
+// • الصلاحيّة: ٢٤ ساعة أو دخول يوم التبديل — أيّهما أقرب (إسقاط كسول).
+// • القبول ذرّيّ: أوّل من يوافق يُنفَّذ معه فورًا وتختفي كروت البقيّة.
+// • الرفض صامت للطالب؛ رفض الجميع (أو انتهاء الكلّ) → إشعار «لم يقبل أحد» مرّة.
+// • إعادة فحص الصلاحيّة لحظة الموافقة (المحرّك يرفض إن تغيّر الجدول).
 
-type SwapData = {
+type SwapDataV2 = {
+  v: 2;
   clinic_id: string; week_start: string; day: WeekDay;
-  doctor_ids: string[];
-  scope: { kind: 'day' } | { kind: 'shift'; shift: Shift } | { kind: 'period'; period: number };
   requester_id: string; requester_name: string;
-  target_id?: string; target_name?: string;
+  target_id: string; target_name: string;
+  swap_group: string;
+  expires_at: string; // ISO
 };
 
-/** يرسل طلب تبديلٍ إلى الطرف الآخر لأخذ موافقته (action) */
-export async function openSwapRequest(args: {
+const DAY_INDEX: Record<WeekDay, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
+};
+
+/** صلاحيّة طلب التبديل: ٢٤ ساعة أو بداية يوم التبديل — أيّهما أقرب.
+ *  اليوم بدأ أصلًا (طلبٌ ليومه)؟ حتى نهاية اليوم أو ٢٤ ساعة. */
+function swapExpiry(weekStart: string, day: WeekDay): string {
+  const now = Date.now();
+  const dayStart = new Date(`${weekStart}T00:00:00`);
+  dayStart.setDate(dayStart.getDate() + DAY_INDEX[day]);
+  const startMs = dayStart.getTime();
+  const in24h = now + TWENTY_FOUR_HOURS_MS;
+  const cap = startMs > now ? startMs : startMs + TWENTY_FOUR_HOURS_MS; // بدأ اليوم → نهايته
+  return new Date(Math.min(in24h, cap)).toISOString();
+}
+
+const swapExpired = (d: SwapDataV2): boolean =>
+  !!d.expires_at && new Date(d.expires_at).getTime() < Date.now();
+
+/** كروت مجموعة تبديل */
+async function loadSwapGroup(group: string): Promise<{
+  id: string; recipient_id: string; data: SwapDataV2; action_status: string | null;
+}[]> {
+  const { data } = await supabase
+    .from('notifications')
+    .select('id, recipient_id, data, action_status')
+    .eq('type', NotifType.SWAP_REQUEST)
+    .filter('data->>swap_group', 'eq', group);
+  return (data || []) as { id: string; recipient_id: string; data: SwapDataV2; action_status: string | null }[];
+}
+
+const isPendingRow = (s: string | null) => !s || s === 'pending';
+
+/** «لم يقبل أحد» للطالب — مرّة واحدة لكلّ مجموعة (يتحقّق من عدم سبق الإرسال). */
+async function notifyGroupExhausted(group: string, d: SwapDataV2): Promise<void> {
+  const { data } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('type', NotifType.REQUEST_RESULT)
+    .filter('data->>swap_group', 'eq', group)
+    .limit(1);
+  if (data && data.length > 0) return; // أُبلغ سابقًا
+  await sendInfo({
+    clinicId: d.clinic_id, recipientId: d.requester_id,
+    type: NotifType.REQUEST_RESULT, title: 'طلب التبديل',
+    body: `لم يقبل أحدٌ طلب التبديل يوم ${DAY_AR[d.day]}.`,
+    data: { swap_v2: true, swap_group: group },
+  });
+}
+
+/** إن ماتت المجموعة كلّها (لا معلّق ولا مقبول) → أبلغ الطالب مرّة. */
+async function sweepSwapGroup(group: string): Promise<void> {
+  const rows = await loadSwapGroup(group);
+  if (rows.length === 0) return;
+  if (rows.some((r) => r.action_status === 'accepted')) return;
+  // أسقط المعلّق المنتهي
+  let livePending = false;
+  for (const r of rows) {
+    if (!isPendingRow(r.action_status)) continue;
+    if (swapExpired(r.data)) await supabase.from('notifications').delete().eq('id', r.id);
+    else livePending = true;
+  }
+  if (!livePending) await notifyGroupExhausted(group, rows[0]!.data);
+}
+
+/** قادة العيادة (لإشعار العلم عند تبديلٍ بين شفتين) */
+async function clinicLeaderIds(clinicId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('doctors')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('role', 'team_leader');
+  return ((data as { id: string }[] | null) || []).map((r) => r.id).filter(Boolean);
+}
+
+/** تبديل بين شفتين تمّ → علمٌ لكلّ القادة (عدا الطرفين والمستثنى). */
+export async function notifyLeadersCrossShiftSwap(args: {
+  clinicId: string;
+  day: WeekDay;
+  aName: string;
+  bName: string;
+  excludeIds?: string[];
+}): Promise<void> {
+  const skip = new Set(args.excludeIds || []);
+  const leaders = await clinicLeaderIds(args.clinicId);
+  for (const id of leaders) {
+    if (skip.has(id)) continue;
+    await sendInfo({
+      clinicId: args.clinicId, recipientId: id,
+      type: NotifType.REQUEST_INFO, title: 'تبديل بين الشفتين',
+      body: `تمّ تبديلٌ بين ${dr(args.aName)} و${dr(args.bName)} يوم ${DAY_AR[args.day]} (شفتان مختلفان).`,
+    });
+  }
+}
+
+/**
+ * يفتح طلب تبديل: كرتٌ (موافق/رفض) لكلّ مستلم، تجمعها مجموعة واحدة.
+ * طلبٌ معلّقٌ قائمٌ لنفس الطالب/اليوم/الأسبوع → رفض (يُلغى أوّلًا أو يُنتظر).
+ */
+export async function openSwapGroup(args: {
   clinicId: string;
   weekStart: string;
   day: WeekDay;
   requesterId: string;
   requesterName: string;
-  targetId: string;
-  targetName: string;
-  scope: SwapData['scope'];
-  doctorIds: string[];
-}): Promise<{ success: boolean; error?: string; id?: string }> {
-  const data: SwapData = {
-    clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
-    doctor_ids: args.doctorIds, scope: args.scope,
-    requester_id: args.requesterId, requester_name: args.requesterName,
-    target_id: args.targetId, target_name: args.targetName,
-  };
-  const { id, error } = await sendAction({
-    clinicId: args.clinicId, recipientId: args.targetId,
-    senderId: args.requesterId, senderName: args.requesterName,
-    type: NotifType.SWAP_REQUEST, title: 'طلب تبديل',
-    body: `يطلب ${dr(args.requesterName)} التبديل معك يوم ${DAY_AR[args.day]}.`,
-    data,
-  });
-  return { success: !error, error, id };
+  targets: { id: string; name: string }[];
+}): Promise<{ success: boolean; error?: string; count?: number; group?: string }> {
+  try {
+    if (args.targets.length === 0) return { success: false, error: 'لا مستلمين للطلب.' };
+    // منع الازدواج: طلب معلّق حيّ لنفس اليوم
+    const { data: existing } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('type', NotifType.SWAP_REQUEST)
+      .filter('data->>requester_id', 'eq', args.requesterId)
+      .filter('data->>week_start', 'eq', args.weekStart)
+      .filter('data->>day', 'eq', args.day);
+    for (const r of (existing || []) as { id: string; data: SwapDataV2; action_status: string | null }[]) {
+      if (!isPendingRow(r.action_status)) continue;
+      if (swapExpired(r.data)) {
+        await supabase.from('notifications').delete().eq('id', r.id);
+      } else {
+        return { success: false, error: 'لديك طلب تبديلٍ قائمٌ لهذا اليوم — ألغِه أوّلًا أو انتظر نتيجته.' };
+      }
+    }
+
+    const group = `${args.requesterId}|${args.weekStart}|${args.day}|${Date.now()}`;
+    const expiresAt = swapExpiry(args.weekStart, args.day);
+    let sent = 0;
+    for (const t of args.targets) {
+      const data: SwapDataV2 = {
+        v: 2,
+        clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
+        requester_id: args.requesterId, requester_name: args.requesterName,
+        target_id: t.id, target_name: t.name,
+        swap_group: group, expires_at: expiresAt,
+      };
+      const { error } = await sendAction({
+        clinicId: args.clinicId, recipientId: t.id,
+        senderId: args.requesterId, senderName: args.requesterName,
+        type: NotifType.SWAP_REQUEST, title: 'طلب تبديل',
+        body: `يطلب ${dr(args.requesterName)} التبديل معك يوم ${DAY_AR[args.day]} — كلٌّ يستلم مكان الآخر كاملًا.`,
+        data,
+      });
+      if (!error) sent += 1;
+    }
+    return sent > 0
+      ? { success: true, count: sent, group }
+      : { success: false, error: 'تعذّر إرسال الطلب.' };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
 }
 
-/** قبول تبديلٍ: يُطبّقه عبر المحرّك ويثبّته مقبولًا (لا إشعار للّيدر) */
+/**
+ * قبول طلب تبديل: قفلٌ ذرّيّ (أوّل موافقٍ يفوز)، إعادة فحصٍ وتنفيذٌ عبر المحرّك،
+ * إخفاء كروت البقيّة، إبلاغ الطالب، وعلمُ القادة إن كان التبديل بين شفتين.
+ */
 export async function acceptSwap(args: {
   notificationId: string;
   targetId: string;
   targetRole?: string;
   targetName?: string;
-}): Promise<NotifResult & { requesterId?: string; requesterName?: string; resultSent?: boolean; resultError?: string }> {
+}): Promise<NotifResult & { requesterName?: string; resultSent?: boolean; resultError?: string }> {
   try {
     const notif = await loadNotif(args.notificationId);
     if (!notif) return fail('الطلب غير موجود.');
-    const d = notif.data as SwapData;
-    if (notif.action_status && notif.action_status !== 'pending') return fail('عولِج هذا الطلب مسبقًا.');
-    const swap = await swapInSchedule(
-      { id: args.targetId, role: args.targetRole || 'doctor' },
-      { clinicId: d.clinic_id, weekStart: d.week_start, day: d.day, doctorIds: d.doctor_ids, scope: d.scope },
-    );
-    if (!swap.success) return fail(swap.error || 'تعذّر تطبيق التبديل.');
-    await supabase
+    const d = notif.data as SwapDataV2;
+    if (!isPendingRow(notif.action_status)) return fail('عولِج هذا الطلب مسبقًا.');
+    if (swapExpired(d)) {
+      await supabase.from('notifications').delete().eq('id', args.notificationId);
+      await sweepSwapGroup(d.swap_group);
+      return fail('انتهت مهلة هذا الطلب.');
+    }
+    // سبقك زميل؟ (كرتٌ شقيق مقبول)
+    if (d.swap_group) {
+      const rows = await loadSwapGroup(d.swap_group);
+      if (rows.some((r) => r.id !== notif.id && r.action_status === 'accepted')) {
+        await supabase.from('notifications').delete().eq('id', args.notificationId);
+        return fail('سبقك زميلٌ آخر — انتهى الطلب.');
+      }
+    }
+    // القفل الذرّيّ: لا يقبله إلّا واحد
+    const { data: claimed } = await supabase
       .from('notifications')
       .update({ action_status: 'accepted', is_read: true })
-      .eq('id', args.notificationId);
+      .eq('id', args.notificationId)
+      .eq('action_status', 'pending')
+      .select('id');
+    if (!claimed || claimed.length === 0) return fail('عولِج هذا الطلب مسبقًا.');
 
-    // ردّ للطالب: تمّت الموافقة
+    // إعادة الفحص والتنفيذ — المحرّك يرفض إن تغيّر الجدول
+    const { swapFullPositions } = await import('./requests_v2');
+    const swap = await swapFullPositions(
+      { id: args.targetId, role: args.targetRole || 'doctor' },
+      {
+        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
+        aId: d.requester_id, bId: d.target_id,
+      },
+    );
+    if (!swap.success) {
+      // الطلب لم يعد صالحًا → أسقط الكرت كي لا يبقى قابلًا للضغط
+      await supabase.from('notifications').delete().eq('id', args.notificationId);
+      return fail(swap.error || 'الطلب لم يعد صالحًا.');
+    }
+
+    // كروت البقيّة المعلّقة تختفي
+    if (d.swap_group) {
+      const rows = await loadSwapGroup(d.swap_group);
+      for (const r of rows) {
+        if (r.id !== notif.id && isPendingRow(r.action_status)) {
+          await supabase.from('notifications').delete().eq('id', r.id);
+        }
+      }
+    }
+
+    // إبلاغ الطالب بالموافقة
     const who = args.targetName || d.target_name;
     const res = await sendInfo({
       clinicId: d.clinic_id, recipientId: d.requester_id,
       senderId: args.targetId, senderName: who,
       type: NotifType.REQUEST_RESULT, title: 'تمّ التبديل',
-      body: `وافق ${who ? dr(who) : 'الطرف الآخر'} على التبديل يوم ${DAY_AR[d.day]} — تمّ.`,
+      body: `وافق ${who ? dr(who) : 'زميلك'} على طلب التبديل يوم ${DAY_AR[d.day]} — تمّ التبديل.`,
+      data: { swap_v2: true, swap_group: d.swap_group },
     });
-    return { success: true, requesterId: d.requester_id, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
+
+    // بين شفتين؟ علمٌ للقادة تلقائيًّا (عدا الطرفين)
+    if (swap.crossShift) {
+      await notifyLeadersCrossShiftSwap({
+        clinicId: d.clinic_id, day: d.day,
+        aName: d.requester_name, bName: who || d.target_name,
+        excludeIds: [d.requester_id, d.target_id],
+      });
+    }
+    // زال تعارض استئذانٍ بهذا التبديل؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق تلقائيًّا
+    await resolvePermissionAlertV2({
+      clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
+      doctorIds: [d.requester_id, d.target_id],
+    });
+    return { success: true, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
 }
 
-/** رفض تبديلٍ: يثبّته مرفوضًا ويُبلِغ الطالب بالاعتذار */
+/**
+ * رفض طلب تبديل: يثبّته مرفوضًا **بصمت** (لا إشعار للطالب)، وإن كان آخر معلّقٍ
+ * في المجموعة (رفض الجميع/انتهى الباقي) → «لم يقبل أحد» للطالب مرّة واحدة.
+ */
 export async function rejectSwap(args: {
   notificationId: string;
   targetName?: string;
-}): Promise<NotifResult & { requesterId?: string; requesterName?: string; resultSent?: boolean; resultError?: string }> {
+}): Promise<NotifResult> {
   try {
     const notif = await loadNotif(args.notificationId);
     if (!notif) return fail('الطلب غير موجود.');
-    const d = notif.data as SwapData;
+    const d = notif.data as SwapDataV2;
+    if (!isPendingRow(notif.action_status)) return fail('عولِج هذا الطلب مسبقًا.');
     await supabase
       .from('notifications')
       .update({ action_status: 'rejected', is_read: true })
-      .eq('id', args.notificationId);
+      .eq('id', args.notificationId)
+      .eq('action_status', 'pending');
+    if (d.swap_group) await sweepSwapGroup(d.swap_group);
+    return ok();
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
 
-    // ردّ للطالب: اعتذر الطرف الآخر
-    const who = args.targetName || d.target_name;
-    const res = await sendInfo({
-      clinicId: d.clinic_id, recipientId: d.requester_id,
-      senderName: who,
-      type: NotifType.REQUEST_RESULT, title: 'رُفض التبديل',
-      body: `اعتذر ${who ? dr(who) : 'الطرف الآخر'} عن التبديل يوم ${DAY_AR[d.day]}.`,
+/** إسقاط كسول لكروت التبديل المنتهية عند مستلمٍ (يُستدعى عند فتح الإشعارات). */
+export async function pruneExpiredSwaps(recipientId: string): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('type', NotifType.SWAP_REQUEST)
+      .eq('recipient_id', recipientId);
+    const groups = new Set<string>();
+    for (const r of (data || []) as { id: string; data: SwapDataV2; action_status: string | null }[]) {
+      if (isPendingRow(r.action_status) && r.data?.v === 2 && swapExpired(r.data)) {
+        await supabase.from('notifications').delete().eq('id', r.id);
+        if (r.data.swap_group) groups.add(r.data.swap_group);
+      }
+    }
+    for (const g of groups) await sweepSwapGroup(g);
+  } catch { /* صمت — تنظيف كسول */ }
+}
+
+/**
+ * حالة طلبات التبديل المفتوحة لطالبٍ («شصار على طلبي؟») — لكلّ مجموعة:
+ * اليوم، المرسَل إليهم، كم رفض، كم بقي، ومن وافق إن وُجد. تُسقط المنتهي كسولًا.
+ */
+export async function swapGroupsStatus(args: {
+  requesterId: string;
+}): Promise<{
+  groups: {
+    group: string; day: WeekDay; weekStart: string;
+    total: number; pending: number; rejected: number;
+    acceptedBy?: string; expired: boolean;
+  }[];
+}> {
+  const { data } = await supabase
+    .from('notifications')
+    .select('id, data, action_status')
+    .eq('type', NotifType.SWAP_REQUEST)
+    .filter('data->>requester_id', 'eq', args.requesterId);
+  const byGroup = new Map<string, { data: SwapDataV2; rows: { id: string; data: SwapDataV2; action_status: string | null }[] }>();
+  for (const r of (data || []) as { id: string; data: SwapDataV2; action_status: string | null }[]) {
+    if (r.data?.v !== 2 || !r.data.swap_group) continue;
+    const g = byGroup.get(r.data.swap_group) || { data: r.data, rows: [] };
+    g.rows.push(r);
+    byGroup.set(r.data.swap_group, g);
+  }
+  const out: {
+    group: string; day: WeekDay; weekStart: string;
+    total: number; pending: number; rejected: number;
+    acceptedBy?: string; expired: boolean;
+  }[] = [];
+  for (const [group, g] of byGroup) {
+    const expired = swapExpired(g.data);
+    let pending = 0; let rejected = 0; let acceptedBy: string | undefined;
+    for (const r of g.rows) {
+      if (r.action_status === 'accepted') acceptedBy = r.data.target_name;
+      else if (r.action_status === 'rejected') rejected += 1;
+      else if (isPendingRow(r.action_status)) pending += 1;
+    }
+    if (expired && !acceptedBy) {
+      // أسقط المعلّق المنتهي وأبلغ «لم يقبل أحد» إن لزم
+      await sweepSwapGroup(group);
+      pending = 0;
+    }
+    out.push({
+      group, day: g.data.day, weekStart: g.data.week_start,
+      total: g.rows.length, pending, rejected, acceptedBy, expired,
     });
-    return { success: true, requesterId: d.requester_id, requesterName: d.requester_name, resultSent: res.success, resultError: res.error };
+  }
+  return { groups: out };
+}
+
+/** إلغاء طلب تبديلٍ معلّق (الطالب): يحذف كروت المجموعة المعلّقة. وافق أحدٌ؟ فات الإلغاء. */
+export async function cancelSwapGroup(args: {
+  requesterId: string;
+  weekStart: string;
+  day?: WeekDay;
+}): Promise<NotifResult & { canceledDays?: WeekDay[] }> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('type', NotifType.SWAP_REQUEST)
+      .filter('data->>requester_id', 'eq', args.requesterId)
+      .filter('data->>week_start', 'eq', args.weekStart);
+    const rows = ((data || []) as { id: string; data: SwapDataV2; action_status: string | null }[])
+      .filter((r) => r.data?.v === 2 && (!args.day || r.data.day === args.day));
+    if (rows.length === 0) return fail('لا يوجد طلب تبديلٍ قائمٌ لإلغائه.');
+    if (rows.some((r) => r.action_status === 'accepted')) {
+      return fail('وافق أحد الزملاء وتمّ التبديل — لم يعد طلبًا ليُلغى. أرسل طلبًا عكسيًّا إن أردت التراجع.');
+    }
+    const days = new Set<WeekDay>();
+    let deleted = 0;
+    for (const r of rows) {
+      if (!isPendingRow(r.action_status)) continue;
+      await supabase.from('notifications').delete().eq('id', r.id);
+      days.add(r.data.day);
+      deleted += 1;
+    }
+    if (deleted === 0) return fail('لا كروت معلّقة لهذا الطلب (رُفض أو انتهى).');
+    return { ...ok(), canceledDays: [...days] };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -790,6 +1077,8 @@ export async function alertLeaderPlacement(args: {
   doctorId: string;
   doctorName: string;
   canceledStatusAr?: string;  // «مرضية» — لصياغة العنوان فقط
+  customBody?: string;        // نصّ جسمٍ جاهز (تحويل مرضيّةٍ مُغطّاةٍ إلى استئذان ونحوه)
+  converted?: boolean;        // الحدث تحويل حالةٍ إلى استئذانٍ لا إلغاؤها — لصياغة البذرة
   senderId?: string;
   senderName?: string;
 }): Promise<{ success: boolean; error?: string; id?: string }> {
@@ -817,14 +1106,16 @@ export async function alertLeaderPlacement(args: {
       clinicId: args.clinicId, recipientId: args.leaderId,
       senderId: args.senderId, senderName: args.senderName,
       type: NotifType.GAP_ALERT, title: 'عودة تحتاج مكانًا',
-      body: self
-        ? `ألغيتَ ${statusAr === 'حالته' ? 'حالتك' : 'ال' + statusAr} يوم ${DAY_AR[args.day]} ومكانك السابق مُغطًّى — حدّد أين تعود.`
-        : `أُلغيت ${statusAr === 'حالته' ? 'حالة' : statusAr} ${dr(args.doctorName)} يوم ${DAY_AR[args.day]} ومكانه مُغطًّى — حدّد أين يوضَع.`,
+      body: args.customBody
+        ?? (self
+          ? `ألغيتَ ${statusAr === 'حالته' ? 'حالتك' : 'ال' + statusAr} يوم ${DAY_AR[args.day]} ومكانك السابق مُغطًّى — حدّد أين تعود.`
+          : `أُلغيت ${statusAr === 'حالته' ? 'حالة' : statusAr} ${dr(args.doctorName)} يوم ${DAY_AR[args.day]} ومكانه مُغطًّى — حدّد أين يوضَع.`),
       data: {
         v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
         placement: {
           day: args.day, doctor_id: args.doctorId,
           doctor_name: args.doctorName, status_ar: statusAr,
+          ...(args.converted ? { converted: true } : {}),
         },
         batch_at: Date.now(),
       },
@@ -865,6 +1156,116 @@ export async function resolvePlacementV2(args: {
         .eq('id', r.id);
     }
   } catch { /* إغلاق الكروت تحسينٌ — لا يُفشل التنسيب المنفَّذ */ }
+}
+
+/**
+ * v2 — كرت «استئذان يحتاج ترتيبًا»: طبيبٌ استأذن وهو يستلم خانةً في فترةٍ يحجبها
+ * استئذانه — كرتُ فعلٍ للقائد (أحمر حتّى يُحلّ): يفتح خيطًا يعرض فيه الذكاء الحال
+ * وينفّذ ما يأمر به القائد (تبديل/نقل). يُغلَق تلقائيًّا متى زال التعارض (تبديلٌ
+ * نجح أو أُلغي الاستئذان) عبر resolvePermissionAlertV2. لا يُكرَّر لنفس
+ * (القائد، الأسبوع، اليوم، الطبيب).
+ */
+export async function alertLeaderPermissionConflict(args: {
+  clinicId: string;
+  leaderId: string;
+  weekStart: string;
+  day: WeekDay;
+  doctorId: string;
+  doctorName: string;
+  statusAr: string;   // «استئذان بداية الدوام» — للجسم والبذرة
+  senderId?: string;
+  senderName?: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  try {
+    const { data: rows } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('type', NotifType.GAP_ALERT);
+    const dup = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find((r) => {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      return pending && d.v === 2 && d.perm_conflict
+        && d.week_start === args.weekStart
+        && d.perm_conflict.day === args.day
+        && d.perm_conflict.doctor_id === args.doctorId;
+    });
+    if (dup) return { success: true, id: dup.id };
+
+    const { id, error } = await sendAction({
+      clinicId: args.clinicId, recipientId: args.leaderId,
+      senderId: args.senderId, senderName: args.senderName,
+      type: NotifType.GAP_ALERT, title: 'استئذان يحتاج ترتيبًا',
+      body: `${dr(args.doctorName)} ${args.statusAr} يوم ${DAY_AR[args.day]} وهو يستلم وقت استئذانه — يلزم تبديل فترة عمله.`,
+      data: {
+        v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
+        perm_conflict: {
+          day: args.day, doctor_id: args.doctorId,
+          doctor_name: args.doctorName, status_ar: args.statusAr,
+        },
+        batch_at: Date.now(),
+      },
+    });
+    return { success: !error, error, id };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+/**
+ * v2 — يُغلق كروت «استئذان يحتاج ترتيبًا» عند **كلّ** القادة متى زال التعارض فعلًا.
+ * يُعاد حساب التعارض من الجدول الحيّ (لا ثقة بالحدث المستدعي): الطبيب ما زال
+ * مستأذنًا ويستلم خانةً في فترةٍ محجوبة → الكرت يبقى؛ غير ذلك → يُغلَق (تمّ).
+ * يُستدعى بعد كلّ تبديلٍ ناجح وبعد إلغاء الحالة. فشله لا يُفشل العمليّة.
+ */
+export async function resolvePermissionAlertV2(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  doctorIds: string[];
+}): Promise<void> {
+  try {
+    const { data: slots } = await supabase
+      .from('schedule_slots')
+      .select('doctor_id, period, role, status')
+      .eq('clinic_id', args.clinicId)
+      .eq('week_start', args.weekStart)
+      .eq('day_of_week', args.day);
+    const all = (slots || []) as { doctor_id: string; period: number; role: string; status: string }[];
+    const stillConflicted = (docId: string): boolean => {
+      const perm = all.find(
+        (r) => r.doctor_id === docId && r.period === 0
+          && (r.status === 'permission_start' || r.status === 'permission_end'),
+      );
+      if (!perm) return false; // لا استئذان أصلًا → لا تعارض
+      const blocked = perm.status === 'permission_start' ? [1, 3] : [2, 4];
+      return all.some(
+        (r) => r.doctor_id === docId && r.status === 'active' && r.period > 0
+          && (r.role === 'clinic' || r.role === 'delegator') && blocked.includes(r.period),
+      );
+    };
+    const resolved = args.doctorIds.filter((id) => !stillConflicted(id));
+    if (resolved.length === 0) return;
+
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.GAP_ALERT);
+    for (const r of (data || []) as { id: string; data: any; action_status: string | null }[]) {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      if (!pending || d.v !== 2 || !d.perm_conflict) continue;
+      if (d.week_start !== args.weekStart) continue;
+      if (d.perm_conflict.day !== args.day) continue;
+      if (!resolved.includes(d.perm_conflict.doctor_id)) continue;
+      await supabase
+        .from('notifications')
+        .update({ action_status: 'accepted', is_read: true })
+        .eq('id', r.id);
+    }
+  } catch { /* إغلاق الكروت تحسينٌ — لا يُفشل العمليّة المنفَّذة */ }
 }
 
 /**
@@ -978,9 +1379,11 @@ export const notifications = {
   notifyScheduleCreated, notifyLeaderOfRequest, broadcast, resolveAudience,
   // تغطية
   openCoverageRequests, acceptCoverage, rejectCoverage, sweepCoverageGroup,
-  // تبديل بموافقة
-  openSwapRequest, acceptSwap, rejectSwap,
+  // طلب تبديل (مجموعة كروت — أوّل موافقٍ يفوز)
+  openSwapGroup, acceptSwap, rejectSwap, pruneExpiredSwaps,
+  swapGroupsStatus, cancelSwapGroup, notifyLeadersCrossShiftSwap,
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
   alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, upsertLeaderCoverage, resolveGapAlert, resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
+  alertLeaderPermissionConflict, resolvePermissionAlertV2,
 };

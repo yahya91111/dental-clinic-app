@@ -52,6 +52,142 @@ export async function announceAbsence(params: {
     : { success: false, error: res.error };
 }
 
+/** القائد فأعلى (نسخة محلّيّة لقرارات التوجيه في الموزّع) */
+const LEADER_PLUS_ROLES = new Set(['team_leader', 'coordinator', 'super_admin', 'manager']);
+const isLeaderPlusRole = (role: string): boolean => LEADER_PLUS_ROLES.has(role);
+
+/**
+ * إرسال طلب تبديلٍ لطبيبٍ واحد **بالكود مباشرةً** (يستعمله الموزّع للطبيب الطرف،
+ * وزرّ [أرسل طلبًا] للقائد الطرف). يُرجِع سطرًا جاهزًا للعرض.
+ */
+export async function sendSwapRequestByCode(params: {
+  clinicId: string;
+  requester: { id: string; name: string };
+  weekStart: string;
+  day: string;
+  targetId: string;
+  targetName: string;
+}): Promise<{ success: boolean; info?: string; error?: string }> {
+  const { requestsV2 } = await import('../algorithms/requests_v2');
+  const { notifications } = await import('../algorithms/notifications');
+  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+  const listed = await requestsV2.listSwapTargets({
+    clinicId: params.clinicId, weekStart: params.weekStart, day,
+    requesterId: params.requester.id, mode: { kind: 'doctor', doctorId: params.targetId },
+  });
+  if (!listed.success || !listed.targets) return { success: false, error: listed.error };
+  const opened = await notifications.openSwapGroup({
+    clinicId: params.clinicId, weekStart: params.weekStart, day,
+    requesterId: params.requester.id, requesterName: params.requester.name,
+    targets: listed.targets,
+  });
+  if (!opened.success) return { success: false, error: opened.error };
+  return {
+    success: true,
+    info: `أُرسل طلب التبديل إلى ${params.targetName} ليوم ${DAY_AR[day]} — يتمّ فور موافقته وتصلك النتيجة.`,
+  };
+}
+
+/**
+ * إرسال طلب تبديلٍ لمجموعةٍ **بالكود مباشرةً** (أزرار اقتراحات الاستئذان):
+ * كلّ الفترة المكمّلة أو كلّ الشفت الآخر، مع استبعاد من يستلم فترةً محجوبةً
+ * (التبديل معه لا يحلّ التعارض). يُرجِع سطرًا جاهزًا للعرض.
+ */
+export async function sendSwapRequestModeByCode(params: {
+  clinicId: string;
+  requester: { id: string; name: string };
+  weekStart: string;
+  day: string;
+  mode: { kind: 'period'; period: number } | { kind: 'other_shift' };
+  excludePeriods?: number[];
+}): Promise<{ success: boolean; info?: string; error?: string }> {
+  const { requestsV2 } = await import('../algorithms/requests_v2');
+  const { notifications } = await import('../algorithms/notifications');
+  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+  const listed = await requestsV2.listSwapTargets({
+    clinicId: params.clinicId, weekStart: params.weekStart, day,
+    requesterId: params.requester.id, mode: params.mode,
+    excludePeriods: params.excludePeriods,
+  });
+  if (!listed.success || !listed.targets) return { success: false, error: listed.error };
+  const opened = await notifications.openSwapGroup({
+    clinicId: params.clinicId, weekStart: params.weekStart, day,
+    requesterId: params.requester.id, requesterName: params.requester.name,
+    targets: listed.targets,
+  });
+  if (!opened.success) return { success: false, error: opened.error };
+  const n = listed.targets.length;
+  return {
+    success: true,
+    info: n === 1
+      ? `أُرسل طلب التبديل إلى ${listed.targets[0]!.name} ليوم ${DAY_AR[day]} — يتمّ فور موافقته وتصلك النتيجة.`
+      : `أُرسل طلب التبديل إلى ${n} من الزملاء ليوم ${DAY_AR[day]} — أوّل موافقٍ يتمّ معه التبديل وتصلك النتيجة.`,
+  };
+}
+
+/**
+ * تنفيذ تبديلٍ مباشرٍ **بالكود** (زرّ [بدّل مباشرة] للقائد الطرف): تبادل مراكز
+ * كامل، مع علم القادة تلقائيًّا إن كان بين شفتين.
+ */
+export async function directSwapByCode(params: {
+  clinicId: string;
+  actor: { id: string; role: string };
+  weekStart: string;
+  day: string;
+  targetId: string;
+  targetName: string;
+  actorName: string;
+}): Promise<{ success: boolean; info?: string; error?: string }> {
+  const { requestsV2 } = await import('../algorithms/requests_v2');
+  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+  const res = await requestsV2.swapFullPositions(params.actor, {
+    clinicId: params.clinicId, weekStart: params.weekStart, day,
+    aId: params.actor.id, bId: params.targetId,
+  });
+  if (!res.success) return { success: false, error: res.error };
+  {
+    const { notifications } = await import('../algorithms/notifications');
+    if (res.crossShift) {
+      await notifications.notifyLeadersCrossShiftSwap({
+        clinicId: params.clinicId, day,
+        aName: params.actorName, bName: params.targetName,
+        excludeIds: [params.actor.id, params.targetId],
+      });
+    }
+    // زال تعارض استئذانٍ بهذا التبديل؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق
+    await notifications.resolvePermissionAlertV2({
+      clinicId: params.clinicId, weekStart: params.weekStart, day,
+      doctorIds: [params.actor.id, params.targetId],
+    });
+  }
+  return { success: true, info: `تمّ التبديل بينك وبين ${params.targetName} يوم ${DAY_AR[day]}.` };
+}
+
+/**
+ * إبلاغ طرفَي تبديلٍ نفّذه القائد (زرّ [أبلغهما]) — إشعار علمٍ لكلٍّ منهما.
+ */
+export async function notifySwappedPair(params: {
+  clinicId: string;
+  sender: { id?: string; name?: string };
+  day: string;
+  a: { id: string; name: string };
+  b: { id: string; name: string };
+}): Promise<{ success: boolean; info?: string; error?: string }> {
+  const { notifications } = await import('../algorithms/notifications');
+  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+  const dayAr = DAY_AR[day] || params.day;
+  const tell = async (to: { id: string; name: string }, other: { name: string }) =>
+    notifications.broadcast({
+      clinicId: params.clinicId, recipientIds: [to.id],
+      senderId: params.sender.id, senderName: params.sender.name,
+      title: 'تبديل', body: `بُدّلت مع ${other.name} يوم ${dayAr} — كلٌّ استلم مكان الآخر.`,
+    });
+  const r1 = await tell(params.a, params.b);
+  const r2 = await tell(params.b, params.a);
+  if (!r1.success && !r2.success) return { success: false, error: r1.error || r2.error };
+  return { success: true, info: 'أُبلغ الطرفان بالتبديل.' };
+}
+
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
 const DAY_AR: Record<string, string> = {
   sunday: 'الأحد', monday: 'الاثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
@@ -255,6 +391,46 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
         period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فقط لو scope=period.' },
       },
       required: ['weekStart', 'day', 'doctorIndexes'],
+    },
+  },
+  {
+    name: 'request_swap',
+    description:
+      'يرسل **طلب تبديل** (تبادل مراكز يومٍ كامل — كلٌّ يستلم مكان الآخر بكلّ ما فيه) ' +
+      'إلى: طبيبٍ باسمه (target=doctor مع doctorIndex)، أو كلّ أطبّاء فترةٍ (target=period ' +
+      'مع period)، أو كلّ الشفت الآخر (target=other_shift). يصل المستلمين إشعارٌ ' +
+      'بموافق/رفض؛ أوّل موافقٍ يُنفَّذ معه فورًا وتُسحب البقيّة. الطالب هو المستخدم نفسه ' +
+      'دائمًا. الصلاحيّة ٢٤ ساعة أو دخول اليوم.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS] },
+        target: { type: 'string', enum: ['doctor', 'period', 'other_shift'] },
+        doctorIndex: { type: 'integer', description: 'فقط لو target=doctor.' },
+        period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فقط لو target=period.' },
+      },
+      required: ['weekStart', 'day', 'target'],
+    },
+  },
+  {
+    name: 'swap_request_status',
+    description:
+      'حالة طلبات التبديل المفتوحة للمستخدم («شصار على طلبي؟»): كم رفض، كم بقي، ' +
+      'من وافق، أو انتهت المهلة.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'cancel_swap_request',
+    description:
+      'يلغي طلب تبديلٍ معلّقًا للمستخدم (قبل أن يوافق أحد). مرّر اليوم إن سمّاه.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS], description: 'إن سمّاه المستخدم.' },
+      },
+      required: ['weekStart'],
     },
   },
   {
@@ -536,6 +712,7 @@ export async function dispatchRequestToolV2(
         //  • «احتياط» (قائد فقط — المحرّك يرفضه من غيره) يُخرج الطبيب من عيادته فعلًا،
         //    فيُعامَل غيابًا كاملًا: إشعار العلم وكرت التغطية كالمرضية بالضبط.
         const ABSENCE = ['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'];
+        const perm = (res as { permission?: import('../algorithms/requests_v2').PermissionInfo }).permission;
         if (ABSENCE.includes(status)) {
           try {
             const { notifications } = await import('../algorithms/notifications');
@@ -570,12 +747,39 @@ export async function dispatchRequestToolV2(
               });
             }
             for (const leaderId of leaders) {
+              // تحويل مرضيّةٍ/تفرّغٍ مُغطًّى إلى استئذان: كرتُ «تحديد المكان» يحلّ
+              // محلّ إشعار العلم (إشعار واحد للحدث) — القائد يفتح الكرت ويأمر فيُنفَّذ.
+              if (perm?.covered) {
+                await notifications.alertLeaderPlacement({
+                  clinicId: ctx.clinicId, leaderId,
+                  weekStart: wsEff, day: r.day,
+                  doctorId: doc.id, doctorName: doc.name,
+                  converted: true,
+                  customBody: leaderId === doc.id
+                    ? `حوّلتَ ${perm.convertedFromAr || 'حالتك'} إلى ${STATUS_AR[status]} يوم ${DAY_AR[r.day]} ومكانك السابق مُغطًّى — حدّد أين تعود.`
+                    : `حوّل ${doc.name} ${perm.convertedFromAr || 'حالته'} إلى ${STATUS_AR[status]} يوم ${DAY_AR[r.day]} ومكانه السابق مُغطًّى — حدّد مكانه.`,
+                  senderId: doc.id, senderName: doc.name,
+                });
+                continue;
+              }
               if (leaderId !== actor.id) {
+                // علم الاستئذان يحمل ملاحظة التعارض إن وُجد (يستلم وقت استئذانه)
+                const note = perm?.conflict ? ' — يستلم وقتَ استئذانه ويلزم تبديل فترة عمله' : '';
                 await notifications.notifyLeaderOfRequest({
                   clinicId: ctx.clinicId, leaderId,
                   senderId: doc.id, senderName: doc.name,
-                  summary: `${STATUS_AR[status]} يوم ${DAY_AR[r.day]}`,
+                  summary: `${STATUS_AR[status]} يوم ${DAY_AR[r.day]}${note}`,
                   weekStart: wsEff, day: r.day,
+                });
+              }
+              // تعارض الاستئذان → كرتُ فعلٍ أحمر لكلّ قائد، يُغلَق تلقائيًّا متى زال
+              if (perm?.conflict) {
+                await notifications.alertLeaderPermissionConflict({
+                  clinicId: ctx.clinicId, leaderId,
+                  weekStart: wsEff, day: r.day,
+                  doctorId: doc.id, doctorName: doc.name,
+                  statusAr: STATUS_AR[status] || 'استئذان',
+                  senderId: doc.id, senderName: doc.name,
                 });
               }
               await notifications.upsertLeaderCoverage({
@@ -592,10 +796,46 @@ export async function dispatchRequestToolV2(
           }
         }
 
+        // استئذانٌ يتعارض مع استلامه → اقتراحات تبديل الفترة **أزرارًا من الكود**
+        // (زميل العيادة / كلّ الفترة / الشفت الآخر — الأخير قبل اليوم بيومٍ فأكثر)،
+        // وسطرٌ لطيف من المحرّك. لا أزرار إبلاغٍ هنا — الأولويّة لحلّ التعارض.
+        if (perm?.conflict) {
+          const dayDate = new Date(`${wsEff}T00:00:00`);
+          dayDate.setDate(dayDate.getDate() + DAYS.indexOf(r.day as (typeof DAYS)[number]));
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const otherShift = dayDate.getTime() - today.getTime() >= 24 * 3600 * 1000;
+          if (actor.id === doc.id) {
+            ctx.onSwapOffer?.({
+              kind: 'permission_fix', weekStart: wsEff, day: r.day,
+              blocked: perm.blocked, colleague: perm.colleague,
+              period: perm.targetPeriod, otherShift,
+            });
+            return final(
+              `سُجّل ${STATUS_AR[status]} لك يوم ${DAY_AR[r.day]} — لكنّك تستلم وقتَ ` +
+              'استئذانك، والأجمل أن تبدّل فترة عملك كي لا تبقى عيادتك معلّقةً عليك. ' +
+              'اختر من الأزرار ما يناسبك.',
+            );
+          }
+          return final(
+            `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff}) — ` +
+            'لكنّه يستلم وقتَ استئذانه ويلزم تبديل فترة عمله. وصل القادةَ تنبيهٌ بذلك.',
+          );
+        }
+        // تحويلٌ ومكانه مُغطًّى → صار مستأذنًا بلا مركز، والقادة وصلهم كرت تحديد المكان
+        if (perm?.covered) {
+          return final(actor.id === doc.id
+            ? `تمّ التحويل إلى ${STATUS_AR[status]} يوم ${DAY_AR[r.day]} — مكانك السابق ` +
+              'مُغطًّى، وسيحدّد القائد أين تعود.'
+            : `تمّ التحويل إلى ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} — ` +
+              'مكانه السابق مُغطًّى، حدّد مكانه من كرت الذكاء.');
+        }
+
         // غياب الطبيب لنفسه → سؤال الإبلاغ صار **أزرارًا من الكود** (الواجهة تعرض
         // [الشفت][المركز][لا داعي] وتنفّذ الضغط مباشرةً) — النموذج لا يسأل ولا ينفّذ،
         // والنتيجة نهائيّة: الكود يعرض التأكيد والأزرار تحته بلا جولة نموذج.
-        const base = `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff}).`;
+        const base = `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff})` +
+          `${perm?.wasReserve ? ' — حلّ الاستئذان محلّ احتياطه' : ''}.`;
         if (actor.id === doc.id && ABSENCE.includes(status)) {
           ctx.onAnnounceOffer?.({
             weekStart: wsEff, day: r.day,
@@ -611,11 +851,64 @@ export async function dispatchRequestToolV2(
         const idxs = Array.isArray(r.doctorIndexes) ? r.doctorIndexes : [];
         const docs = idxs.map((n) => resolveDoctor(ctx, n)).filter((d): d is Resolved => d != null);
         if (docs.length < 2) return 'Tool error: التبديل يحتاج طبيبين صالحين على الأقلّ.';
-        // القرار حتميّ: إن كان الطالب أحد طرفَي تبديلٍ ثنائيّ → يحتاج موافقة الآخر،
-        // وهذه تأتي مع وحدة الإشعارات (لم نُعِد بناءها بعد). غير ذلك → فوريّ.
+        const wsEff = String(r.weekStart);
         const actorIsParty = docs.some((d) => d.id === actor.id);
+
+        // القرار حتميّ — الطالب أحد طرفَي تبديلٍ ثنائيّ:
+        //  • طبيب → يفتح طلب تبديلٍ تلقائيًّا (موافقة الآخر بالإشعارات).
+        //  • قائد → سؤال أزرارٍ من الكود: [أرسل طلبًا] أم [بدّل مباشرة]؟
         if (actorIsParty && docs.length === 2) {
-          return final('تبديلك مع زميلك يحتاج موافقته — هذه الميزة قيد البناء.');
+          const other = docs.find((d) => d.id !== actor.id)!;
+          if (isLeaderPlusRole(actor.role)) {
+            ctx.onSwapOffer?.({
+              kind: 'ask_mode', weekStart: wsEff, day: r.day,
+              target: { id: other.id, name: other.name },
+            });
+            return final(
+              `أنت طرفٌ في التبديل مع ${other.name} يوم ${DAY_AR[r.day]} — اختر من ` +
+              'الأزرار: إرسال طلبٍ لموافقته، أو تنفيذٌ مباشر.',
+            );
+          }
+          const sent = await sendSwapRequestByCode({
+            clinicId: ctx.clinicId,
+            requester: { id: actor.id, name: ctx.user?.name || '' },
+            weekStart: wsEff, day: r.day,
+            targetId: other.id, targetName: other.name,
+          });
+          return sent.success ? final(sent.info || 'أُرسل الطلب.') : `Tool error: ${sent.error}`;
+        }
+
+        // القائد يبدّل آخرين: تبديلٌ ثنائيّ كامل اليوم = تبادل مراكز كامل (يشمل
+        // الاحتياط)، ثمّ عرض «هل تُبلَّغان؟» أزرارًا. غير ذلك (٣+ أو نطاق فترة/شفت)
+        // يبقى تسلسلًا دائريًّا للخانات كما هو.
+        const scoped = r.scope === 'shift' || r.scope === 'period';
+        if (docs.length === 2 && !scoped) {
+          const res = await requestsV2.swapFullPositions(actor, {
+            clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+            aId: docs[0]!.id, bId: docs[1]!.id,
+          });
+          if (!res.success) return `Tool error: ${res.error}`;
+          {
+            const { notifications } = await import('../algorithms/notifications');
+            if (res.crossShift) {
+              await notifications.notifyLeadersCrossShiftSwap({
+                clinicId: ctx.clinicId, day: r.day,
+                aName: docs[0]!.name, bName: docs[1]!.name,
+                excludeIds: [actor.id, docs[0]!.id, docs[1]!.id],
+              });
+            }
+            // زال تعارض استئذانٍ بهذا التبديل؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق
+            await notifications.resolvePermissionAlertV2({
+              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+              doctorIds: [docs[0]!.id, docs[1]!.id],
+            });
+          }
+          ctx.onSwapOffer?.({
+            kind: 'offer_notify', weekStart: wsEff, day: r.day,
+            a: { id: docs[0]!.id, name: docs[0]!.name },
+            b: { id: docs[1]!.id, name: docs[1]!.name },
+          });
+          return final(`تمّ التبديل بين ${docs[0]!.name} و${docs[1]!.name} يوم ${DAY_AR[r.day]}.`);
         }
         const scope =
           r.scope === 'shift'
@@ -624,12 +917,76 @@ export async function dispatchRequestToolV2(
               ? { kind: 'period' as const, period: Number(r.period) }
               : { kind: 'day' as const };
         const res = await requestsV2.swapInSchedule(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
+          clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
           doctorIds: docs.map((d) => d.id), scope,
         });
         return res.success
           ? final(`تمّ التبديل بين: ${docs.map((d) => d.name).join('، ')} يوم ${DAY_AR[r.day]}.`)
           : `Tool error: ${res.error}`;
+      }
+
+      case 'request_swap': {
+        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
+        const wsEff = String(r.weekStart);
+        let mode: { kind: 'doctor'; doctorId: string } | { kind: 'period'; period: number } | { kind: 'other_shift' };
+        if (r.target === 'doctor') {
+          const doc = resolveDoctor(ctx, r.doctorIndex);
+          if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+          if (doc.id === actor.id) return 'Tool error: لا تبديل بين الطبيب ونفسه.';
+          mode = { kind: 'doctor', doctorId: doc.id };
+        } else if (r.target === 'period') {
+          const p = Number(r.period);
+          if (![1, 2, 3, 4].includes(p)) return 'Tool error: الفترة غير صالحة.';
+          mode = { kind: 'period', period: p };
+        } else {
+          mode = { kind: 'other_shift' };
+        }
+        const listed = await requestsV2.listSwapTargets({
+          clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+          requesterId: actor.id, mode,
+        });
+        if (!listed.success || !listed.targets) return `Tool error: ${listed.error}`;
+        const { notifications } = await import('../algorithms/notifications');
+        const opened = await notifications.openSwapGroup({
+          clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+          requesterId: actor.id, requesterName: ctx.user?.name || '',
+          targets: listed.targets,
+        });
+        if (!opened.success) return `Tool error: ${opened.error}`;
+        const n = opened.count || 0;
+        return final(
+          n === 1
+            ? `أُرسل طلب التبديل إلى ${listed.targets[0]!.name} ليوم ${DAY_AR[r.day]} — يتمّ فور موافقته وتصلك النتيجة.`
+            : `أُرسل طلب التبديل إلى ${n} من الأطبّاء ليوم ${DAY_AR[r.day]} — أوّل من يوافق يتمّ التبديل معه فورًا وتصلك النتيجة.`,
+        );
+      }
+
+      case 'swap_request_status': {
+        const { notifications } = await import('../algorithms/notifications');
+        const { groups } = await notifications.swapGroupsStatus({ requesterId: actor.id });
+        if (groups.length === 0) return final('لا طلبات تبديلٍ مفتوحة لك.');
+        const lines = groups.map((g) => {
+          const dayAr = DAY_AR[g.day] || g.day;
+          if (g.acceptedBy) return `يوم ${dayAr}: وافق ${g.acceptedBy} — تمّ التبديل.`;
+          if (g.expired || g.pending === 0) {
+            return g.rejected > 0
+              ? `يوم ${dayAr}: اعتذر الجميع (${g.rejected} من ${g.total}) — لم يتمّ.`
+              : `يوم ${dayAr}: انتهت المهلة دون ردّ.`;
+          }
+          return `يوم ${dayAr}: رفض ${g.rejected}، باقي ${g.pending} لم يردّوا بعد.`;
+        });
+        return final(lines.join('\n'));
+      }
+
+      case 'cancel_swap_request': {
+        const { notifications } = await import('../algorithms/notifications');
+        const res = await notifications.cancelSwapGroup({
+          requesterId: actor.id, weekStart: String(r.weekStart),
+          day: isDay(r.day) ? r.day : undefined,
+        });
+        if (!res.success) return `Tool error: ${res.error}`;
+        const days = (res.canceledDays || []).map((d) => DAY_AR[d] || d).join('، ');
+        return final(`أُلغي طلب التبديل${days ? ` (يوم ${days})` : ''}.`);
       }
 
       case 'cancel_schedule_status': {
@@ -651,6 +1008,11 @@ export async function dispatchRequestToolV2(
           await notifications.resolveCoverageV2({
             clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
             absentDoctorId: doc.id, covered: { kind: 'all' },
+          });
+          // أُلغي استئذانٌ متعارض؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق تلقائيًّا
+          await notifications.resolvePermissionAlertV2({
+            clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
+            doctorIds: [doc.id],
           });
           const statusAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الحالة';
           const fate = res.covered
