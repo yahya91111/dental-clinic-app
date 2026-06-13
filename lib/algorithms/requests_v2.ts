@@ -54,7 +54,8 @@ export type StatusResult = RequestResult & { gaps?: GapLocation[] };
  *  • targetPeriod: الفترة المكمّلة في شفته — هدف اقتراح «التبديل مع كلّ الفترة»
  *  • colleague: زميله في نفس العيادة بالفترة المكمّلة (إن خلا هو نفسه من الحجب)
  *  • covered: كان غائبًا (مرضية/تفرّغ) ومكانه مُغطًّى — صار مستأذنًا بلا مركز
- *  • wasReserve: كان احتياطيًّا — حلّت علامة الاستئذان محلّ الاحتياط
+ *  • wasReserve: كان احتياطيًّا — بقي احتياطًا والعلامة أُضيفت (تعايش)
+ *  • shadowToReserve: ظلٌّ استأذن — نُقل إلى الاحتياط وحده، وإلغاؤه يعيده لمدرّبه
  */
 export type PermissionInfo = {
   conflict: boolean;
@@ -64,6 +65,8 @@ export type PermissionInfo = {
   covered?: boolean;
   convertedFromAr?: string;
   wasReserve?: boolean;
+  wasReserveNoteAr?: string;
+  shadowToReserve?: boolean;
 };
 
 const ok = (): RequestResult => ({ success: true });
@@ -119,12 +122,13 @@ type Row = {
   doctor_name: string;
   role: string;
   status: string;
+  source?: string | null; // 'shadow' = صفّ حالةٍ لظلٍّ — إلغاؤه يعيده إلى جانب مدرّبه
 };
 
 async function loadDay(clinicId: string, weekStart: string, day: WeekDay): Promise<Row[]> {
   const { data, error } = await supabase
     .from('schedule_slots')
-    .select('id, period, clinic_number, doctor_id, doctor_name, role, status')
+    .select('id, period, clinic_number, doctor_id, doctor_name, role, status, source')
     .eq('clinic_id', clinicId)
     .eq('week_start', weekStart)
     .eq('day_of_week', day);
@@ -166,6 +170,86 @@ async function insertRows(rows: Record<string, unknown>[]): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** حزمة تغييرات على الجدول تُطبَّق دفعةً واحدة. */
+type SlotChanges = {
+  updates?: { id: string; doctor_id: string; doctor_name: string }[];
+  deleteIds?: string[];
+  inserts?: Record<string, unknown>[];
+};
+
+/** تطبيق الحزمة معاملةً واحدةً في قاعدة البيانات (sql/apply_slot_changes.sql):
+ *  إمّا أن تقع كلّها أو لا يقع منها شيء — فلا يبقى الجدول ناقصًا إن انقطع الاتصال. */
+async function applySlotChanges(changes: SlotChanges): Promise<void> {
+  const updates = changes.updates || [];
+  const deleteIds = changes.deleteIds || [];
+  const inserts = changes.inserts || [];
+  if (updates.length + deleteIds.length + inserts.length === 0) return;
+  const { error } = await supabase.rpc('apply_slot_changes', {
+    p_updates: updates,
+    p_delete_ids: deleteIds,
+    p_inserts: inserts,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** هل خانة الحفظ (فترة/عيادة أو دليقيتر) يشغلها الآن طبيبٌ آخر؟
+ *  حارس «لا إرجاع فوق ساكن»: المكان المحفوظ قد يكون مُلئ يدويًّا بعد الغياب
+ *  (التنسيب لا يمزّق الحفظ كما تفعل التغطية) — فلا يُعاد الغائب فوق مَن فيه. */
+function slotOccupied(rows: Row[], p: { period: number; clinic_number: number }, doctorId: string): boolean {
+  return rows.some(
+    (r) => r.doctor_id !== doctorId && r.status === 'active' && r.period === p.period
+      && (p.clinic_number === 0
+        ? r.role === 'delegator'
+        : r.role === 'clinic' && r.clinic_number === p.clinic_number),
+  );
+}
+
+/** بعد إرجاع مدرّبٍ إلى الجدول: ظلُّه (الذي نُقل احتياطًا بوسم source='shadow')
+ *  يعود معه تلقائيًّا مرآةً لخاناته الحاليّة. لا يُمسّ مَن أُلحق بطبيبٍ آخر (له
+ *  خانات فعليّة)، ولا الغائب بنفسه، ولا احتياطيٌّ وُضع بقرارٍ مستقلّ (وسمه ليس
+ *  'shadow'). يُرجع أسماء مَن عاد. */
+async function returnShadowsWithSupervisor(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  supervisorId: string;
+}): Promise<string[]> {
+  const { clinicId, weekStart, day, supervisorId } = args;
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const kids = ((members || []) as {
+    doctor_id: string; doctor_name: string; work_status?: string; supervisor_doctor_id?: string | null;
+  }[]).filter((m) => m.work_status === 'trainee' && m.supervisor_doctor_id === supervisorId);
+  if (kids.length === 0) return [];
+  const cur = await loadDay(clinicId, weekStart, day); // بعد الإرجاع
+  const supSlots = cur.filter(
+    (r) => r.doctor_id === supervisorId && r.status === 'active' && r.period > 0
+      && (r.role === 'clinic' || r.role === 'delegator'),
+  );
+  if (supSlots.length === 0) return [];
+  const names: string[] = [];
+  for (const t of kids) {
+    const tRows = cur.filter((r) => r.doctor_id === t.doctor_id);
+    if (tRows.some((r) => r.status === 'active' && r.period > 0
+      && (r.role === 'clinic' || r.role === 'delegator'))) continue; // منسَّب/مُلحَق بغيره — يبقى
+    if (tRows.some((r) => r.period === 0
+      && (r.status === 'sick_leave' || r.status === 'vacation'
+        || r.status === 'permission_start' || r.status === 'permission_end'))) continue; // غائب/مستأذن بنفسه
+    const tEx = tRows.filter((r) => r.period === 0 && r.status === 'extra');
+    if (tEx.length === 0 || !tEx.some((r) => r.source === 'shadow')) continue;
+    await deleteRows(tEx.map((r) => r.id));
+    await insertRows(
+      supSlots.map((r) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: r.period, clinic_number: r.clinic_number,
+        doctor_id: t.doctor_id, doctor_name: t.doctor_name,
+        role: r.role, status: 'active', source: 'request',
+      })),
+    );
+    names.push(t.doctor_name);
+  }
+  return names;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // الحالة — مرضية/تفرّغ/استئذان/احتياط
 // ═══════════════════════════════════════════════════════════════
@@ -187,7 +271,12 @@ export async function setScheduleStatus(
     status: ScheduleStatus;
     shift: Shift; // لتحديد جهة EX (صباح=1 / مساء=2) — يُصحَّح من مكانه الفعليّ
   },
-): Promise<StatusResult & { permission?: PermissionInfo }> {
+): Promise<StatusResult & {
+  permission?: PermissionInfo;
+  duplicate?: boolean;          // نفس الحالة مسجّلة أصلًا — لا عمل، ذكِّر بالتكرار
+  keptPermissionAr?: string;    // احتياطٌ فوق استئذانٍ قائم — نصّ «لن يُستدعى في …»
+  returnedShadows?: string[];   // ظلالٌ عادت مع المدرّب عند إرجاعه (تحويل غياب→استئذان)
+}> {
   const { clinicId, weekStart, day, doctorId, doctorName, status, shift } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة تغيير حالة هذا الطبيب.');
   // الاحتياط صلاحيّة القائد فأعلى حصرًا — الطبيب لا يجعل نفسه (ولا غيره) احتياطًا.
@@ -235,18 +324,64 @@ export async function setScheduleStatus(
     }
     if (REMOVES_FROM_CLINIC.has(status) && alreadySameStatus && !stillPlaced) {
       const prev = mine.filter((r) => r.role === PREV_ROLE);
-      return { success: true, gaps: gapsFrom(prev) };
+      return { success: true, gaps: gapsFrom(prev), duplicate: true };
+    }
+    // استئذانٌ بنفس النوع مسجّلٌ أصلًا → تذكيرٌ بالتكرار، لا إعادة كتابةٍ ولا إشعارات
+    const toPermission = status === 'permission_start' || status === 'permission_end';
+    if (toPermission && alreadySameStatus) {
+      return { success: true, gaps: [], duplicate: true };
+    }
+
+    // ── الطبيب نفسه ظلٌّ (متدرّب خاناته تطابق خانات مدرّبه تمامًا)؟ ──
+    // غيابه لا يُحدث نقصًا — مدرّبه باقٍ في الخانة — فلا حفظَ ولا كروت تغطية:
+    // تُمسح خاناته ويُكتب صفّ حالته بوسم source='shadow'، فيعيده الإلغاء إلى جانب
+    // مدرّبه **أينما كان حينها** لا إلى خانةٍ قديمة. والاستئذان ينقله إلى الاحتياط
+    // وحده (لا تعارض يُحسب له — الظلّ لا يملك خانةً مستقلّة يستلمها).
+    if (myActive.length > 0) {
+      const { data: members0 } = await getAllGroupMembers(clinicId);
+      const me = ((members0 || []) as {
+        doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null;
+      }[]).find((m) => m.doctor_id === doctorId);
+      if (me?.work_status === 'trainee' && me.supervisor_doctor_id) {
+        const supKeys = new Set(rows
+          .filter((r) => r.doctor_id === me.supervisor_doctor_id && r.status === 'active'
+            && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'))
+          .map((r) => `${r.period}|${r.clinic_number}|${r.role}`));
+        const myKeys = myActive.map((r) => `${r.period}|${r.clinic_number}|${r.role}`);
+        if (myKeys.length > 0 && myKeys.length === supKeys.size && myKeys.every((k) => supKeys.has(k))) {
+          const oldSt = mine.filter((r) => r.period === 0 && r.status !== 'active');
+          const oldPrev = mine.filter((r) => r.role === PREV_ROLE);
+          await deleteRows([...myActive, ...oldSt, ...oldPrev].map((r) => r.id));
+          const cell = exCellOf(effShift!);
+          const statusRow = {
+            clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+            period: 0, clinic_number: cell,
+            doctor_id: doctorId, doctor_name: doctorName,
+            role: 'clinic', status, source: 'shadow',
+          };
+          // استئذان الظلّ: علامة الاستئذان + صفّ احتياطٍ معًا (يظهر في قائمة EX)
+          await insertRows(toPermission ? [statusRow, { ...statusRow, status: 'extra' }] : [statusRow]);
+          return {
+            success: true, gaps: [],
+            permission: toPermission
+              ? { conflict: false, blocked: status === 'permission_start' ? [1, 3] : [2, 4], shadowToReserve: true }
+              : undefined,
+          };
+        }
+      }
     }
 
     // ── تحويل حالةٍ تُخرج من العيادة (مرضية/تفرّغ/احتياط) إلى استئذان ──
     // الاستئذان حالةُ مَن هو **داخل** العيادة (يتأخّر أو يخرج مبكّرًا). كان خارجها
     // بحالةٍ سابقة؟ أعِده أوّلًا إلى مكانه المحفوظ ثمّ ضَع علامة الاستئذان — كما لو
     // سُجّل الاستئذان من البداية، فلا حالة هجينة (لافتة استئذان وهو غائبٌ كلّيًّا).
-    // الاستثناءان:
-    //  • كان احتياطيًّا → لا إرجاع: علامة الاستئذان تحلّ محلّ الاحتياط فقط.
-    //  • كان غائبًا ومكانه مُغطًّى (لا حفظ باقيًا) → يسري التحويل بلا مركز، ويُعلَم
-    //    بـcovered=true ليرسل الطرف الأعلى كرت «تحديد المكان» للقائد.
-    const toPermission = status === 'permission_start' || status === 'permission_end';
+    // الاستثناءات:
+    //  • ظلٌّ غائب (وسم source='shadow') → يبقى ظلًّا: استئذانٌ + احتياطٌ بوسمه،
+    //    وإلغاؤه يعيده إلى جانب مدرّبه. لا إرجاع لخانةٍ ولا كرت «تحديد مكان».
+    //  • كان احتياطيًّا → لا إرجاع: العلامة تُضاف والاحتياط باقٍ (تعايش).
+    //  • كان غائبًا ومكانه مُغطًّى (لا حفظ باقيًا، أو شغل خاناتِه غيرُه) → يسري
+    //    التحويل بلا مركز، ويُعلَم بـcovered=true ليرسل الطرف الأعلى كرت
+    //    «تحديد المكان» للقائد.
     const outRow = mine.find(
       (r) => r.period === 0 && REMOVES_FROM_CLINIC.has(r.status as ScheduleStatus),
     );
@@ -255,16 +390,36 @@ export async function setScheduleStatus(
     let permCovered = false;
     let permWasReserve = false;
     let permConvertedFromAr: string | undefined;
+    let returnedShadows: string[] = [];
+    if (toPermission && wasOut && !stillPlaced && outRow!.source === 'shadow') {
+      const oldSt = mine.filter((r) => r.period === 0 && r.status !== 'active');
+      await deleteRows(oldSt.map((r) => r.id));
+      const statusRow = {
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: 0, clinic_number: outRow!.clinic_number,
+        doctor_id: doctorId, doctor_name: doctorName,
+        role: 'clinic', status, source: 'shadow',
+      };
+      await insertRows([statusRow, { ...statusRow, status: 'extra' }]);
+      return {
+        success: true, gaps: [],
+        permission: { conflict: false, blocked: status === 'permission_start' ? [1, 3] : [2, 4], shadowToReserve: true },
+      };
+    }
     if (toPermission && wasOut && !stillPlaced) {
       const prevRows = mine.filter((r) => r.role === PREV_ROLE);
       if (outRow!.status === 'extra') {
-        permWasReserve = true; // احتياطيّ يستأذن — علامةٌ بدل علامة، حفظه القديم لا يُمسّ
+        permWasReserve = true; // احتياطيّ يستأذن — العلامة تُضاف والاحتياط باقٍ، حفظه القديم لا يُمسّ
       } else if (prevRows.length === 0) {
         permCovered = true;
         permConvertedFromAr = outRow!.status === 'vacation' ? 'التفرّغ' : 'المرضية';
       } else {
+        // لا إرجاع فوق ساكن: يُعاد إلى الخانات الفارغة فقط؛ ما شغله غيرُه يدويًّا
+        // يبقى له، ويُعلَم القائد بكرت «تحديد المكان» للباقي.
+        const free = prevRows.filter((r) => !slotOccupied(rows, r, doctorId));
+        const taken = prevRows.length - free.length;
         await insertRows(
-          prevRows.map((r) => ({
+          free.map((r) => ({
             clinic_id: clinicId, week_start: weekStart, day_of_week: day,
             period: r.period, clinic_number: r.clinic_number,
             doctor_id: doctorId, doctor_name: doctorName,
@@ -272,18 +427,43 @@ export async function setScheduleStatus(
           })),
         );
         await deleteRows(prevRows.map((r) => r.id));
-        permPlacedRows = prevRows.map((r) => ({ period: r.period, clinic_number: r.clinic_number }));
-        // شفته الفعليّ الآن من مكانه المستعاد، لا من استنتاجٍ قديمٍ وهو غائب
-        effShift = prevRows.some((r) => r.period >= 3) ? 'evening' : 'morning';
+        permPlacedRows = free.map((r) => ({ period: r.period, clinic_number: r.clinic_number }));
+        if (taken > 0) {
+          permCovered = true;
+          permConvertedFromAr = outRow!.status === 'vacation' ? 'التفرّغ' : 'المرضية';
+        }
+        if (free.length > 0) {
+          // شفته الفعليّ الآن من مكانه المستعاد، لا من استنتاجٍ قديمٍ وهو غائب
+          effShift = free.some((r) => r.period >= 3) ? 'evening' : 'morning';
+          // عاد المدرّب إلى الجدول → ظلُّه (المنقول احتياطًا) يعود معه تلقائيًّا
+          returnedShadows = await returnShadowsWithSupervisor({ clinicId, weekStart, day, supervisorId: doctorId });
+        }
       }
     }
     if (toPermission && permPlacedRows === null && stillPlaced) {
       permPlacedRows = myActive.map((r) => ({ period: r.period, clinic_number: r.clinic_number }));
     }
 
-    // أزِل أيّ حالة EX سابقة لنفس الطبيب/اليوم (تفادي التكرار)
+    // أزِل أيّ حالة EX سابقة لنفس الطبيب/اليوم (تفادي التكرار) — مع قاعدة التعايش:
+    // الاحتياط والاستئذان يتعايشان (حقيقتان معًا: في صفّ الاحتياط ولا يُستدعى وقت
+    // استئذانه) — فاستئذانٌ جديد لا يمحو صفّ الاحتياط، واحتياطٌ جديد لا يمحو
+    // علامة الاستئذان. المرضية/التفرّغ غيابٌ كامل يمحو كلّ شيء.
+    const isPermRow = (r: Row) => r.status === 'permission_start' || r.status === 'permission_end';
     const oldStatusRows = mine.filter((r) => r.status !== 'active' && r.period === 0);
-    await deleteRows(oldStatusRows.map((r) => r.id));
+    const keepRow = (r: Row) =>
+      (toPermission && r.status === 'extra') || (status === 'extra' && isPermRow(r));
+    await deleteRows(oldStatusRows.filter((r) => !keepRow(r)).map((r) => r.id));
+    // احتياطٌ فوق استئذانٍ باقٍ → نصّ «لن يُستدعى في فترته» (بفترته الفعليّة حسب شفته)
+    let keptPermissionAr: string | undefined;
+    const keptPerm = status === 'extra' ? oldStatusRows.find(isPermRow) : undefined;
+    if (keptPerm) {
+      const firstP = effShift === 'evening' ? 3 : 1;
+      const ps = keptPerm.status === 'permission_start';
+      keptPermissionAr = `مستأذن ${ps ? 'بداية' : 'نهاية'} الدوام — لن يُستدعى في الفترة ${ps ? firstP : firstP + 1}`;
+    }
+    // كان موسومًا ظلًّا (غائبًا بوسم source='shadow')؟ الحالة الجديدة ترث الوسم
+    // كي يبقى إلغاؤها يعيده إلى جانب مدرّبه لا إلى حفظٍ لا يملكه.
+    const wasShadowMarked = oldStatusRows.some((r) => r.source === 'shadow');
 
     if (REMOVES_FROM_CLINIC.has(status)) {
       // احفظ المكان قبل الغياب (خانات العيادة/الدليقيتر الفعليّة)، ثمّ احذفها
@@ -326,11 +506,13 @@ export async function setScheduleStatus(
         await deleteRows(tSlots.map((r) => r.id));
         const tOldEx = rows.filter((r) => r.doctor_id === t.doctor_id && r.period === 0);
         await deleteRows(tOldEx.map((r) => r.id));
+        // وسم 'shadow' يميّزه عن احتياطيٍّ بقرارٍ مستقلّ — به يعود تلقائيًّا مع
+        // مدرّبه عند إرجاعه، ولا يُمسّ مَن جُعل احتياطًا عمدًا.
         await insertRows([{
           clinic_id: clinicId, week_start: weekStart, day_of_week: day,
           period: 0, clinic_number: exCellOf(effShift),
           doctor_id: t.doctor_id, doctor_name: t.doctor_name,
-          role: 'clinic', status: 'extra', source: 'request',
+          role: 'clinic', status: 'extra', source: 'shadow',
         }]);
       }
     }
@@ -340,7 +522,7 @@ export async function setScheduleStatus(
       clinic_id: clinicId, week_start: weekStart, day_of_week: day,
       period: 0, clinic_number: exCellOf(effShift),
       doctor_id: doctorId, doctor_name: doctorName,
-      role: 'clinic', status, source: 'request',
+      role: 'clinic', status, source: wasShadowMarked ? 'shadow' : 'request',
     }]);
 
     // ── حقائق الاستئذان: هل يستلم خانةً في فترةٍ يحجبها استئذانه؟ ──
@@ -374,14 +556,24 @@ export async function setScheduleStatus(
           }
         }
       }
+      // احتياطيٌّ استأذن — العلامة أُضيفت والاحتياط باقٍ: نصّ «لن يُستدعى» بفترته
+      let wasReserveNoteAr: string | undefined;
+      if (permWasReserve) {
+        const firstP = effShift === 'evening' ? 3 : 1;
+        const ps = status === 'permission_start';
+        wasReserveNoteAr = `لا يزال احتياطًا — لن يُستدعى في الفترة ${ps ? firstP : firstP + 1}`;
+      }
       permission = {
         conflict: conflictSlots.length > 0, blocked, targetPeriod, colleague,
         covered: permCovered || undefined, convertedFromAr: permConvertedFromAr,
-        wasReserve: permWasReserve || undefined,
+        wasReserve: permWasReserve || undefined, wasReserveNoteAr,
       };
     }
 
-    return { success: true, gaps, permission };
+    return {
+      success: true, gaps, permission, keptPermissionAr,
+      returnedShadows: returnedShadows.length ? returnedShadows : undefined,
+    };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -389,9 +581,12 @@ export async function setScheduleStatus(
 
 /**
  * يلغي حالة طبيب ليومٍ (يُزيل صفّ EX). الطبيب لنفسه؛ الليدر لأيّ أحد.
- * restoreToPrevPlace=true: يعيده إلى مكانه قبل الغياب إن وُجد محفوظًا.
- * covered=true: كانت حالته تُخرجه من العيادة ولا صفوف حفظٍ باقية — أي أنّ مكانه
- * غُطّي فعلًا، فلا يُعاد تلقائيًّا؛ القائد يقرّر أين يوضَع.
+ * restoreToPrevPlace=true: يعيده إلى مكانه قبل الغياب إن وُجد محفوظًا — إلى
+ * الخانات **الفارغة** فقط (لا إرجاع فوق ساكن).
+ * ترتيب الإلغاء عند اجتماع حالتين (تعايش الاحتياط والاستئذان): الاستئذان يُلغى
+ * أوّلًا (يبقى احتياطًا)؛ إلغاءٌ ثانٍ يلغي الاحتياط نفسه.
+ * الظلّ الموسوم (source='shadow') يعود إلى جانب مدرّبه أينما كان حينها.
+ * covered=true: مكانه (كلّه أو بعضه) مُغطًّى/مشغول — القائد يقرّر أين يوضَع.
  */
 export async function cancelStatus(
   actor: Actor,
@@ -402,7 +597,16 @@ export async function cancelStatus(
     doctorId: string;
     restoreToPrevPlace?: boolean;
   },
-): Promise<RequestResult & { restored?: boolean; covered?: boolean; canceledStatus?: string }> {
+): Promise<RequestResult & {
+  restored?: boolean;
+  covered?: boolean;
+  canceledStatus?: string;
+  permissionCanceled?: boolean;       // أُزيلت علامة استئذانٍ وهو في عيادته — لا إرجاع
+  returnedToReserve?: boolean;        // أُزيلت العلامة وبقي احتياطًا كما كان
+  shadowReturned?: boolean;           // ظلٌّ عاد إلى جانب مدرّبه
+  shadowSupervisorAbsent?: boolean;   // ظلٌّ أُلغيت حالته ومدرّبه غائب — بقي احتياطًا
+  returnedShadows?: string[];         // ظلالُ المدرّب التي عادت معه عند إرجاعه
+}> {
   const { clinicId, weekStart, day, doctorId, restoreToPrevPlace } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة إلغاء حالة هذا الطبيب.');
   try {
@@ -432,27 +636,92 @@ export async function cancelStatus(
           : `لا حالة مسجّلة لهذا الطبيب في هذا الأسبوع (${weekStart}).`,
       );
     }
-    await deleteRows(mine.filter((r) => r.period === 0 && r.status !== 'active').map((r) => r.id));
-
+    const statusRows = mine.filter((r) => r.period === 0 && r.status !== 'active');
+    const isPermRow = (r: Row) => r.status === 'permission_start' || r.status === 'permission_end';
     const prev = mine.filter((r) => r.role === PREV_ROLE);
-    // حالةٌ كانت تُخرجه من العيادة ولا حفظَ باقيًا = مكانه غُطّي (التغطية تمزّق الحفظ)
-    const covered = !!statusRow
-      && REMOVES_FROM_CLINIC.has(statusRow.status as ScheduleStatus)
-      && prev.length === 0;
-    let restored = false;
+
+    // ── ظلٌّ موسوم (source='shadow')؟ عودته مرآةُ خانات مدرّبه **الحاليّة** ──
+    // (لا حفظَ له — الظلّ يلاصق مدرّبه أينما كان). مدرّبه غائب؟ يبقى احتياطًا.
+    const shadowMark = statusRows.find((r) => r.source === 'shadow');
+    if (shadowMark) {
+      await deleteRows([...statusRows, ...prev].map((r) => r.id));
+      const { data: members } = await getAllGroupMembers(clinicId);
+      const me = ((members || []) as {
+        doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null;
+      }[]).find((m) => m.doctor_id === doctorId);
+      const supId = me?.supervisor_doctor_id || null;
+      const supSlots = supId
+        ? rows.filter((r) => r.doctor_id === supId && r.status === 'active' && r.period > 0
+            && (r.role === 'clinic' || r.role === 'delegator'))
+        : [];
+      if (supSlots.length > 0) {
+        const myName = shadowMark.doctor_name;
+        await insertRows(
+          supSlots.map((r) => ({
+            clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+            period: r.period, clinic_number: r.clinic_number,
+            doctor_id: doctorId, doctor_name: myName,
+            role: r.role, status: 'active', source: 'request',
+          })),
+        );
+        return { success: true, restored: true, shadowReturned: true, canceledStatus: shadowMark.status };
+      }
+      // مدرّبه ليس في الجدول الآن → يبقى في صفّ الاحتياط (بوسمه، ليتبعه عند عودته)
+      await insertRows([{
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: 0, clinic_number: shadowMark.clinic_number,
+        doctor_id: doctorId, doctor_name: shadowMark.doctor_name,
+        role: 'clinic', status: 'extra', source: 'shadow',
+      }]);
+      return { success: true, restored: false, shadowSupervisorAbsent: true, canceledStatus: shadowMark.status };
+    }
+
+    // ── استئذانٌ يُلغى أوّلًا (هو في عيادته — تُزال العلامة فقط، لا إرجاع) ──
+    const permRows = statusRows.filter(isPermRow);
+    if (permRows.length > 0) {
+      await deleteRows(permRows.map((r) => r.id));
+      const extraStays = statusRows.some((r) => r.status === 'extra');
+      if (extraStays) {
+        // كان احتياطًا واستأذن — تُزال العلامة ويبقى احتياطًا، وحفظُه القديم
+        // (لما قبل الاحتياط) يبقى لإلغاء الاحتياط لاحقًا.
+        return { success: true, returnedToReserve: true, canceledStatus: permRows[0]!.status };
+      }
+      // حفظٌ بائت بلا غيابٍ معه؟ نظّفه كي لا يُستعاد خطأً لاحقًا.
+      await deleteRows(prev.map((r) => r.id));
+      return { success: true, permissionCanceled: true, canceledStatus: permRows[0]!.status };
+    }
+
+    // ── غيابٌ كامل (مرضية/تفرّغ) أو احتياط ──
+    await deleteRows(statusRows.map((r) => r.id));
+    let restoredCount = 0;
+    let blockedCount = 0;
     if (restoreToPrevPlace && prev.length > 0) {
+      // لا إرجاع فوق ساكن: الفارغ يُستعاد، والمشغول يقرّر القائد مكانه (covered)
+      const free = prev.filter((r) => !slotOccupied(rows, r, doctorId));
+      blockedCount = prev.length - free.length;
       await insertRows(
-        prev.map((r) => ({
+        free.map((r) => ({
           clinic_id: clinicId, week_start: weekStart, day_of_week: day,
           period: r.period, clinic_number: r.clinic_number,
           doctor_id: r.doctor_id, doctor_name: r.doctor_name,
           role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
         })),
       );
-      restored = true;
+      restoredCount = free.length;
     }
     await deleteRows(prev.map((r) => r.id));
-    return { success: true, restored, covered, canceledStatus: statusRow?.status };
+    // مكانه (كلّه أو بعضه) لم يُستعَد: غُطّي وقت الغياب (الحفظ مُزِّق) أو شغله غيرُه
+    const covered = REMOVES_FROM_CLINIC.has(statusRow.status as ScheduleStatus)
+      && (prev.length === 0 || blockedCount > 0);
+    // عاد المدرّب → ظلُّه (المنقول احتياطًا بوسم 'shadow') يعود معه تلقائيًّا
+    let returnedShadows: string[] = [];
+    if (restoredCount > 0) {
+      returnedShadows = await returnShadowsWithSupervisor({ clinicId, weekStart, day, supervisorId: doctorId });
+    }
+    return {
+      success: true, restored: restoredCount > 0, covered, canceledStatus: statusRow.status,
+      returnedShadows: returnedShadows.length ? returnedShadows : undefined,
+    };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -826,8 +1095,10 @@ export async function swapInSchedule(
 ): Promise<RequestResult> {
   const { clinicId, weekStart, day, doctorIds, scope } = args;
   if (doctorIds.length < 2) return fail('التبديل يحتاج طبيبين على الأقلّ.');
-  if (!isLeaderPlus(actor.role) && !doctorIds.includes(actor.id)) {
-    return fail('لا تملك صلاحيّة هذا التبديل.');
+  // غير القائد: طرفٌ في تبديلٍ ثنائيٍّ فقط (مسار التغطية/الموافقات) — الجماعيّ
+  // أو بين أطبّاء آخرين للقائد وحده، فلا طريق خلفيًّا لتبديلٍ بلا موافقة.
+  if (!isLeaderPlus(actor.role) && !(doctorIds.length === 2 && doctorIds.includes(actor.id))) {
+    return fail('التبديل الجماعيّ أو بين أطبّاء آخرين للقائد فقط.');
   }
   const periodsInScope: number[] =
     scope.kind === 'day' ? [1, 2, 3, 4]
@@ -851,18 +1122,15 @@ export async function swapInSchedule(
     );
     if (affected.length === 0) return fail('لا توجد خانات للأطباء المحدّدين في هذا النطاق.');
 
-    // طبّق التبديل خانةً بخانة (تحديث doctor_id/name مع ثبات الموضع)
-    for (const r of affected) {
+    // التبديل خانةً بخانة (نقل الملكيّة مع ثبات الموضع)، والظلّ — المتدرّب
+    // المبتدئ الملتصق بمدرّبه — ينتقل معه. تُحسب الحزمة كاملةً ثمّ تُطبَّق
+    // معاملةً واحدة: إمّا كلّها أو لا شيء.
+    const updates = affected.map((r) => {
       const to = next.get(r.doctor_id)!;
-      const { error } = await supabase
-        .from('schedule_slots')
-        .update({ doctor_id: to.id, doctor_name: to.name, updated_at: new Date().toISOString() })
-        .eq('id', r.id);
-      if (error) return fail(error.message);
-    }
-
-    // الظلّ: المتدرّب المبتدئ ملتصق بمدرّبه، فينتقل معه إلى مواضعه الجديدة.
-    await moveShadowTrainees({ clinicId, weekStart, day, doctorIds, periodsInScope, preRows: rows });
+      return { id: r.id, doctor_id: to.id, doctor_name: to.name };
+    });
+    const shadow = await shadowTraineeChanges({ clinicId, weekStart, day, doctorIds, periodsInScope, preRows: rows });
+    await applySlotChanges({ updates, deleteIds: shadow.deleteIds, inserts: shadow.inserts });
     return ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -870,26 +1138,28 @@ export async function swapInSchedule(
 }
 
 /**
- * بعد تبديل أطباء، ينقل المتدرّب المبتدئ (الظلّ) ليتبع مدرّبه. الظلّ نسخة من خانات
+ * بعد تبديل أطباء، يحسب نقل المتدرّب المبتدئ (الظلّ) ليتبع مدرّبه. الظلّ نسخة من خانات
  * مدرّبه (نفس الفترة/العيادة/الدور). نتعرّف عليه بمطابقة خاناته تمامًا لخانات مدرّبه
  * قبل التبديل (المستقلّ لا يُطابق فلا يُنقل). موضع المدرّب الجديد = موضع سَلَفه القديم.
+ * يحسب فقط ولا يكتب — يُرجع الحذوف/الإدراجات ليضمّها المستدعي إلى معاملته الواحدة.
  */
-async function moveShadowTrainees(args: {
+async function shadowTraineeChanges(args: {
   clinicId: string;
   weekStart: string;
   day: WeekDay;
   doctorIds: string[];
   periodsInScope: number[];
   preRows: Row[];
-}): Promise<void> {
+}): Promise<{ deleteIds: string[]; inserts: Record<string, unknown>[] }> {
   const { clinicId, weekStart, day, doctorIds, periodsInScope, preRows } = args;
+  const changes = { deleteIds: [] as string[], inserts: [] as Record<string, unknown>[] };
   const { data: members } = await getAllGroupMembers(clinicId);
   const swapped = new Set(doctorIds);
   const shadows = (members || []).filter(
     (m: { work_status?: string; supervisor_doctor_id?: string | null }) =>
       m.work_status === 'trainee' && m.supervisor_doctor_id && swapped.has(m.supervisor_doctor_id),
   ) as { doctor_id: string; doctor_name: string; supervisor_doctor_id: string }[];
-  if (shadows.length === 0) return;
+  if (shadows.length === 0) return changes;
 
   const inScope = (r: Row) =>
     r.period > 0 && r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator')
@@ -911,17 +1181,95 @@ async function moveShadowTrainees(args: {
     const supSet = new Set(supPos.map(key));
     if (!tPos.every((p) => supSet.has(key(p)))) continue;
 
-    const newPos = posOf(predecessorOf(t.supervisor_doctor_id));
-    const tOldIds = preRows.filter((r) => r.doctor_id === t.doctor_id && inScope(r)).map((r) => r.id);
-    await deleteRows(tOldIds);
-    await insertRows(
-      newPos.map((p) => ({
+    const pred = predecessorOf(t.supervisor_doctor_id);
+    const newPos = posOf(pred);
+    const tOldIds = preRows
+      .filter((r) => r.doctor_id === t.doctor_id && (inScope(r) || (r.period === 0 && r.status === 'extra')))
+      .map((r) => r.id);
+
+    // مدرّبه انتقل إلى صفّ الاحتياط (لا خانات جديدة) → الظلّ يصبح احتياطيًّا معه
+    // بدل أن يختفي. جهة الاحتياط من صفّ EX القديم لِمن أخذ المدرّب مكانه.
+    if (newPos.length === 0) {
+      const predEx = preRows.find((r) => r.doctor_id === pred && r.period === 0 && r.status === 'extra');
+      if (!predEx) continue; // لا نعرف الجهة — اتركه كما هو بدل حذفه بلا بديل
+      changes.deleteIds.push(...tOldIds);
+      changes.inserts.push({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: 0, clinic_number: predEx.clinic_number,
+        doctor_id: t.doctor_id, doctor_name: t.doctor_name,
+        role: 'clinic', status: 'extra', source: 'request',
+      });
+      continue;
+    }
+
+    changes.deleteIds.push(...tOldIds);
+    changes.inserts.push(
+      ...newPos.map((p) => ({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: p.period, clinic_number: p.clinic_number,
         doctor_id: t.doctor_id, doctor_name: t.doctor_name,
         role: p.role, status: 'active', source: 'request',
       })),
     );
+  }
+  return changes;
+}
+
+/**
+ * يُلحِق القائد متدرّبًا احتياطيًّا بمدرّبٍ (آخر) **لهذا اليوم فقط**: يُحذف صفّ
+ * احتياطه ويُكتب اسمه في خانات المدرّب نفسها (عيادة/دليقيتر). لا يغيّر مدرّبه
+ * الرسميّ ولا أيّ يومٍ آخر. القائد فأعلى حصرًا.
+ */
+export async function attachTraineeForDay(
+  actor: Actor,
+  args: {
+    clinicId: string;
+    weekStart: string;
+    day: WeekDay;
+    traineeId: string;
+    traineeName: string;
+    supervisorId: string;
+    supervisorName: string;
+  },
+): Promise<RequestResult & { mirrored?: { period: number; clinic_number: number; role: string }[] }> {
+  const { clinicId, weekStart, day, traineeId, traineeName, supervisorId, supervisorName } = args;
+  if (!isLeaderPlus(actor.role)) return fail('إلحاق المتدرّب بمدرّبٍ صلاحيّة للقائد فأعلى فقط.');
+  if (traineeId === supervisorId) return fail('لا يُلحَق المتدرّب بنفسه.');
+  try {
+    const { data: members } = await getAllGroupMembers(clinicId);
+    const tm = ((members || []) as { doctor_id: string; work_status?: string }[])
+      .find((m) => m.doctor_id === traineeId);
+    if (!tm || tm.work_status !== 'trainee') return fail(`${traineeName} ليس متدرّبًا.`);
+
+    const rows = await loadDay(clinicId, weekStart, day);
+    const t = dayPositionOf(rows, traineeId);
+    if (t.absent) return fail(`${traineeName} غائبٌ هذا اليوم — أُلغِ غيابه أوّلًا.`);
+    if (t.extra.length === 0) {
+      return fail(`${traineeName} ليس احتياطيًّا هذا اليوم — الإلحاق يكون من صفّ الاحتياط فقط.`);
+    }
+    const sup = dayPositionOf(rows, supervisorId);
+    if (sup.absent) return fail(`${supervisorName} غائبٌ هذا اليوم — لا يُلحَق به متدرّب.`);
+    if (sup.slots.length === 0) {
+      return fail(`${supervisorName} بلا خاناتٍ في الجدول هذا اليوم — لا مكان يُلحَق المتدرّب به.`);
+    }
+
+    // أزِل صفّ الاحتياط (وأيّ خانات قديمة احتياطًا للسلامة) واكتبه ظلًّا للمدرّب
+    // — حذفٌ وإدراجٌ في معاملةٍ واحدة، فلا يختفي المتدرّب إن انقطع الاتصال بينهما.
+    const mirrored = sup.slots.map((r) => ({
+      period: r.period, clinic_number: r.clinic_number, role: r.role,
+    }));
+    await applySlotChanges({
+      deleteIds: [...t.extra, ...t.slots].map((r) => r.id),
+      inserts: mirrored.map((p) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: p.period, clinic_number: p.clinic_number,
+        doctor_id: traineeId, doctor_name: traineeName,
+        role: p.role, status: 'active', source: 'request',
+      })),
+    });
+    return { ...ok(), mirrored };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
 }
 
@@ -980,6 +1328,12 @@ export async function swapFullPositions(
     if (a.slots.length + a.extra.length === 0 || b.slots.length + b.extra.length === 0) {
       return fail('أحد الطرفين بلا مركزٍ في الجدول هذا اليوم — التبديل لم يعد ممكنًا.');
     }
+    // استئذان × تبديل: لا يُوضَع طرفٌ في فترةٍ استئذانُه يحجبها (فحص لحظة التنفيذ)
+    const aBlocked = covererAbsence(rows, aId).blocked;
+    const bBlocked = covererAbsence(rows, bId).blocked;
+    if (a.slots.some((r) => bBlocked.has(r.period)) || b.slots.some((r) => aBlocked.has(r.period))) {
+      return fail('أحد الطرفين مستأذنٌ عن فترةٍ سيستلمها بهذا التبديل — التبديل لم يعد ممكنًا.');
+    }
     const crossShift = (() => {
       const sa = dayShiftOf(rows, aId);
       const sb = dayShiftOf(rows, bId);
@@ -988,21 +1342,16 @@ export async function swapFullPositions(
     const nameOf = (id: string) => rows.find((r) => r.doctor_id === id)?.doctor_name || '';
     const aName = nameOf(aId);
     const bName = nameOf(bId);
-    const reassign = async (rowIds: string[], to: { id: string; name: string }) => {
-      for (const rid of rowIds) {
-        const { error } = await supabase
-          .from('schedule_slots')
-          .update({ doctor_id: to.id, doctor_name: to.name, updated_at: new Date().toISOString() })
-          .eq('id', rid);
-        if (error) throw new Error(error.message);
-      }
-    };
-    await reassign([...a.slots, ...a.extra].map((r) => r.id), { id: bId, name: bName });
-    await reassign([...b.slots, ...b.extra].map((r) => r.id), { id: aId, name: aName });
-    // الظلّ يتبع مدرّبه إلى مركزه الجديد
-    await moveShadowTrainees({
+    // كلّ التغييرات — نقل المركزين والظلّ التابع لمدرّبه — تُحسب أوّلًا ثمّ
+    // تُطبَّق معاملةً واحدة: إمّا كلّها أو لا شيء (لا جدول ناقصًا في المنتصف).
+    const updates = [
+      ...[...a.slots, ...a.extra].map((r) => ({ id: r.id, doctor_id: bId, doctor_name: bName })),
+      ...[...b.slots, ...b.extra].map((r) => ({ id: r.id, doctor_id: aId, doctor_name: aName })),
+    ];
+    const shadow = await shadowTraineeChanges({
       clinicId, weekStart, day, doctorIds: [aId, bId], periodsInScope: [1, 2, 3, 4], preRows: rows,
     });
+    await applySlotChanges({ updates, deleteIds: shadow.deleteIds, inserts: shadow.inserts });
     return { ...ok(), crossShift, aName, bName };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -1032,6 +1381,10 @@ export async function listSwapTargets(args: {
   const { clinicId, weekStart, day, requesterId, mode, excludePeriods } = args;
   try {
     const rows = await loadDay(clinicId, weekStart, day);
+    // أسبوعٌ بلا جدولٍ أصلًا ≠ يومٌ بلا مركز — رسالةٌ أوضح تمنع سوء الفهم
+    if (rows.length === 0) {
+      return { success: false, error: `لا جدول للأسبوع ${weekStart} بعد — لا يمكن فتح تبديلٍ فيه. تأكّد من الأسبوع المقصود.` };
+    }
     const me = dayPositionOf(rows, requesterId);
     if (me.absent) return { success: false, error: 'أنت غائبٌ هذا اليوم — لا مركز لتبديله.' };
     if (me.slots.length + me.extra.length === 0) {
@@ -1057,6 +1410,17 @@ export async function listSwapTargets(args: {
       }
     }
 
+    // الظلّ لا يكون طالبَ تبديلٍ أيضًا: مكانه تابعٌ لمدرّبه، وقبول طلبه يفصله عنه.
+    if (shadowIds.has(requesterId)) {
+      return {
+        success: false,
+        error: 'مكانك هذا اليوم مرتبطٌ بمدرّبك ويتحرّك معه — لا يُفتح تبديلٌ باسمك. إن أردت تغييرًا فمدرّبك أو القائد يرتّبه.',
+      };
+    }
+
+    // استئذان × تبديل: من يحجب استئذانُه فترةً سيستلمها لا يُعرَض أصلًا (والعكس)
+    const myBlocked = covererAbsence(rows, requesterId).blocked;
+    const myPeriods = me.slots.map((r) => r.period);
     const eligible = (id: string): boolean => {
       if (id === requesterId || shadowIds.has(id)) return false;
       const p = dayPositionOf(rows, id);
@@ -1064,6 +1428,9 @@ export async function listSwapTargets(args: {
       if (excludePeriods?.length && p.slots.some((r) => excludePeriods.includes(r.period))) {
         return false;
       }
+      const tBlocked = covererAbsence(rows, id).blocked;
+      if (myPeriods.some((P) => tBlocked.has(P))) return false;            // سيستلم فترةً هو مستأذنٌ عنها
+      if (myBlocked.size > 0 && p.slots.some((r) => myBlocked.has(r.period))) return false; // أنا سأستلم فترةً أنا مستأذنٌ عنها
       return true;
     };
     const nameOf = (id: string) => rows.find((r) => r.doctor_id === id)?.doctor_name || '';
@@ -1071,7 +1438,7 @@ export async function listSwapTargets(args: {
     let ids: string[] = [];
     if (mode.kind === 'doctor') {
       if (!eligible(mode.doctorId)) {
-        return { success: false, error: 'الطبيب المطلوب غائبٌ أو بلا مركزٍ هذا اليوم — لا يُرسَل له طلب.' };
+        return { success: false, error: 'الطبيب المطلوب غائبٌ أو بلا مركزٍ هذا اليوم، أو يصطدم التبديل باستئذانٍ لدى أحدكما — لا يُرسَل له طلب.' };
       }
       ids = [mode.doctorId];
     } else if (mode.kind === 'period') {
@@ -1165,7 +1532,10 @@ export async function placeInClinic(
     clinicNumber: number;
     periods: number[]; // الفترات التي يُوضع فيها (مثلًا [1,2] صباح كامل)
   },
-): Promise<RequestResult & { displaced?: { name: string; periods: number[] }[] }> {
+): Promise<RequestResult & {
+  displaced?: { name: string; periods: number[] }[];
+  permissionNoteAr?: string; // نُسِّب وهو مستأذن (في فتراتٍ مسموحة) — للتذكير في الرسالة
+}> {
   const { clinicId, weekStart, day, doctorId, doctorName, clinicNumber, periods } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة تنسيب هذا الطبيب.');
   if (!Number.isInteger(clinicNumber) || clinicNumber < 1) return fail('رقم العيادة غير صالح.');
@@ -1193,6 +1563,25 @@ export async function placeInClinic(
         `عيادة ${clinicNumber} لا تعمل في الفترات ${badPeriods.join('، ')} هذا اليوم — ` +
         `فتراتها: ${[...opPeriods].sort((a, b) => a - b).join('، ')}.`,
       );
+    }
+
+    // حارس الاستئذان: المستأذن لا يُنسَّب في فترةٍ يحجبها استئذانه — والعلامة نفسها
+    // لا يمحوها التنسيب (حقيقةُ حضورٍ جزئيّ تبقى ظاهرةً للجميع).
+    const myPermRow = mine.find(
+      (r) => r.period === 0 && (r.status === 'permission_start' || r.status === 'permission_end'),
+    );
+    let permissionNoteAr: string | undefined;
+    if (myPermRow) {
+      const ps = myPermRow.status === 'permission_start';
+      const pBlocked = ps ? [1, 3] : [2, 4];
+      const hit = periods.filter((p) => pBlocked.includes(p));
+      if (hit.length) {
+        return fail(
+          `${doctorName} مستأذن ${ps ? 'بداية' : 'نهاية'} الدوام — لا يُنسَّب في ` +
+          `الفترة ${hit.join('، ')} المحجوبة باستئذانه. اختر فترةً أخرى أو ألغِ الاستئذان أوّلًا.`,
+        );
+      }
+      permissionNoteAr = `علمًا أنّه مستأذن ${ps ? 'بداية' : 'نهاية'} الدوام`;
     }
 
     // حارس التعارض: لا يكون الطبيب في عيادتين بنفس الفترة. إن كان له تكليف فعليّ في
@@ -1231,9 +1620,14 @@ export async function placeInClinic(
       displaced = [...byDoc.values()];
     }
 
-    // أزِل حالته الغائبة وصفوف الحفظ (سيدخل العيادة فعليًّا)
+    // أزِل حالته الغائبة (مرضية/تفرّغ/احتياط) وصفوف الحفظ (سيدخل العيادة فعليًّا)
+    // — علامة الاستئذان تبقى: التنسيب لا يمحوها (حقيقةُ حضورٍ جزئيّ مستقلّة).
     await deleteRows(
-      mine.filter((r) => r.role === PREV_ROLE || (r.period === 0 && r.status !== 'active')).map((r) => r.id),
+      mine.filter(
+        (r) => r.role === PREV_ROLE
+          || (r.period === 0 && r.status !== 'active'
+            && r.status !== 'permission_start' && r.status !== 'permission_end'),
+      ).map((r) => r.id),
     );
     // لا تكرّر إن كان موجودًا في نفس الخانة
     const existing = new Set(
@@ -1254,7 +1648,7 @@ export async function placeInClinic(
       supervisorIds: [doctorId, ...occupants.map((r) => r.doctor_id)],
       preRows: rows,
     });
-    return { success: true, displaced };
+    return { success: true, displaced, permissionNoteAr };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -1284,6 +1678,13 @@ export async function placeAsDelegator(
     const delegPeriods = [...new Set(delegRows.map((r) => r.period))].sort((a, b) => a - b);
     if (!delegPeriods.length) return fail('لا دليقيتر في جدول هذا اليوم.');
 
+    // حارس الغياب: الغائب كلّيًّا (مرضية/تفرّغ) لا يُعيَّن دليقيترًا — وإلّا صار
+    // غائبًا ودليقيترًا معًا. والمستأذن لا يُعيَّن في الفترات التي يحجبها استئذانه.
+    const dAbs = covererAbsence(rows, doctorId);
+    if (dAbs.hardAr) {
+      return fail(`${doctorName} عنده ${dAbs.hardAr} هذا اليوم — غائبٌ عن العمل ولا يُعيَّن دليقيترًا. ألغِ حالته أوّلًا.`);
+    }
+
     const busy = new Set(
       rows
         .filter((r) => r.doctor_id === doctorId && r.status === 'active' && r.period > 0
@@ -1299,10 +1700,16 @@ export async function placeAsDelegator(
       if (busy.has(P)) {
         return fail(`${doctorName} مشغول في الفترة ${P} — لا يكون في مكانين بنفس الفترة.`);
       }
+      if (dAbs.blocked.has(P)) {
+        return fail(`${doctorName} مستأذنٌ في الفترة ${P} — لا يُعيَّن دليقيترًا وقتَ استئذانه.`);
+      }
     } else {
-      P = delegPeriods.find((p) => !busy.has(p));
+      P = delegPeriods.find((p) => !busy.has(p) && !dAbs.blocked.has(p));
       if (P == null) {
-        return fail(`${doctorName} مشغول في كلّ فترات الدليقيتر (${delegPeriods.join('، ')}).`);
+        const permHit = delegPeriods.some((p) => dAbs.blocked.has(p));
+        return fail(
+          `${doctorName} ${permHit ? 'مستأذنٌ أو مشغول' : 'مشغول'} في كلّ فترات الدليقيتر (${delegPeriods.join('، ')}).`,
+        );
       }
     }
 
@@ -1317,6 +1724,11 @@ export async function placeAsDelegator(
         role: 'delegator', status: 'active', source: 'request',
       }]);
     }
+    // الاحتياطيّ المعيَّن دليقيترًا استُدعي للعمل — يُحذف صفّ احتياطه
+    // (كما تفعل التغطية)، فلا يظهر دليقيترًا واحتياطيًّا معًا.
+    await deleteRows(
+      rows.filter((r) => r.doctor_id === doctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
+    );
     await mirrorShadows({
       clinicId, weekStart, day,
       supervisorIds: [doctorId, ...current.map((r) => r.doctor_id)],

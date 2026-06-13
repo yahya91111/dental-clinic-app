@@ -159,6 +159,11 @@ export async function directSwapByCode(params: {
       clinicId: params.clinicId, weekStart: params.weekStart, day,
       doctorIds: [params.actor.id, params.targetId],
     });
+    // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
+    await notifications.invalidateSwapsTouching({
+      weekStart: params.weekStart, day,
+      doctorIds: [params.actor.id, params.targetId],
+    });
   }
   return { success: true, info: `تمّ التبديل بينك وبين ${params.targetName} يوم ${DAY_AR[day]}.` };
 }
@@ -508,6 +513,23 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
     },
   },
   {
+    name: 'attach_trainee',
+    description:
+      'يُلحق متدرّبًا **احتياطيًّا** بمدرّبٍ آخر لذلك اليوم فقط: يُوضع اسمه مع المدرّب ' +
+      'في خاناته نفسها (عيادة/دليقيتر) ويُرفَع من صفّ الاحتياط. لا يغيّر مدرّبه الدائم. ' +
+      'الليدر فأعلى.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS] },
+        traineeDoctorIndex: { type: 'integer', description: 'رقم المتدرّب الاحتياطيّ.' },
+        supervisorDoctorIndex: { type: 'integer', description: 'رقم المدرّب الذي يُلحَق به.' },
+      },
+      required: ['weekStart', 'day', 'traineeDoctorIndex', 'supervisorDoctorIndex'],
+    },
+  },
+  {
     name: 'cover_gap',
     description:
       'يغطّي نقصًا نتج عن غياب طبيب: يضع المُغطّي في مكان النقص (عيادة برقمها أو الدليقيتر) ' +
@@ -701,6 +723,14 @@ export async function dispatchRequestToolV2(
         });
         if (!res.success) return `Tool error: ${res.error}`;
 
+        // نفس الحالة مسجّلة أصلًا → تذكيرٌ بالتكرار، بلا إشعاراتٍ جديدة للقادة
+        if ((res as { duplicate?: boolean }).duplicate) {
+          return final(
+            `تنبيه: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} مسجّلٌ ` +
+            'مسبقًا — الطلب مكرّر ولم يتغيّر شيء.',
+          );
+        }
+
         // إشعار القائد عند الغياب — واحد لكلّ قائد:
         //  • إشعار العلم (طلب جديد) يصل **دائمًا** — سجلٌّ في صفحة الإشعارات —
         //    ويُستثنى منه الفاعل فقط (لا يُبلَّغ القائد بطلبه هو).
@@ -716,6 +746,12 @@ export async function dispatchRequestToolV2(
         if (ABSENCE.includes(status)) {
           try {
             const { notifications } = await import('../algorithms/notifications');
+            // زال تعارضُ استئذانٍ سابقٍ بهذا التسجيل/التحويل (استئذان→مرضية، أو
+            // بداية→نهاية بلا تعارض)؟ الفاحص يعيد الحساب من الجدول الحيّ ويغلق
+            // كروت «استئذان يحتاج ترتيبًا» التي زال سببها فقط — فلا كرت أحمر بائت.
+            await notifications.resolvePermissionAlertV2({
+              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day, doctorIds: [doc.id],
+            });
             // استئذانٌ ناجح = الطبيب داخل عيادته (التحويل من مرضية ونحوها يُعيده إلى
             // مكانه أوّلًا أو يفشل) → يومُ غيابه السابق لم يعد نقصًا. أسقِطه من كروت
             // كلّ القادة صراحةً — تحديث الكرت وحده لا يطال كرتًا خارج نافذة التجميع.
@@ -822,6 +858,14 @@ export async function dispatchRequestToolV2(
             'لكنّه يستلم وقتَ استئذانه ويلزم تبديل فترة عمله. وصل القادةَ تنبيهٌ بذلك.',
           );
         }
+        // ظلٌّ استأذن → نُقل إلى الاحتياط وحده (لا تعارض ولا أزرار) — رسالة خاصّة
+        if (perm?.shadowToReserve) {
+          return final(actor.id === doc.id
+            ? `سُجّل ${STATUS_AR[status]} لك يوم ${DAY_AR[r.day]} — ونُقلتَ إلى الاحتياط ` +
+              'ذلك اليوم. عند إلغاء الاستئذان تعود إلى جانب مدرّبك تلقائيًّا.'
+            : `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} — ونُقل إلى ` +
+              'الاحتياط ذلك اليوم. عند الإلغاء يعود إلى جانب مدرّبه تلقائيًّا.');
+        }
         // تحويلٌ ومكانه مُغطًّى → صار مستأذنًا بلا مركز، والقادة وصلهم كرت تحديد المكان
         if (perm?.covered) {
           return final(actor.id === doc.id
@@ -834,8 +878,12 @@ export async function dispatchRequestToolV2(
         // غياب الطبيب لنفسه → سؤال الإبلاغ صار **أزرارًا من الكود** (الواجهة تعرض
         // [الشفت][المركز][لا داعي] وتنفّذ الضغط مباشرةً) — النموذج لا يسأل ولا ينفّذ،
         // والنتيجة نهائيّة: الكود يعرض التأكيد والأزرار تحته بلا جولة نموذج.
+        const keptPermAr = (res as { keptPermissionAr?: string }).keptPermissionAr;
+        const backShadows = (res as { returnedShadows?: string[] }).returnedShadows;
         const base = `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff})` +
-          `${perm?.wasReserve ? ' — حلّ الاستئذان محلّ احتياطه' : ''}.`;
+          `${perm?.wasReserve ? ` — ${perm.wasReserveNoteAr || 'لا يزال احتياطًا ولن يُستدعى وقتَ استئذانه'}` : ''}` +
+          `${keptPermAr ? ` — وهو ${keptPermAr}` : ''}` +
+          `${backShadows?.length ? ` — وعاد معه ظلُّه ${backShadows.join(' و')}` : ''}.`;
         if (actor.id === doc.id && ABSENCE.includes(status)) {
           ctx.onAnnounceOffer?.({
             weekStart: wsEff, day: r.day,
@@ -878,6 +926,11 @@ export async function dispatchRequestToolV2(
           return sent.success ? final(sent.info || 'أُرسل الطلب.') : `Tool error: ${sent.error}`;
         }
 
+        // غير القائد لا يبدّل آخرين ولا جماعيًّا — له طلبٌ ثنائيٌّ لنفسه فقط.
+        if (!isLeaderPlusRole(actor.role)) {
+          return 'Tool error: يمكنك طلب تبديلٍ بينك وبين زميلٍ واحدٍ فقط — التبديل بين الآخرين أو الجماعيّ للقائد.';
+        }
+
         // القائد يبدّل آخرين: تبديلٌ ثنائيّ كامل اليوم = تبادل مراكز كامل (يشمل
         // الاحتياط)، ثمّ عرض «هل تُبلَّغان؟» أزرارًا. غير ذلك (٣+ أو نطاق فترة/شفت)
         // يبقى تسلسلًا دائريًّا للخانات كما هو.
@@ -902,6 +955,11 @@ export async function dispatchRequestToolV2(
               clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
               doctorIds: [docs[0]!.id, docs[1]!.id],
             });
+            // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
+            await notifications.invalidateSwapsTouching({
+              weekStart: wsEff, day: r.day,
+              doctorIds: [docs[0]!.id, docs[1]!.id],
+            });
           }
           ctx.onSwapOffer?.({
             kind: 'offer_notify', weekStart: wsEff, day: r.day,
@@ -920,9 +978,15 @@ export async function dispatchRequestToolV2(
           clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
           doctorIds: docs.map((d) => d.id), scope,
         });
-        return res.success
-          ? final(`تمّ التبديل بين: ${docs.map((d) => d.name).join('، ')} يوم ${DAY_AR[r.day]}.`)
-          : `Tool error: ${res.error}`;
+        if (!res.success) return `Tool error: ${res.error}`;
+        {
+          // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
+          const { notifications } = await import('../algorithms/notifications');
+          await notifications.invalidateSwapsTouching({
+            weekStart: wsEff, day: r.day, doctorIds: docs.map((d) => d.id),
+          });
+        }
+        return final(`تمّ التبديل بين: ${docs.map((d) => d.name).join('، ')} يوم ${DAY_AR[r.day]}.`);
       }
 
       case 'request_swap': {
@@ -1015,9 +1079,25 @@ export async function dispatchRequestToolV2(
             doctorIds: [doc.id],
           });
           const statusAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الحالة';
-          const fate = res.covered
-            ? 'مكانه مُغطًّى — حدّد أين يوضَع'
-            : res.restored ? 'عاد إلى مكانه' : 'لم يكن منسَّبًا في العيادة';
+          const rc = res as {
+            permissionCanceled?: boolean; returnedToReserve?: boolean;
+            shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
+          };
+          const fate = rc.permissionCanceled
+            ? 'أُزيلت علامة الاستئذان ومكانه في الجدول كما هو'
+            : rc.returnedToReserve
+              ? 'أُزيلت العلامة وبقي احتياطًا كما كان'
+              : rc.shadowReturned
+                ? 'عاد إلى جانب مدرّبه'
+                : rc.shadowSupervisorAbsent
+                  ? 'مدرّبه غائبٌ فبقي في الاحتياط'
+                  : res.covered && res.restored
+                    ? 'أُعيد إلى بعض خاناته وبعضُها مشغول — حدّد مكان الباقي'
+                    : res.covered
+                      ? 'مكانه مُغطًّى — حدّد أين يوضَع'
+                      : res.restored
+                        ? `عاد إلى مكانه${rc.returnedShadows?.length ? ` ومعه ظلُّه ${rc.returnedShadows.join(' و')}` : ''}`
+                        : 'لم يكن منسَّبًا في العيادة';
           const leaders = await getTeamLeaderIds(ctx.clinicId);
           for (const leaderId of leaders) {
             // مكانه مُغطًّى → **كرت فعلٍ** لكلّ القادة — حتى الفاعل نفسه لو كان قائدًا
@@ -1045,7 +1125,29 @@ export async function dispatchRequestToolV2(
           console.log('[notify-cancel] failed', e instanceof Error ? e.message : e);
         }
 
+        const rcf = res as {
+          permissionCanceled?: boolean; returnedToReserve?: boolean;
+          shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
+        };
+        // إلغاء استئذان: الطبيب في عيادته أصلًا — تُزال العلامة فقط، لا «إرجاع»
+        if (rcf.permissionCanceled) {
+          return final(`تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — أُزيلت العلامة ومكانه في الجدول كما هو.`);
+        }
+        if (rcf.returnedToReserve) {
+          return final(`تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — يبقى احتياطًا كما كان.`);
+        }
+        if (rcf.shadowReturned) {
+          return final(`تمّ الإلغاء — عاد ${doc.name} إلى جانب مدرّبه في العيادة.`);
+        }
+        if (rcf.shadowSupervisorAbsent) {
+          return final(`تمّ الإلغاء — مدرّبه غائبٌ هذا اليوم فبقي ${doc.name} في الاحتياط، ويعود معه عند عودته.`);
+        }
+
         const cancelBase = `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]}.`;
+        // عاد إلى بعض خاناته وبعضها شغله غيرُه يدويًّا → كرت «تحديد المكان» للباقي
+        if (res.covered && res.restored) {
+          return final(cancelBase + ' أُعيد إلى خاناته الفارغة، وبعضُها مشغولٌ الآن — وصل القادةَ كرتٌ لتحديد مكان الباقي.');
+        }
         // مكانه مُغطّى → لا إرجاع تلقائيًّا؛ القرار «أين يوضَع» يُتَّخذ داخل كرت
         // «عودة تحتاج مكانًا» الذي وصل القادة للتوّ — لا سؤال هنا (تأكيد نهائيّ).
         if (res.covered) {
@@ -1056,7 +1158,8 @@ export async function dispatchRequestToolV2(
         }
         // كن صادقًا: لا تدّعِ الإرجاع إن لم يوجد مكانٌ محفوظ (لم يكن منسَّبًا وقت الغياب).
         return final(res.restored
-          ? cancelBase.replace('.', ' وإرجاعه إلى مكانه في العيادة.')
+          ? cancelBase.replace('.', ' وإرجاعه إلى مكانه في العيادة' +
+              `${rcf.returnedShadows?.length ? ` — وعاد معه ظلُّه ${rcf.returnedShadows.join(' و')}` : ''}.`)
           : cancelBase + ' (لا مكان محفوظ لإرجاعه — لم يكن منسَّبًا في العيادة وقت الغياب.)');
       }
 
@@ -1082,8 +1185,9 @@ export async function dispatchRequestToolV2(
         const moved = (res.displaced || [])
           .map((d) => `أُزيح ${d.name} من الفترة ${d.periods.join('، ')} (بقيت له خاناته الأخرى)`)
           .join('، و');
+        const permNote = (res as { permissionNoteAr?: string }).permissionNoteAr;
         return final(`تمّ وضع ${doc.name} في عيادة ${r.clinicNumber} (الفترات ${periods.join('، ')}) ` +
-          `يوم ${DAY_AR[r.day]}.${moved ? ` و${moved}.` : ''}`);
+          `يوم ${DAY_AR[r.day]}${permNote ? ` — ${permNote}` : ''}.${moved ? ` و${moved}.` : ''}`);
       }
 
       case 'set_delegator': {
@@ -1111,6 +1215,27 @@ export async function dispatchRequestToolV2(
             : undefined,
         });
         return res.success ? final(res.info || 'تمّ الإبلاغ.') : `Tool error: ${res.error}`;
+      }
+
+      case 'attach_trainee': {
+        const trainee = resolveDoctor(ctx, r.traineeDoctorIndex);
+        const sup = resolveDoctor(ctx, r.supervisorDoctorIndex);
+        if (!trainee || !sup) return 'Tool error: رقم الطبيب غير صالح.';
+        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
+        const res = await requestsV2.attachTraineeForDay(actor, {
+          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
+          traineeId: trainee.id, traineeName: trainee.name,
+          supervisorId: sup.id, supervisorName: sup.name,
+        });
+        if (!res.success) return `Tool error: ${res.error}`;
+        // إبلاغ المدرّب المكلَّف (للعلم): سيكون معه متدرّب في عيادته هذا اليوم
+        const sender = senderOf(ctx);
+        await notifications.notifyTraineeAttached({
+          clinicId: ctx.clinicId, supervisorId: sup.id,
+          traineeName: trainee.name, day: r.day, weekStart: String(r.weekStart),
+          senderId: sender.id, senderName: sender.name,
+        });
+        return final(`تمّ: ${trainee.name} مع ${sup.name} يوم ${DAY_AR[r.day]} (لهذا اليوم فقط)، ووصله إشعارٌ بذلك.`);
       }
 
       case 'cover_gap': {
