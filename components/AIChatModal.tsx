@@ -1003,17 +1003,17 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                               <View style={styles.chipRow}>
                                 {!!m.swapOffer.colleague && (
                                   <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_colleague')}>
-                                    <Text style={styles.chipTxt}>{`بدّل مع ${m.swapOffer.colleague.name}`}</Text>
+                                    <Text style={styles.chipTxt}>{`زميلك بالعيادة (${m.swapOffer.colleague.name})`}</Text>
                                   </TouchableOpacity>
                                 )}
                                 {!!m.swapOffer.period && (
                                   <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_period')}>
-                                    <Text style={styles.chipTxt}>اعرض على كلّ الفترة</Text>
+                                    <Text style={styles.chipTxt}>الفترة الأخرى</Text>
                                   </TouchableOpacity>
                                 )}
                                 {m.swapOffer.otherShift && (
                                   <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_other')}>
-                                    <Text style={styles.chipTxt}>اعرض على الشفت الآخر</Text>
+                                    <Text style={styles.chipTxt}>الشفت الثاني</Text>
                                   </TouchableOpacity>
                                 )}
                               </View>

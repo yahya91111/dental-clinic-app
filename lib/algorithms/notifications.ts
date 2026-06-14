@@ -1099,19 +1099,21 @@ export async function cancelSwapGroup(args: {
       .filter('data->>week_start', 'eq', args.weekStart);
     const rows = ((data || []) as { id: string; data: SwapDataV2; action_status: string | null }[])
       .filter((r) => r.data?.v === 2 && (!args.day || r.data.day === args.day));
-    if (rows.length === 0) return fail('لا يوجد طلب تبديلٍ قائمٌ لإلغائه.');
-    if (rows.some((r) => r.action_status === 'accepted')) {
+    // الإلغاء يخصّ الطلب **الحيّ المعلّق** فقط. للطالب قد تكون عدّة مجموعاتٍ لنفس
+    // اليوم عبر الزمن (محاولاتٌ سابقة)؛ كرتٌ «مقبولٌ» من مجموعةٍ قديمة لا يخصّ طلبه
+    // الحاليّ — فلا يجوز أن يمنع الإلغاء أو يدّعي أنّ تبديلًا تمّ (كان يكذب).
+    const pending = rows.filter((r) => isPendingRow(r.action_status) && !swapExpired(r.data));
+    if (pending.length === 0) return fail('لا يوجد طلب تبديلٍ معلّقٌ لإلغائه.');
+    // وافقَ زميلٌ على **نفس المجموعة الحيّة** (سباقٌ نادر: قبولٌ ومعلّقٌ معًا) → تمّ.
+    const liveGroups = new Set(pending.map((r) => r.data.swap_group));
+    if (rows.some((r) => r.action_status === 'accepted' && liveGroups.has(r.data.swap_group))) {
       return fail('وافق أحد الزملاء وتمّ التبديل — لم يعد طلبًا ليُلغى. أرسل طلبًا عكسيًّا إن أردت التراجع.');
     }
     const days = new Set<WeekDay>();
-    let deleted = 0;
-    for (const r of rows) {
-      if (!isPendingRow(r.action_status)) continue;
+    for (const r of pending) {
       await supabase.from('notifications').delete().eq('id', r.id);
       days.add(r.data.day);
-      deleted += 1;
     }
-    if (deleted === 0) return fail('لا كروت معلّقة لهذا الطلب (رُفض أو انتهى).');
     return { ...ok(), canceledDays: [...days] };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
