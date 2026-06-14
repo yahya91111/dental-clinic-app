@@ -65,6 +65,12 @@ export type AnnounceOffer = {
 export type SwapOffer =
   | { kind: 'ask_mode'; weekStart: string; day: string; target: { id: string; name: string } }
   | {
+    // استئذانٌ مبهم (لم يحدّد بداية/نهاية) → زرّان من الكود يحسمانه ويسجّلان مباشرةً
+    // (بلا جولة نموذجٍ للحلّ). الواجهة تنفّذ عبر resolvePermissionByCode.
+    kind: 'permission_clarify'; weekStart: string; day: string;
+    doctorId: string; doctorName: string; shift?: 'morning' | 'evening';
+  }
+  | {
     kind: 'offer_notify'; weekStart: string; day: string;
     a: { id: string; name: string }; b: { id: string; name: string };
   }

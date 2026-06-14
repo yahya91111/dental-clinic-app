@@ -713,14 +713,46 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   // الضغط يُنفَّذ **بالكود مباشرةً**، لا نداء للنموذج.
   const [swapResults, setSwapResults] = useState<Record<string, { text: string; ok: boolean }>>({});
   const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
+  // عرضٌ بديلٌ يحلّ محلّ m.swapOffer محلّيًّا: بعد حسم استئذانٍ مبهمٍ بزرَّي بداية/
+  // نهاية، إن نتج تعارضٌ نضع عرض تبديل الفترة هنا فتظهر أزراره في نفس الفقاعة.
+  const [offerOverride, setOfferOverride] = useState<Record<string, ChatMessage['swapOffer']>>({});
   const handleSwapOffer = useCallback(async (
     m: ChatMessage,
-    choice: 'request' | 'direct' | 'notify' | 'none' | 'perm_colleague' | 'perm_period' | 'perm_other',
+    choice: 'request' | 'direct' | 'notify' | 'none' | 'perm_colleague' | 'perm_period' | 'perm_other'
+      | 'perm_start' | 'perm_end',
   ) => {
-    const offer = m.swapOffer;
+    const offer = offerOverride[m.id] ?? m.swapOffer;
     if (!offer || swapBusyId) return;
     if (choice === 'none') {
       setSwapResults((p) => ({ ...p, [m.id]: { text: 'حسنًا — بلا إبلاغ.', ok: true } }));
+      return;
+    }
+    // حسم استئذانٍ مبهم: بداية/نهاية → تسجيلٌ بالكود مباشرةً (بلا جولة نموذج).
+    if (offer.kind === 'permission_clarify' && (choice === 'perm_start' || choice === 'perm_end')) {
+      setSwapBusyId(m.id);
+      try {
+        const cid = clinicId || user.clinicId;
+        if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+        const mod = await import('../lib/ai_v2/tools_requests_v2');
+        const out = await mod.resolvePermissionByCode({
+          clinicId: cid, user: { id: user.id, name: user.name, role: user.role },
+          doctorId: offer.doctorId, doctorName: offer.doctorName,
+          weekStart: offer.weekStart, day: offer.day,
+          status: choice === 'perm_start' ? 'permission_start' : 'permission_end',
+          shift: offer.shift,
+        });
+        if (out.swapOffer) {
+          // تعارضٌ → اعرض أزرار تبديل الفترة في نفس الفقاعة، وأبقِ سطر التأكيد
+          setOfferOverride((p) => ({ ...p, [m.id]: out.swapOffer }));
+          setSwapResults((p) => ({ ...p, [m.id]: { text: out.text, ok: false } }));
+        } else {
+          setSwapResults((p) => ({ ...p, [m.id]: { text: out.text, ok: true } }));
+        }
+      } catch (e) {
+        setSwapResults((p) => ({ ...p, [m.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
+      } finally {
+        setSwapBusyId(null);
+      }
       return;
     }
     setSwapBusyId(m.id);
@@ -782,7 +814,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     } finally {
       setSwapBusyId(null);
     }
-  }, [swapBusyId, clinicId, user]);
+  }, [swapBusyId, clinicId, user, offerOverride]);
 
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
@@ -976,21 +1008,35 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                           </>
                         )
                       )}
-                      {/* أزرار التبديل للقائد — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
-                      {m.role === 'assistant' && !!m.swapOffer && (
-                        swapResults[m.id]?.ok ? (
+                      {/* أزرار التبديل/التوضيح — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
+                      {m.role === 'assistant' && !!m.swapOffer && (() => {
+                        // العرض الفعليّ: بديلٌ محلّيٌّ (بعد حسم استئذانٍ مبهم) أو الأصليّ
+                        const eff = offerOverride[m.id] ?? m.swapOffer;
+                        if (!eff) return null;
+                        if (swapResults[m.id]?.ok) {
                           // نجاحٌ (أو «لا داعي») → نتيجةٌ فقط، تختفي الأزرار
-                          <Text style={styles.annNote}>{swapResults[m.id].text}</Text>
-                        ) : swapBusyId === m.id ? (
-                          <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
-                        ) : (
-                          // فشلٌ أو لا محاولة بعد → أبقِ الأزرار ظاهرةً (مع ملاحظة الخطأ
-                          // فوقها إن فشلت محاولةٌ) كي يختار خيارًا آخر بلا أن يُحصَر.
+                          return <Text style={styles.annNote}>{swapResults[m.id].text}</Text>;
+                        }
+                        if (swapBusyId === m.id) {
+                          return <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />;
+                        }
+                        // فشلٌ أو لا محاولة بعد → أبقِ الأزرار ظاهرةً (مع ملاحظةٍ فوقها
+                        // إن وُجدت) كي يختار خيارًا آخر بلا أن يُحصَر.
+                        return (
                           <>
                             {!!swapResults[m.id] && !swapResults[m.id].ok && (
                               <Text style={styles.annNote}>{swapResults[m.id].text}</Text>
                             )}
-                            {m.swapOffer.kind === 'ask_mode' ? (
+                            {eff.kind === 'permission_clarify' ? (
+                              <View style={styles.chipRow}>
+                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_start')}>
+                                  <Text style={styles.chipTxt}>بداية الدوام</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_end')}>
+                                  <Text style={styles.chipTxt}>نهاية الدوام</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : eff.kind === 'ask_mode' ? (
                               <View style={styles.chipRow}>
                                 <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'request')}>
                                   <Text style={styles.chipTxt}>أرسل طلبًا</Text>
@@ -999,19 +1045,19 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                                   <Text style={styles.chipTxt}>بدّل مباشرة</Text>
                                 </TouchableOpacity>
                               </View>
-                            ) : m.swapOffer.kind === 'permission_fix' ? (
+                            ) : eff.kind === 'permission_fix' ? (
                               <View style={styles.chipRow}>
-                                {!!m.swapOffer.colleague && (
+                                {!!eff.colleague && (
                                   <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_colleague')}>
-                                    <Text style={styles.chipTxt}>{`زميلك بالعيادة (${m.swapOffer.colleague.name})`}</Text>
+                                    <Text style={styles.chipTxt}>{`زميلك بالعيادة (${eff.colleague.name})`}</Text>
                                   </TouchableOpacity>
                                 )}
-                                {!!m.swapOffer.period && (
+                                {!!eff.period && (
                                   <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_period')}>
                                     <Text style={styles.chipTxt}>الفترة الأخرى</Text>
                                   </TouchableOpacity>
                                 )}
-                                {m.swapOffer.otherShift && (
+                                {eff.otherShift && (
                                   <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_other')}>
                                     <Text style={styles.chipTxt}>الشفت الثاني</Text>
                                   </TouchableOpacity>
@@ -1031,8 +1077,8 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                               </>
                             )}
                           </>
-                        )
-                      )}
+                        );
+                      })()}
                     </View>
                   );
                 }

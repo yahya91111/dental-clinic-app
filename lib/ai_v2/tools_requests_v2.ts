@@ -11,7 +11,7 @@
 //   3. حدّث requests_assistant_v2.md
 // ═══════════════════════════════════════════════════════════════
 
-import type { V2Tool, V2ToolContext } from './tools';
+import type { V2Tool, V2ToolContext, SwapOffer, AnnounceOffer } from './tools';
 
 /**
  * تنفيذ الإبلاغ بالكود مباشرةً (يستعمله زرّا [الشفت]/[المركز] في الواجهة، وأداة
@@ -91,6 +91,39 @@ export async function sendSwapRequestByCode(params: {
     success: true,
     info: `أُرسل طلب التبديل إلى ${params.targetName} ليوم ${DAY_AR[day]} — يتمّ فور موافقته وتصلك النتيجة.`,
   };
+}
+
+/**
+ * يحسم استئذانًا مبهمًا (بداية/نهاية) **بالكود مباشرةً** — يستعمله زرّا
+ * [بداية الدوام]/[نهاية الدوام] في الواجهة. يستدعي مُرسِل أدوات الطلبات الحقيقيّ
+ * بسياقٍ مصغّر (روستر من إدخالٍ واحد)، فيجري منطق التسجيل كاملًا (إشعارات، تغطية،
+ * وأزرار تبديل الفترة إن تعارض) بلا جولة نموذجٍ للحلّ. يُرجِع النصّ وأيّ عرضٍ ناتج.
+ */
+export async function resolvePermissionByCode(params: {
+  clinicId: string;
+  user: { id: string; name: string; role: string };
+  doctorId: string;
+  doctorName: string;
+  weekStart: string;
+  day: string;
+  status: 'permission_start' | 'permission_end';
+  shift?: 'morning' | 'evening';
+}): Promise<{ text: string; swapOffer?: SwapOffer; announceOffer?: AnnounceOffer }> {
+  let swapOffer: SwapOffer | undefined;
+  let announceOffer: AnnounceOffer | undefined;
+  const ctx: V2ToolContext = {
+    clinicId: params.clinicId,
+    user: params.user,
+    roster: [{ id: params.doctorId, name: params.doctorName }],
+    onSwapOffer: (o) => { swapOffer = o; },
+    onAnnounceOffer: (o) => { announceOffer = o; },
+  };
+  const raw = await dispatchRequestToolV2('set_schedule_status', {
+    doctorIndex: 1, day: params.day, weekStart: params.weekStart,
+    status: params.status, ...(params.shift ? { shift: params.shift } : {}),
+  }, ctx);
+  const text = raw.startsWith(FINAL_MARK) ? raw.slice(FINAL_MARK.length) : raw;
+  return { text, swapOffer, announceOffer };
 }
 
 /**
@@ -372,7 +405,11 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
         doctorIndex: { type: 'integer', description: 'رقم الطبيب من القائمة المرقّمة.' },
         status: {
           type: 'string',
-          enum: ['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'],
+          enum: ['sick_leave', 'vacation', 'permission_start', 'permission_end', 'permission', 'extra'],
+          description:
+            'استئذانٌ ولم يحدّد المستخدم بدايةً أو نهايةً؟ مرّر `permission` (المبهم) — ' +
+            'النظام يسأل بزرَّين ويسجّل بنفسه. حدّد `permission_start`/`permission_end` فقط ' +
+            'حين يذكر المستخدم النوع صراحةً.',
         },
         shift: {
           type: 'string', enum: ['morning', 'evening'],
@@ -717,6 +754,16 @@ export async function dispatchRequestToolV2(
             'thursday) لليوم المقصود في هذا الأسبوع — لا تتركه فارغًا ولا تسأل عن الأسبوع.';
         }
         const status = String(r.status);
+        // استئذانٌ مبهم (بلا بداية/نهاية) → لا نسجّل؛ المحرّك يسأل بزرَّين من الكود،
+        // والضغط يسجّل مباشرةً عبر resolvePermissionByCode (بلا جولة نموذجٍ للحلّ).
+        if (status === 'permission') {
+          ctx.onSwapOffer?.({
+            kind: 'permission_clarify', weekStart: String(r.weekStart), day: r.day,
+            doctorId: doc.id, doctorName: doc.name,
+            ...(r.shift === 'evening' || r.shift === 'morning' ? { shift: r.shift } : {}),
+          });
+          return final(`استئذانُ ${doc.name} يوم ${DAY_AR[r.day]}: بدايةَ الدوام أم نهايتَه؟ اختر من الزرّين.`);
+        }
         if (!['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'].includes(status)) {
           return 'Tool error: الحالة غير صالحة.';
         }
