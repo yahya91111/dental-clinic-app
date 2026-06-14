@@ -758,6 +758,8 @@ export type AssignedSlot = {
   clinicNumber: number;         // 0 لـ delegator / EX
   doctor: LoadedDoctor;
   role: SlotRoleAssigned;
+  /** 'shadow' = متدرّب يُتِّم وقتَ البناء (مدرّبه غائب) — يعود معه تلقائيًّا */
+  source?: 'ai' | 'shadow';
 };
 
 export type ShiftDistribution = {
@@ -772,6 +774,10 @@ export type ShiftDistribution = {
 /**
  * يحذف الخانات النشطة (status='active') للأسبوع، ثم يُدخل الجديدة
  * بـ source='ai'. الغيابات (status != 'active') تبقى لم تُمسّ.
+ *
+ * صفّ الاحتياط يُكتب بصيغة محرّك الطلبات نفسها (role='clinic',
+ * status='extra', period=0) — صيغة واحدة في القاعدة كي يرى المحرّكُ
+ * احتياطيّي البناء ويراهم كرتُ التغطية وعجلةُ العدالة معًا.
  */
 async function writeSlots(
   clinicId: string,
@@ -787,6 +793,19 @@ async function writeSlots(
     .eq('status', 'active');
   if (delErr) return `فشل حذف الخانات القديمة: ${delErr.message}`;
 
+  // 1.b حذف احتياط البناء السابق (status='extra' بمصدر البناء أو ظلّ) —
+  //     ظلّ المتدرّب يُعاد اشتقاقه من صفوف الغياب الباقية عند كلّ بناء،
+  //     فيُحذف القديم تفاديًا للتكرار. احتياطُ قرارٍ مستقلّ (source='request')
+  //     لا يُمسّ.
+  const { error: delExErr } = await supabase
+    .from('schedule_slots')
+    .delete()
+    .eq('clinic_id', clinicId)
+    .eq('week_start', weekStart)
+    .eq('status', 'extra')
+    .in('source', ['ai', 'shadow']);
+  if (delExErr) return `فشل حذف احتياط البناء القديم: ${delExErr.message}`;
+
   // 2. إدخال الخانات الجديدة
   if (slots.length === 0) return null;
 
@@ -798,9 +817,10 @@ async function writeSlots(
     clinic_number: s.clinicNumber,
     doctor_id: s.doctor.id,
     doctor_name: s.doctor.name,
-    role: s.role,
-    status: 'active',
-    source: 'ai',
+    // الاحتياط بصيغة المحرّك الموحّدة؛ الباقي كما هو
+    role: s.role === 'ex' ? 'clinic' : s.role,
+    status: s.role === 'ex' ? 'extra' : 'active',
+    source: s.source ?? 'ai',
   }));
 
   const { error: insErr } = await supabase
@@ -901,6 +921,37 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         warnings,
         errors: [`MISSING_TRAINEE_MODES: ${list}`],
         summary: `يلزم تحديد وضع كل تريني (مستقل/مبتدئ) قبل البناء — ${missing.length} يحتاج قرار`,
+      };
+    }
+  }
+
+  // 2.6 — تعارض «نقل شفت + غياب» لنفس الطبيب نفس اليوم. الغياب يومٌ كامل دائمًا
+  //       (لا يعمل في أيّ شفت)، فلا يصحّ نقلُ شفته ذلك اليوم. لا نبتلع التناقض
+  //       بصمت (لا يفوز الغياب ويختفي النقل بلا علم القائد) — نكشفه ونعيد للمساعد
+  //       كي يسأل القائد أيّهما يريد قبل البناء. غيابات اليوم تأتي من نصّ
+  //       الاستثناءات (extraAbsences، أيّ نطاق) ومن خانات DB المحفوظة (طبية/تفرّغ).
+  if ((input.extraShifts || []).length > 0) {
+    const nameById = new Map(data.doctors.map((d) => [d.id, d.name]));
+    const absentDay = new Set<string>();
+    for (const a of input.extraAbsences || []) absentDay.add(`${a.doctorId}|${a.day}`);
+    for (const s of data.existingSlots) {
+      if (s.status === 'sick_leave' || s.status === 'vacation') {
+        absentDay.add(`${s.doctorId}|${s.dayOfWeek}`);
+      }
+    }
+    const clashes = (input.extraShifts || []).filter((o) => absentDay.has(`${o.doctorId}|${o.day}`));
+    if (clashes.length > 0) {
+      const list = clashes
+        .map((o) => `${nameById.get(o.doctorId) || o.doctorId}|${o.doctorId}|${o.day}`)
+        .join('; ');
+      return {
+        success: false,
+        slotsCreated: 0,
+        doctorsAssigned: 0,
+        absencesRespected: 0,
+        warnings,
+        errors: [`CONFLICT_SHIFT_MOVE_ABSENCE: ${list}`],
+        summary: `تعارض: نقل شفت وغياب لنفس الطبيب نفس اليوم — يلزم حسم أيّهما قبل البناء (${clashes.length})`,
       };
     }
   }

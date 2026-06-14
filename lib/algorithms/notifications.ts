@@ -441,6 +441,28 @@ export async function acceptCoverage(args: {
       doctorIds: [d.absent_doctor_id, args.accepterId],
     });
 
+    // إنعاش كروت النقص عند **كلّ** القادة: زميلٌ قبِل التغطية فسُدّ النقص — أعِد
+    // حساب حقائق اليوم (المعادلة من جديد) كي ينطفئ الأحمر الكاذب ولا يبقى الكرت
+    // معلّقًا «يوجد نقص» بلا نقص. يُنعَش كلّ غائبي اليوم لا المُغطَّى وحده: المُغطّي
+    // صار مشغولًا فقد يسقط من اقتراحات غائبٍ آخر في الكرت نفسه. فشله لا يُفشل التغطية.
+    try {
+      const { computeDayCoverageBriefs } = await import('./requests_v2');
+      const briefs = await computeDayCoverageBriefs({
+        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
+      });
+      const ids = new Set(briefs.map((b) => b.absentId));
+      const all = ids.has(d.absent_doctor_id)
+        ? briefs
+        : [...briefs, { day: d.day, absentId: d.absent_doctor_id, absentName: d.absent_doctor_name, gaps: [], reserves: [] }];
+      for (const b of all) {
+        await resolveCoverageV2({
+          clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
+          absentDoctorId: b.absentId,
+          covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
+        });
+      }
+    } catch { /* إنعاش الكروت تحسينٌ — لا يُفشل التغطية المنفَّذة */ }
+
     // ردّ للطالب (الغائب): تمّت تغطية فترتك
     await sendInfo({
       clinicId: d.clinic_id, recipientId: d.absent_doctor_id,

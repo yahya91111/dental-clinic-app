@@ -6,7 +6,8 @@
 -- داخل قاعدة البيانات في معاملة واحدة: إمّا تقع كلّها أو لا شيء.
 -- المحرّك في التطبيق يحسب كلّ شيء؛ القاعدة تطبّق فقط (لا منطق هنا).
 --
--- p_updates:    [{id, doctor_id, doctor_name}] — نقل ملكيّة خانة
+-- p_updates:    [{id, doctor_id, doctor_name, source?}] — نقل ملكيّة خانة
+--               (source اختياريّ: يُحدَّث الوسم إن ورد، وإلّا بقي كما هو)
 -- p_delete_ids: [uuid] — خانات تُحذف
 -- p_inserts:    [{clinic_id, week_start, day_of_week, period,
 --                 clinic_number, doctor_id, doctor_name, role,
@@ -28,11 +29,13 @@ BEGIN
   UPDATE schedule_slots s
   SET doctor_id   = u.doctor_id,
       doctor_name = u.doctor_name,
+      source      = COALESCE(u.source, s.source),  -- يُحدَّث الوسم إن ورد، وإلّا بقي كما هو
       updated_at  = NOW()
   FROM (
     SELECT (e->>'id')::uuid          AS id,
            (e->>'doctor_id')::uuid   AS doctor_id,
-           e->>'doctor_name'         AS doctor_name
+           e->>'doctor_name'         AS doctor_name,
+           e->>'source'              AS source
     FROM jsonb_array_elements(p_updates) e
   ) u
   WHERE s.id = u.id;

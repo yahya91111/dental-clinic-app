@@ -567,11 +567,15 @@ async function handleReadSchedule(rawInput: unknown, ctx: V2ToolContext): Promis
     }
     const dlg = ds.filter((s) => s.role === 'delegator' && s.status === 'active').sort((a, b) => a.period - b.period);
     if (dlg.length) lines.push(`  دليقيتر: ${dlg.map((s) => `ف${s.period}:${s.doctorName}`).join('، ')}`);
-    const ex = ds.filter((s) => (s.role as string) === 'ex' && s.status === 'active');
+    // الاحتياط: الصيغة الموحّدة (status='extra') + الصيغة القديمة (role='ex')
+    const ex = ds.filter(
+      (s) => ((s.role as string) === 'ex' && s.status === 'active')
+        || (s.status === 'extra' && s.period === 0),
+    );
     if (ex.length) lines.push(`  احتياط: ${ex.map((s) => s.doctorName).join('، ')}`);
     const seen = new Set<string>();
     const abs = ds
-      .filter((s) => s.status !== 'active')
+      .filter((s) => s.status !== 'active' && s.status !== 'extra')
       .filter((s) => (seen.has(s.doctorId) ? false : (seen.add(s.doctorId), true)));
     if (abs.length) {
       lines.push(`  غياب/استئذان: ${abs.map((s) => `${s.doctorName}(${STATUS_AR_READ[s.status] ?? s.status})`).join('، ')}`);

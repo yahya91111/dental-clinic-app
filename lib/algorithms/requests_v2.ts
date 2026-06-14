@@ -172,7 +172,7 @@ async function insertRows(rows: Record<string, unknown>[]): Promise<void> {
 
 /** حزمة تغييرات على الجدول تُطبَّق دفعةً واحدة. */
 type SlotChanges = {
-  updates?: { id: string; doctor_id: string; doctor_name: string }[];
+  updates?: { id: string; doctor_id: string; doctor_name: string; source?: string }[];
   deleteIds?: string[];
   inserts?: Record<string, unknown>[];
 };
@@ -236,15 +236,15 @@ async function returnShadowsWithSupervisor(args: {
         || r.status === 'permission_start' || r.status === 'permission_end'))) continue; // غائب/مستأذن بنفسه
     const tEx = tRows.filter((r) => r.period === 0 && r.status === 'extra');
     if (tEx.length === 0 || !tEx.some((r) => r.source === 'shadow')) continue;
-    await deleteRows(tEx.map((r) => r.id));
-    await insertRows(
-      supSlots.map((r) => ({
+    await applySlotChanges({
+      deleteIds: tEx.map((r) => r.id),
+      inserts: supSlots.map((r) => ({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: r.period, clinic_number: r.clinic_number,
         doctor_id: t.doctor_id, doctor_name: t.doctor_name,
         role: r.role, status: 'active', source: 'request',
       })),
-    );
+    });
     names.push(t.doctor_name);
   }
   return names;
@@ -351,7 +351,6 @@ export async function setScheduleStatus(
         if (myKeys.length > 0 && myKeys.length === supKeys.size && myKeys.every((k) => supKeys.has(k))) {
           const oldSt = mine.filter((r) => r.period === 0 && r.status !== 'active');
           const oldPrev = mine.filter((r) => r.role === PREV_ROLE);
-          await deleteRows([...myActive, ...oldSt, ...oldPrev].map((r) => r.id));
           const cell = exCellOf(effShift!);
           const statusRow = {
             clinic_id: clinicId, week_start: weekStart, day_of_week: day,
@@ -360,7 +359,10 @@ export async function setScheduleStatus(
             role: 'clinic', status, source: 'shadow',
           };
           // استئذان الظلّ: علامة الاستئذان + صفّ احتياطٍ معًا (يظهر في قائمة EX)
-          await insertRows(toPermission ? [statusRow, { ...statusRow, status: 'extra' }] : [statusRow]);
+          await applySlotChanges({
+            deleteIds: [...myActive, ...oldSt, ...oldPrev].map((r) => r.id),
+            inserts: toPermission ? [statusRow, { ...statusRow, status: 'extra' }] : [statusRow],
+          });
           return {
             success: true, gaps: [],
             permission: toPermission
@@ -393,14 +395,16 @@ export async function setScheduleStatus(
     let returnedShadows: string[] = [];
     if (toPermission && wasOut && !stillPlaced && outRow!.source === 'shadow') {
       const oldSt = mine.filter((r) => r.period === 0 && r.status !== 'active');
-      await deleteRows(oldSt.map((r) => r.id));
       const statusRow = {
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: 0, clinic_number: outRow!.clinic_number,
         doctor_id: doctorId, doctor_name: doctorName,
         role: 'clinic', status, source: 'shadow',
       };
-      await insertRows([statusRow, { ...statusRow, status: 'extra' }]);
+      await applySlotChanges({
+        deleteIds: oldSt.map((r) => r.id),
+        inserts: [statusRow, { ...statusRow, status: 'extra' }],
+      });
       return {
         success: true, gaps: [],
         permission: { conflict: false, blocked: status === 'permission_start' ? [1, 3] : [2, 4], shadowToReserve: true },
@@ -418,15 +422,15 @@ export async function setScheduleStatus(
         // يبقى له، ويُعلَم القائد بكرت «تحديد المكان» للباقي.
         const free = prevRows.filter((r) => !slotOccupied(rows, r, doctorId));
         const taken = prevRows.length - free.length;
-        await insertRows(
-          free.map((r) => ({
+        await applySlotChanges({
+          deleteIds: prevRows.map((r) => r.id),
+          inserts: free.map((r) => ({
             clinic_id: clinicId, week_start: weekStart, day_of_week: day,
             period: r.period, clinic_number: r.clinic_number,
             doctor_id: doctorId, doctor_name: doctorName,
             role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
           })),
-        );
-        await deleteRows(prevRows.map((r) => r.id));
+        });
         permPlacedRows = free.map((r) => ({ period: r.period, clinic_number: r.clinic_number }));
         if (taken > 0) {
           permCovered = true;
@@ -452,7 +456,13 @@ export async function setScheduleStatus(
     const oldStatusRows = mine.filter((r) => r.status !== 'active' && r.period === 0);
     const keepRow = (r: Row) =>
       (toPermission && r.status === 'extra') || (status === 'extra' && isPermRow(r));
-    await deleteRows(oldStatusRows.filter((r) => !keepRow(r)).map((r) => r.id));
+    // تُجمَع كلّ تغييرات تسجيل الحالة (حذف القديم + حفظ المكان + ظلال + صفّ الحالة)
+    // وتُطبَّق معاملةً واحدةً في النهاية — فلا يبقى الطبيب بلا خانةٍ ولا حالةٍ إن
+    // انقطع الاتصال في المنتصف. (الإرجاع المبكّر للاستئذان أعلاه له نداؤه الخاصّ
+    // لأنّ returnShadowsWithSupervisor يقرأ DB بعده.)
+    const pendDel: string[] = [];
+    const pendIns: Record<string, unknown>[] = [];
+    pendDel.push(...oldStatusRows.filter((r) => !keepRow(r)).map((r) => r.id));
     // احتياطٌ فوق استئذانٍ باقٍ → نصّ «لن يُستدعى في فترته» (بفترته الفعليّة حسب شفته)
     let keptPermissionAr: string | undefined;
     const keptPerm = status === 'extra' ? oldStatusRows.find(isPermRow) : undefined;
@@ -476,16 +486,15 @@ export async function setScheduleStatus(
       // فلا يجد الإلغاء ما يُرجِعه.
       if (placed.length > 0) {
         const oldPrev = mine.filter((r) => r.role === PREV_ROLE);
-        await deleteRows(oldPrev.map((r) => r.id));
-        await insertRows(
-          placed.map((r) => ({
+        pendDel.push(...oldPrev.map((r) => r.id), ...placed.map((r) => r.id));
+        pendIns.push(
+          ...placed.map((r) => ({
             clinic_id: clinicId, week_start: weekStart, day_of_week: day,
             period: r.period, clinic_number: r.clinic_number,
             doctor_id: doctorId, doctor_name: doctorName,
             role: PREV_ROLE, status: 'active', source: 'request',
           })),
         );
-        await deleteRows(placed.map((r) => r.id));
       }
 
       // المتدرّب الظلّ (المبتدئ الملتصق بمدرّبه): عند غياب المدرّب يصبح احتياطيًّا
@@ -503,27 +512,28 @@ export async function setScheduleStatus(
         );
         const tKeys = tSlots.map((r) => `${r.period}|${r.clinic_number}|${r.role}`);
         if (placed.length === 0 || tSlots.length !== placed.length || !tKeys.every((k) => supKeys.has(k))) continue;
-        await deleteRows(tSlots.map((r) => r.id));
         const tOldEx = rows.filter((r) => r.doctor_id === t.doctor_id && r.period === 0);
-        await deleteRows(tOldEx.map((r) => r.id));
+        pendDel.push(...tSlots.map((r) => r.id), ...tOldEx.map((r) => r.id));
         // وسم 'shadow' يميّزه عن احتياطيٍّ بقرارٍ مستقلّ — به يعود تلقائيًّا مع
         // مدرّبه عند إرجاعه، ولا يُمسّ مَن جُعل احتياطًا عمدًا.
-        await insertRows([{
+        pendIns.push({
           clinic_id: clinicId, week_start: weekStart, day_of_week: day,
           period: 0, clinic_number: exCellOf(effShift),
           doctor_id: t.doctor_id, doctor_name: t.doctor_name,
           role: 'clinic', status: 'extra', source: 'shadow',
-        }]);
+        });
       }
     }
 
     // اكتب صفّ الحالة (period=0، جهة EX حسب الشفت الفعليّ)
-    await insertRows([{
+    pendIns.push({
       clinic_id: clinicId, week_start: weekStart, day_of_week: day,
       period: 0, clinic_number: exCellOf(effShift),
       doctor_id: doctorId, doctor_name: doctorName,
       role: 'clinic', status, source: wasShadowMarked ? 'shadow' : 'request',
-    }]);
+    });
+    // طبّق كلّ تغييرات الحالة دفعةً واحدة (ذرّيًّا): الحذف ثمّ الإضافة في معاملة واحدة
+    await applySlotChanges({ deleteIds: pendDel, inserts: pendIns });
 
     // ── حقائق الاستئذان: هل يستلم خانةً في فترةٍ يحجبها استئذانه؟ ──
     // بداية الدوام تحجب أولى فترتي الشفت (١/٣)، ونهايته تحجب الأخيرة (٢/٤).
@@ -644,7 +654,7 @@ export async function cancelStatus(
     // (لا حفظَ له — الظلّ يلاصق مدرّبه أينما كان). مدرّبه غائب؟ يبقى احتياطًا.
     const shadowMark = statusRows.find((r) => r.source === 'shadow');
     if (shadowMark) {
-      await deleteRows([...statusRows, ...prev].map((r) => r.id));
+      const shadowDel = [...statusRows, ...prev].map((r) => r.id);
       const { data: members } = await getAllGroupMembers(clinicId);
       const me = ((members || []) as {
         doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null;
@@ -656,23 +666,27 @@ export async function cancelStatus(
         : [];
       if (supSlots.length > 0) {
         const myName = shadowMark.doctor_name;
-        await insertRows(
-          supSlots.map((r) => ({
+        await applySlotChanges({
+          deleteIds: shadowDel,
+          inserts: supSlots.map((r) => ({
             clinic_id: clinicId, week_start: weekStart, day_of_week: day,
             period: r.period, clinic_number: r.clinic_number,
             doctor_id: doctorId, doctor_name: myName,
             role: r.role, status: 'active', source: 'request',
           })),
-        );
+        });
         return { success: true, restored: true, shadowReturned: true, canceledStatus: shadowMark.status };
       }
       // مدرّبه ليس في الجدول الآن → يبقى في صفّ الاحتياط (بوسمه، ليتبعه عند عودته)
-      await insertRows([{
-        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-        period: 0, clinic_number: shadowMark.clinic_number,
-        doctor_id: doctorId, doctor_name: shadowMark.doctor_name,
-        role: 'clinic', status: 'extra', source: 'shadow',
-      }]);
+      await applySlotChanges({
+        deleteIds: shadowDel,
+        inserts: [{
+          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+          period: 0, clinic_number: shadowMark.clinic_number,
+          doctor_id: doctorId, doctor_name: shadowMark.doctor_name,
+          role: 'clinic', status: 'extra', source: 'shadow',
+        }],
+      });
       return { success: true, restored: false, shadowSupervisorAbsent: true, canceledStatus: shadowMark.status };
     }
 
@@ -692,24 +706,27 @@ export async function cancelStatus(
     }
 
     // ── غيابٌ كامل (مرضية/تفرّغ) أو احتياط ──
-    await deleteRows(statusRows.map((r) => r.id));
     let restoredCount = 0;
     let blockedCount = 0;
+    let restoreIns: Record<string, unknown>[] = [];
     if (restoreToPrevPlace && prev.length > 0) {
       // لا إرجاع فوق ساكن: الفارغ يُستعاد، والمشغول يقرّر القائد مكانه (covered)
       const free = prev.filter((r) => !slotOccupied(rows, r, doctorId));
       blockedCount = prev.length - free.length;
-      await insertRows(
-        free.map((r) => ({
-          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-          period: r.period, clinic_number: r.clinic_number,
-          doctor_id: r.doctor_id, doctor_name: r.doctor_name,
-          role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
-        })),
-      );
+      restoreIns = free.map((r) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: r.period, clinic_number: r.clinic_number,
+        doctor_id: r.doctor_id, doctor_name: r.doctor_name,
+        role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
+      }));
       restoredCount = free.length;
     }
-    await deleteRows(prev.map((r) => r.id));
+    // أزِل صفّ الحالة + صفوف الحفظ، وأعِد المكان الفارغ — معاملةً واحدةً قبل
+    // returnShadowsWithSupervisor (الذي يقرأ DB فيرى الإرجاع).
+    await applySlotChanges({
+      deleteIds: [...statusRows, ...prev].map((r) => r.id),
+      inserts: restoreIns,
+    });
     // مكانه (كلّه أو بعضه) لم يُستعَد: غُطّي وقت الغياب (الحفظ مُزِّق) أو شغله غيرُه
     const covered = REMOVES_FROM_CLINIC.has(statusRow.status as ScheduleStatus)
       && (prev.length === 0 || blockedCount > 0);
@@ -1344,9 +1361,14 @@ export async function swapFullPositions(
     const bName = nameOf(bId);
     // كلّ التغييرات — نقل المركزين والظلّ التابع لمدرّبه — تُحسب أوّلًا ثمّ
     // تُطبَّق معاملةً واحدة: إمّا كلّها أو لا شيء (لا جدول ناقصًا في المنتصف).
+    // الخانات تنتقل كما هي؛ أمّا صفوف الاحتياط فيُصفَّر وسمها إلى 'request': صارت
+    // ملكيّةً منقولةً بقرارٍ متعمَّد، لا ظلًّا يتبع مدرّبًا — كي لا يرث المستلِم سلوك
+    // «العودة التلقائيّة مع المدرّب» الذي لا يخصّه (وسم 'shadow' يخصّ صاحبه الأصليّ).
     const updates = [
-      ...[...a.slots, ...a.extra].map((r) => ({ id: r.id, doctor_id: bId, doctor_name: bName })),
-      ...[...b.slots, ...b.extra].map((r) => ({ id: r.id, doctor_id: aId, doctor_name: aName })),
+      ...a.slots.map((r) => ({ id: r.id, doctor_id: bId, doctor_name: bName })),
+      ...a.extra.map((r) => ({ id: r.id, doctor_id: bId, doctor_name: bName, source: 'request' })),
+      ...b.slots.map((r) => ({ id: r.id, doctor_id: aId, doctor_name: aName })),
+      ...b.extra.map((r) => ({ id: r.id, doctor_id: aId, doctor_name: aName, source: 'request' })),
     ];
     const shadow = await shadowTraineeChanges({
       clinicId, weekStart, day, doctorIds: [aId, bId], periodsInScope: [1, 2, 3, 4], preRows: rows,
@@ -1500,15 +1522,15 @@ async function mirrorShadows(args: {
   for (const t of shadows) {
     const supSlots = cur.filter((r) => r.doctor_id === t.supervisor_doctor_id && inScope(r));
     const tOld = cur.filter((r) => r.doctor_id === t.doctor_id && inScope(r));
-    await deleteRows(tOld.map((r) => r.id));
-    await insertRows(
-      supSlots.map((r) => ({
+    await applySlotChanges({
+      deleteIds: tOld.map((r) => r.id),
+      inserts: supSlots.map((r) => ({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: r.period, clinic_number: r.clinic_number,
         doctor_id: t.doctor_id, doctor_name: t.doctor_name,
         role: r.role, status: 'active', source: 'request',
       })),
-    );
+    });
   }
 }
 
@@ -1610,7 +1632,6 @@ export async function placeInClinic(
         const who = [...new Set(occupants.map((r) => r.doctor_name))].join('، ');
         return fail(`المكان مشغول (${who}) — اختر مكانًا متاحًا.`);
       }
-      await deleteRows(occupants.map((r) => r.id));
       const byDoc = new Map<string, { name: string; periods: number[] }>();
       for (const r of occupants) {
         const e = byDoc.get(r.doctor_id) || { name: r.doctor_name, periods: [] };
@@ -1622,13 +1643,11 @@ export async function placeInClinic(
 
     // أزِل حالته الغائبة (مرضية/تفرّغ/احتياط) وصفوف الحفظ (سيدخل العيادة فعليًّا)
     // — علامة الاستئذان تبقى: التنسيب لا يمحوها (حقيقةُ حضورٍ جزئيّ مستقلّة).
-    await deleteRows(
-      mine.filter(
-        (r) => r.role === PREV_ROLE
-          || (r.period === 0 && r.status !== 'active'
-            && r.status !== 'permission_start' && r.status !== 'permission_end'),
-      ).map((r) => r.id),
-    );
+    const statusDel = mine.filter(
+      (r) => r.role === PREV_ROLE
+        || (r.period === 0 && r.status !== 'active'
+          && r.status !== 'permission_start' && r.status !== 'permission_end'),
+    ).map((r) => r.id);
     // لا تكرّر إن كان موجودًا في نفس الخانة
     const existing = new Set(
       mine.filter((r) => r.role === 'clinic' && r.status === 'active').map((r) => `${r.period}|${r.clinic_number}`),
@@ -1641,7 +1660,11 @@ export async function placeInClinic(
         doctor_id: doctorId, doctor_name: doctorName,
         role: 'clinic', status: 'active', source: 'request',
       }));
-    await insertRows(toAdd);
+    // إزاحة المُغطّي + إزالة حالة العائد + تنسيبه — معاملةً واحدة قبل mirrorShadows.
+    await applySlotChanges({
+      deleteIds: [...occupants.map((r) => r.id), ...statusDel],
+      inserts: toAdd,
+    });
     // التريني الظلّ يلاصق مدرّبه في النقل (للموضوع وللمُزاحين كي تتبعهم ظلالهم)
     await mirrorShadows({
       clinicId, weekStart, day,
@@ -1715,20 +1738,23 @@ export async function placeAsDelegator(
 
     // أزِح الدليقيتر الحاليّ في هذه الفترة وضع الطبيب مكانه
     const current = delegRows.filter((r) => r.period === P && r.doctor_id !== doctorId);
-    await deleteRows(current.map((r) => r.id));
-    if (!delegRows.some((r) => r.period === P && r.doctor_id === doctorId)) {
-      await insertRows([{
+    const delegIns = delegRows.some((r) => r.period === P && r.doctor_id === doctorId)
+      ? []
+      : [{
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: P, clinic_number: 0,
         doctor_id: doctorId, doctor_name: doctorName,
         role: 'delegator', status: 'active', source: 'request',
-      }]);
-    }
-    // الاحتياطيّ المعيَّن دليقيترًا استُدعي للعمل — يُحذف صفّ احتياطه
-    // (كما تفعل التغطية)، فلا يظهر دليقيترًا واحتياطيًّا معًا.
-    await deleteRows(
-      rows.filter((r) => r.doctor_id === doctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
-    );
+      }];
+    // أزِح الدليقيتر الحاليّ + أزِل صفّ احتياط المُغطّي (استُدعي للعمل فلا يظهر
+    // دليقيترًا واحتياطيًّا معًا) + اكتب صفّه — معاملةً واحدة قبل mirrorShadows.
+    const exDel = rows
+      .filter((r) => r.doctor_id === doctorId && r.period === 0 && r.status === 'extra')
+      .map((r) => r.id);
+    await applySlotChanges({
+      deleteIds: [...current.map((r) => r.id), ...exDel],
+      inserts: delegIns,
+    });
     await mirrorShadows({
       clinicId, weekStart, day,
       supervisorIds: [doctorId, ...current.map((r) => r.doctor_id)],
@@ -1812,22 +1838,21 @@ export async function coverGap(
       const exists = rows.some(
         (r) => r.doctor_id === coverDoctorId && r.role === 'delegator' && r.period === freePeriod && r.status === 'active',
       );
-      if (!exists) {
-        await insertRows([{
+      // اكتب صفّ الدليقيتر، ومزّق صفّ حفظ الغائب (الفترة المغطّاة) وصفّ احتياط المُغطّي
+      // إن كان — معاملةً واحدة (الحفظ/الاحتياط خارج نطاق mirrorShadows فلا يضرّ تقديمهما).
+      await applySlotChanges({
+        deleteIds: [
+          ...prev.filter((r) => r.clinic_number === 0 && r.period === freePeriod).map((r) => r.id),
+          ...rows.filter((r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
+        ],
+        inserts: exists ? [] : [{
           clinic_id: clinicId, week_start: weekStart, day_of_week: day,
           period: freePeriod, clinic_number: 0,
           doctor_id: coverDoctorId, doctor_name: coverDoctorName,
           role: 'delegator', status: 'active', source: 'request',
-        }]);
-      }
+        }],
+      });
       await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [coverDoctorId], preRows: rows });
-      // المكان غُطّي → مزّق صفّ حفظه (الفترة المغطّاة فقط) كي لا يُحسب نقصًا بعد الآن
-      // ولا يُعاد الغائب فوق المُغطّي عند إلغاء الحالة (كما تفعل التغطية المركّبة).
-      await deleteRows(prev.filter((r) => r.clinic_number === 0 && r.period === freePeriod).map((r) => r.id));
-      // المُغطّي كان احتياطيًّا؟ صار في مكانٍ فعليّ — أزِل صفّ احتياطه
-      await deleteRows(
-        rows.filter((r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
-      );
       return ok();
     }
 
@@ -1875,17 +1900,16 @@ export async function coverGap(
         doctor_id: coverDoctorId, doctor_name: coverDoctorName,
         role: 'clinic', status: 'active', source: 'request',
       }));
-    await insertRows(toAdd);
+    // اكتب خانات التغطية، ومزّق صفوف حفظ الغائب المُغطّاة وصفّ احتياط المُغطّي إن كان
+    // — معاملةً واحدة (الحفظ/الاحتياط خارج نطاق mirrorShadows فلا يضرّ تقديم حذفهما).
+    await applySlotChanges({
+      deleteIds: [
+        ...prev.filter((r) => r.clinic_number === clinicNumber && coverable.includes(r.period)).map((r) => r.id),
+        ...rows.filter((r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
+      ],
+      inserts: toAdd,
+    });
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [coverDoctorId], preRows: rows });
-    // ما غُطّي → مزّق صفوف حفظه كي لا يُحسب نقصًا بعد الآن ولا يُعاد الغائب
-    // فوق المُغطّي عند إلغاء الحالة (كما تفعل التغطية المركّبة).
-    await deleteRows(
-      prev.filter((r) => r.clinic_number === clinicNumber && coverable.includes(r.period)).map((r) => r.id),
-    );
-    // المُغطّي كان احتياطيًّا؟ صار في مكانٍ فعليّ — أزِل صفّ احتياطه
-    await deleteRows(
-      rows.filter((r) => r.doctor_id === coverDoctorId && r.period === 0 && r.status === 'extra').map((r) => r.id),
-    );
     // أرجِع الرقم المستنتَج + الفترات المتبقّية بلا تغطية (إن وُجدت) ليُذكَرا بصدق
     return {
       success: true, clinicNumber,
@@ -1988,8 +2012,7 @@ export async function reshapeGap(
       .filter((r) => r.clinic_number === C && coveredPs.has(r.period))
       .map((r) => r.id));
 
-    await deleteRows(deleteIds);
-    await insertRows(inserts);
+    await applySlotChanges({ deleteIds, inserts });
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
     return { success: true, clinicNumber: C, moves: chosen.moves };
   } catch (e) {
@@ -2129,8 +2152,7 @@ export async function applyCoverageOption(
     }
 
     deleteIds.push(...prev.map((r) => r.id)); // الغائب مُغطّى → أزِل صفوف حفظه
-    await deleteRows(deleteIds);
-    await insertRows(inserts);
+    await applySlotChanges({ deleteIds, inserts });
     // التريني الظلّ يلاصق مدرّبه في كلّ النقلات
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
     return ok();

@@ -266,7 +266,11 @@ function replayExWheel(
     let b = buckets.get(key);
     if (!b) { b = { ex: new Set(), absent: new Set() }; buckets.set(key, b); }
     if (s.status === 'active') {
-      if ((s.role as string) === 'ex') b.ex.add(s.doctorId);
+      if ((s.role as string) === 'ex') b.ex.add(s.doctorId); // صيغة قديمة (أسابيع محفوظة سابقًا)
+    } else if (s.status === 'extra') {
+      // الصيغة الموحّدة: احتياط البناء واحتياط المحرّك خلال الأسبوع معًا —
+      // كلاهما "أخذ دور الاحتياط" في العدالة (ما في الجدول هو الحقيقة)
+      if (s.period === 0) b.ex.add(s.doctorId);
     } else if (s.status === 'sick_leave' || s.status === 'vacation') {
       b.absent.add(s.doctorId); // طبية/تفرّغ فقط (لا الاستئذان)
     }
@@ -370,8 +374,8 @@ export function distributeShiftWheel(
     slots.push({ day, period: p, clinicNumber: c, doctor: doc, role: 'clinic' });
   const addDel = (p: Period, doc: LoadedDoctor) =>
     slots.push({ day, period: p, clinicNumber: 0, doctor: doc, role: 'delegator' });
-  const addEx = (doc: LoadedDoctor) =>
-    slots.push({ day, period: 0 as unknown as Period, clinicNumber: exClinicSlot, doctor: doc, role: 'ex' });
+  const addEx = (doc: LoadedDoctor, source?: 'shadow') =>
+    slots.push({ day, period: 0 as unknown as Period, clinicNumber: exClinicSlot, doctor: doc, role: 'ex', source });
 
   let available = [...pool.available];
   const lds = [...pool.lightDuty];
@@ -465,8 +469,9 @@ export function distributeShiftWheel(
       }
     }
   }
-  // ── beginner يتيم (مدرّبه غائب) → احتياط ──
-  for (const orphan of pool.beginnersOrphan) addEx(orphan);
+  // ── beginner يتيم (مدرّبه غائب) → احتياط بوسم الظلّ: لو أُلغي غياب
+  //    مدرّبه خلال الأسبوع أعاده المحرّك إلى جانبه تلقائيًّا ──
+  for (const orphan of pool.beginnersOrphan) addEx(orphan, 'shadow');
 
   return { shift: pool.shift, slots, warnings };
 }

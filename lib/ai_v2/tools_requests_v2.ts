@@ -1078,6 +1078,9 @@ export async function dispatchRequestToolV2(
             clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
             doctorIds: [doc.id],
           });
+          // العائد صار متاحًا → أنعِش كروت بقيّة غائبي اليوم كي يظهر مرشّحًا لهم
+          // (كما يفعل مسار تسجيل الغياب تمامًا — وإلّا بقيت اقتراحاتهم بائتةً بلا العائد).
+          await refreshCoverageCards(ctx.clinicId, String(r.weekStart), r.day, { id: doc.id, name: doc.name });
           const statusAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الحالة';
           const rc = res as {
             permissionCanceled?: boolean; returnedToReserve?: boolean;
