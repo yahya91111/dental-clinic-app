@@ -1442,18 +1442,23 @@ export async function listSwapTargets(args: {
       };
     }
 
-    // استئذان × تبديل: من يحجب استئذانُه فترةً سيستلمها لا يُعرَض أصلًا (والعكس)
+    // غير المتفرّغين لتحمّل تبديل: صاحب تخفيف العمل لا يُكلَّف بمركزٍ إضافيّ.
+    const lightDutyIds = new Set(
+      ((members || []) as { doctor_id: string; work_status?: string }[])
+        .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id),
+    );
+    // استئذان × تبديل
     const myBlocked = covererAbsence(rows, requesterId).blocked;
-    const myPeriods = me.slots.map((r) => r.period);
     const eligible = (id: string): boolean => {
       if (id === requesterId || shadowIds.has(id)) return false;
+      if (lightDutyIds.has(id)) return false;                              // تخفيف عمل — لا يُرسَل له طلب
       const p = dayPositionOf(rows, id);
       if (p.absent || p.slots.length + p.extra.length === 0) return false;
       if (excludePeriods?.length && p.slots.some((r) => excludePeriods.includes(r.period))) {
         return false;
       }
-      const tBlocked = covererAbsence(rows, id).blocked;
-      if (myPeriods.some((P) => tBlocked.has(P))) return false;            // سيستلم فترةً هو مستأذنٌ عنها
+      // مستأذنٌ نفسه (له صفّ استئذان) → غير متفرّغٍ كلّيًّا، فلا يُرسَل له طلب تبديل أصلًا
+      if (covererAbsence(rows, id).blocked.size > 0) return false;
       if (myBlocked.size > 0 && p.slots.some((r) => myBlocked.has(r.period))) return false; // أنا سأستلم فترةً أنا مستأذنٌ عنها
       return true;
     };
