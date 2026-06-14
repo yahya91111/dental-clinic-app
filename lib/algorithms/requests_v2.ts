@@ -2225,6 +2225,7 @@ export const requestsV2 = {
   setScheduleStatus, cancelStatus, computeCoverageBrief, computeDayCoverageBriefs,
   swapInSchedule, swapFullPositions, listSwapTargets,
   placeInClinic, placeAsDelegator, coverGap, applyCoverageOption, reshapeGap,
+  attachTraineeForDay,
   clearWeek,
   setClinicCount, moveDoctorGroup, setDoctorGroupStatus,
 };

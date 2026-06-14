@@ -1232,6 +1232,7 @@ export async function dispatchRequestToolV2(
         });
         if (!res.success) return `Tool error: ${res.error}`;
         // إبلاغ المدرّب المكلَّف (للعلم): سيكون معه متدرّب في عيادته هذا اليوم
+        const { notifications } = await import('../algorithms/notifications');
         const sender = senderOf(ctx);
         await notifications.notifyTraineeAttached({
           clinicId: ctx.clinicId, supervisorId: sup.id,
