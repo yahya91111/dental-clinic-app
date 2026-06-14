@@ -366,7 +366,7 @@ export async function setScheduleStatus(
           return {
             success: true, gaps: [],
             permission: toPermission
-              ? { conflict: false, blocked: status === 'permission_start' ? [1, 3] : [2, 4], shadowToReserve: true }
+              ? { conflict: false, blocked: status === 'permission_start' ? [effShift === 'evening' ? 3 : 1] : [effShift === 'evening' ? 4 : 2], shadowToReserve: true }
               : undefined,
           };
         }
@@ -407,7 +407,7 @@ export async function setScheduleStatus(
       });
       return {
         success: true, gaps: [],
-        permission: { conflict: false, blocked: status === 'permission_start' ? [1, 3] : [2, 4], shadowToReserve: true },
+        permission: { conflict: false, blocked: status === 'permission_start' ? [effShift === 'evening' ? 3 : 1] : [effShift === 'evening' ? 4 : 2], shadowToReserve: true },
       };
     }
     if (toPermission && wasOut && !stillPlaced) {
@@ -540,7 +540,9 @@ export async function setScheduleStatus(
     // الزميل المقترح: شريك نفس العيادة في الفترة المكمّلة، إن خلا هو نفسه من الحجب.
     let permission: PermissionInfo | undefined;
     if (toPermission) {
-      const blocked = status === 'permission_start' ? [1, 3] : [2, 4];
+      const blocked = status === 'permission_start'
+        ? [effShift === 'evening' ? 3 : 1]
+        : [effShift === 'evening' ? 4 : 2];
       const placed = permPlacedRows ?? [];
       const conflictSlots = placed.filter((p) => blocked.includes(p.period));
       const comp = (p: number) => (p === 1 ? 2 : p === 2 ? 1 : p === 3 ? 4 : 3);
@@ -1595,7 +1597,10 @@ export async function placeInClinic(
     let permissionNoteAr: string | undefined;
     if (myPermRow) {
       const ps = myPermRow.status === 'permission_start';
-      const pBlocked = ps ? [1, 3] : [2, 4];
+      const pEvening = myPermRow.clinic_number === 2 ? true
+        : myPermRow.clinic_number === 1 ? false
+          : mine.some((r) => r.status === 'active' && r.period >= 3 && (r.role === 'clinic' || r.role === 'delegator'));
+      const pBlocked = ps ? [pEvening ? 3 : 1] : [pEvening ? 4 : 2];
       const hit = periods.filter((p) => pBlocked.includes(p));
       if (hit.length) {
         return fail(
@@ -1789,8 +1794,22 @@ function covererAbsence(rows: Row[], coverDoctorId: string): { hardAr: string | 
   );
   const hard = st.find((r) => r.status === 'sick_leave' || r.status === 'vacation');
   const blocked = new Set<number>();
-  if (st.some((r) => r.status === 'permission_start')) { blocked.add(1); blocked.add(3); }
-  if (st.some((r) => r.status === 'permission_end')) { blocked.add(2); blocked.add(4); }
+  // الاستئذان يحجب فترةً واحدةً من **شفت الطبيب نفسه** فقط (لا الفترة المسمّاة في
+  // الشفتين معًا): بداية الدوام صباحًا = ١ ومساءً = ٣؛ نهايته صباحًا = ٢ ومساءً = ٤.
+  // الشفت من خانة صفّ الاستئذان (1=صباح/2=مساء، كُتبت من مكانه وقت التسجيل)، وإلّا
+  // من خاناته الفعليّة — فيبقى المستأذن صباحًا قادرًا على العمل/التبديل في الشفت الآخر.
+  const myPeriods = rows
+    .filter((r) => r.doctor_id === coverDoctorId && r.status === 'active' && r.period > 0
+      && (r.role === 'clinic' || r.role === 'delegator'))
+    .map((r) => r.period);
+  for (const r of st) {
+    if (r.status !== 'permission_start' && r.status !== 'permission_end') continue;
+    const evening = r.clinic_number === 2 ? true
+      : r.clinic_number === 1 ? false
+        : myPeriods.some((p) => p >= 3);
+    if (r.status === 'permission_start') blocked.add(evening ? 3 : 1);
+    else blocked.add(evening ? 4 : 2);
+  }
   return { hardAr: hard ? (hard.status === 'sick_leave' ? 'مرضيّة' : 'تفرّغ') : null, blocked };
 }
 
