@@ -56,6 +56,9 @@ export async function announceAbsence(params: {
 const LEADER_PLUS_ROLES = new Set(['team_leader', 'coordinator', 'super_admin', 'manager']);
 const isLeaderPlusRole = (role: string): boolean => LEADER_PLUS_ROLES.has(role);
 
+/** وسم تبديل الاستئذان كما تمرّره الواجهة (الجانب same/other يُشتقّ من الخيار). */
+export type PermSwapArg = { blocked: number[]; targetPeriod?: number; statusAr: string; leaderIds: string[] };
+
 /**
  * إرسال طلب تبديلٍ لطبيبٍ واحد **بالكود مباشرةً** (يستعمله الموزّع للطبيب الطرف،
  * وزرّ [أرسل طلبًا] للقائد الطرف). يُرجِع سطرًا جاهزًا للعرض.
@@ -67,6 +70,7 @@ export async function sendSwapRequestByCode(params: {
   day: string;
   targetId: string;
   targetName: string;
+  perm?: PermSwapArg;
 }): Promise<{ success: boolean; info?: string; error?: string }> {
   const { requestsV2 } = await import('../algorithms/requests_v2');
   const { notifications } = await import('../algorithms/notifications');
@@ -80,6 +84,7 @@ export async function sendSwapRequestByCode(params: {
     clinicId: params.clinicId, weekStart: params.weekStart, day,
     requesterId: params.requester.id, requesterName: params.requester.name,
     targets: listed.targets,
+    ...(params.perm ? { perm: { ...params.perm, side: 'same' as const } } : {}),
   });
   if (!opened.success) return { success: false, error: opened.error };
   return {
@@ -100,6 +105,7 @@ export async function sendSwapRequestModeByCode(params: {
   day: string;
   mode: { kind: 'period'; period: number } | { kind: 'other_shift' };
   excludePeriods?: number[];
+  perm?: PermSwapArg;
 }): Promise<{ success: boolean; info?: string; error?: string }> {
   const { requestsV2 } = await import('../algorithms/requests_v2');
   const { notifications } = await import('../algorithms/notifications');
@@ -114,6 +120,9 @@ export async function sendSwapRequestModeByCode(params: {
     clinicId: params.clinicId, weekStart: params.weekStart, day,
     requesterId: params.requester.id, requesterName: params.requester.name,
     targets: listed.targets,
+    ...(params.perm
+      ? { perm: { ...params.perm, side: params.mode.kind === 'other_shift' ? 'other' as const : 'same' as const } }
+      : {}),
   });
   if (!opened.success) return { success: false, error: opened.error };
   const n = listed.targets.length;
@@ -808,16 +817,9 @@ export async function dispatchRequestToolV2(
                   weekStart: wsEff, day: r.day,
                 });
               }
-              // تعارض الاستئذان → كرتُ فعلٍ أحمر لكلّ قائد، يُغلَق تلقائيًّا متى زال
-              if (perm?.conflict) {
-                await notifications.alertLeaderPermissionConflict({
-                  clinicId: ctx.clinicId, leaderId,
-                  weekStart: wsEff, day: r.day,
-                  doctorId: doc.id, doctorName: doc.name,
-                  statusAr: STATUS_AR[status] || 'استئذان',
-                  senderId: doc.id, senderName: doc.name,
-                });
-              }
+              // تعارض الاستئذان: لا يصل القائد كرتٌ عند التسجيل. الكرت «استئذان يحتاج
+              // ترتيبًا» يُؤجَّل حتى يرفض الجميع التبديل مع صاحب الاستئذان في الشفتين
+              // (يُرسَل عندئذٍ من مسار استنفاد طلب التبديل) — فالكرت = المشكلة الحقيقيّة.
               await notifications.upsertLeaderCoverage({
                 clinicId: ctx.clinicId, leaderId,
                 weekStart: wsEff, day: r.day,
@@ -842,10 +844,13 @@ export async function dispatchRequestToolV2(
           today.setHours(0, 0, 0, 0);
           const otherShift = dayDate.getTime() - today.getTime() >= 24 * 3600 * 1000;
           if (actor.id === doc.id) {
+            // قادة العيادة للتصعيد إن رفض الشفتان (كرت القائد يُؤجَّل لتلك اللحظة).
+            const permLeaders = await getTeamLeaderIds(ctx.clinicId);
             ctx.onSwapOffer?.({
               kind: 'permission_fix', weekStart: wsEff, day: r.day,
               blocked: perm.blocked, colleague: perm.colleague,
               period: perm.targetPeriod, otherShift,
+              statusAr: STATUS_AR[status] || 'استئذان', leaderIds: permLeaders,
             });
             return final(
               `سُجّل ${STATUS_AR[status]} لك يوم ${DAY_AR[r.day]} — لكنّك تستلم وقتَ ` +

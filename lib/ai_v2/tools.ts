@@ -74,6 +74,8 @@ export type SwapOffer =
     colleague?: { id: string; name: string }; // زميل نفس العيادة بالفترة المكمّلة
     period?: number;                          // الفترة المكمّلة — هدف «كلّ الفترة»
     otherShift: boolean;                      // يُعرض «الشفت الآخر» (يومٌ فأكثر قبل الموعد)
+    statusAr?: string;                        // «استئذان نهاية الدوام» — لكرت القائد عند التصعيد
+    leaderIds?: string[];                     // قادة العيادة — للتصعيد إن رفض الشفتان
   };
 
 export type V2Tool = {

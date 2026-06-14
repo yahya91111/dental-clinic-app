@@ -558,6 +558,17 @@ type SwapDataV2 = {
   target_id: string; target_name: string;
   swap_group: string;
   expires_at: string; // ISO
+  /** وسم تبديل الاستئذان: لتصعيد الكرت للقائد فقط بعد رفض الشفتين، وإعادة العرض للطالب. */
+  perm?: PermSwapTag;
+};
+
+/** وسم مجموعة تبديلٍ ناتجةٍ عن استئذانٍ يتعارض مع استلام صاحبه لوقته. */
+export type PermSwapTag = {
+  blocked: number[];          // الفترة المحجوبة (لإعادة الحساب وكرت القائد)
+  targetPeriod?: number;      // فترة شفت الطالب نفسه (لإعادة عرض «الفترة»)
+  side: 'same' | 'other';     // الجانب المستهدَف في هذه المجموعة (نفس الشفت / الآخر)
+  statusAr: string;           // «استئذان نهاية الدوام» — لكرت القائد
+  leaderIds: string[];        // قادة العيادة (للتصعيد عند رفض الشفتين)
 };
 
 const DAY_INDEX: Record<WeekDay, number> = {
@@ -607,6 +618,80 @@ async function notifyGroupExhausted(group: string, d: SwapDataV2): Promise<void>
     type: NotifType.REQUEST_RESULT, title: 'طلب التبديل',
     body: `لم يقبل أحدٌ طلب التبديل يوم ${DAY_AR[d.day]}.`,
     data: { swap_v2: true, swap_group: group },
+  });
+  // تبديل استئذان: رُفض هذا الجانب كاملًا → أعِد العرض للجانب الآخر، أو صعّد للقائد.
+  if (d.perm) await escalatePermSwap(d);
+}
+
+/**
+ * تصعيد تبديل الاستئذان بعد رفض جانبٍ كاملًا: إن بقي الجانب الآخر (الشفت/الفترة)
+ * غير مُجرَّبٍ وفيه مرشّحون → كرتُ ذكاءٍ للطالب يعيد العرض (يضغط بنفسه، أورب أحمر).
+ * رُفض الجانبان (أو لا مرشّحين) → كرت «استئذان يحتاج ترتيبًا» للقادة (المشكلة الحقيقيّة).
+ */
+async function escalatePermSwap(d: SwapDataV2): Promise<void> {
+  try {
+    if (!d.perm) return;
+    const otherSide: 'same' | 'other' = d.perm.side === 'other' ? 'same' : 'other';
+    // هل جُرّب الجانب الآخر أصلًا لنفس (الطالب، الأسبوع، اليوم)؟
+    const { data: groups } = await supabase
+      .from('notifications')
+      .select('data')
+      .eq('type', NotifType.SWAP_REQUEST)
+      .filter('data->>requester_id', 'eq', d.requester_id)
+      .filter('data->>week_start', 'eq', d.week_start)
+      .filter('data->>day', 'eq', d.day);
+    const triedSides = new Set(
+      ((groups || []) as { data: SwapDataV2 }[]).map((g) => g.data?.perm?.side).filter(Boolean),
+    );
+    if (!triedSides.has(otherSide)) {
+      const { requestsV2 } = await import('./requests_v2');
+      const mode = otherSide === 'other'
+        ? { kind: 'other_shift' as const }
+        : { kind: 'period' as const, period: d.perm.targetPeriod ?? 0 };
+      const listed = await requestsV2.listSwapTargets({
+        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
+        requesterId: d.requester_id, mode, excludePeriods: d.perm.blocked,
+      });
+      if (listed.success && (listed.targets?.length || 0) > 0) {
+        await offerPermRetry(d, otherSide); // كرت ذكاءٍ للطالب — يضغط الجانب الآخر بنفسه
+        return;
+      }
+    }
+    // رُفض الجانبان (أو لا مرشّحين متبقّين) → كرت القائد عند كلّ القادة
+    for (const leaderId of d.perm.leaderIds) {
+      await alertLeaderPermissionConflict({
+        clinicId: d.clinic_id, leaderId,
+        weekStart: d.week_start, day: d.day,
+        doctorId: d.requester_id, doctorName: d.requester_name,
+        statusAr: d.perm.statusAr,
+        senderId: d.requester_id, senderName: d.requester_name,
+      });
+    }
+  } catch { /* التصعيد تحسينٌ — لا يُفشل الرفض */ }
+}
+
+/** كرتُ ذكاءٍ للطالب (أورب أحمر) يعرض زرّ طلب التبديل من الجانب الآخر بعد رفض جانبٍ. */
+async function offerPermRetry(d: SwapDataV2, side: 'same' | 'other'): Promise<void> {
+  if (!d.perm) return;
+  await sendAction({
+    clinicId: d.clinic_id, recipientId: d.requester_id,
+    senderId: d.requester_id, senderName: d.requester_name,
+    type: NotifType.GAP_ALERT, title: 'لم يقبل أحد — جرّب الجانب الآخر',
+    body: side === 'other'
+      ? `لم يقبل أحدٌ التبديل في فترتك يوم ${DAY_AR[d.day]}. تطلب من الشفت الآخر؟`
+      : `لم يقبل أحدٌ من الشفت الآخر يوم ${DAY_AR[d.day]}. تطلب من فترتك؟`,
+    data: {
+      v: 2, clinic_id: d.clinic_id, week_start: d.week_start,
+      perm_retry: {
+        day: d.day, side,
+        blocked: d.perm.blocked,
+        target_period: d.perm.targetPeriod,
+        status_ar: d.perm.statusAr,
+        leader_ids: d.perm.leaderIds,
+        requester_name: d.requester_name,
+      },
+      batch_at: Date.now(),
+    },
   });
 }
 
@@ -709,6 +794,7 @@ export async function openSwapGroup(args: {
   requesterId: string;
   requesterName: string;
   targets: { id: string; name: string }[];
+  perm?: PermSwapTag;
 }): Promise<{ success: boolean; error?: string; count?: number; group?: string }> {
   try {
     if (args.targets.length === 0) return { success: false, error: 'لا مستلمين للطلب.' };
@@ -766,6 +852,7 @@ export async function openSwapGroup(args: {
         requester_id: args.requesterId, requester_name: args.requesterName,
         target_id: t.id, target_name: t.name,
         swap_group: group, expires_at: expiresAt,
+        ...(args.perm ? { perm: args.perm } : {}),
       };
       const { error } = await sendAction({
         clinicId: args.clinicId, recipientId: t.id,
@@ -1174,7 +1261,7 @@ export async function upsertLeaderCoverage(args: {
       (r) => {
         const d = r.data || {};
         const pending = !r.action_status || r.action_status === 'pending';
-        return pending && d.v === 2 && !d.placement && d.week_start === args.weekStart;
+        return pending && d.v === 2 && !d.placement && !d.perm_retry && d.week_start === args.weekStart;
       },
     );
     // مالك البند: البنود الجديدة تحمل absentId؛ القديمة (بندٌ واحد لغائب الكرت) لا.

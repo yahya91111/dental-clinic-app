@@ -752,6 +752,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
           clinicId: cid, requester: { id: user.id, name: user.name },
           weekStart: offer.weekStart, day: offer.day,
           targetId: offer.colleague.id, targetName: offer.colleague.name,
+          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
         });
       } else if (offer.kind === 'permission_fix' && choice === 'perm_period' && offer.period) {
         res = await mod.sendSwapRequestModeByCode({
@@ -759,6 +760,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
           weekStart: offer.weekStart, day: offer.day,
           mode: { kind: 'period', period: offer.period },
           excludePeriods: offer.blocked,
+          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
         });
       } else if (offer.kind === 'permission_fix' && choice === 'perm_other') {
         res = await mod.sendSwapRequestModeByCode({
@@ -766,6 +768,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
           weekStart: offer.weekStart, day: offer.day,
           mode: { kind: 'other_shift' },
           excludePeriods: offer.blocked,
+          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
         });
       }
       if (res) {
@@ -798,6 +801,39 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر وتختفي عند الفتح التالي)
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
   }, [user?.id]);
+
+  // كرت إعادة عرض تبديل الاستئذان: الطالب يضغط الجانب الآخر → يُرسَل الطلب ويُغلَق الكرت.
+  const handlePermRetry = useCallback(async (n: ConvoNotif) => {
+    const pr = n.data?.perm_retry as
+      | { day: string; side: 'same' | 'other'; blocked: number[]; target_period?: number; status_ar?: string; leader_ids?: string[] }
+      | undefined;
+    if (!pr || swapBusyId) return;
+    setSwapBusyId(n.id);
+    try {
+      const cid = clinicId || user.clinicId;
+      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+      const mod = await import('../lib/ai_v2/tools_requests_v2');
+      const perm = { blocked: pr.blocked, targetPeriod: pr.target_period, statusAr: pr.status_ar || 'استئذان', leaderIds: pr.leader_ids || [] };
+      const mode = pr.side === 'other'
+        ? { kind: 'other_shift' as const }
+        : { kind: 'period' as const, period: pr.target_period ?? 0 };
+      const res = await mod.sendSwapRequestModeByCode({
+        clinicId: cid, requester: { id: user.id, name: user.name },
+        weekStart: String(n.data?.week_start || ''), day: pr.day,
+        mode, excludePeriods: pr.blocked, perm,
+      });
+      setSwapResults((p) => ({ ...p, [n.id]: res.success ? (res.info || 'تمّ.') : `تعذّر: ${res.error || ''}` }));
+      if (res.success) {
+        const { updateNotificationAction } = await import('../lib/database');
+        await updateNotificationAction(n.id, 'accepted'); // أُغلق كرت إعادة العرض بعد الإرسال
+      }
+      loadConvo();
+    } catch (e) {
+      setSwapResults((p) => ({ ...p, [n.id]: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }));
+    } finally {
+      setSwapBusyId(null);
+    }
+  }, [swapBusyId, clinicId, user, loadConvo]);
 
   // حمّل الطلبات عند الفتح، وأعد التحميل عند تغيّر المحادثة (قد ينشئ ردّ الذكاء طلبًا)
   useEffect(() => { if (visible) { setNote(''); loadConvo(); } }, [visible, messages.length, loadConvo]);
@@ -995,6 +1031,27 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
                 if (n.type === 'gap_alert') {
                   if (n.data?.v !== 2) return null;
+                  // كرت إعادة عرض تبديل الاستئذان للطالب — زرّ الجانب الآخر (تنفيذ بالكود).
+                  if (n.data?.perm_retry) {
+                    const pr = n.data.perm_retry as { side: 'same' | 'other' };
+                    const label = pr.side === 'other' ? 'اطلب من الشفت الآخر' : 'اطلب من فترتك';
+                    return (
+                      <View key={n.id} style={[styles.msg, styles.msgAI]}>
+                        <Text style={styles.msgTxt}>{n.body}</Text>
+                        {swapResults[n.id] ? (
+                          <Text style={styles.annNote}>{swapResults[n.id]}</Text>
+                        ) : swapBusyId === n.id ? (
+                          <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
+                        ) : (
+                          <View style={styles.chipRow}>
+                            <TouchableOpacity style={styles.chip} onPress={() => handlePermRetry(n)}>
+                              <Text style={styles.chipTxt}>{label}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  }
                   if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict) return null;
                   return (
                     <CoverageCard
