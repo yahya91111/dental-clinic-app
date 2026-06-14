@@ -554,14 +554,20 @@ export async function setScheduleStatus(
           .filter((r) => r.doctor_id === id && r.status === 'active' && r.period > 0
             && (r.role === 'clinic' || r.role === 'delegator'))
           .map((r) => r.period);
+        // لا نَعرض شريكًا لا يصلح للتبديل: تخفيف العمل مُستبعَدٌ كلّيًّا، والظلّ ليس
+        // زميلًا مستقلًّا (يُلاصق مدرّبه). فالزرّ يظهر فقط حين يكون التبديل صالحًا.
+        const { data: mem } = await getAllGroupMembers(clinicId);
+        const lightDuty = new Set(((mem || []) as { doctor_id: string; work_status?: string }[])
+          .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id));
         for (const cs of conflictSlots) {
           if (cs.clinic_number <= 0) continue; // الدليقيتر بلا «زميل عيادة»
           const mateRow = rows.find(
             (r) => r.doctor_id !== doctorId && r.status === 'active'
               && r.period === comp(cs.period) && r.clinic_number === cs.clinic_number
-              && r.role === 'clinic',
+              && r.role === 'clinic' && r.source !== 'shadow', // الظلّ ليس زميلًا
           );
-          if (mateRow && !periodsOf(mateRow.doctor_id).some((p) => blocked.includes(p))) {
+          if (mateRow && !lightDuty.has(mateRow.doctor_id) // تخفيف العمل لا يُبدَّل معه
+            && !periodsOf(mateRow.doctor_id).some((p) => blocked.includes(p))) {
             colleague = { id: mateRow.doctor_id, name: mateRow.doctor_name };
             targetPeriod = comp(cs.period);
             break;
