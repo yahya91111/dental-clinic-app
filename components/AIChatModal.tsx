@@ -711,7 +711,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   // أزرار التبديل للقائد: [أرسل طلبًا]/[بدّل مباشرة] حين يكون طرفًا، و[أبلغهما]/[لا داعي]
   // بعد تبديله اثنين، وأزرار اقتراحات الاستئذان المتعارض (زميل/فترة/شفت آخر) —
   // الضغط يُنفَّذ **بالكود مباشرةً**، لا نداء للنموذج.
-  const [swapResults, setSwapResults] = useState<Record<string, string>>({});
+  const [swapResults, setSwapResults] = useState<Record<string, { text: string; ok: boolean }>>({});
   const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
   const handleSwapOffer = useCallback(async (
     m: ChatMessage,
@@ -720,7 +720,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     const offer = m.swapOffer;
     if (!offer || swapBusyId) return;
     if (choice === 'none') {
-      setSwapResults((p) => ({ ...p, [m.id]: 'حسنًا — بلا إبلاغ.' }));
+      setSwapResults((p) => ({ ...p, [m.id]: { text: 'حسنًا — بلا إبلاغ.', ok: true } }));
       return;
     }
     setSwapBusyId(m.id);
@@ -774,11 +774,11 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
       if (res) {
         setSwapResults((p) => ({
           ...p,
-          [m.id]: res!.success ? (res!.info || 'تمّ.') : `تعذّر: ${res!.error || ''}`,
+          [m.id]: { text: res!.success ? (res!.info || 'تمّ.') : `تعذّر: ${res!.error || ''}`, ok: res!.success },
         }));
       }
     } catch (e) {
-      setSwapResults((p) => ({ ...p, [m.id]: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }));
+      setSwapResults((p) => ({ ...p, [m.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
     } finally {
       setSwapBusyId(null);
     }
@@ -822,14 +822,14 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
         weekStart: String(n.data?.week_start || ''), day: pr.day,
         mode, excludePeriods: pr.blocked, perm,
       });
-      setSwapResults((p) => ({ ...p, [n.id]: res.success ? (res.info || 'تمّ.') : `تعذّر: ${res.error || ''}` }));
+      setSwapResults((p) => ({ ...p, [n.id]: { text: res.success ? (res.info || 'تمّ.') : `تعذّر: ${res.error || ''}`, ok: res.success } }));
       if (res.success) {
         const { updateNotificationAction } = await import('../lib/database');
         await updateNotificationAction(n.id, 'accepted'); // أُغلق كرت إعادة العرض بعد الإرسال
       }
       loadConvo();
     } catch (e) {
-      setSwapResults((p) => ({ ...p, [n.id]: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }));
+      setSwapResults((p) => ({ ...p, [n.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
     } finally {
       setSwapBusyId(null);
     }
@@ -978,48 +978,58 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                       )}
                       {/* أزرار التبديل للقائد — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
                       {m.role === 'assistant' && !!m.swapOffer && (
-                        swapResults[m.id] ? (
-                          <Text style={styles.annNote}>{swapResults[m.id]}</Text>
+                        swapResults[m.id]?.ok ? (
+                          // نجاحٌ (أو «لا داعي») → نتيجةٌ فقط، تختفي الأزرار
+                          <Text style={styles.annNote}>{swapResults[m.id].text}</Text>
                         ) : swapBusyId === m.id ? (
                           <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
-                        ) : m.swapOffer.kind === 'ask_mode' ? (
-                          <View style={styles.chipRow}>
-                            <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'request')}>
-                              <Text style={styles.chipTxt}>أرسل طلبًا</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'direct')}>
-                              <Text style={styles.chipTxt}>بدّل مباشرة</Text>
-                            </TouchableOpacity>
-                          </View>
-                        ) : m.swapOffer.kind === 'permission_fix' ? (
-                          <View style={styles.chipRow}>
-                            {!!m.swapOffer.colleague && (
-                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_colleague')}>
-                                <Text style={styles.chipTxt}>{`بدّل مع ${m.swapOffer.colleague.name}`}</Text>
-                              </TouchableOpacity>
-                            )}
-                            {!!m.swapOffer.period && (
-                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_period')}>
-                                <Text style={styles.chipTxt}>اعرض على كلّ الفترة</Text>
-                              </TouchableOpacity>
-                            )}
-                            {m.swapOffer.otherShift && (
-                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_other')}>
-                                <Text style={styles.chipTxt}>اعرض على الشفت الآخر</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
                         ) : (
+                          // فشلٌ أو لا محاولة بعد → أبقِ الأزرار ظاهرةً (مع ملاحظة الخطأ
+                          // فوقها إن فشلت محاولةٌ) كي يختار خيارًا آخر بلا أن يُحصَر.
                           <>
-                            <Text style={styles.annAsk}>هل يُبلَّغ الطرفان بالتبديل؟</Text>
-                            <View style={styles.chipRow}>
-                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'notify')}>
-                                <Text style={styles.chipTxt}>أبلغهما</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'none')}>
-                                <Text style={styles.chipTxt}>لا داعي</Text>
-                              </TouchableOpacity>
-                            </View>
+                            {!!swapResults[m.id] && !swapResults[m.id].ok && (
+                              <Text style={styles.annNote}>{swapResults[m.id].text}</Text>
+                            )}
+                            {m.swapOffer.kind === 'ask_mode' ? (
+                              <View style={styles.chipRow}>
+                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'request')}>
+                                  <Text style={styles.chipTxt}>أرسل طلبًا</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'direct')}>
+                                  <Text style={styles.chipTxt}>بدّل مباشرة</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : m.swapOffer.kind === 'permission_fix' ? (
+                              <View style={styles.chipRow}>
+                                {!!m.swapOffer.colleague && (
+                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_colleague')}>
+                                    <Text style={styles.chipTxt}>{`بدّل مع ${m.swapOffer.colleague.name}`}</Text>
+                                  </TouchableOpacity>
+                                )}
+                                {!!m.swapOffer.period && (
+                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_period')}>
+                                    <Text style={styles.chipTxt}>اعرض على كلّ الفترة</Text>
+                                  </TouchableOpacity>
+                                )}
+                                {m.swapOffer.otherShift && (
+                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_other')}>
+                                    <Text style={styles.chipTxt}>اعرض على الشفت الآخر</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            ) : (
+                              <>
+                                <Text style={styles.annAsk}>هل يُبلَّغ الطرفان بالتبديل؟</Text>
+                                <View style={styles.chipRow}>
+                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'notify')}>
+                                    <Text style={styles.chipTxt}>أبلغهما</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'none')}>
+                                    <Text style={styles.chipTxt}>لا داعي</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </>
+                            )}
                           </>
                         )
                       )}
@@ -1038,16 +1048,21 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                     return (
                       <View key={n.id} style={[styles.msg, styles.msgAI]}>
                         <Text style={styles.msgTxt}>{n.body}</Text>
-                        {swapResults[n.id] ? (
-                          <Text style={styles.annNote}>{swapResults[n.id]}</Text>
+                        {swapResults[n.id]?.ok ? (
+                          <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
                         ) : swapBusyId === n.id ? (
                           <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
                         ) : (
-                          <View style={styles.chipRow}>
-                            <TouchableOpacity style={styles.chip} onPress={() => handlePermRetry(n)}>
-                              <Text style={styles.chipTxt}>{label}</Text>
-                            </TouchableOpacity>
-                          </View>
+                          <>
+                            {!!swapResults[n.id] && !swapResults[n.id].ok && (
+                              <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
+                            )}
+                            <View style={styles.chipRow}>
+                              <TouchableOpacity style={styles.chip} onPress={() => handlePermRetry(n)}>
+                                <Text style={styles.chipTxt}>{label}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
                         )}
                       </View>
                     );
