@@ -1120,6 +1120,7 @@ export async function dispatchRequestToolV2(
                 senderId: doc.id, senderName: doc.name,
                 summary: `إلغاء ${statusAr} يوم ${DAY_AR[r.day]} — ${fate}`,
                 weekStart: String(r.weekStart), day: r.day,
+                standalone: true, // الإلغاء حدثٌ مميَّز — لا يُدمَج في إشعار التسجيل فيختفي
               });
             }
           }

@@ -185,40 +185,46 @@ export async function notifyLeaderOfRequest(args: {
   summary: string;     // «مرضية يوم الأحد» — يصوغها المساعد
   weekStart?: string;  // للتجميع (طلبات نفس الأسبوع)
   day?: string;        // مفتاح التمييز (لا يتكرّر السطر لو أُعيد نفس اليوم)
+  standalone?: boolean; // حدثٌ مميَّز (إلغاء/إرجاع) لا يُدمَج في إشعار سابق — إشعار جديد دائمًا
 }): Promise<NotifResult> {
   try {
     const now = Date.now();
-    // إشعار علمٍ غير مقروء لنفس (القائد، الطبيب، الأسبوع) **ومن نفس الجلسة**؟ أَلحِق به.
-    // خارج النافذة الزمنيّة = طلبٌ جديد منفصل → إشعار جديد.
-    const { data: rows } = await supabase
-      .from('notifications')
-      .select('id, data, is_read')
-      .eq('clinic_id', args.clinicId)
-      .eq('recipient_id', args.leaderId)
-      .eq('sender_id', args.senderId)
-      .eq('type', NotifType.REQUEST_INFO)
-      .eq('is_read', false);
-    const existing = ((rows || []) as { id: string; data: any; is_read: boolean }[]).find(
-      (r) =>
-        (r.data?.week_start ?? '') === (args.weekStart ?? '') &&
-        now - (r.data?.batch_at ?? 0) < BATCH_WINDOW_MS,
-    );
-
-    if (existing) {
-      const items: { day?: string; summary: string }[] = Array.isArray(existing.data?.items)
-        ? existing.data.items.slice()
-        : existing.data?.summary
-          ? [{ summary: existing.data.summary as string }]
-          : [];
-      const i = args.day != null ? items.findIndex((x) => x.day === args.day) : -1;
-      const entry = { day: args.day, summary: args.summary };
-      if (i >= 0) items[i] = entry; else items.push(entry);
-      const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`;
-      await supabase
+    // الإلغاء/الإرجاع يصل **مستقلًّا** (standalone): حدثٌ مميَّز لا يُدمَج في إشعار
+    // التسجيل السابق — وإلّا اختفى خبرُه بإحلاله محلّ بند نفس اليوم (فيظنّ القائد
+    // أنّ شيئًا لم يصل). الطلبات العاديّة تُجمَّع كالمعتاد.
+    if (!args.standalone) {
+      // إشعار علمٍ غير مقروء لنفس (القائد، الطبيب، الأسبوع) **ومن نفس الجلسة**؟ أَلحِق به.
+      // خارج النافذة الزمنيّة = طلبٌ جديد منفصل → إشعار جديد.
+      const { data: rows } = await supabase
         .from('notifications')
-        .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now }, body, is_read: false })
-        .eq('id', existing.id);
-      return ok();
+        .select('id, data, is_read')
+        .eq('clinic_id', args.clinicId)
+        .eq('recipient_id', args.leaderId)
+        .eq('sender_id', args.senderId)
+        .eq('type', NotifType.REQUEST_INFO)
+        .eq('is_read', false);
+      const existing = ((rows || []) as { id: string; data: any; is_read: boolean }[]).find(
+        (r) =>
+          (r.data?.week_start ?? '') === (args.weekStart ?? '') &&
+          now - (r.data?.batch_at ?? 0) < BATCH_WINDOW_MS,
+      );
+
+      if (existing) {
+        const items: { day?: string; summary: string }[] = Array.isArray(existing.data?.items)
+          ? existing.data.items.slice()
+          : existing.data?.summary
+            ? [{ summary: existing.data.summary as string }]
+            : [];
+        const i = args.day != null ? items.findIndex((x) => x.day === args.day) : -1;
+        const entry = { day: args.day, summary: args.summary };
+        if (i >= 0) items[i] = entry; else items.push(entry);
+        const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`;
+        await supabase
+          .from('notifications')
+          .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now }, body, is_read: false })
+          .eq('id', existing.id);
+        return ok();
+      }
     }
 
     return sendInfo({
