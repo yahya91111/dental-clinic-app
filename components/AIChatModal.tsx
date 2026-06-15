@@ -12,8 +12,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, ScrollView, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, PanResponder,
+  ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, PanResponder, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { getNotifications, markAsRead, subscribeToNotifications } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
 import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
@@ -449,6 +451,62 @@ const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل 
  * الذكاء الحلول بسياق هذا النقص وحده (sendMessageV2 بحقائقه). يحلّ تشويش تعدّد
  * الطلبات: كلّ كرت حديثه منفصل. أوّل فتح يُعلّم الكرت مقروءًا فيهدأ الأوربّ.
  */
+// ═══════════════════════════════════════════════════════════════
+// Aurora (فاتح) — لغةُ الكروت: شارةُ نوعٍ + حبّةُ حالة + سطحٌ زجاجيّ مضيء
+// ═══════════════════════════════════════════════════════════════
+type CardKind = 'coverage' | 'decision' | 'swap' | 'done' | 'ignored' | 'info';
+// ألوانٌ أزهى للخلفيّة الداكنة (مطابِقة للنموذج)
+const KIND: Record<CardKind, { accent: string; soft: string; line: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  coverage: { accent: '#FBBF24', soft: 'rgba(251,191,36,0.18)',  line: 'rgba(251,191,36,0.40)',  icon: 'warning' },
+  decision: { accent: '#A78BFA', soft: 'rgba(167,139,250,0.18)', line: 'rgba(167,139,250,0.40)', icon: 'help-circle' },
+  swap:     { accent: '#A78BFA', soft: 'rgba(167,139,250,0.18)', line: 'rgba(167,139,250,0.40)', icon: 'swap-horizontal' },
+  done:     { accent: '#34D399', soft: 'rgba(52,211,153,0.18)',  line: 'rgba(52,211,153,0.40)',  icon: 'checkmark-circle' },
+  ignored:  { accent: '#94A3B8', soft: 'rgba(148,163,184,0.16)', line: 'rgba(148,163,184,0.32)', icon: 'help-circle' },
+  info:     { accent: '#A99FD0', soft: 'rgba(169,159,208,0.14)', line: 'rgba(169,159,208,0.26)', icon: 'information-circle' },
+};
+
+function CardBadge({ kind, live }: { kind: CardKind; live?: boolean }) {
+  const k = KIND[kind];
+  return (
+    <View style={[styles.badge, { backgroundColor: k.soft, borderColor: k.line }]}>
+      <Ionicons name={k.icon} size={scale(20)} color={k.accent} />
+      {live && <View style={[styles.badgeDot, { backgroundColor: k.accent }]} />}
+    </View>
+  );
+}
+
+function Pill({ kind, text }: { kind: CardKind; text: string }) {
+  const k = KIND[kind];
+  return (
+    <View style={[styles.pill, { backgroundColor: k.soft, borderColor: k.line }]}>
+      <Text style={[styles.pillTxt, { color: k.accent }]}>{text}</Text>
+    </View>
+  );
+}
+
+// السطح الزجاجيّ الفاتح + خطٌّ علويٌّ متلاشٍ بلون النوع + توهّجٌ للكروت الحيّة
+function GlassCard({ kind, glow, children, style }: {
+  kind: CardKind; glow?: boolean; children: React.ReactNode; style?: any;
+}) {
+  const k = KIND[kind];
+  return (
+    <View style={[styles.glass, glow && { shadowColor: k.accent, shadowOpacity: 0.30, shadowRadius: scale(18) }, style]}>
+      {/* لوحٌ زجاجيٌّ داكنٌ قائمٌ بذاته (على الخلفيّة الفاتحة) — أفتح أعلى (إضاءة) وأعمق أسفل */}
+      <LinearGradient
+        colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
+        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={styles.glassFill}
+      />
+      <LinearGradient
+        colors={['transparent', k.accent, 'transparent']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={styles.accentLine}
+      />
+      {children}
+    </View>
+  );
+}
+
 function CoverageCard({ notif, user, clinicId, onSeen }: {
   notif: ConvoNotif;
   user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
@@ -467,18 +525,36 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
     !notif.action_status || notif.action_status === 'pending' ? 'pending'
       : notif.action_status === 'ignored' ? 'ignored' : 'done';
 
-  // سحب الكرت (مثل محادثات الواتساب): يمينًا تظهر خيارات «تجاهل» و«تمّ»، يسارًا تختفي
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 14 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-    onPanResponderRelease: (_e, g) => {
-      if (g.dx > 36) setActionsOpen(true);
-      else if (g.dx < -36) setActionsOpen(false);
+  // سحب الكرت يمينًا يكشف Done/Dismiss (متحرّك، يتبع الإصبع ويثبّت/يُغلق بنعومة)
+  // يعمل **فقط والكرت مغلق** (expandedRef) — لا أثناء فتحه.
+  const SW_OPEN = scale(140);
+  const tx = useRef(new Animated.Value(0)).current;
+  const swBase = useRef(0);
+  const expandedRef = useRef(false);
+  const closeSwipe = useCallback(() => {
+    Animated.spring(tx, { toValue: 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+    swBase.current = 0;
+  }, [tx]);
+  const horizontal = (g: { dx: number; dy: number }) => Math.abs(g.dx) > Math.abs(g.dy) * 1.2 && Math.abs(g.dx) > 8;
+  const swipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => !expandedRef.current && horizontal(g),
+    // يخطف السحب الأفقيّ قبل أزرار الرأس/الحلول (وإلّا تبتلعه اللمسات الداخليّة)
+    onMoveShouldSetPanResponderCapture: (_e, g) => !expandedRef.current && horizontal(g),
+    onPanResponderGrant: () => { tx.stopAnimation((v: number) => { swBase.current = v; }); },
+    onPanResponderMove: (_e, g) => {
+      let x = swBase.current + g.dx;
+      if (x < 0) x = 0; else if (x > SW_OPEN) x = SW_OPEN + (x - SW_OPEN) * 0.12;
+      tx.setValue(Math.min(x, SW_OPEN));
     },
+    onPanResponderRelease: (_e, g) => {
+      const open = (swBase.current + g.dx) > SW_OPEN * 0.45;
+      Animated.spring(tx, { toValue: open ? SW_OPEN : 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+      swBase.current = open ? SW_OPEN : 0;
+    },
+    onPanResponderTerminationRequest: () => false,  // لا يخطف الـScrollView السحب في منتصفه
   })).current;
 
   const mark = useCallback(async (s: 'ignored' | 'done') => {
-    setActionsOpen(false);
     try {
       const { updateNotificationAction } = await import('../lib/database');
       await updateNotificationAction(notif.id, s);
@@ -519,7 +595,10 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   }, [notif, user, clinicId, persist]);
 
   const onToggle = useCallback(async () => {
+    // السحب مفتوح؟ النقرة تُغلقه فقط — لا تفتح الكرت
+    if (swBase.current > 0) { closeSwipe(); return; }
     const next = !expanded;
+    expandedRef.current = next;
     setExpanded(next);
     if (next && !startedRef.current) {
       startedRef.current = true;
@@ -529,7 +608,7 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
       if (saved && saved.length) setHistory(saved);
       else runTurn([{ role: 'user', content: SEED_TRIGGER }]);
     }
-  }, [expanded, notif.id, notif.data, onSeen, runTurn]);
+  }, [expanded, notif.id, notif.data, onSeen, runTurn, closeSwipe]);
 
   const send = useCallback((text: string) => {
     const t = text.trim();
@@ -583,90 +662,296 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   // ما يُعرَض: تجاوز رسالة التشغيل الخفيّة (index 0)، وآخر ردّ يحمل خياراته كأزرار
   const shown = history.filter((m, i) => !(i === 0 && m.role === 'user' && m.content === SEED_TRIGGER));
 
-  // الألوان مبدئيّة (التصميم لاحقًا): معلّق = كهرمانيّ، متجاهَل = رماديّ، تمّ = أخضر
-  const statusTag = status === 'done' ? ' · تمّ' : status === 'ignored' ? ' · متجاهَل' : '';
+  const kind: CardKind = status === 'done' ? 'done' : status === 'ignored' ? 'ignored' : 'coverage';
+  const nDays = coverageDays(notif.data || {}).length;
+  const pillText = status === 'done' ? 'Done' : status === 'ignored' ? 'Dismissed'
+    : `يحتاج ترتيبك${nDays > 1 ? ` · ${nDays} أيّام` : ''}`;
 
   return (
-    <View
-      style={[styles.covCard, status === 'ignored' && styles.covIgnored, status === 'done' && styles.covDone]}
-      {...pan.panHandlers}
-    >
-      <TouchableOpacity style={styles.covHead} onPress={onToggle} activeOpacity={0.7}>
-        <Text style={styles.covCaret}>{expanded ? '▾' : '▸'}</Text>
-        <Text style={styles.covTitle}>{coverageTitle(notif) + statusTag}</Text>
-      </TouchableOpacity>
-
-      {actionsOpen && (
-        <View style={styles.covActions}>
-          <TouchableOpacity style={[styles.covActBtn, styles.covActDone]} onPress={() => mark('done')}>
-            <Text style={styles.covActTxt}>تمّ</Text>
+    <View style={styles.swWrap}>
+      {/* درج Done / Dismiss — امتدادٌ زجاجيٌّ يُكشَف بالسحب يمينًا (لكلّ الحالات) */}
+      {/* الدرج خلف الكرت بكامل عرضه ونفس استدارته وتدرّجه — فزوايا الكرت المستديرة
+          تكشفه (لا الخلفيّة)، فيبدوان قطعةً واحدة متّصلة الحواف */}
+      <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
+        <LinearGradient
+          colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
+          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.swActs}>
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('done'); }}>
+            <Ionicons name="checkmark" size={scale(21)} color="#34D399" />
+            <Text style={[styles.swTxt, { color: '#34D399' }]}>Done</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.covActBtn, styles.covActIgnore]} onPress={() => mark('ignored')}>
-            <Text style={styles.covActTxt}>تجاهل</Text>
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('ignored'); }}>
+            <Ionicons name="close" size={scale(21)} color="#FB7185" />
+            <Text style={[styles.swTxt, { color: '#FB7185' }]}>Dismiss</Text>
           </TouchableOpacity>
         </View>
-      )}
+      </Animated.View>
+
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
+        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && styles.glassDim}>
+          <TouchableOpacity style={styles.head} onPress={onToggle} activeOpacity={0.8}>
+            <CardBadge kind={kind} live={status === 'pending'} />
+            <View style={styles.headTxt}>
+              <Text style={styles.cardTitle} numberOfLines={2}>{coverageTitle(notif)}</Text>
+              <Pill kind={kind} text={pillText} />
+            </View>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+          </TouchableOpacity>
 
       {expanded && (
         <View style={styles.covBody}>
-          {/* الذكاء يعرض الحلول نصًّا، والأزرار أسفله تُبنى من حقائق الكرت (كود لا نموذج) */}
-          {shown.map((m, i) => {
-            const isAI = m.role === 'assistant';
-            return (
-              <View key={i} style={[styles.msg, isAI ? styles.msgAI : styles.msgUser]}>
-                <Text style={[styles.msgTxt, !isAI && styles.msgTxtUser]}>{m.content}</Text>
-              </View>
-            );
-          })}
-          {loading && <ActivityIndicator color="#2D8C8C" style={{ marginVertical: scale(6) }} />}
+          {/* نصّ الذكاء كفقرات (كالنموذج)، وردّ المستخدم كفقاعةٍ بنفسجيّة */}
+          {shown.map((m, i) => (
+            m.role === 'assistant'
+              ? <Text key={i} style={styles.bodyPara}>{m.content}</Text>
+              : (
+                <View key={i} style={[styles.msg, styles.msgUser]}>
+                  <Text style={[styles.msgTxt, styles.msgTxtUser]}>{m.content}</Text>
+                </View>
+              )
+          ))}
+          {loading && <ActivityIndicator color="#7C3AED" style={{ marginVertical: scale(6) }} />}
 
-          {/* أزرار الحلول — تحت نصّ الذكاء مباشرةً، مجموعة لكلّ يوم؛ الضغط ينفّذ
-              بالكود فورًا (بلا نموذج)، والكتابة الحرّة تبقى لما هو خارج الخيارات */}
+          {/* الحلول المقترحة — خياراتٌ عريضةٌ زجاجيّة (كالنموذج)، مجموعةٌ لكلّ يوم */}
           {!loading && shown.some((m) => m.role === 'assistant') && covButtonDays.map((g) => (
-            <View key={`${g.day}|${g.absentId}`} style={styles.covBtnGroup}>
+            <View key={`${g.day}|${g.absentId}`} style={styles.optGroup}>
               {covButtonDays.length > 1 && (
-                <Text style={styles.covBtnDay}>
-                  يوم {g.dayAr}{covMultiAbsent && g.absentName ? ` — غياب ${dr(g.absentName)}` : ''}:
+                <Text style={styles.optDay}>
+                  {g.dayAr}{covMultiAbsent && g.absentName ? ` — غياب ${dr(g.absentName)}` : ''}
                 </Text>
               )}
-              <View style={styles.chipRow}>
-                {g.btns.map((b) => {
-                  const k = `${g.day}|${g.absentId}|${b.label}`;
-                  const busy = covBusy === k;
-                  return busy ? (
-                    <ActivityIndicator key={k} color="#2D8C8C" style={{ marginVertical: scale(4) }} />
-                  ) : (
-                    <TouchableOpacity
-                      key={k}
-                      style={styles.chip}
-                      disabled={!!covBusy}
-                      onPress={() => handleChoice(g.day, { id: g.absentId, name: g.absentName }, b.label, b.choice)}
-                    >
-                      <Text style={styles.chipTxt}>{b.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              {g.btns.map((b) => {
+                const k = `${g.day}|${g.absentId}|${b.label}`;
+                const busy = covBusy === k;
+                return busy ? (
+                  <ActivityIndicator key={k} color="#7C3AED" style={{ marginVertical: scale(8) }} />
+                ) : (
+                  <TouchableOpacity
+                    key={k}
+                    style={styles.opt}
+                    activeOpacity={0.8}
+                    disabled={!!covBusy}
+                    onPress={() => handleChoice(g.day, { id: g.absentId, name: g.absentName }, b.label, b.choice)}
+                  >
+                    <Text style={styles.optTxt}>{b.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           ))}
 
+          {/* خانة حلٍّ مختلف — زرّ الإرسال (سهم) يمينًا */}
           <View style={styles.covInputRow}>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => send(reply)} disabled={loading}>
+              <LinearGradient colors={['#A78BFA', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sendBtn}>
+                <Ionicons name="send" size={scale(17)} color="#FFFFFF" />
+              </LinearGradient>
+            </TouchableOpacity>
             <TextInput
               style={styles.covInput}
               value={reply}
               onChangeText={setReply}
-              placeholder="ردّك…"
-              placeholderTextColor="#9AA7A7"
+              placeholder="حلٌّ مختلف؟ اكتب هنا"
+              placeholderTextColor="rgba(244,241,255,0.42)"
               textAlign="right"
               onSubmitEditing={() => send(reply)}
             />
-            <TouchableOpacity style={styles.sendBtn} onPress={() => send(reply)} disabled={loading}>
-              <Text style={styles.sendTxt}>إرسال</Text>
-            </TouchableOpacity>
           </View>
         </View>
       )}
+        </GlassCard>
+      </Animated.View>
     </View>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AICardsView — لوحةُ كروت الإبلاغ المشتركة (تغطية نقص / موافقات / نتائج)
+// ═══════════════════════════════════════════════════════════════
+// مصدرٌ واحد: تُحمَّل من قاعدة البيانات وتُحدَّث فوريًّا (Realtime). تُستعمل في
+// **المكانين**: محادثة الضغط المطوّل (AIChatModal) وصفحة الذكاء المنزلقة
+// (AISchedulePanel) — فالكروت نفسها تظهر متزامنةً في كليهما، منفصلةً عن المحادثة.
+export function AICardsView({ user, clinicId }: {
+  user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
+  clinicId?: string | null;
+}) {
+  const [convo, setConvo] = useState<ConvoNotif[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
+  const [swapResults, setSwapResults] = useState<Record<string, { text: string; ok: boolean }>>({});
+  const [note, setNote] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+
+  const loadConvo = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await getNotifications(user.id, 50);
+    const sunday = currentSunday();
+    const items = ((data || []) as ConvoNotif[])
+      .filter((n) =>
+        isPending(n)
+        || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
+        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
+    // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
+    setConvo(items);
+    items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
+  }, [user?.id]);
+
+  const handlePermRetry = useCallback(async (n: ConvoNotif) => {
+    const pr = n.data?.perm_retry as
+      | { day: string; side: 'same' | 'other'; blocked: number[]; target_period?: number; status_ar?: string; leader_ids?: string[] }
+      | undefined;
+    if (!pr || swapBusyId) return;
+    setSwapBusyId(n.id);
+    try {
+      const cid = clinicId || user.clinicId;
+      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+      const mod = await import('../lib/ai_v2/tools_requests_v2');
+      const perm = { blocked: pr.blocked, targetPeriod: pr.target_period, statusAr: pr.status_ar || 'استئذان', leaderIds: pr.leader_ids || [] };
+      const mode = pr.side === 'other'
+        ? { kind: 'other_shift' as const }
+        : { kind: 'period' as const, period: pr.target_period ?? 0 };
+      const res = await mod.sendSwapRequestModeByCode({
+        clinicId: cid, requester: { id: user.id, name: user.name },
+        weekStart: String(n.data?.week_start || ''), day: pr.day,
+        mode, excludePeriods: pr.blocked, perm,
+      });
+      setSwapResults((p) => ({ ...p, [n.id]: { text: res.success ? (res.info || 'تمّ.') : `تعذّر: ${res.error || ''}`, ok: res.success } }));
+      if (res.success) {
+        const { updateNotificationAction } = await import('../lib/database');
+        await updateNotificationAction(n.id, 'accepted');
+      }
+      loadConvo();
+    } catch (e) {
+      setSwapResults((p) => ({ ...p, [n.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
+    } finally {
+      setSwapBusyId(null);
+    }
+  }, [swapBusyId, clinicId, user, loadConvo]);
+
+  async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
+    if (!user?.id) return;
+    setBusyId(n.id);
+    try {
+      let msg = '';
+      if (n.type === 'coverage_request') {
+        const res = decision === 'accept'
+          ? await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name })
+          : await notifEngine.rejectCoverage({ notificationId: n.id });
+        msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'رفضتَ الطلب.') : `تعذّر: ${res.error || ''}`;
+      } else {
+        const { updateNotificationAction } = await import('../lib/database');
+        await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
+        msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
+      }
+      setNote(msg);
+      await loadConvo();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  useEffect(() => { setNote(''); loadConvo(); }, [loadConvo]);
+  useEffect(() => {
+    if (!user?.id) return;
+    const unsub = subscribeToNotifications(user.id, loadConvo);
+    return unsub;
+  }, [user?.id, loadConvo]);
+
+  return (
+    <ScrollView
+      ref={scrollRef}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
+    >
+      {convo.map((n) => {
+        if (n.type === 'gap_alert') {
+          if (n.data?.v !== 2) return null;
+          if (n.data?.perm_retry) {
+            const pr = n.data.perm_retry as { side: 'same' | 'other' };
+            const label = pr.side === 'other' ? 'اطلب من الشفت الآخر' : 'اطلب من فترتك';
+            return (
+              <GlassCard key={n.id} kind="swap" glow style={styles.feedCard}>
+                <View style={styles.head}>
+                  <CardBadge kind="swap" live />
+                  <View style={styles.headTxt}>
+                    <Text style={styles.cardTitle}>تنبيه استئذان</Text>
+                    <Text style={styles.cardBody}>{n.body}</Text>
+                  </View>
+                </View>
+                {swapResults[n.id]?.ok ? (
+                  <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
+                ) : swapBusyId === n.id ? (
+                  <ActivityIndicator color="#7C3AED" style={{ marginTop: scale(10) }} />
+                ) : (
+                  <>
+                    {!!swapResults[n.id] && !swapResults[n.id].ok && (
+                      <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
+                    )}
+                    <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={() => handlePermRetry(n)}>
+                      <Text style={styles.primaryBtnTxt}>{label}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </GlassCard>
+            );
+          }
+          if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict) return null;
+          return (
+            <CoverageCard key={n.id} notif={n} user={user} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />
+          );
+        }
+        if (isPending(n)) {
+          const busy = busyId === n.id;
+          return (
+            <GlassCard key={n.id} kind="decision" glow style={styles.feedCard}>
+              <View style={styles.head}>
+                <CardBadge kind="decision" live />
+                <View style={styles.headTxt}>
+                  <Text style={styles.cardTitle}>بانتظار قرارك</Text>
+                  <Text style={styles.cardBody}>{n.body}</Text>
+                </View>
+              </View>
+              <View style={styles.reqActions}>
+                {busy ? (
+                  <ActivityIndicator color="#7C3AED" />
+                ) : (
+                  <>
+                    <TouchableOpacity style={[styles.actBtn, styles.accept]} activeOpacity={0.85} onPress={() => handleDecision(n, 'accept')}>
+                      <Text style={styles.actTxt}>موافق</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.actBtn, styles.reject]} activeOpacity={0.85} onPress={() => handleDecision(n, 'reject')}>
+                      <Text style={styles.rejectTxt}>رفض</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </GlassCard>
+          );
+        }
+        return (
+          <View key={n.id} style={styles.infoCard}>
+            <View style={[styles.infoDot]}>
+              <Ionicons name="information-circle" size={scale(15)} color="#A99FD0" />
+            </View>
+            <Text style={styles.infoTxt}>{n.body}</Text>
+          </View>
+        );
+      })}
+
+      {convo.length === 0 && (
+        <Text style={styles.empty}>No notifications</Text>
+      )}
+      {!!note && (
+        <View style={[styles.msg, styles.msgAI]}>
+          <Text style={styles.msgTxt}>{note}</Text>
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
@@ -675,6 +960,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   const [input, setInput] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [view, setView] = useState<'chat' | 'cards'>('chat'); // تبويبٌ مؤقّت: المحادثة / كروت الإبلاغ
   const scrollRef = useRef<ScrollView>(null);
 
   // أزرار الإبلاغ بعد غيابٍ ذاتيّ: الضغط يُنفَّذ **بالكود مباشرةً** (announceAbsence)
@@ -827,8 +1113,8 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
       .filter((n) =>
         isPending(n)
         || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
-        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday))
-      .reverse();
+        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
+    // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
     setConvo(items);
     // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر وتختفي عند الفتح التالي)
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
@@ -867,16 +1153,8 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     }
   }, [swapBusyId, clinicId, user, loadConvo]);
 
-  // حمّل الطلبات عند الفتح، وأعد التحميل عند تغيّر المحادثة (قد ينشئ ردّ الذكاء طلبًا)
-  useEffect(() => { if (visible) { setNote(''); loadConvo(); } }, [visible, messages.length, loadConvo]);
-
-  // تحديث فوريّ (Realtime) والمحادثة مفتوحة: يصل الردّ (موافقة/رفض) فورًا دون
-  // الحاجة للخروج والدخول.
-  useEffect(() => {
-    if (!visible || !user?.id) return;
-    const unsub = subscribeToNotifications(user.id, loadConvo);
-    return unsub;
-  }, [visible, user?.id, loadConvo]);
+  // كروت الإبلاغ (تغطية/موافقات/نتائج) انتقلت إلى لوحةٍ مشتركة (AICardsView) تُعرَض
+  // في تبويب «الكروت» — فلا تُحمَّل ولا تُدمَج هنا (المحادثة صارت رسائلَ فقط).
 
   // إرسال إدخال المستخدم العاديّ (المحادثة المشتركة). كروت التغطية لها خيطها
   // المستقلّ داخل الكرت (CoverageCard) فلا تمرّ من هنا.
@@ -928,7 +1206,6 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     | { kind: 'notif'; ts: number; n: ConvoNotif };
   const mergedItems: Merged[] = [
     ...messages.map((m): Merged => ({ kind: 'msg', ts: m.timestamp || 0, m })),
-    ...convo.map((n): Merged => ({ kind: 'notif', ts: n.created_at ? new Date(n.created_at).getTime() : 0, n })),
   ].sort((a, b) => a.ts - b.ts);
 
   return (
@@ -937,9 +1214,15 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.center}>
           <View style={styles.card}>
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>الذكاء</Text>
+              {/* زرٌّ مؤقّت: تبديلٌ بين المحادثة وكروت الإبلاغ (التصميم/الآليّة لاحقًا) */}
+              <TouchableOpacity
+                onPress={() => setView((v) => (v === 'chat' ? 'cards' : 'chat'))}
+                style={{ backgroundColor: '#EAF4F4', borderWidth: scale(1), borderColor: '#2D8C8C', borderRadius: scale(14), paddingHorizontal: scale(11), paddingVertical: scale(5) }}
+              >
+                <Text style={{ color: '#1F6B6B', fontSize: scale(13), fontWeight: '800' }}>{view === 'chat' ? 'الكروت' : 'المحادثة'}</Text>
+              </TouchableOpacity>
               <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(4) }}>
-                {!!onClearConversation && (
+                {!!onClearConversation && view === 'chat' && (
                   <TouchableOpacity onPress={handleClear} style={styles.closeBtn}>
                     <Text style={[styles.closeTxt, { color: '#C0493B' }]}>مسح المحادثة</Text>
                   </TouchableOpacity>
@@ -950,6 +1233,10 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
               </View>
             </View>
 
+            {view === 'cards' ? (
+              <AICardsView user={user} clinicId={clinicId ?? user.clinicId} />
+            ) : (
+            <>
             <ScrollView
               ref={scrollRef}
               style={styles.body}
@@ -1181,6 +1468,8 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 <Text style={styles.sendTxt}>إرسال</Text>
               </TouchableOpacity>
             </View>
+            </>
+            )}
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -1189,87 +1478,120 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
 }
 
 const styles = StyleSheet.create({
+  // ── المودال القديم (الضغط المطوّل) — يُطابَق لاحقًا ──
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: scale(16) },
-  card: {
-    width: '100%', maxWidth: scale(440), height: '74%',
-    backgroundColor: '#FFFFFF', borderRadius: scale(20), overflow: 'hidden',
-  },
+  card: { width: '100%', maxWidth: scale(440), height: '74%', backgroundColor: '#FFFFFF', borderRadius: scale(20), overflow: 'hidden' },
   header: {
     flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: scale(16), paddingVertical: scale(12),
-    borderBottomWidth: 1, borderBottomColor: '#ECEFF0',
+    paddingHorizontal: scale(16), paddingVertical: scale(12), borderBottomWidth: 1, borderBottomColor: '#ECEFF0',
   },
   headerTitle: { fontSize: scale(17), fontWeight: '800', color: '#1A2B2B' },
   closeBtn: { paddingVertical: scale(4), paddingHorizontal: scale(8) },
   closeTxt: { fontSize: scale(14), fontWeight: '700', color: '#2D8C8C' },
   body: { flex: 1, backgroundColor: '#F7F9FA' },
-  empty: { textAlign: 'center', color: '#8A9A9A', marginTop: scale(30), fontSize: scale(14) },
-  chipRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(8), marginTop: scale(10) },
-  chip: {
-    paddingVertical: scale(8), paddingHorizontal: scale(14),
-    borderRadius: scale(20), backgroundColor: '#EAF4F4',
-    borderWidth: 1, borderColor: '#2D8C8C',
-  },
-  chipTxt: { color: '#1F6B6B', fontSize: scale(13), fontWeight: '800' },
-  // سؤال/نتيجة الإبلاغ (أزرار كود بعد غيابٍ ذاتيّ)
-  annAsk: { fontSize: scale(13), color: '#5A6B6B', textAlign: 'right', marginTop: scale(8), fontWeight: '700' },
-  annNote: { fontSize: scale(13), color: '#1F6B6B', textAlign: 'right', marginTop: scale(8), fontWeight: '700' },
-  reqActions: { flexDirection: 'row-reverse', gap: scale(10), marginTop: scale(11) },
-  actBtn: { flex: 1, paddingVertical: scale(9), borderRadius: scale(10), alignItems: 'center' },
-  accept: { backgroundColor: '#2D8C8C' },
-  reject: { backgroundColor: '#C0493B' },
-  actTxt: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '800' },
-  msg: { maxWidth: '85%', borderRadius: scale(14), padding: scale(10), marginBottom: scale(8) },
-  msgUser: { alignSelf: 'flex-start', backgroundColor: '#2D8C8C' },
-  msgAI: { alignSelf: 'flex-end', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3E7E8' },
-  msgTxt: { fontSize: scale(14), color: '#1A2B2B', textAlign: 'right', lineHeight: scale(20) },
-  msgTxtUser: { color: '#FFFFFF' },
   inputRow: {
     flexDirection: 'row-reverse', alignItems: 'flex-end', gap: scale(8),
-    paddingHorizontal: scale(12), paddingVertical: scale(10),
-    borderTopWidth: 1, borderTopColor: '#ECEFF0', backgroundColor: '#FFFFFF',
+    paddingHorizontal: scale(12), paddingVertical: scale(10), borderTopWidth: 1, borderTopColor: '#ECEFF0', backgroundColor: '#FFFFFF',
   },
   input: {
-    flex: 1, maxHeight: scale(110), minHeight: scale(42),
-    backgroundColor: '#F2F4F5', borderRadius: scale(12),
-    paddingHorizontal: scale(12), paddingVertical: scale(10),
-    fontSize: scale(14), color: '#1A2B2B',
+    flex: 1, maxHeight: scale(110), minHeight: scale(42), backgroundColor: '#F2F4F5', borderRadius: scale(12),
+    paddingHorizontal: scale(12), paddingVertical: scale(10), fontSize: scale(14), color: '#1A2B2B',
   },
-  sendBtn: { backgroundColor: '#2D8C8C', borderRadius: scale(12), paddingHorizontal: scale(16), justifyContent: 'center', minHeight: scale(42) },
-  sendTxt: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '800' },
-  // كرت التغطية (gap_alert v2)
-  covCard: {
-    alignSelf: 'stretch', borderRadius: scale(14), marginBottom: scale(10),
-    backgroundColor: '#FFF8EC', borderWidth: 1, borderColor: '#E6B566', overflow: 'hidden',
+
+  empty: { textAlign: 'center', color: 'rgba(244,241,255,0.5)', marginTop: scale(46), fontSize: scale(13.5), fontWeight: '600', letterSpacing: scale(0.3) },
+
+  // ════════ Aurora (داكن) — السطح الزجاجيّ ════════
+  glass: {
+    alignSelf: 'stretch', borderRadius: scale(22),
+    backgroundColor: 'rgba(38,33,82,0.94)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: scale(15), paddingTop: scale(15), paddingBottom: scale(14),
+    shadowColor: '#2A1A52', shadowOpacity: 0.35, shadowRadius: scale(16), shadowOffset: { width: 0, height: scale(8) }, elevation: 6,
   },
-  covIgnored: { backgroundColor: '#F2F4F5', borderColor: '#C9D2D2' },
-  covDone: { backgroundColor: '#EDF7F0', borderColor: '#83BD95' },
-  covActions: {
-    flexDirection: 'row-reverse', gap: scale(8),
-    paddingHorizontal: scale(10), paddingBottom: scale(10),
+  glassFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: scale(22) },
+  glassDim: { opacity: 0.6 },
+  feedCard: { marginBottom: scale(14) },
+  accentLine: { position: 'absolute', top: 0, left: 0, right: 0, height: scale(2.5) },
+
+  head: { flexDirection: 'row-reverse', alignItems: 'center', gap: scale(11) },
+  headTxt: { flex: 1, alignItems: 'flex-end' },
+  badge: { width: scale(38), height: scale(38), borderRadius: scale(13), alignItems: 'center', justifyContent: 'center', borderWidth: scale(1) },
+  badgeDot: {
+    position: 'absolute', top: -scale(2), right: -scale(2), width: scale(9), height: scale(9), borderRadius: scale(5),
+    borderWidth: scale(1.5), borderColor: 'rgba(30,27,75,0.9)',
   },
-  covActBtn: { flex: 1, paddingVertical: scale(8), borderRadius: scale(10), alignItems: 'center' },
-  covActDone: { backgroundColor: '#2D8C8C' },
-  covActIgnore: { backgroundColor: '#8A9A9A' },
-  covActTxt: { color: '#FFFFFF', fontSize: scale(13), fontWeight: '800' },
-  covHead: {
-    flexDirection: 'row-reverse', alignItems: 'center', gap: scale(8),
-    paddingHorizontal: scale(12), paddingVertical: scale(11),
+  pill: { alignSelf: 'flex-end', marginTop: scale(4), paddingHorizontal: scale(9), paddingVertical: scale(3), borderRadius: scale(999), borderWidth: scale(1) },
+  pillTxt: { fontSize: scale(11), fontWeight: '800' },
+  cardTitle: { fontSize: scale(15), fontWeight: '800', color: '#F4F1FF', textAlign: 'right', lineHeight: scale(22) },
+  cardBody: { fontSize: scale(13), color: 'rgba(244,241,255,0.66)', textAlign: 'right', lineHeight: scale(20), fontWeight: '500', marginTop: scale(3) },
+
+  // ── كرت معلوماتيّ (خافت، داكن) ──
+  infoCard: {
+    flexDirection: 'row-reverse', alignItems: 'flex-start', gap: scale(10),
+    alignSelf: 'stretch', backgroundColor: 'rgba(45,38,92,0.55)', borderRadius: scale(16),
+    paddingVertical: scale(12), paddingHorizontal: scale(13), marginBottom: scale(10),
+    borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.10)',
+    borderRightWidth: scale(3), borderRightColor: 'rgba(148,163,184,0.55)',
   },
-  covCaret: { fontSize: scale(14), color: '#B07A1E', fontWeight: '800' },
-  covTitle: { flex: 1, fontSize: scale(14), fontWeight: '800', color: '#7A4E0A', textAlign: 'right' },
-  covBody: {
-    paddingHorizontal: scale(10), paddingBottom: scale(10),
-    borderTopWidth: 1, borderTopColor: '#F0DDB8', backgroundColor: '#FFFCF5',
+  infoDot: { width: scale(26), height: scale(26), borderRadius: scale(8), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(169,159,208,0.14)', borderWidth: scale(1), borderColor: 'rgba(169,159,208,0.26)' },
+  infoTxt: { flex: 1, fontSize: scale(13), color: 'rgba(244,241,255,0.6)', textAlign: 'right', lineHeight: scale(20), fontWeight: '500' },
+
+  // ── جسم التغطية: نصٌّ + حلولٌ زجاجيّة + إدخال ──
+  covBody: { marginTop: scale(12), paddingTop: scale(12), borderTopWidth: scale(1), borderTopColor: 'rgba(255,255,255,0.10)' },
+  msg: { maxWidth: '88%', borderRadius: scale(15), paddingHorizontal: scale(12), paddingVertical: scale(10), marginBottom: scale(8) },
+  msgUser: { alignSelf: 'flex-start', backgroundColor: '#7C3AED' },
+  msgAI: { alignSelf: 'flex-end', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.14)' },
+  msgTxt: { fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', lineHeight: scale(20) },
+  msgTxtUser: { color: '#FFFFFF' },
+  chipRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(8), marginTop: scale(8) },
+  chip: {
+    paddingVertical: scale(9), paddingHorizontal: scale(13), borderRadius: scale(13),
+    backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.12)',
   },
-  // أزرار حلول التغطية — منسجمة مع نصّ الذكاء (نفس الـchip)، عنوان اليوم فوقها
-  covBtnGroup: { alignSelf: 'flex-end', maxWidth: '85%', marginBottom: scale(6) },
-  covBtnDay: { fontSize: scale(13), color: '#5A6B6B', textAlign: 'right', fontWeight: '700' },
-  covInputRow: { flexDirection: 'row-reverse', alignItems: 'flex-end', gap: scale(8), marginTop: scale(6) },
+  chipTxt: { color: '#E9DEFF', fontSize: scale(13), fontWeight: '700' },
+  covBtnGroup: { alignSelf: 'flex-end', maxWidth: '92%', marginBottom: scale(6) },
+  covBtnDay: { fontSize: scale(12), color: '#C4B5FD', textAlign: 'right', fontWeight: '800', marginBottom: scale(2) },
+  // نصّ الذكاء كفقرة (كالنموذج)
+  bodyPara: { fontSize: scale(13.5), color: 'rgba(244,241,255,0.66)', textAlign: 'right', lineHeight: scale(21), fontWeight: '500', marginBottom: scale(11) },
+  // الحلول كخيارات عريضة زجاجيّة
+  optGroup: { alignSelf: 'stretch', marginBottom: scale(4) },
+  optDay: { fontSize: scale(12), color: '#C4B5FD', textAlign: 'right', fontWeight: '800', marginBottom: scale(6), marginTop: scale(2) },
+  opt: {
+    alignSelf: 'stretch', marginBottom: scale(8), paddingVertical: scale(12), paddingHorizontal: scale(14),
+    borderRadius: scale(14), backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.12)',
+  },
+  optTxt: { fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', fontWeight: '700', lineHeight: scale(20) },
+  covInputRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: scale(8), marginTop: scale(10) },
   covInput: {
-    flex: 1, maxHeight: scale(90), minHeight: scale(40),
-    backgroundColor: '#FFFFFF', borderRadius: scale(10), borderWidth: 1, borderColor: '#E3E7E8',
-    paddingHorizontal: scale(12), paddingVertical: scale(9), fontSize: scale(14), color: '#1A2B2B',
+    flex: 1, minHeight: scale(44), maxHeight: scale(90), borderRadius: scale(999),
+    backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: scale(16), paddingVertical: scale(9), fontSize: scale(13.5), color: '#F4F1FF',
   },
+  sendBtn: { width: scale(44), height: scale(44), borderRadius: scale(22), alignItems: 'center', justifyContent: 'center' },
+  sendTxt: { color: '#FFFFFF', fontSize: scale(12.5), fontWeight: '800' },
+
+  annAsk: { fontSize: scale(12.5), color: 'rgba(244,241,255,0.6)', textAlign: 'right', marginTop: scale(8), fontWeight: '700' },
+  annNote: { fontSize: scale(12.5), color: '#C4B5FD', textAlign: 'right', marginTop: scale(10), fontWeight: '700' },
+
+  // ── أزرار: قرار (موافق/رفض) + زرّ أساسيّ ──
+  reqActions: { flexDirection: 'row-reverse', gap: scale(10), marginTop: scale(13) },
+  actBtn: { flex: 1, paddingVertical: scale(11), borderRadius: scale(14), alignItems: 'center' },
+  accept: { backgroundColor: '#7C3AED' },
+  reject: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.16)' },
+  actTxt: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '800' },
+  rejectTxt: { color: '#C4B5FD', fontSize: scale(14), fontWeight: '800' },
+  primaryBtn: { marginTop: scale(13), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: '#7C3AED', alignItems: 'center' },
+  primaryBtnTxt: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '800' },
+
+  // ── السحب: درج Done / Dismiss امتدادٌ زجاجيٌّ داكن بنفس مادّة الكرت ──
+  swWrap: { position: 'relative', marginBottom: scale(14) },
+  // الدرج خلف الكرت بكامل عرضه ونفس استدارته (22) وتدرّجه — حوافه متّصلةٌ بحواف الكرت
+  swTray: {
+    position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+    borderRadius: scale(22), overflow: 'hidden',
+  },
+  // الخياران في يسار الدرج (يُكشفان بالسحب)، والباقي يبقى تحت الكرت
+  swActs: { position: 'absolute', top: 0, bottom: 0, left: 0, width: scale(140), flexDirection: 'row' },
+  swAct: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: scale(5) },
+  swTxt: { fontSize: scale(11.5), fontWeight: '800' },
 });

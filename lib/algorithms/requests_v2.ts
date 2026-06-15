@@ -1548,6 +1548,93 @@ async function mirrorShadows(args: {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// مصالحةُ التخفيف — يُستدعى بعد كلّ إعادة تشكيلٍ للتغطية
+// ═══════════════════════════════════════════════════════════════
+/**
+ * طبيبُ التخفيف لا يبقى وحده في عيادته: يعمل **فترةً واحدة** وله **شريكٌ** يكمل الفترة
+ * الأخرى. التغطية قد تنقل الأطبّاء فتسحب شريكه أو تُعطيه فترةً ثانية (كأن يستلم العيادة
+ * كاملة بديلًا) — وكلاهما خطأ. نُصلح بعد كلّ عمليّة:
+ *  ① التخفيف يحتفظ بفترةٍ واحدة فقط (نُبقي خانة البناء الأصليّة لا خانة التغطية، فالفائض يُحذَف).
+ *  ② إن خلت الفترة الأخرى من عيادته من شريكٍ (غير ظلّ) → نسحب طبيبًا من **الدليقيتر** في تلك
+ *     الفترة (العيادة أهمّ من الدليقيتر — يُضحّى به)، ويتبعه ظلُّه آليًّا.
+ *  ③ لا دليقيترَ متفرّغ (شحّ: أطباء = عيادات) → تبقى الفترة الأخرى نقصًا مقبولًا.
+ */
+async function ensureLightDutyNotAlone(args: {
+  clinicId: string; weekStart: string; day: WeekDay;
+}): Promise<void> {
+  const { clinicId, weekStart, day } = args;
+  const rows = await loadDay(clinicId, weekStart, day);
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const ldIds = new Set(
+    ((members || []) as { doctor_id: string; work_status?: string }[])
+      .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id),
+  );
+  if (ldIds.size === 0) return;
+
+  const inScope = (r: Row) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator');
+  const keysOf = (id: string) =>
+    new Set(rows.filter((r) => r.doctor_id === id && inScope(r)).map((r) => `${r.period}|${r.clinic_number}|${r.role}`));
+  // الظلّ: متدرّبٌ خاناته تطابق خانات مدرّبه تمامًا — لا يُحسب شريكًا مستقلًّا
+  const shadowIds = new Set<string>();
+  for (const m of (members || []) as { doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null }[]) {
+    if (m.work_status !== 'trainee' || !m.supervisor_doctor_id) continue;
+    const tk = [...keysOf(m.doctor_id)];
+    const sk = keysOf(m.supervisor_doctor_id);
+    if (tk.length > 0 && tk.length === sk.size && tk.every((k) => sk.has(k))) shadowIds.add(m.doctor_id);
+  }
+
+  const clinicRowsActive = () => rows.filter((r) => r.role === 'clinic' && r.status === 'active' && r.period > 0);
+  const delegRowsActive = () => rows.filter((r) => r.role === 'delegator' && r.status === 'active' && r.period > 0);
+  const mkClinicRow = (cn: number, P: number, id: string, name: string) => ({
+    clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+    period: P, clinic_number: cn, doctor_id: id, doctor_name: name,
+    role: 'clinic', status: 'active', source: 'request',
+  });
+
+  const deleteIds: string[] = [];
+  const inserts: Record<string, unknown>[] = [];
+  const movedIds: string[] = [];
+  const dropped = new Set<string>(); // معرّفات صفوفٍ حُذفت محليًّا (لئلّا تُحسب موجودة)
+
+  for (const shift of [[1, 2], [3, 4]] as number[][]) {
+    const [pA, pB] = shift;
+    for (const ld of ldIds) {
+      const ldClinic = clinicRowsActive()
+        .filter((r) => r.doctor_id === ld && shift.includes(r.period) && !dropped.has(r.id));
+      if (ldClinic.length === 0) continue;
+      // ① فترةٌ واحدة فقط: نُبقي خانة البناء الأصليّة (source != 'request')، وإلّا الأدنى فترةً
+      ldClinic.sort((a, b) => a.period - b.period);
+      const keep = ldClinic.find((r) => r.source !== 'request') ?? ldClinic[0]!;
+      for (const extra of ldClinic) {
+        if (extra.id === keep.id) continue;
+        deleteIds.push(extra.id); dropped.add(extra.id);
+      }
+      const C = keep.clinic_number;
+      const otherP = keep.period === pA ? pB : pA;
+      // ② شريكٌ (غير ظلّ) في الفترة الأخرى من عيادته؟ (مع مراعاة ما حُذف/أُدرج محليًّا)
+      const hasPartner = clinicRowsActive().some(
+        (r) => r.clinic_number === C && r.period === otherP && r.doctor_id !== ld
+          && !dropped.has(r.id) && !shadowIds.has(r.doctor_id),
+      ) || inserts.some((i) => i.clinic_number === C && i.period === otherP);
+      if (hasPartner) continue;
+      // ③ اسحب شريكًا من الدليقيتر في الفترة الأخرى (يُضحّى بالدليقيتر — العيادة أهمّ)
+      const cand = delegRowsActive().find(
+        (r) => r.period === otherP && !dropped.has(r.id)
+          && !ldIds.has(r.doctor_id) && !shadowIds.has(r.doctor_id),
+      );
+      if (!cand) continue; // شحّ: لا دليقيتر متفرّغ — الفترة الأخرى نقصٌ مقبول
+      deleteIds.push(cand.id); dropped.add(cand.id);
+      inserts.push(mkClinicRow(C, otherP, cand.doctor_id, cand.doctor_name));
+      movedIds.push(cand.doctor_id);
+    }
+  }
+
+  if (deleteIds.length + inserts.length === 0) return;
+  await applySlotChanges({ deleteIds, inserts });
+  await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // التنسيب — وضع طبيب داخل عيادة/فترات (العكس: من غياب إلى داخل العيادة)
 // ═══════════════════════════════════════════════════════════════
 
@@ -1883,6 +1970,7 @@ export async function coverGap(
         }],
       });
       await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [coverDoctorId], preRows: rows });
+      await ensureLightDutyNotAlone({ clinicId, weekStart, day });
       return ok();
     }
 
@@ -1940,6 +2028,7 @@ export async function coverGap(
       inserts: toAdd,
     });
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [coverDoctorId], preRows: rows });
+    await ensureLightDutyNotAlone({ clinicId, weekStart, day });
     // أرجِع الرقم المستنتَج + الفترات المتبقّية بلا تغطية (إن وُجدت) ليُذكَرا بصدق
     return {
       success: true, clinicNumber,
@@ -2044,6 +2133,7 @@ export async function reshapeGap(
 
     await applySlotChanges({ deleteIds, inserts });
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
+    await ensureLightDutyNotAlone({ clinicId, weekStart, day });
     return { success: true, clinicNumber: C, moves: chosen.moves };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -2185,6 +2275,7 @@ export async function applyCoverageOption(
     await applySlotChanges({ deleteIds, inserts });
     // التريني الظلّ يلاصق مدرّبه في كلّ النقلات
     await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
+    await ensureLightDutyNotAlone({ clinicId, weekStart, day });
     return ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -2255,6 +2346,7 @@ export const requestsV2 = {
   setScheduleStatus, cancelStatus, computeCoverageBrief, computeDayCoverageBriefs,
   swapInSchedule, swapFullPositions, listSwapTargets,
   placeInClinic, placeAsDelegator, coverGap, applyCoverageOption, reshapeGap,
+  ensureLightDutyNotAlone,
   attachTraineeForDay,
   clearWeek,
   setClinicCount, moveDoctorGroup, setDoctorGroupStatus,

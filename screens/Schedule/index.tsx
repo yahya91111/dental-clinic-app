@@ -637,8 +637,10 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* AI Orb — زرّ الذكاء الموحّد: نقرة تفتح لوحة الجدول، ضغطة مطوّلة تفتح المحادثة */}
-      {!showAIPanel && user && (
+      {/* AI Orb — زرّ الذكاء الموحّد: نقرة تفتح لوحة الجدول، ضغطة مطوّلة تفتح المحادثة.
+          يبقى ظاهرًا دائمًا (حتّى أثناء فتح/إغلاق صفحة الذكاء) فلا فجوةٌ تُشعر باللاق:
+          القطرة تنبثق من فوقه وتغطّيه، وعند الإغلاق تنكشف عنه مباشرةً. */}
+      {user && (
         <AIButton
           orbState={aiState}
           onPress={() => setShowAIPanel(true)}
@@ -663,6 +665,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         onSend={handleAISend}
         isLoading={aiLoading}
         contextLabel={`Schedule — ${activeTab === 'daily_duty' ? 'Daily Duty' : activeTab === 'doctors' ? 'Doctors' : activeTab === 'vacation' ? 'Vacation' : 'Weekend'}`}
+        userName={user?.name}
+        user={user ? { id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName } : undefined}
         clinicId={clinicId}
         onCreateSchedule={(result: WizardResult) => {
           // TODO: تمرير result إلى بناء الجدول لاحقًا

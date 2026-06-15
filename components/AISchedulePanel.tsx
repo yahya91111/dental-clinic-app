@@ -7,6 +7,8 @@ import Svg, { Path, Circle, Defs, LinearGradient as SvgGradient, RadialGradient,
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../lib/scale';
+import { OrbGlyph } from './AIOrb';
+import { AICardsView } from './AIChatModal';
 import { ChatMessage } from './aiTypes';
 import { WizardContent, WizardResult, PreviewView } from './ScheduleWizard';
 import type { Clarification, ResolvedClarification, UnsupportedRequest } from '../lib/ai_v2/parseExceptions';
@@ -27,6 +29,8 @@ interface AISchedulePanelProps {
   onSend: (text: string) => void; // called on send / when a choice chip is tapped
   isLoading?: boolean;            // shows a "typing…" bubble
   contextLabel?: string;          // small line under the header (optional)
+  userName?: string;              // اسم المستخدم — للترحيب في رأس المحادثة
+  user?: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string }; // لكروت الإبلاغ المشتركة
   clinicId?: string | null;       // for the create-schedule questionnaire (group names)
   onCreateSchedule?: (result: WizardResult) => void; // questionnaire finished
   // معاينة جدول قادمة من الشات (الذكاء بنى معاينة) — تُعرَض فوق الصفحة، والحفظ من هنا
@@ -65,6 +69,9 @@ const MARGIN = scale(22);
 const THREAD_COLORS = ['#A855F7', '#7C3AED', '#C084FC', '#9333EA', '#8B5CF6', '#A78BFA', '#D8B4FE'];
 const PAGE_STOPS = ['#1E1B4B', '#312E81', '#4C1D95'];
 const FILL_W = W / NTHREAD + scale(5);          // stroke width that merges strands into a full surface
+// خروج المارد: قطر الدائرة الأساس + تكبيرٌ يكفي لتغطية قُطر الشاشة
+const BLOB = 120;
+const COVER = Math.hypot(W, H) / BLOB + 1.6;
 
 // morph value (0 = knot A .. 1 = straight C) -> the six keyframe shapes
 const MORPH_IN = [0, 0.18, 0.4, 0.58, 0.74, 1];
@@ -617,8 +624,38 @@ const HOME_OPTIONS: { key: string; label: string; icon: keyof typeof Ionicons.gl
 ];
 // (home & schedule both use the shared <OrbitCarousel> defined above)
 
+// نصٌّ بحدودٍ بيضاء حول لونٍ بنفسجيّ — تُحاكى الحدود بنُسخٍ بيضاء مزاحةٍ خلف النصّ (٨ اتّجاهات).
+function OutlinedText({ text, color = '#7C3AED', outline = '#FFFFFF', size, weight = '900', spacing = 0 }:
+  { text: string; color?: string; outline?: string; size: number; weight?: any; spacing?: number }) {
+  const d = scale(1.4);
+  const offs: [number, number][] = [[-d, -d], [d, -d], [-d, d], [d, d], [0, -d], [0, d], [-d, 0], [d, 0]];
+  const base = { fontSize: size, fontWeight: weight, letterSpacing: spacing } as const;
+  return (
+    <View>
+      {offs.map(([x, y], i) => (
+        <Text key={i} style={{ position: 'absolute', left: x, top: y, color: outline, ...base }}>{text}</Text>
+      ))}
+      <Text style={{ color, ...base }}>{text}</Text>
+    </View>
+  );
+}
+
+// ارتفاع لوحة المفاتيح — داخل Modal لا تتقلّص الشاشة تلقائيًّا، فنرفع المحادثة/الإدخال يدويًّا فوقها
+function useKeyboardHeight(): number {
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, (e) => setH(e.endCoordinates?.height ?? 0));
+    const hd = Keyboard.addListener(hideEvt, () => setH(0));
+    return () => { s.remove(); hd.remove(); };
+  }, []);
+  return h;
+}
+
 // ---- bottom chat input bar (WhatsApp-style glass pill + circular ">" send button) ----
 function ChatInputBar({ onSend, light }: { onSend?: (text: string) => void; light?: boolean }) {
+  const kb = useKeyboardHeight();
   const [text, setText] = useState('');
   const canSend = text.trim().length > 0;
   const send = () => {
@@ -632,12 +669,11 @@ function ChatInputBar({ onSend, light }: { onSend?: (text: string) => void; ligh
   const inputColor = light ? '#2A2350' : '#fff';
   const placeholderColor = light ? 'rgba(60,46,102,0.45)' : 'rgba(255,255,255,0.45)';
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 8 }}
+    <View
+      style={{ position: 'absolute', left: 0, right: 0, bottom: kb, zIndex: 8 }}
       pointerEvents="box-none"
     >
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: scale(10), paddingHorizontal: scale(14), paddingBottom: scale(26) }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: scale(10), paddingHorizontal: scale(14), paddingBottom: kb > 0 ? scale(10) : scale(26) }}>
         {/* the glass pill */}
         <View
           style={{
@@ -673,7 +709,7 @@ function ChatInputBar({ onSend, light }: { onSend?: (text: string) => void; ligh
           </LinearGradient>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -683,11 +719,16 @@ function ChatBody({ messages, isLoading, onSend, style, light, header }: {
   messages: ChatMessage[]; isLoading?: boolean; onSend: (text: string) => void; style?: any; light?: boolean; header?: React.ReactNode;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const kb = useKeyboardHeight();
+  // ترفع المنطقة فوق لوحة المفاتيح، وتُنزل آخر رسالةٍ لتبقى ظاهرةً
+  useEffect(() => {
+    if (kb > 0) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+  }, [kb]);
   const t = light
-    ? { userBg: '#7C3AED', userBorder: 'rgba(255,255,255,0.5)', userText: '#fff',
-        botBg: 'rgba(255,255,255,0.92)', botBorder: 'rgba(124,58,237,0.18)', botText: '#3A2E66',
+    ? { userBg: '#7C3AED', userBorder: 'rgba(255,255,255,0.32)', userText: '#fff',
+        botBg: '#FFFFFF', botBorder: 'rgba(124,58,237,0.12)', botText: '#352B5C',
         chipBg: 'rgba(255,255,255,0.95)', chipBorder: 'rgba(124,58,237,0.4)', chipText: '#6D4FB8',
-        loadBg: 'rgba(255,255,255,0.92)', loadText: '#6B6486', spinner: '#7C3AED' }
+        loadBg: '#FFFFFF', loadText: '#6B6486', spinner: '#7C3AED' }
     : { userBg: 'rgba(124,58,237,0.85)', userBorder: 'rgba(167,139,250,0.6)', userText: '#fff',
         botBg: 'rgba(255,255,255,0.12)', botBorder: 'rgba(255,255,255,0.18)', botText: '#fff',
         chipBg: 'rgba(255,255,255,0.10)', chipBorder: 'rgba(167,139,250,0.5)', chipText: '#E9DEFF',
@@ -695,8 +736,8 @@ function ChatBody({ messages, isLoading, onSend, style, light, header }: {
   return (
     <ScrollView
       ref={scrollRef}
-      style={style}
-      contentContainerStyle={{ paddingHorizontal: scale(14), paddingBottom: scale(10), gap: scale(10) }}
+      style={[style, { bottom: kb }]}
+      contentContainerStyle={{ paddingHorizontal: scale(14), paddingBottom: kb > 0 ? scale(64) : scale(90), gap: scale(10) }}
       onContentSizeChange={() => { if (!header) scrollRef.current?.scrollToEnd({ animated: true }); }}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -709,12 +750,18 @@ function ChatBody({ messages, isLoading, onSend, style, light, header }: {
         return (
           <View key={m.id}>
             <View style={{
-              alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '82%',
+              alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '80%',
               backgroundColor: isUser ? t.userBg : t.botBg,
               borderWidth: scale(1), borderColor: isUser ? t.userBorder : t.botBorder,
-              borderRadius: scale(18), paddingHorizontal: scale(14), paddingVertical: scale(10),
+              borderRadius: scale(20),
+              // ذيلٌ خفيف: الزاوية السفليّة القريبة من المُرسِل أحدّ
+              borderBottomRightRadius: isUser ? scale(6) : scale(20),
+              borderBottomLeftRadius: isUser ? scale(20) : scale(6),
+              paddingHorizontal: scale(15), paddingVertical: scale(11),
+              shadowColor: '#2A1A52', shadowOpacity: 0.13, shadowRadius: scale(6), shadowOffset: { width: 0, height: scale(2) },
+              elevation: 2,
             }}>
-              <Text style={{ color: isUser ? t.userText : t.botText, fontSize: scale(14), lineHeight: scale(20) }}>{text}</Text>
+              <Text style={{ color: isUser ? t.userText : t.botText, fontSize: scale(14.5), lineHeight: scale(21) }}>{text}</Text>
             </View>
             {choices.length > 0 && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(8), marginTop: scale(8), alignSelf: 'flex-start', maxWidth: '92%' }}>
@@ -800,17 +847,29 @@ function UnsupportedCards({ items }: { items: UnsupportedRequest[] }) {
   );
 }
 
-export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, isLoading, contextLabel, clinicId, onCreateSchedule, chatPreview, chatPreviewSaving, chatPreviewError, onSaveChatPreview, onDiscardChatPreview }: AISchedulePanelProps) {
+export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, isLoading, contextLabel, userName, user, clinicId, onCreateSchedule, chatPreview, chatPreviewSaving, chatPreviewError, onSaveChatPreview, onDiscardChatPreview }: AISchedulePanelProps) {
   const morph = useRef(new Animated.Value(0)).current;       // 0 = knot A .. 1 = straight C
   const gather = useRef(new Animated.Value(0)).current;      // 0 = thin colored threads .. 1 = thick page surface
   const surfaceOp = useRef(new Animated.Value(0)).current;   // real page surface
   const content = useRef(new Animated.Value(0)).current;
-  const threadsOp = useRef(new Animated.Value(1)).current;   // the strands layer
+  const threadsOp = useRef(new Animated.Value(1)).current;   // the strands layer (مُعطَّل في وضع المارد)
+  const emerge = useRef(new Animated.Value(0)).current;      // 0 = داخل الأيقونة .. 1 = يملأ الشاشة (خروج المارد)
   const sub = useRef(new Animated.Value(0)).current;         // 0 = home view .. 1 = schedule sub-view
   const chatOp = useRef(new Animated.Value(0)).current;      // 0 = hidden .. 1 = chat view shown
   const wizardOp = useRef(new Animated.Value(0)).current;    // 0 = hidden .. 1 = create-questionnaire shown
   const chatSlide = useRef(new Animated.Value(0)).current;   // 0 = slide-chat off-screen right .. 1 = fully in
   const [chatOpen, setChatOpen] = useState(false);          // the summonable slide-in chat
+  const [chatTab, setChatTab] = useState<'chat' | 'cards'>('chat'); // محادثة | كروت الإبلاغ
+  // مسارٌ أفقيٌّ متزامنٌ مع السحب: 0 = المحادثة، ‎-W‎ = الكروت
+  const pageAnim = useRef(new Animated.Value(0)).current;
+  const pageBase = useRef(0);
+  const goToTab = (tab: 'chat' | 'cards') => {
+    const target = tab === 'cards' ? -W : 0;
+    pageBase.current = target;
+    Animated.spring(pageAnim, { toValue: target, useNativeDriver: false, bounciness: 0, speed: 14 }).start();
+    setChatTab(tab);
+  };
+  // (السحب أُلغي — التنقّل بين المحادثة والكروت يتمّ بزرّ التبديل فقط عبر goToTab)
   // تأكيد الأسماء الغامضة: clarifications = المعلَّقة، resolvedClar = المحلولة (تُمرَّر للويزرد)
   const [clarifications, setClarifications] = useState<Clarification[]>([]);
   const [resolvedClar, setResolvedClar] = useState<ResolvedClarification[]>([]);
@@ -941,6 +1000,8 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   // right; the page behind shrinks slightly (drawer feel). Dismisses the same way.
   const openSlideChat = () => {
     Keyboard.dismiss();
+    // ابدأ دائمًا على المحادثة (المسار عند 0)
+    pageAnim.setValue(0); pageBase.current = 0; setChatTab('chat');
     setChatOpen(true);   // رَكِّب محتوى/خلفيّة الجات أولاً (تبقى ثابتة)
     // اترك إطارين كي يُلتزَم التركيب قبل بدء الحركة → الخلفيّات حاضرة والحركة سلسة بلا lag
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -949,6 +1010,8 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   };
   const closeSlideChat = () => {
     Keyboard.dismiss();
+    // أعِد الصفحة الرئيسيّة لمكانها فورًا (مخفيٌّ خلف الدُّرج المنزلق) كي لا تبقى منزاحةً إن أُغلق من تبويب الكروت
+    pageAnim.setValue(0); pageBase.current = 0; setChatTab('chat');
     Animated.timing(chatSlide, { toValue: 0, duration: 300, easing: Easing.in(Easing.cubic), useNativeDriver: true })
       .start(() => {
         setChatOpen(false);
@@ -960,56 +1023,47 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
       });
   };
 
-  // OPEN: the knot shows first, then bursts open (bulgy/springy) -> straightens -> gathers into the page
+  // OPEN — خروج المارد: الصفحة كلّها تنبثق من الأيقونة (أسفل-يمين)، تكبُر وتصعد كالدخان
+  // حتّى تملأ الشاشة، ثمّ يظهر المحتوى. (العقدة/الخيوط القديمة مُعطَّلة.)
   const playOpen = () => {
     closingRef.current = false;
     transitioningRef.current = false;
     setView('home'); sub.setValue(0); chatOp.setValue(0); wizardOp.setValue(0);
     chatSlide.setValue(0); setChatOpen(false); setClarifications([]); setResolvedClar([]); setUnsupported([]);
     homeRef.current?.show(); schedRef.current?.hide();   // reset orbits to the home state
-    morph.setValue(0); gather.setValue(0); surfaceOp.setValue(0); content.setValue(0); threadsOp.setValue(1);
+    // السطح حاضرٌ كاملًا، والخيوط مخفيّة — الحركة كلّها على انبثاق الحاوية
+    threadsOp.setValue(0); morph.setValue(1); gather.setValue(1); surfaceOp.setValue(1);
+    content.setValue(0); emerge.setValue(0);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      Animated.sequence([
-        Animated.delay(220),  // the knot is clearly visible first (mirrors how the close ends on the knot)
+      Animated.parallel([
+        // الانبثاق من الأيقونة حتّى ملء الشاشة — سلسٌ جدًّا (تباطؤٌ ناعمٌ في النهاية)
+        Animated.timing(emerge, { toValue: 1, duration: 560, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        // المحتوى يظهر بعد أن تتّسع القطرة وتغطّي الشاشة
         Animated.sequence([
-          Animated.timing(morph, { toValue: 0.18, duration: 300, easing: Easing.bezier(0.3, 0, 0.7, 0.25), useNativeDriver: false }),  // snap open
-          Animated.timing(morph, { toValue: 0.40, duration: 360, easing: Easing.bezier(0.2, 0.8, 0.4, 1.4), useNativeDriver: false }),  // burst (overshoot)
-          Animated.timing(morph, { toValue: 0.58, duration: 300, easing: Easing.bezier(0.5, -0.3, 0.5, 1.3), useNativeDriver: false }), // writhe, springy
-          Animated.timing(morph, { toValue: 0.74, duration: 264, easing: Easing.bezier(0.3, 1.5, 0.6, 1), useNativeDriver: false }),    // spring past rest
-          Animated.timing(morph, { toValue: 1, duration: 426, easing: Easing.bezier(0.5, 0, 0.2, 1), useNativeDriver: false }),         // straighten
-        ]),
-        Animated.timing(gather, { toValue: 1, duration: 550, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-        Animated.parallel([
-          Animated.timing(surfaceOp, { toValue: 1, duration: 1, useNativeDriver: false }),
-          Animated.timing(content, { toValue: 1, duration: 420, useNativeDriver: false }),
-          Animated.timing(threadsOp, { toValue: 0, duration: 450, useNativeDriver: false }),
+          Animated.delay(400),
+          Animated.timing(content, { toValue: 1, duration: 320, easing: Easing.out(Easing.ease), useNativeDriver: false }),
         ]),
       ]).start();
     }));
   };
 
-  // CLOSE: reverse — content/surface fade, strands un-gather, then ONE continuous synchronized
-  // morph back C -> ... -> knot A (smooth, no per-keyframe stalls). Knot forms only at the very end.
+  // CLOSE — عكس المارد: المحتوى يتلاشى ثمّ الصفحة تنكمش عائدةً إلى الأيقونة، فيحلّ
+  // الأوربّ الحقيقيّ مكانها فورًا (لا فجوة).
   const beginClose = () => {
     if (closingRef.current) return;
     closingRef.current = true;
-    threadsOp.setValue(1);
     Animated.parallel([
-      Animated.timing(content, { toValue: 0, duration: 300, useNativeDriver: false }),
-      Animated.timing(gather, { toValue: 0, duration: 500, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-      Animated.timing(surfaceOp, { toValue: 0, duration: 500, useNativeDriver: false }),
-    ]).start();
-    setTimeout(() => {
-      Animated.timing(morph, { toValue: 0, duration: 1750, easing: Easing.bezier(0.4, 0, 0.25, 1), useNativeDriver: false }).start(() => {
-        // hold on the knot for a beat, then unmount so the REAL orb (same tangled ball, same
-        // spot) takes the knot's place instantly — no empty gap.
-        setTimeout(() => {
-          closingRef.current = false;
-          setMounted(false);
-          onClose();
-        }, 200);
-      });
-    }, 160);
+      Animated.timing(content, { toValue: 0, duration: 200, useNativeDriver: false }),
+      // الانكماش عائدًا إلى الأيقونة — سلسٌ جدًّا (تسارعٌ ناعمٌ من البداية)
+      Animated.sequence([
+        Animated.delay(80),
+        Animated.timing(emerge, { toValue: 0, duration: 460, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      ]),
+    ]).start(() => {
+      closingRef.current = false;
+      setMounted(false);
+      onClose();
+    });
   };
 
   useEffect(() => {
@@ -1024,6 +1078,15 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   if (!mounted) return null;
 
   const strokeWidth = gather.interpolate({ inputRange: [0, 1], outputRange: [scale(2.4), FILL_W] });
+  // ═══ خروج المارد: قطرةٌ مستديرة تكبُر من مركز الأيقونة (BX,BY) حتّى تغطّي الشاشة ═══
+  // (translate قبل scale → بوحدات الشاشة) القطرة تبدأ عند الأيقونة ثمّ تكبُر وتنزلق للمركز.
+  const blobScale = emerge.interpolate({ inputRange: [0, 1], outputRange: [0.18, COVER] });
+  const blobTX = emerge.interpolate({ inputRange: [0, 1], outputRange: [0, CX - BX] });
+  const blobTY = emerge.interpolate({ inputRange: [0, 1], outputRange: [0, CY - BY] });
+  // تذوب القطرة في آخر ٨٪ من الحركة (وتظهر في أوّلها) فلا قفزةٌ عند التفكيك/التركيب
+  const blobOpacity = emerge.interpolate({ inputRange: [0, 0.08, 1], outputRange: [0, 1, 1] });
+  // سطح الصفحة المستطيل يملأ الزوايا بعد أن تتّسع القطرة (نفس اللون → انتقالٌ خفيّ)
+  const surfaceShow = emerge.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0, 0, 1] });
   // the floating ball fades out in BOTH chat and the create-questionnaire
   const decorOp = Animated.multiply(
     chatOp.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
@@ -1034,6 +1097,19 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   return (
     <Modal transparent visible={mounted} animationType="none" onRequestClose={() => (chatOpen ? closeSlideChat() : beginClose())}>
       <View style={{ flex: 1 }}>
+        {/* قطرة المارد: دائرةٌ تكبُر بسلاسةٍ من مركز الأيقونة حتّى تغطّي الشاشة (بلون الصفحة) */}
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: BX - BLOB / 2, top: BY - BLOB / 2,
+            width: BLOB, height: BLOB, borderRadius: BLOB / 2, overflow: 'hidden',
+            opacity: blobOpacity,
+            transform: [{ translateX: blobTX }, { translateY: blobTY }, { scale: blobScale }],
+          }}
+        >
+          <LinearGradient colors={['#1E1B4B', '#312E81', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        </Animated.View>
         {/* CHAT BACKGROUND — sits BEHIND the main card (light purple + same effects). The chat
             CONTENT (messages/input/close) is rendered ON TOP of the main card, lower in the tree. */}
         <Animated.View
@@ -1045,25 +1121,44 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
           <LinearGradient colors={['#ECE5FA', '#E2D6F4', '#D8C9F0']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
           {chatOpen && <Smoke />}
           {chatOpen && <Ribbons />}
-          {/* ظلّ مُحاكى واقعيّ (لا خاصيّة shadow) — يخرج من خلف البطاقة: طبقات مستديرة بنفس مقاس
-              البطاقة، خلفها، موزاحة للأسفل قليلاً (الضوء من الأعلى)، فتطلّ ناعمةً من الأسفل واليمين. */}
-          {chatOpen && [{ o: scale(22), a: 0.14 }, { o: scale(14), a: 0.24 }, { o: scale(7), a: 0.34 }].map((s, i) => (
-            <View
-              key={i}
+          {/* ظلّ مُحاكى واقعيّ (لا خاصيّة shadow) — يخرج من خلف البطاقة. يتلاشى وينزلق يسارًا
+              مع السحب للكروت تمامًا كالصفحة الرئيسيّة (pageAnim)، فلا يبقى ظلٌّ بلا بطاقة. */}
+          {chatOpen && (
+            <Animated.View
               pointerEvents="none"
-              style={{
-                position: 'absolute',
-                left: -W * 0.31 + s.o * 0.6,   // مقاس البطاقة (نصفها خارج الشاشة) + إزاحة يمين بسيطة
-                top: H * 0.19 + s.o,           // إزاحة للأسفل → ظلّ سفليّ
-                width: W * 0.62,
-                height: H * 0.62,
-                borderRadius: scale(16),
-                backgroundColor: `rgba(74,48,128,${s.a})`,
-              }}
-            />
-          ))}
+              style={[StyleSheet.absoluteFill, {
+                opacity: pageAnim.interpolate({ inputRange: [-W, 0], outputRange: [0, 1] }),
+                transform: [{ translateX: pageAnim.interpolate({ inputRange: [-W, 0], outputRange: [-W * 0.6, 0] }) }],
+              }]}
+            >
+              {[{ o: scale(22), a: 0.14 }, { o: scale(14), a: 0.24 }, { o: scale(7), a: 0.34 }].map((s, i) => (
+                <View
+                  key={i}
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    left: -W * 0.31 + s.o * 0.6,
+                    top: H * 0.19 + s.o,
+                    width: W * 0.62,
+                    height: H * 0.62,
+                    borderRadius: scale(16),
+                    backgroundColor: `rgba(74,48,128,${s.a})`,
+                  }}
+                />
+              ))}
+            </Animated.View>
+          )}
         </Animated.View>
 
+        {/* حاوية السحب: مع الانتقال للكروت (pageAnim ‎0→-W‎) تنزلق الصفحة الرئيسيّة المصغّرة
+            أكثرَ يسارًا وتتلاشى — متزامنةً مع الإصبع، وتعود مع العودة. */}
+        <Animated.View
+          pointerEvents="box-none"
+          style={[StyleSheet.absoluteFill, {
+            opacity: pageAnim.interpolate({ inputRange: [-W, 0], outputRange: [0, 1] }),
+            transform: [{ translateX: pageAnim.interpolate({ inputRange: [-W, 0], outputRange: [-W * 0.6, 0] }) }],
+          }]}
+        >
         {/* MAIN PAGE — ON TOP of the chat; full-screen when closed, shrinks to a left card (~70%,
             shorter) when the chat opens so the chat shows behind/around it. */}
         <Animated.View
@@ -1079,8 +1174,8 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
             ] },
           ]}
         >
-        {/* real page surface — revealed beneath the gathered strands */}
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity: surfaceOp }]}>
+        {/* سطح الصفحة المستطيل — يظهر ليملأ الزوايا بعد اتّساع القطرة */}
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: surfaceShow }]}>
           <LinearGradient colors={['#1E1B4B', '#312E81', '#4C1D95']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
         </Animated.View>
 
@@ -1197,6 +1292,7 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
         </Animated.View>
 
         </Animated.View>
+        </Animated.View>
 
         {/* the strands: tangled knot at the button that unravels / re-knots, and gathers into the page color */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: threadsOp }]} pointerEvents="none">
@@ -1224,18 +1320,67 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
           pointerEvents={chatOpen ? 'box-none' : 'none'}
           style={[StyleSheet.absoluteFill, { opacity: chatSlide.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) }]}
         >
-          <TouchableOpacity onPress={closeSlideChat} style={{ position: 'absolute', top: scale(44), right: scale(14), padding: scale(8), zIndex: 9 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="close" size={scale(28)} color="rgba(60,46,102,0.85)" />
+          {/* المسار الأفقيّ [المحادثة | الكروت] — ينزلق بزرّ التبديل فقط (لا سحب) */}
+          <View style={StyleSheet.absoluteFill}>
+            <Animated.View style={{ flexDirection: 'row', width: W * 2, height: '100%', transform: [{ translateX: pageAnim }] }}>
+              {/* صفحة المحادثة */}
+              <View style={{ width: W, height: '100%' }}>
+                <ChatBody
+                  light
+                  messages={messages}
+                  isLoading={isLoading}
+                  onSend={onSend}
+                  header={<><UnsupportedCards items={unsupported} /><ClarifyCards clarifications={clarifications} onResolve={resolveClar} /></>}
+                  style={{ position: 'absolute', top: scale(132), left: 0, right: 0, bottom: scale(94) }}
+                />
+                <ChatInputBar light onSend={onSend} />
+              </View>
+              {/* صفحة الكروت — نفس الخلفيّة */}
+              <View style={{ width: W, height: '100%' }}>
+                <View style={{ position: 'absolute', top: scale(132), left: 0, right: 0, bottom: 0 }}>
+                  {user && <AICardsView user={user} clinicId={clinicId ?? user.clinicId} />}
+                </View>
+              </View>
+            </Animated.View>
+          </View>
+
+          {/* سهم العودة (يسار) — فوق المسار */}
+          <TouchableOpacity onPress={closeSlideChat} activeOpacity={0.8} style={{ position: 'absolute', top: scale(82), left: scale(16), zIndex: 9 }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <View style={{
+              width: scale(40), height: scale(40), borderRadius: scale(20),
+              backgroundColor: 'transparent',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Ionicons name="chevron-back" size={scale(28)} color="#6D4FB8" />
+            </View>
           </TouchableOpacity>
-          <ChatBody
-            light
-            messages={messages}
-            isLoading={isLoading}
-            onSend={onSend}
-            header={<><UnsupportedCards items={unsupported} /><ClarifyCards clarifications={clarifications} onResolve={resolveClar} /></>}
-            style={{ position: 'absolute', top: scale(84), left: 0, right: 0, bottom: scale(94) }}
-          />
-          <ChatInputBar light onSend={onSend} />
+
+          {/* زرّ التبديل (يمين) — أيقونة: جرسٌ للإشعارات / فقاعةٌ للمحادثة */}
+          <TouchableOpacity
+            onPress={() => goToTab(chatTab === 'chat' ? 'cards' : 'chat')}
+            activeOpacity={0.8}
+            style={{ position: 'absolute', top: scale(82), right: scale(16), zIndex: 9, width: scale(40), height: scale(40), borderRadius: scale(20), backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name={chatTab === 'chat' ? 'notifications' : 'chatbubble'} size={scale(24)} color="#6D4FB8" />
+          </TouchableOpacity>
+
+          {/* رأس الصفحة: الأيقونة يسارًا (مستقلّة)، وإلى يمينها عمودٌ: «DCM AI» وتحته الترحيب مباشرةً */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: scale(74), left: 0, right: 0, alignItems: 'center', zIndex: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(9), transform: [{ translateX: -scale(23.5) }] }}>
+              <OrbGlyph size={scale(38)} idPrefix="hdr" />
+              <View style={{ alignItems: 'center' }}>
+                <OutlinedText text="DCM AI" size={scale(22)} spacing={scale(1.2)} />
+                <Text style={{ marginTop: scale(3), color: 'rgba(108,79,184,0.92)', fontSize: scale(12.5), fontWeight: '800' }}>
+                  {(() => {
+                    const n = (userName || '').trim();
+                    const dr = n ? (/^د\s*\./.test(n) ? n : `د. ${n}`) : '';
+                    return dr ? `مرحبًا ${dr}` : 'مرحبًا بك';
+                  })()}
+                </Text>
+              </View>
+            </View>
+          </View>
         </Animated.View>
 
         {/* معاينة جدول من الشات — تُعرَض فوق كلّ شيء؛ يحفظ المستخدم منها مباشرةً

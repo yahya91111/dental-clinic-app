@@ -61,33 +61,72 @@ function buildLobes(opts: {
   return d;
 }
 
-// ١٠ بتلاتٍ (قطرات) تخرج من مركزٍ واحد، بأطوالٍ متفاوتةٍ عضويّة
+// ١٤ بتلةً (قطرات) تخرج من مركزٍ واحد، بأطوالٍ متفاوتةٍ عضويّة
 const BURST = buildLobes({
-  petals: 10, rOuter: 46, halfW: 6,
-  lengths: [1.0, 0.82, 1.12, 0.86, 1.05, 0.8, 1.1, 0.88, 1.04, 0.84],
+  petals: 14, rOuter: 46, halfW: 6,
+  lengths: [1.12, 0.72, 1.05, 0.62, 1.20, 0.84, 0.68, 1.10, 0.78, 1.16, 0.66, 0.95, 1.18, 0.74],
   rot: -Math.PI / 2, // أوّل بتلةٍ للأعلى
 });
 
-type Palette = { glow: string; light: string; mid: string; deep: string; sheen: string };
-const PURPLE: Palette = { glow: '#A855F7', light: '#C084FC', mid: '#7C3AED', deep: '#5B21B6', sheen: '#F3E8FF' };
-const RED: Palette = { glow: '#FF5A4D', light: '#FF8A7E', mid: '#E5342B', deep: '#B91C1C', sheen: '#FEE2E2' };
+type Palette = { glow: string; light: string; mid: string; deep: string; sheen: string;
+  coreLight: string; coreMid: string; coreDeep: string };
+// النواة بنفسجيّةٌ بدرجةٍ مختلفة (بَنفسجيّ-نيليّ أعمق) لتتميّز عن بتلاتِ البنفسجيّ
+const PURPLE: Palette = { glow: '#A855F7', light: '#C084FC', mid: '#7C3AED', deep: '#5B21B6', sheen: '#F3E8FF',
+  coreLight: '#DDD6FE', coreMid: '#8B5CF6', coreDeep: '#6D28D9' };
+const RED: Palette = { glow: '#FF5A4D', light: '#FF8A7E', mid: '#E5342B', deep: '#B91C1C', sheen: '#FEE2E2',
+  coreLight: '#FECDD3', coreMid: '#FB7185', coreDeep: '#E11D48' };
 
-export function AIOrb({ size = 48, onPress, onLongPress, delayLongPress = 400, alert }: AIOrbProps) {
+// شكلُ الأوربّ وحده (بلا حركةٍ ولا لمس) — لإعادة استعماله أيقونةً في الترويسة وغيرها.
+// idPrefix يُفرِّد معرّفات التدرّجات كي لا تتعارض نسختان على نفس الشاشة.
+export function OrbGlyph({ size = 40, alert, idPrefix = 'orb' }: { size?: number; alert?: boolean; idPrefix?: string }) {
+  const pal = alert ? RED : PURPLE;
+  const gGlow = `${idPrefix}Glow`, gFill = `${idPrefix}Fill`, gSheen = `${idPrefix}Sheen`, gCore = `${idPrefix}Core`;
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${VB} ${VB}`}>
+      <Defs>
+        <RadialGradient id={gGlow} cx="50%" cy="50%" r="50%">
+          <Stop offset="0%" stopColor={pal.glow} stopOpacity={0.45} />
+          <Stop offset="55%" stopColor={pal.glow} stopOpacity={0.18} />
+          <Stop offset="100%" stopColor={pal.glow} stopOpacity={0} />
+        </RadialGradient>
+        <RadialGradient id={gFill} cx="38%" cy="32%" r="78%">
+          <Stop offset="0%" stopColor={pal.light} />
+          <Stop offset="55%" stopColor={pal.mid} />
+          <Stop offset="100%" stopColor={pal.deep} />
+        </RadialGradient>
+        <RadialGradient id={gSheen} cx="50%" cy="50%" r="50%">
+          <Stop offset="0%" stopColor={pal.sheen} stopOpacity={0.45} />
+          <Stop offset="100%" stopColor={pal.sheen} stopOpacity={0} />
+        </RadialGradient>
+        <RadialGradient id={gCore} cx="50%" cy="50%" r="50%">
+          <Stop offset="0%" stopColor={pal.coreLight} stopOpacity={1} />
+          <Stop offset="70%" stopColor={pal.coreMid} stopOpacity={1} />
+          <Stop offset="100%" stopColor={pal.coreDeep} stopOpacity={1} />
+        </RadialGradient>
+      </Defs>
+      <Circle cx={C} cy={C} r={58} fill={`url(#${gGlow})`} />
+      <Path d={BURST} fill={`url(#${gFill})`} />
+      <Circle cx={C} cy={C} r={17} fill={`url(#${gCore})`} />
+      <Circle cx={C} cy={C} r={12} fill={`url(#${gSheen})`} />
+    </Svg>
+  );
+}
+
+export function AIOrb({ size = 40, onPress, onLongPress, delayLongPress = 400, alert }: AIOrbProps) {
   const spin = useRef(new Animated.Value(0)).current;     // دورانٌ بطيءٌ دائم
   const breathe = useRef(new Animated.Value(0)).current;  // تنفّسٌ هادئ
   const floatA = useRef(new Animated.Value(0)).current;   // طفوٌ خفيف لأعلى/أسفل
-  const pal = alert ? RED : PURPLE;
 
   useEffect(() => {
     const loops = [
-      Animated.loop(Animated.timing(spin, { toValue: 1, duration: 56000, easing: Easing.linear, useNativeDriver: true })),
+      Animated.loop(Animated.timing(spin, { toValue: 1, duration: 56000, easing: Easing.linear, useNativeDriver: true, isInteraction: false })),
       Animated.loop(Animated.sequence([
-        Animated.timing(breathe, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(breathe, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(breathe, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true, isInteraction: false }),
+        Animated.timing(breathe, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true, isInteraction: false }),
       ])),
       Animated.loop(Animated.sequence([
-        Animated.timing(floatA, { toValue: 1, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(floatA, { toValue: 0, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(floatA, { toValue: 1, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true, isInteraction: false }),
+        Animated.timing(floatA, { toValue: 0, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true, isInteraction: false }),
       ])),
     ];
     loops.forEach((l) => l.start());
@@ -111,31 +150,7 @@ export function AIOrb({ size = 48, onPress, onLongPress, delayLongPress = 400, a
       <Animated.View style={{ width: box, height: box, alignItems: 'center', justifyContent: 'center', transform: [{ translateY: floatY }] }}>
         {/* التنفّس + الدوران على الشكل نفسه */}
         <Animated.View style={{ transform: [{ scale: scaleA }, { rotate }] }}>
-          <Svg width={box} height={box} viewBox={`0 0 ${VB} ${VB}`}>
-            <Defs>
-              {/* هالةُ توهّجٍ تخفت إلى الشفافيّة */}
-              <RadialGradient id="orbGlow" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor={pal.glow} stopOpacity={0.45} />
-                <Stop offset="55%" stopColor={pal.glow} stopOpacity={0.18} />
-                <Stop offset="100%" stopColor={pal.glow} stopOpacity={0} />
-              </RadialGradient>
-              {/* تعبئةٌ ثلاثيّة الأبعاد: فاتحٌ أعلى-يسار → عميقٌ أسفل-يمين */}
-              <RadialGradient id="orbFill" cx="38%" cy="32%" r="78%">
-                <Stop offset="0%" stopColor={pal.light} />
-                <Stop offset="55%" stopColor={pal.mid} />
-                <Stop offset="100%" stopColor={pal.deep} />
-              </RadialGradient>
-              {/* لمعةٌ داخليّة ناعمة */}
-              <RadialGradient id="orbSheen" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor={pal.sheen} stopOpacity={0.9} />
-                <Stop offset="100%" stopColor={pal.sheen} stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-
-            <Circle cx={C} cy={C} r={58} fill="url(#orbGlow)" />
-            <Path d={BURST} fill="url(#orbFill)" />
-            <Circle cx={C - 12} cy={C - 14} r={16} fill="url(#orbSheen)" />
-          </Svg>
+          <OrbGlyph size={box} alert={alert} idPrefix="orbMain" />
         </Animated.View>
       </Animated.View>
     </TouchableOpacity>
