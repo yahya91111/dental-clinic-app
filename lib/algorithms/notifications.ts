@@ -1177,34 +1177,6 @@ export async function cancelSwapGroup(args: {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * يصعّد نقصًا غير مُغطّى إلى الليدر (action) — حين يرفض الجميع أو تنتهي
- * المهلة. المساعد بعدها يعرض على الليدر قائمة الحلول.
- */
-export async function alertLeaderGap(args: {
-  clinicId: string;
-  leaderId: string;
-  weekStart: string;
-  day: WeekDay;
-  gap: Gap;
-  absentDoctorName?: string;
-  senderId?: string;
-  senderName?: string;
-}): Promise<{ success: boolean; error?: string; id?: string }> {
-  const reason = args.absentDoctorName ? ` (غياب ${dr(args.absentDoctorName)})` : '';
-  const { id, error } = await sendAction({
-    clinicId: args.clinicId, recipientId: args.leaderId,
-    senderId: args.senderId, senderName: args.senderName,
-    type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
-    body: `العيادة ${args.gap.clinicNumber} الفترة ${periodLabel(args.gap.period)} يوم ${DAY_AR[args.day]} بلا تغطية${reason}.`,
-    data: {
-      clinic_id: args.clinicId, week_start: args.weekStart, day: args.day, gap: args.gap,
-      absent_doctor_name: args.absentDoctorName,
-    },
-  });
-  return { success: !error, error, id };
-}
-
-/**
  * يفتح كرت تغطيةٍ للّيدر بنصٍّ افتتاحيّ **حتميّ جاهز** (يكتبه المحرّك ويُعرَض كما
  * هو). الذكاء لا يصوغ الافتتاحيّة — يقرؤها ويُكمل. صامت (لا رنّة) كنوع gap_alert.
  */
@@ -1231,35 +1203,6 @@ export async function alertLeaderCoverage(args: {
       absent_doctor_name: args.absentDoctorName,
       two_periods: args.twoPeriods ?? null,
       reserves: args.reserves ?? [],
-    },
-  });
-  return { success: !error, error, id };
-}
-
-/**
- * v2 — يُبلِغ القائد بنقصٍ نتج عن غياب طبيب، حاملًا **الحقائق المنظَّمة** (لا نصًّا
- * جاهزًا): أماكن النقص (عيادة/دليقيتر، بلا فترات) + زميل الفترتين + الاحتياطيّون.
- * الذكاء يصوغ الرسالة بصوته من هذه الحقائق عند فتح القائد للأوربّ. صامت كـ gap_alert.
- * إشعار واحد للحدث: يحلّ محلّ إشعار العلم حين يكون هناك نقص.
- */
-export async function notifyLeaderCoverage(args: {
-  clinicId: string;
-  leaderId: string;
-  weekStart: string;
-  day: WeekDay;
-  coverage: unknown; // CoverageBrief من requests_v2 (حقائق منظَّمة)
-  senderId?: string;
-  senderName?: string;
-}): Promise<{ success: boolean; error?: string; id?: string }> {
-  const c = args.coverage as { absentName?: string } | null;
-  const { id, error } = await sendAction({
-    clinicId: args.clinicId, recipientId: args.leaderId,
-    senderId: args.senderId, senderName: args.senderName,
-    type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
-    body: `نقصٌ يوم ${DAY_AR[args.day]}${c?.absentName ? ` بغياب ${dr(c.absentName)}` : ''}.`,
-    data: {
-      v: 2, clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
-      coverage: args.coverage,
     },
   });
   return { success: !error, error, id };
@@ -1673,7 +1616,7 @@ export async function resolveCoverageV2(args: {
 
 /**
  * يُنهي كروت النقص المطابقة (نفس العيادة/الفترة/اليوم/الأسبوع) بعد التغطية
- * الفعليّة — كي يخفت زرّ الذكاء ولا يبقى الكرت معلّقًا.
+ * الفعليّة — كي يخفت زرّ الذكاء ولا يبقى الكرت معلّقًا. (يستعمله مساعد v1.)
  */
 export async function resolveGapAlert(args: {
   clinicId: string; weekStart: string; day: WeekDay; clinicNumber: number; period: number;
@@ -1708,7 +1651,7 @@ export const notifications = {
   swapGroupsStatus, cancelSwapGroup, notifyLeadersCrossShiftSwap,
   invalidateSwapsTouching,
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
-  alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, upsertLeaderCoverage, resolveGapAlert, resolveCoverageV2,
+  alertLeaderCoverage, resolveGapAlert, resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
   alertLeaderPermissionConflict, resolvePermissionAlertV2,
   // تعويض النقص (إعادة ترتيب الشفت) — كرت [نفّذ] للقائد

@@ -576,65 +576,6 @@ const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
     },
   },
   {
-    name: 'cover_gap',
-    description:
-      'يغطّي نقصًا نتج عن غياب طبيب: يضع المُغطّي في مكان النقص (عيادة برقمها أو الدليقيتر) ' +
-      'و**المحرّك يحسب الفترة الصحيحة تلقائيًّا** — لا تذكر الفترات ولا تخمّنها. استعملها ' +
-      '(لا place_in_clinic) لتنفيذ حلول كرت التغطية. للتناوب على الدليقيتر: استدعِها لكلّ ' +
-      'مُغطٍّ فيؤخذ في فترته الفارغة. الليدر فأعلى.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
-        absentDoctorIndex: { type: 'integer', description: 'رقم الطبيب الغائب صاحب النقص.' },
-        locationKind: { type: 'string', enum: ['delegator', 'clinic'], description: 'مكان النقص.' },
-        clinicNumber: { type: 'integer', description: 'رقم العيادة — فقط لو locationKind=clinic.' },
-        coverDoctorIndex: { type: 'integer', description: 'رقم الطبيب المُغطّي.' },
-      },
-      required: ['weekStart', 'day', 'absentDoctorIndex', 'locationKind', 'coverDoctorIndex'],
-    },
-  },
-  {
-    name: 'reshape_day',
-    description:
-      'يعيد توزيع اليوم لسدّ نقص عيادةٍ **لا حلّ كاملًا له**: المحرّك يُدخل الطبيب المختار ' +
-      'منفردًا في العيادة الشاغرة اليوم كاملًا، وزميله يستلم عيادتهما كاملة، والدليقيتر يبقى ' +
-      'بالتناوب إن أمكن وإلّا ذاب (شغل العيادة أهمّ). استعملها حين يختار القائد أحد خيارات ' +
-      '«إعادة التوزيع» (مرّر soloDoctorIndex للمنفرد الذي اختاره). الليدر فأعلى.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
-        absentDoctorIndex: { type: 'integer', description: 'رقم الطبيب الغائب صاحب النقص.' },
-        soloDoctorIndex: { type: 'integer', description: 'رقم الطبيب الذي ينفرد بالعيادة الشاغرة (من خيارات إعادة التوزيع المعروضة).' },
-        clinicNumber: { type: 'integer', description: 'عيادة النقص — فقط إن تعدّدت العيادات الناقصة.' },
-      },
-      required: ['weekStart', 'day', 'absentDoctorIndex'],
-    },
-  },
-  {
-    name: 'apply_coverage_option',
-    description:
-      'ينفّذ **خيار تغطيةٍ كاملًا بكلّ نقلاته** لنقصٍ مركّب (عيادة + دليقيتر). استعملها حين ' +
-      'يختار القائد «الخيار الأول/الثاني». الخيار A: طبيبٌ يحلّ محلّ الغائب كاملًا (مرّر ' +
-      'coverDoctorIndex للمُغطّي). الخيار B: زميل الغائب يستلم عيادته وعيادةٌ أخرى تتولّى ' +
-      'الدليقيتر بالتناوب (مرّر delegatorClinicNumber). المحرّك يطبّق كلّ الخطوات. الليدر فأعلى.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
-        absentDoctorIndex: { type: 'integer', description: 'رقم الطبيب الغائب صاحب النقص.' },
-        option: { type: 'string', enum: ['A', 'B'], description: 'A=الخيار الأول، B=الخيار الثاني.' },
-        coverDoctorIndex: { type: 'integer', description: 'المُغطّي — للخيار A فقط.' },
-        delegatorClinicNumber: { type: 'integer', description: 'العيادة التي تتولّى الدليقيتر — للخيار B فقط.' },
-      },
-      required: ['weekStart', 'day', 'absentDoctorIndex', 'option'],
-    },
-  },
-  {
     name: 'clear_week',
     description:
       'يمسح جدول أسبوعٍ كاملًا (كلّ الخانات والحالات). لا رجعة فيه. الليدر فأعلى. ' +
@@ -686,11 +627,7 @@ const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
 // ─── إطفاء النقص من الطلبات (مؤقّت) ────────────────────────────
 // التغطية تنتقل إلى خوارزميّة الجدول. لا نحذف شيئًا — نُخفي أدوات النقص من
 // النموذج ونوقف توليد كروت التغطية. أعِد المفتاح إلى true لاسترجاع السلوك القديم.
-export const COVERAGE_IN_REQUESTS = false;
-const COVERAGE_TOOL_NAMES = ['cover_gap', 'reshape_day', 'apply_coverage_option'];
-export const REQUESTS_TOOLS_V2: V2Tool[] = COVERAGE_IN_REQUESTS
-  ? REQUESTS_TOOLS_V2_ALL
-  : REQUESTS_TOOLS_V2_ALL.filter((t) => !COVERAGE_TOOL_NAMES.includes(t.name));
+export const REQUESTS_TOOLS_V2: V2Tool[] = REQUESTS_TOOLS_V2_ALL;
 
 // ─── أدوات مساعدة ──────────────────────────────────────────────
 type Resolved = { id: string; name: string };
@@ -827,32 +764,8 @@ export async function dispatchRequestToolV2(
               });
             }
             const leaders = await getTeamLeaderIds(ctx.clinicId);
-            // اليوم كاملًا — كلّ غائبيه: غيابان بنفس اليوم يجتمعان في كرتٍ واحد
-            // بأسمائهما (upsertLeaderCoverage يضمّ غياب يومٍ فيه نقصٌ معلّق إلى
-            // كرته)، ومرشّحو كلّ موجزٍ محسوبون بعد آخِر غياب لا قبله.
-            // كروت التغطية (النقص) أُطفئت من الطلبات — انتقلت إلى خوارزميّة الجدول
-            // (COVERAGE_IN_REQUESTS=false). يبقى إشعار العلم وكرت تحديد المكان.
-            let dayBrief: Awaited<ReturnType<typeof requestsV2.computeDayCoverageBriefs>>[number] | undefined;
-            let dayHasGap = false;
-            if (COVERAGE_IN_REQUESTS) {
-              const briefs = await requestsV2.computeDayCoverageBriefs({
-                clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-              });
-              const mineBrief = briefs.find((b) => b.absentId === doc.id)
-                ?? { day: r.day, absentId: doc.id, absentName: doc.name, gaps: [], reserves: [] };
-              dayHasGap = mineBrief.gaps.length > 0;
-              dayBrief = mineBrief;
-              // أنعِش بنود الغائبين الآخرين في كروتهم القائمة: الغائب الجديد لم يعد
-              // مرشّحًا لتغطيتهم — لا اقتراحات بائتة (تحديثٌ فقط، لا كروت جديدة).
-              for (const b of briefs) {
-                if (b.absentId === doc.id) continue;
-                await notifications.resolveCoverageV2({
-                  clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-                  absentDoctorId: b.absentId,
-                  covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
-                });
-              }
-            }
+            // كروت التغطية (النقص) انتقلت إلى خوارزميّة الجدول. يبقى هنا إشعار العلم
+            // وكرت «تحديد المكان» (عند تحويل غيابٍ مُغطًّى إلى استئذان).
             for (const leaderId of leaders) {
               // تحويل مرضيّةٍ/تفرّغٍ مُغطًّى إلى استئذان: كرتُ «تحديد المكان» يحلّ
               // محلّ إشعار العلم (إشعار واحد للحدث) — القائد يفتح الكرت ويأمر فيُنفَّذ.
@@ -882,15 +795,6 @@ export async function dispatchRequestToolV2(
               // تعارض الاستئذان: لا يصل القائد كرتٌ عند التسجيل. الكرت «استئذان يحتاج
               // ترتيبًا» يُؤجَّل حتى يرفض الجميع التبديل مع صاحب الاستئذان في الشفتين
               // (يُرسَل عندئذٍ من مسار استنفاد طلب التبديل) — فالكرت = المشكلة الحقيقيّة.
-              if (COVERAGE_IN_REQUESTS && dayBrief) {
-                await notifications.upsertLeaderCoverage({
-                  clinicId: ctx.clinicId, leaderId,
-                  weekStart: wsEff, day: r.day,
-                  absentDoctorId: doc.id, absentDoctorName: doc.name,
-                  dayBrief, dayHasGap,
-                  senderId: doc.id, senderName: doc.name,
-                });
-              }
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -1368,76 +1272,6 @@ export async function dispatchRequestToolV2(
           senderId: sender.id, senderName: sender.name,
         });
         return final(`تمّ: ${trainee.name} مع ${sup.name} يوم ${DAY_AR[r.day]} (لهذا اليوم فقط)، ووصله إشعارٌ بذلك.`);
-      }
-
-      case 'cover_gap': {
-        const absent = resolveDoctor(ctx, r.absentDoctorIndex);
-        const cover = resolveDoctor(ctx, r.coverDoctorIndex);
-        if (!absent || !cover) return 'Tool error: رقم الطبيب غير صالح.';
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        const kind = r.locationKind === 'clinic' ? 'clinic' : 'delegator';
-        // رقم عيادة غائب/تالف لا يُمرَّر NaN — يُترك للمحرّك يستنتجه من صفوف الحفظ
-        const cnRaw = Number(r.clinicNumber);
-        const target =
-          kind === 'clinic'
-            ? { kind: 'clinic' as const, clinicNumber: Number.isFinite(cnRaw) && cnRaw > 0 ? cnRaw : undefined }
-            : { kind: 'delegator' as const };
-        const res = await requestsV2.coverGap(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-          absentDoctorId: absent.id, target,
-          coverDoctorId: cover.id, coverDoctorName: cover.name,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
-        // التغطية نُفّذت → أعد حساب حقائق اليوم وحدّث كروت **كلّ** القادة بها
-        await refreshCoverageCards(ctx.clinicId, String(r.weekStart), r.day, absent);
-        if ((res.remainingPeriods?.length || 0) > 0) {
-          return final(`تمّت التغطية جزئيًّا: ${cover.name} في عيادة ${res.clinicNumber ?? r.clinicNumber} مكان ${absent.name} يوم ${DAY_AR[r.day]} في فترته المتاحة — بقيت فترة بلا تغطية.`);
-        }
-        return final(`تمّت التغطية: ${cover.name} ${kind === 'clinic' ? `في عيادة ${res.clinicNumber ?? r.clinicNumber}` : 'دليقيتر'} مكان ${absent.name} يوم ${DAY_AR[r.day]}.`);
-      }
-
-      case 'reshape_day': {
-        const absent = resolveDoctor(ctx, r.absentDoctorIndex);
-        if (!absent) return 'Tool error: رقم الطبيب الغائب غير صالح.';
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        const cnRaw = Number(r.clinicNumber);
-        const solo = r.soloDoctorIndex != null ? resolveDoctor(ctx, r.soloDoctorIndex) : null;
-        const res = await requestsV2.reshapeGap(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-          absentDoctorId: absent.id,
-          clinicNumber: Number.isFinite(cnRaw) && cnRaw > 0 ? cnRaw : undefined,
-          soloDoctorId: solo?.id,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
-        // إعادة التوزيع نُفّذت → أعد حساب حقائق اليوم وحدّث كروت **كلّ** القادة بها
-        await refreshCoverageCards(ctx.clinicId, String(r.weekStart), r.day, absent);
-        return final(reshapeInfo(res, absent.name, DAY_AR[r.day]));
-      }
-
-      case 'apply_coverage_option': {
-        const absent = resolveDoctor(ctx, r.absentDoctorIndex);
-        if (!absent) return 'Tool error: رقم الطبيب الغائب غير صالح.';
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        const option = r.option === 'B' ? 'B' : 'A';
-        const cover = option === 'A' ? resolveDoctor(ctx, r.coverDoctorIndex) : null;
-        if (option === 'A' && !cover) return 'Tool error: مرّر coverDoctorIndex للخيار الأول.';
-        if (option === 'B' && r.delegatorClinicNumber == null) return 'Tool error: مرّر delegatorClinicNumber للخيار الثاني.';
-        const res = await requestsV2.applyCoverageOption(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-          absentDoctorId: absent.id, option,
-          coverDoctorId: cover?.id, coverDoctorName: cover?.name,
-          delegatorClinicNumber: option === 'B' ? Number(r.delegatorClinicNumber) : undefined,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
-        // التغطية نُفّذت → أعد حساب حقائق اليوم وحدّث كروت **كلّ** القادة بها
-        await refreshCoverageCards(ctx.clinicId, String(r.weekStart), r.day, absent);
-        // كان نقصًا بسيطًا فحوّله المحرّك لتغطية مباشرة → أكّد ما حدث فعلًا، لا نصّ الخيار المركّب
-        if (res.via === 'cover_gap') {
-          return final(`تمّت التغطية: ${cover!.name} ${res.clinicNumber ? `في عيادة ${res.clinicNumber}` : 'دليقيتر'} مكان ${absent.name} يوم ${DAY_AR[r.day]}.`);
-        }
-        return final(option === 'A'
-          ? `تمّ الخيار الأول: ${cover!.name} غطّى ${absent.name} (عيادته + الدليقيتر) وأُعيد توزيع عيادته.`
-          : `تمّ الخيار الثاني: استُلمت عيادة ${absent.name} كاملة، وتولّت عيادة ${r.delegatorClinicNumber} الدليقيتر بالتناوب.`);
       }
 
       case 'clear_week': {
