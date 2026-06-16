@@ -258,6 +258,23 @@ function shiftWeekStart(weekStart: string, weeksBack: number): string {
  * يحمّل كل البيانات اللازمة من DB.
  * يفلتر الأطباء ليُبقي فقط الذين في القروبات الـ4 (templates).
  */
+// مقارِنٌ حتميّ لترتيب الأطبّاء (اسم ثمّ معرّف، code-unit) — مستقرّ عبر كلّ
+// التحميلات فلا ينحرف rosterIdx/البِركة بين بناءٍ وإعادة حساب.
+function sortDoctorsStable(a: LoadedDoctor, b: LoadedDoctor): number {
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+// معرّفات المتدرّبين المبتدئين (الظلال) من الوصفة — تُمرَّر إلى createWheels كي
+// تُستثنى خاناتهم المنسوخة من حالة العجلة (لا يأخذون دورًا في العدالة).
+function beginnerShadowIds(input: ScheduleBuildInput): Set<string> {
+  return new Set(
+    Object.entries(input.traineeModes || {})
+      .filter(([, m]) => m === 'beginner')
+      .map(([id]) => id),
+  );
+}
+
 export async function loadScheduleData(
   clinicId: string,
   weekStart: string,
@@ -349,6 +366,12 @@ export async function loadScheduleData(
     role: s.role,
     status: s.status,
   });
+
+  // ترتيب حتميّ للأطبّاء: قاعدة البيانات لا تضمن ترتيب الإرجاع (لا ORDER BY على
+  // القروبات/الأعضاء). أيّ اختلافٍ في الترتيب يبدّل rosterIdx وترتيب البِركة، فينحرف
+  // التوزيع بين البناء وإعادة الحساب (عبثٌ في شفتاتٍ لم تتغيّر). نثبّته بالاسم ثمّ
+  // المعرّف بمقارنةٍ نصّيّةٍ بحتة (مستقرّة في كلّ محرّك، بلا اعتماد على Intl).
+  doctors.sort(sortDoctorsStable);
 
   return {
     data: {
@@ -442,6 +465,7 @@ export async function loadDoctorRoster(
     }
   }
 
+  doctors.sort(sortDoctorsStable); // نفس الترتيب الحتميّ المستعمل في loadScheduleData
   return { doctors, error: null };
 }
 
@@ -1009,7 +1033,9 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   // العجلات (القاعدة الرباعية): تُبنى من سجل الأسابيع السابقة فتستمرّ
   // الاستمرارية عبر الأسابيع (موضع لا أرقام — لا تكدّس على العائد/الجديد).
   // تُمرَّر لكل شفت وتدور (مَن يأخذ الدور → آخر الطابور).
-  const wheels = createWheels(data.doctors, data.pastSlots);
+  // الظلال (المبتدئون) خارج كلّ العجلات — لا يأخذون دورًا، يتبعون مدرّبهم فقط.
+  const shadowIds = beginnerShadowIds(input);
+  const wheels = createWheels(data.doctors, data.pastSlots, shadowIds);
 
   // استثناءات التريني المستقلّ من دورتَي الدليقيتر/الاحتياطي (حسب خيارات الويزرد)
   const modesForExcl = input.traineeModes || {};
@@ -1063,6 +1089,28 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
         errors: [writeErr],
         summary: writeErr,
       };
+    }
+
+    // لصق صفوف الغياب الكامل بعمود شفت الطبيب الصحيح: غيابٌ سُجّل لأسبوعٍ لم يكن
+    // مبنيًّا حينها لا يعرف شفت الطبيب (لا تنسيب) فيُكتب بعمودٍ مخمَّن. الآن البناء
+    // يعرف الشفت (القروب + خطّة الشفت) فيُصحّح العمود (احتياط الصباح=1، المساء=2).
+    // إصلاحٌ عرضيٌّ آمن (idempotent): يمسّ صفوف SL/VC المنحرفة فقط.
+    const colFixes = new Map<number, string[]>();
+    for (const s of data.existingSlots) {
+      if (s.period !== 0) continue;
+      if (s.status !== 'sick_leave' && s.status !== 'vacation') continue;
+      const doc = data.doctors.find((d) => d.id === s.doctorId);
+      if (!doc) continue;
+      const gk = doc.groupTemplate.key;
+      if (gk !== 'group_a' && gk !== 'group_b') continue; // البورد/AGD لهم منطق شفتٍ خاصّ
+      const aShift = input.aShiftPlan[s.dayOfWeek as WeekDay];
+      if (!aShift) continue;
+      const workShift: Shift = gk === 'group_a' ? aShift : (aShift === 'morning' ? 'evening' : 'morning');
+      const col = workShift === 'morning' ? 1 : 2;
+      if (s.clinicNumber !== col) (colFixes.get(col) ?? colFixes.set(col, []).get(col)!).push(s.id);
+    }
+    for (const [col, ids] of colFixes) {
+      await supabase.from('schedule_slots').update({ clinic_number: col }).in('id', ids);
     }
   }
 
@@ -1280,7 +1328,7 @@ export async function redistributeShift(args: {
     const o = slotOrder(s);
     return o != null && o < targetOrder;
   });
-  const wheels = createWheels(data.doctors, [...data.pastSlots, ...priorThisWeek]);
+  const wheels = createWheels(data.doctors, [...data.pastSlots, ...priorThisWeek], beginnerShadowIds(input));
 
   // نفس استثناءات التريني المستقلّ كما في البناء
   const modesForExcl = input.traineeModes || {};
@@ -1444,6 +1492,144 @@ export async function redistributeOnReturn(args: {
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// الموازنة للأمام — «رفرشٌ أوّل بأوّل لعجلة العدل»
+// ═══════════════════════════════════════════════════════════════
+// بعد اعتماد تغطية يومٍ (أو عودة طبيبٍ ألغى غيابه) يتغيّر تاريخُ العجلة لذلك
+// اليوم، فقد يختلّ توازنُ بقيّة الأسبوع (والأسابيع المبنيّة بعده). نعيد حساب
+// كلّ شفتٍ لم يبدأ بعد، نقارنه بالمكتوب فعلًا، ونكتب **ما تغيّر فقط** («نكتب
+// الفرق»). الشفتات المستقرّة تبقى كما رآها الأطبّاء. القواعد (الوصفة المحفوظة)
+// ثابتةٌ — نُعدّل مَن يأخذ المقعد لا القاعدة. ولا نكشف الآليّة للمستخدم.
+
+const WEEK_DAYS_ORDER: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+
+/** يضيف n يومًا لتاريخ YYYY-MM-DD ويعيده بنفس الصيغة. */
+function addDaysISO(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// عنصرٌ مُسطّحٌ للمقارنة (من DB أو من إعادة الحساب).
+type SigItem = { role: string; status: string; period: number; clinicNumber: number; doctorId: string };
+
+/** مفاتيح شفتٍ واحد: (دور|عيادة|فترة|طبيب) مرتّبة — لكشف «هل تغيّر؟».
+ *  تشمل العيادة/الدليقيتر النشطة بفترات الشفت + احتياط الشفت (extra بعموده). */
+function shiftKeys(items: SigItem[], periods: Period[], exCol: number): string[] {
+  const keys: string[] = [];
+  for (const s of items) {
+    const isEx = s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol;
+    if (isEx) { keys.push(`ex|${s.doctorId}`); continue; }
+    if (s.status !== 'active') continue;
+    if (s.role !== 'clinic' && s.role !== 'delegator') continue;
+    if (!periods.includes(s.period as Period)) continue;
+    keys.push(`${s.role}|${s.clinicNumber}|${s.period}|${s.doctorId}`);
+  }
+  return keys.sort();
+}
+
+/** توقيع موضع كلّ طبيب في الشفت **متجاهلاً الفترة** (ف١↔ف٢): عيادتُه + زملاؤها +
+ *  هل دليقيتر/احتياط. فمَن بقي في عيادته مع شركائه وبدّل فترته فقط لا يُحسَب
+ *  متحرّكًا (لا يُزعَج بإشعار)؛ والتغيير الحقيقيّ (عيادة/شريك/دور) يُكشَف. */
+function placementSigs(items: SigItem[], periods: Period[], exCol: number): Map<string, string> {
+  const clinicMates = new Map<number, Set<string>>();
+  const delegators = new Set<string>();
+  const exDocs = new Set<string>();
+  for (const s of items) {
+    if (s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol) { exDocs.add(s.doctorId); continue; }
+    if (s.status !== 'active') continue;
+    if (!periods.includes(s.period as Period)) continue;
+    if (s.role === 'delegator') { delegators.add(s.doctorId); continue; }
+    if (s.role !== 'clinic') continue;
+    (clinicMates.get(s.clinicNumber) ?? clinicMates.set(s.clinicNumber, new Set()).get(s.clinicNumber)!).add(s.doctorId);
+  }
+  const parts = new Map<string, string[]>();
+  const push = (id: string, p: string) => (parts.get(id) ?? parts.set(id, []).get(id)!).push(p);
+  for (const [c, ids] of clinicMates) { const mates = [...ids].sort().join(','); for (const id of ids) push(id, `c${c}:${mates}`); }
+  for (const id of delegators) push(id, 'del');
+  for (const id of exDocs) push(id, 'ex');
+  const sig = new Map<string, string>();
+  for (const [id, ps] of parts) sig.set(id, ps.sort().join('|'));
+  return sig;
+}
+
+/**
+ * يوازن مستقبل الجدول بعد معالجة يومٍ (مرساة = آخر شفتٍ عُولج). يبدأ من الشفت
+ * **التالي** للمرساة في أسبوعها، ثمّ يمسح الأسابيع المبنيّة بعدها من أوّل شفت.
+ * لكلّ شفت: يعيد الحساب بنفس الوصفة، يقارن بالمكتوب، ويكتب المتغيّر فقط.
+ * يُرجِع الأسابيع التي تغيّرت فعلًا (مع مَن تبدّل مقعده) — لإشعارٍ واحدٍ لكلّ أسبوع.
+ */
+export async function rebalanceForward(args: {
+  clinicId: string;
+  weekStart: string;
+  fromDay: WeekDay;
+  fromShift: Shift;
+  /** كم أسبوعًا مبنيًّا نمسح للأمام (يتوقّف تلقائيًّا عند أوّل أسبوعٍ غير مبنيّ). */
+  maxWeeks?: number;
+}): Promise<{ changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] }> {
+  const DAY_IDX: Record<WeekDay, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+  const maxWeeks = args.maxWeeks ?? 4;
+  const changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] = [];
+
+  let week = args.weekStart;
+  // الأسبوع المرساة: نبدأ من الشفت التالي للمرساة (المرساة نفسها عُولجت بالكرت).
+  let startOrder = DAY_IDX[args.fromDay] * 2 + (args.fromShift === 'evening' ? 1 : 0) + 1;
+
+  for (let wi = 0; wi < maxWeeks; wi++) {
+    const recipe = await loadBuildConfig(args.clinicId, week);
+    if (!recipe) break;                       // أسبوع بلا وصفةٍ محفوظة → غير مبنيّ
+    const { data } = await loadScheduleData(args.clinicId, week);
+    if (!data) break;
+    const builtThisWeek = data.existingSlots.some(
+      (s) => s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator'),
+    );
+    if (!builtThisWeek) break;                // لا خانات مكتوبة → ليس مبنيًّا فعلًا
+
+    const affected = new Set<string>();
+    for (let order = startOrder; order < 10; order++) {
+      const day = WEEK_DAYS_ORDER[Math.floor(order / 2)]!;
+      const shift: Shift = order % 2 === 0 ? 'morning' : 'evening';
+      // إعادة الحساب تقرأ DB طازجًا (يشمل ما كتبناه لشفتاتٍ أسبق) → التتالي طبيعيّ.
+      const r = await redistributeShift({ clinicId: args.clinicId, weekStart: week, day, shift });
+      if (!r.success) continue;               // عطلة/لا بِركة → تخطَّ
+      const periods = SHIFT_PERIODS[shift];
+      const exCol = shift === 'morning' ? 1 : 2;
+      // المرجع = المكتوب أصلًا (ما رآه الأطبّاء)؛ كتابةُ شفتٍ أسبق لا تمسّ صفوف هذا.
+      const curItems: SigItem[] = data.existingSlots
+        .filter((s) => s.dayOfWeek === day)
+        .map((s) => ({ role: s.role, status: s.status, period: s.period, clinicNumber: s.clinicNumber, doctorId: s.doctorId }));
+      const recItems: SigItem[] = r.slots.map((s) => ({
+        role: s.role === 'ex' ? 'clinic' : s.role,
+        status: s.role === 'ex' ? 'extra' : 'active',
+        period: s.role === 'ex' ? 0 : s.period,
+        clinicNumber: s.clinicNumber,
+        doctorId: s.doctor.id,
+      }));
+      const curKeys = shiftKeys(curItems, periods, exCol);
+      const recKeys = shiftKeys(recItems, periods, exCol);
+      if (curKeys.join(';') === recKeys.join(';')) continue;   // مطابق → لا نمسّه
+
+      const ap = await applyShiftRedistribution({ clinicId: args.clinicId, weekStart: week, day, shift, slots: r.slots });
+      if (!ap.success) continue;
+      // نكتب الفرق (شمل تبديل الفترة، للحفاظ على دقّة الميزان)، لكن **لا نُشعِر**
+      // إلّا مَن تبدّل موضعُه فعلًا (عيادة/شريك/دور) — لا مَن بدّل فترته فقط.
+      const curPlace = placementSigs(curItems, periods, exCol);
+      const recPlace = placementSigs(recItems, periods, exCol);
+      for (const id of new Set([...curPlace.keys(), ...recPlace.keys()])) {
+        if (curPlace.get(id) !== recPlace.get(id)) affected.add(id);
+      }
+    }
+    if (affected.size > 0) changedWeeks.push({ weekStart: week, affectedDoctorIds: [...affected] });
+
+    startOrder = 0;                            // الأسابيع التالية مبنيّة بالكامل للمستقبل
+    week = addDaysISO(week, 7);
+  }
+  return { changedWeeks };
+}
+
 export const schedule = {
   build,
   saveSlots,
@@ -1455,4 +1641,5 @@ export const schedule = {
   proposeCoverageForAbsence,
   placementShift,
   redistributeOnReturn,
+  rebalanceForward,
 };

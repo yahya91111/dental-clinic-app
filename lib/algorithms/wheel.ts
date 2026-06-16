@@ -289,51 +289,58 @@ function replayExWheel(
 
 // ─── بناء العجلات من سجل الأسابيع السابقة (استمرارية عبر الأسابيع) ───
 // ترتيب العجلة = الأقدم/مَن لم يأخذ الدور أولاً (مقدّمة الطابور). الأحدث آخراً.
-export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): Wheels {
+// shadowIds = المتدرّبون المبتدئون (الظلال): البناء الحيّ لا يُديرهم في أيّ عجلة —
+// خاناتهم نسخةٌ من مدرّبهم. لذا نُسقِط خاناتهم من كلّ اشتقاقات حالة العجلة (آخذو
+// الدور، ميزان الفترات، مزاوجة التخفيف، الاحتياط) وإلّا انحرفت إعادةُ البناء عن
+// البناء الحيّ (عبثٌ في شفتاتٍ لم تتغيّر). يبقَون في الطابور لكن لا يتحرّكون أبدًا.
+export function createWheels(
+  doctors: LoadedDoctor[], pastSlots: LoadedSlot[], shadowIds: Set<string> = EMPTY_SET,
+): Wheels {
   const roster = doctors.map((d) => d.id);
   const rosterIdx = new Map(roster.map((id, i) => [id, i]));
   const boardIds = new Set(
     doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id),
   );
+  // سجلٌّ بلا خانات الظلال (مرجعٌ واحد لكلّ الاشتقاقات أدناه)
+  const realSlots = shadowIds.size ? pastSlots.filter((s) => !shadowIds.has(s.doctorId)) : pastSlots;
 
   // آخر ظهور لكل دور (وقت قابل للمقارنة: "أسبوع#يوم")
   const dayIdx: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
   const stamp = (s: LoadedSlot) => `${s.weekStart}#${dayIdx[s.dayOfWeek] ?? 0}`;
-  const lastDel = new Map<string, string>();
-  const lastSolo = new Map<string, string>();
   const lastBoardClinic = new Map<string, string>(); // آخر مرّة كان بورديّ في العيادة المشتركة
   const p1MinusP2 = new Map<string, number>();
 
-  // كشف المنفرد: طبيب له خانتا clinic بنفس (يوم|شفت|عيادة)
-  const clinicKey = new Map<string, { id: string; t: string }[]>();
-  for (const s of pastSlots) {
+  // ── إعادة بناء عجلتَي المنفرد/الدليقيتر بإعادة تشغيل التاريخ شفتاً بشفت ──
+  // العجلتان تتطوّران حيّاً أثناء البناء (مَن أخذ الدور → آخر الطابور بترتيبه وقتها).
+  // الختم الزمنيّ الخشن (بدقّة اليوم) لا يميّز صباحَ يومٍ عن مسائه ولا ترتيبَ السحب،
+  // فينحرف عن العجلة الحيّة. الحلّ: نتتبّع «مَن أخذ الدور في كلّ شفت» ثمّ نعيد التشغيل
+  // بنفس قاعدة الاحتياط (replayRoleWheel) — فتطابق المراجعةُ البناءَ تماماً (لا عبث).
+  const shiftStamp = (s: LoadedSlot): string =>
+    `${s.weekStart}#${dayIdx[s.dayOfWeek] ?? 0}#${s.period <= 2 ? 0 : 1}`;
+  const addTaker = (m: Map<string, Set<string>>, key: string, id: string) => {
+    (m.get(key) ?? m.set(key, new Set<string>()).get(key)!).add(id);
+  };
+  const soloTakers = new Map<string, Set<string>>(); // شفت → مَن انفرد
+  const delTakers = new Map<string, Set<string>>();  // شفت → مَن أخذ الدليقيتر
+  const clinicSeatCount = new Map<string, number>(); // (طبيب|شفت|عيادة) → عدد فتراته (٢ = منفرد)
+  for (const s of realSlots) {
     if (s.status !== 'active') continue;
-    const t = stamp(s);
-    if (s.role === 'delegator') {
-      if ((lastDel.get(s.doctorId) ?? '') < t) lastDel.set(s.doctorId, t);
-    }
+    const sk = shiftStamp(s);
+    if (s.role === 'delegator') addTaker(delTakers, sk, s.doctorId);
     // الاحتياط (ex) يُبنى منفصلاً عبر replayExWheel (قاعدة مختلفة) — لا نتتبّعه هنا
     // ميزان الفترات يحسب مقعد العيادة فقط (لا الدليقيتر) — وإلا بقي المضيف
     // متعادلاً صفراً دائماً (عيادة-ف1 يقابلها دليقيتر-ف2) فيُثبَّت دوره الفرعيّ.
     if (s.role === 'clinic') {
       if (isFirstPeriod(s.period)) p1MinusP2.set(s.doctorId, (p1MinusP2.get(s.doctorId) ?? 0) + 1);
       else p1MinusP2.set(s.doctorId, (p1MinusP2.get(s.doctorId) ?? 0) - 1);
-      if (boardIds.has(s.doctorId) && (lastBoardClinic.get(s.doctorId) ?? '') < t) {
-        lastBoardClinic.set(s.doctorId, t); // لتدوير احتياط البورد
+      if (boardIds.has(s.doctorId) && (lastBoardClinic.get(s.doctorId) ?? '') < stamp(s)) {
+        lastBoardClinic.set(s.doctorId, stamp(s)); // لتدوير احتياط البورد
       }
-    }
-    if (s.role === 'clinic') {
-      const sh = s.period <= 2 ? 'm' : 'e';
-      const k = `${s.doctorId}|${s.weekStart}|${s.dayOfWeek}|${sh}|${s.clinicNumber}`;
-      const list = clinicKey.get(k) || [];
-      list.push({ id: s.doctorId, t });
-      clinicKey.set(k, list);
-    }
-  }
-  for (const [, list] of clinicKey) {
-    if (list.length === 2) {
-      const { id, t } = list[0]!;
-      if ((lastSolo.get(id) ?? '') < t) lastSolo.set(id, t);
+      // كشف المنفرد: مَن ملأ فترتَي عيادةٍ واحدة في الشفت نفسه (عدّ المقعد = ٢)
+      const ck = `${s.doctorId}|${sk}|${s.clinicNumber}`;
+      const n = (clinicSeatCount.get(ck) ?? 0) + 1;
+      clinicSeatCount.set(ck, n);
+      if (n === 2) addTaker(soloTakers, sk, s.doctorId);
     }
   }
 
@@ -356,7 +363,7 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
   const pairWith = new Map<string, number>();
   if (lightDutyIds.size > 0) {
     const clinicDocs = new Map<string, Set<string>>(); // (أسبوع|يوم|شفت|عيادة) → أطباؤها
-    for (const s of pastSlots) {
+    for (const s of realSlots) {
       if (s.status !== 'active' || s.role !== 'clinic') continue;
       const sh = s.period <= 2 ? 'm' : 'e';
       const k = `${s.weekStart}|${s.dayOfWeek}|${sh}|${s.clinicNumber}`;
@@ -372,10 +379,23 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
     }
   }
 
+  // يعيد تشغيل عجلةٍ من خريطة «مَن أخذ الدور في كلّ شفت» (مرتّبة زمنياً): مَن أخذ
+  // الدور → آخر الطابور بترتيبه الحاليّ. يطابق أثر spin الحيّ شفتاً بشفت تماماً.
+  const replayRoleWheel = (pool: string[], takers: Map<string, Set<string>>): string[] => {
+    let wheel = [...pool].sort((a, b) => (rosterIdx.get(a) ?? 0) - (rosterIdx.get(b) ?? 0));
+    for (const key of [...takers.keys()].sort()) {
+      const took = takers.get(key)!;
+      if (wheel.some((id) => took.has(id))) {
+        wheel = [...wheel.filter((id) => !took.has(id)), ...wheel.filter((id) => took.has(id))];
+      }
+    }
+    return wheel;
+  };
+
   return {
-    solo: order(lastSolo),
-    del: order(lastDel, nonBoard),
-    ex: replayExWheel(roster, rosterIdx, pastSlots), // قاعدة الاحتياط الخاصّة (الغياب قبل الدور)
+    solo: replayRoleWheel(roster, soloTakers), // إعادة تشغيل شفتاً بشفت (أمينة للبناء الحيّ)
+    del: replayRoleWheel(nonBoard, delTakers), // البورد خارج عجلة الدليقيتر
+    ex: replayExWheel(roster, rosterIdx, realSlots), // قاعدة الاحتياط الخاصّة (الغياب قبل الدور)
     board: order(lastBoardClinic, boardRoster), // الأقدم في العيادة أولاً → يدخلها التالي
     p1MinusP2,
     pairWith,
