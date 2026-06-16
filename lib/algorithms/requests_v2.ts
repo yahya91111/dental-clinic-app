@@ -313,13 +313,12 @@ export async function setScheduleStatus(
       (r) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'),
     );
     const alreadySameStatus = mine.some((r) => r.period === 0 && r.status === status);
-    // «احتياط» لطبيبٍ احتياطٍ أصلًا = غالبًا خطأ توجيه من الذكاء (القصد أن **يغطّي**
-    // نقصًا لا أن يُسجَّل). لا نجاح صامتًا هنا — رسالة تصحيح تقوده للأداة الصحيحة.
+    // «احتياط» لطبيبٍ احتياطٍ أصلًا = غالبًا خطأ توجيه. لا نجاح صامتًا — رسالة تصحيح.
+    // (تعويض النقص لم يعد بأدوات الطلبات — يُرتَّب تلقائيًّا عند الغياب.)
     if (status === 'extra' && alreadySameStatus && !stillPlaced) {
       return fail(
-        `${doctorName} احتياطٌ أصلًا هذا اليوم — لا حاجة لتسجيله. إن كان القصد أن ` +
-        `يغطّي نقصَ غائبٍ فاستعمل أداة التغطية (apply_coverage_option للنقص المركّب ` +
-        `أو cover_gap للبسيط) ومرّر رقمه coverDoctorIndex.`,
+        `${doctorName} احتياطٌ أصلًا هذا اليوم — لا حاجة لتسجيله. ` +
+        `تعويض النقص عند الغياب يُرتَّب تلقائيًّا، فلا تسجّل احتياطًا لهذا الغرض.`,
       );
     }
     if (REMOVES_FROM_CLINIC.has(status) && alreadySameStatus && !stillPlaced) {
