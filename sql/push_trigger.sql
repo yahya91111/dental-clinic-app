@@ -9,13 +9,16 @@
 --
 -- Silent types (no ring): notifications that belong to the AI orb /
 -- in-app surfaces and must not buzz the phone. `gap_alert` (coverage
--- card) reddens the AI button silently — never push it.
+-- card) and `coverage_fill` (shift-fill draft card) redden the AI button
+-- silently — never push them.
 --
 -- Grouped requests: a multi-day request (e.g. sick leave Sun+Mon+Tue)
 -- is collected into ONE `request_info` row whose `body` grows as days
--- are appended (day 1 = INSERT, days 2+ = UPDATE). So we push on UPDATE
--- too, but ONLY when `body` actually changed — the final push carries
--- all the days. is_read / action_status updates (same body) never push.
+-- are appended (day 1 = INSERT, days 2+ = UPDATE). We push ONCE per
+-- request — on the initial INSERT only. Appending later days updates the
+-- in-app card silently (no second ring); the leader opens it to see all
+-- days. A genuinely separate request (outside the batch window) is a new
+-- INSERT, so it rings on its own.
 -- ═══════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION send_push_on_notification()
@@ -24,12 +27,18 @@ DECLARE
   token_record RECORD;
 BEGIN
   -- أنواع صامتة: لا تُرسِل لها دفعًا (مكانها داخل التطبيق فقط)
-  IF NEW.type IN ('gap_alert') THEN
+  IF NEW.type IN ('gap_alert', 'coverage_fill') THEN
     RETURN NEW;
   END IF;
 
-  -- على التحديث: ادفع فقط إن تغيّر الجسم (طلبٌ أُضيف له يومٌ جديد). تغييرات
-  -- القراءة/حالة الإجراء لا تُغيّر الجسم فلا تُطلق دفعًا مكرّرًا.
+  -- طلبٌ متعدّد الأيّام: ادفع مرّةً واحدة عند الإنشاء فقط. إلحاق أيّامٍ لاحقة
+  -- (UPDATE) يحدّث الكرت داخل التطبيق بلا رنّةٍ ثانية — رنّةٌ واحدةٌ لكلّ طلب.
+  IF TG_OP = 'UPDATE' AND NEW.type = 'request_info' THEN
+    RETURN NEW;
+  END IF;
+
+  -- على التحديث (للأنواع الأخرى): ادفع فقط إن تغيّر الجسم. تغييرات القراءة/
+  -- حالة الإجراء لا تُغيّر الجسم فلا تُطلق دفعًا مكرّرًا.
   IF TG_OP = 'UPDATE' AND NEW.body IS NOT DISTINCT FROM OLD.body THEN
     RETURN NEW;
   END IF;

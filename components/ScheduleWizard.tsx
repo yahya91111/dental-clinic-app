@@ -378,8 +378,12 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
         clinicNumber: exCell(a.doctorId, a.day),
       }));
       const res = await schedule.saveSlots(clinicId, r.weekStart, finalSlots, permissions, absences);
-      if (res.success) onComplete(r);
-      else setBuildError(res.error || 'تعذّر حفظ الجدول.');
+      if (res.success) {
+        // احفظ «وصفة البناء» مع الجدول — لتعيد التغطيةُ لاحقًا توزيع شفتٍ بنفس الإعدادات.
+        // (غير قاتل: فشلُه لا يمنع حفظ الجدول.)
+        await schedule.saveBuildConfig(resultToBuildInput(r, clinicId, false, merged ?? undefined));
+        onComplete(r);
+      } else setBuildError(res.error || 'تعذّر حفظ الجدول.');
     } catch (e) {
       setBuildError(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
     } finally {

@@ -349,13 +349,36 @@ export function createWheels(doctors: LoadedDoctor[], pastSlots: LoadedSlot[]): 
   const nonBoard = roster.filter((id) => !boardIds.has(id));
   const boardRoster = roster.filter((id) => boardIds.has(id));
 
+  // ميزان مزاوجة التخفيف من السجل: كم مرّة شارك كلُّ مخفَّفٍ عيادةً مع كلّ زميل.
+  // يُبنى من التاريخ (لا يبدأ فارغًا) فيستمرّ تدوير الشريك عبر الأسابيع والتعويضات
+  // — وإلّا ثُبّت نفس الشريك كلّ أسبوع. المفتاح «مخفَّف|شريك» كما في pickPartner.
+  const lightDutyIds = new Set(doctors.filter((d) => d.workStatus === 'light_duty').map((d) => d.id));
+  const pairWith = new Map<string, number>();
+  if (lightDutyIds.size > 0) {
+    const clinicDocs = new Map<string, Set<string>>(); // (أسبوع|يوم|شفت|عيادة) → أطباؤها
+    for (const s of pastSlots) {
+      if (s.status !== 'active' || s.role !== 'clinic') continue;
+      const sh = s.period <= 2 ? 'm' : 'e';
+      const k = `${s.weekStart}|${s.dayOfWeek}|${sh}|${s.clinicNumber}`;
+      (clinicDocs.get(k) ?? clinicDocs.set(k, new Set()).get(k)!).add(s.doctorId);
+    }
+    for (const docs of clinicDocs.values()) {
+      if (docs.size !== 2) continue;            // زوجٌ فقط (لا منفرد ولا ظلّ ثلاثيّ)
+      const arr = [...docs];
+      const ld = arr.find((id) => lightDutyIds.has(id));
+      const partner = arr.find((id) => id !== ld);
+      if (!ld || !partner) continue;
+      pairWith.set(`${ld}|${partner}`, (pairWith.get(`${ld}|${partner}`) ?? 0) + 1);
+    }
+  }
+
   return {
     solo: order(lastSolo),
     del: order(lastDel, nonBoard),
     ex: replayExWheel(roster, rosterIdx, pastSlots), // قاعدة الاحتياط الخاصّة (الغياب قبل الدور)
     board: order(lastBoardClinic, boardRoster), // الأقدم في العيادة أولاً → يدخلها التالي
     p1MinusP2,
-    pairWith: new Map(),
+    pairWith,
   };
 }
 

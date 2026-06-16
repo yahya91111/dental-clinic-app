@@ -34,6 +34,8 @@ export type SchedulePreview = {
   warnings: string[];
   permissions: PermissionMarker[];
   absenceMarkers: AbsenceMarker[];
+  // وصفة البناء — تُحفظ عند حفظ المعاينة (كي تعمل التغطية لاحقًا، كالويزرد تمامًا)
+  buildInput: ScheduleBuildInput;
 };
 
 const WEEK_DAYS_LIST: WeekDay[] = [
@@ -688,6 +690,7 @@ async function handleBuildSchedule(
         warnings: result.warnings,
         permissions,
         absenceMarkers,
+        buildInput,
       });
     }
 

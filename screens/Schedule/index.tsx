@@ -186,6 +186,11 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         aiPreview.absenceMarkers,
       );
       if (res.success) {
+        // احفظ وصفة البناء (كي تعمل التغطية لاحقًا) — كالويزرد تمامًا
+        if (aiPreview.buildInput) {
+          try { await schedule.saveBuildConfig(aiPreview.buildInput); }
+          catch { /* الحفظ تحسينٌ لا يُفشِل حفظ الجدول */ }
+        }
         setAiPreview(null);
         loadSchedule();
       } else {

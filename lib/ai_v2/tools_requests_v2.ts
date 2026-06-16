@@ -390,7 +390,7 @@ export async function applyCoverageChoice(params: {
 }
 
 // ─── تعريفات الأدوات (تنمو مع كلّ قدرة) ────────────────────────
-export const REQUESTS_TOOLS_V2: V2Tool[] = [
+const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
   {
     name: 'set_schedule_status',
     description:
@@ -683,6 +683,15 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
   },
 ];
 
+// ─── إطفاء النقص من الطلبات (مؤقّت) ────────────────────────────
+// التغطية تنتقل إلى خوارزميّة الجدول. لا نحذف شيئًا — نُخفي أدوات النقص من
+// النموذج ونوقف توليد كروت التغطية. أعِد المفتاح إلى true لاسترجاع السلوك القديم.
+export const COVERAGE_IN_REQUESTS = false;
+const COVERAGE_TOOL_NAMES = ['cover_gap', 'reshape_day', 'apply_coverage_option'];
+export const REQUESTS_TOOLS_V2: V2Tool[] = COVERAGE_IN_REQUESTS
+  ? REQUESTS_TOOLS_V2_ALL
+  : REQUESTS_TOOLS_V2_ALL.filter((t) => !COVERAGE_TOOL_NAMES.includes(t.name));
+
 // ─── أدوات مساعدة ──────────────────────────────────────────────
 type Resolved = { id: string; name: string };
 function resolveDoctor(ctx: V2ToolContext, n: unknown): Resolved | null {
@@ -821,22 +830,28 @@ export async function dispatchRequestToolV2(
             // اليوم كاملًا — كلّ غائبيه: غيابان بنفس اليوم يجتمعان في كرتٍ واحد
             // بأسمائهما (upsertLeaderCoverage يضمّ غياب يومٍ فيه نقصٌ معلّق إلى
             // كرته)، ومرشّحو كلّ موجزٍ محسوبون بعد آخِر غياب لا قبله.
-            const briefs = await requestsV2.computeDayCoverageBriefs({
-              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-            });
-            const mineBrief = briefs.find((b) => b.absentId === doc.id)
-              ?? { day: r.day, absentId: doc.id, absentName: doc.name, gaps: [], reserves: [] };
-            const dayHasGap = mineBrief.gaps.length > 0;
-            const dayBrief = mineBrief;
-            // أنعِش بنود الغائبين الآخرين في كروتهم القائمة: الغائب الجديد لم يعد
-            // مرشّحًا لتغطيتهم — لا اقتراحات بائتة (تحديثٌ فقط، لا كروت جديدة).
-            for (const b of briefs) {
-              if (b.absentId === doc.id) continue;
-              await notifications.resolveCoverageV2({
+            // كروت التغطية (النقص) أُطفئت من الطلبات — انتقلت إلى خوارزميّة الجدول
+            // (COVERAGE_IN_REQUESTS=false). يبقى إشعار العلم وكرت تحديد المكان.
+            let dayBrief: Awaited<ReturnType<typeof requestsV2.computeDayCoverageBriefs>>[number] | undefined;
+            let dayHasGap = false;
+            if (COVERAGE_IN_REQUESTS) {
+              const briefs = await requestsV2.computeDayCoverageBriefs({
                 clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-                absentDoctorId: b.absentId,
-                covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
               });
+              const mineBrief = briefs.find((b) => b.absentId === doc.id)
+                ?? { day: r.day, absentId: doc.id, absentName: doc.name, gaps: [], reserves: [] };
+              dayHasGap = mineBrief.gaps.length > 0;
+              dayBrief = mineBrief;
+              // أنعِش بنود الغائبين الآخرين في كروتهم القائمة: الغائب الجديد لم يعد
+              // مرشّحًا لتغطيتهم — لا اقتراحات بائتة (تحديثٌ فقط، لا كروت جديدة).
+              for (const b of briefs) {
+                if (b.absentId === doc.id) continue;
+                await notifications.resolveCoverageV2({
+                  clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+                  absentDoctorId: b.absentId,
+                  covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
+                });
+              }
             }
             for (const leaderId of leaders) {
               // تحويل مرضيّةٍ/تفرّغٍ مُغطًّى إلى استئذان: كرتُ «تحديد المكان» يحلّ
@@ -867,17 +882,48 @@ export async function dispatchRequestToolV2(
               // تعارض الاستئذان: لا يصل القائد كرتٌ عند التسجيل. الكرت «استئذان يحتاج
               // ترتيبًا» يُؤجَّل حتى يرفض الجميع التبديل مع صاحب الاستئذان في الشفتين
               // (يُرسَل عندئذٍ من مسار استنفاد طلب التبديل) — فالكرت = المشكلة الحقيقيّة.
-              await notifications.upsertLeaderCoverage({
-                clinicId: ctx.clinicId, leaderId,
-                weekStart: wsEff, day: r.day,
-                absentDoctorId: doc.id, absentDoctorName: doc.name,
-                dayBrief, dayHasGap,
-                senderId: doc.id, senderName: doc.name,
-              });
+              if (COVERAGE_IN_REQUESTS && dayBrief) {
+                await notifications.upsertLeaderCoverage({
+                  clinicId: ctx.clinicId, leaderId,
+                  weekStart: wsEff, day: r.day,
+                  absentDoctorId: doc.id, absentDoctorName: doc.name,
+                  dayBrief, dayHasGap,
+                  senderId: doc.id, senderName: doc.name,
+                });
+              }
             }
           } catch (e) {
             // eslint-disable-next-line no-console
             console.log('[notify-leader] failed', e instanceof Error ? e.message : e);
+          }
+        }
+
+        // ترتيب تعويض النقص (الجديد): غيابٌ كاملٌ (مرضية/تفرّغ) أخرج الطبيب من عيادته
+        // → خوارزميّة الجدول تُرتّب تعويض الشفت، ويصل القائدَ كرت [نفّذ] بالفرق.
+        // الفرق محسوبٌ في الكود (لا يُكشَف «إعادة التوزيع» — سرّيّة الآليّة).
+        if (status === 'sick_leave' || status === 'vacation') {
+          try {
+            const { schedule } = await import('../algorithms/schedule');
+            const { notifications } = await import('../algorithms/notifications');
+            const prop = await schedule.proposeCoverageForAbsence({
+              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day, absentDoctorId: doc.id,
+            });
+            if (prop) {
+              const slotsData = prop.slots.map((s) => ({
+                clinicNumber: s.clinicNumber, period: s.period, role: s.role,
+                doctorId: s.doctor.id, doctorName: s.doctor.name,
+              }));
+              for (const leaderId of await getTeamLeaderIds(ctx.clinicId)) {
+                await notifications.notifyCoverageFill({
+                  clinicId: ctx.clinicId, leaderId, weekStart: wsEff,
+                  day: r.day, shift: prop.shift, absentNames: prop.absentNames,
+                  diff: prop.diff, slots: slotsData,
+                });
+              }
+            }
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.log('[coverage-fill] failed', e instanceof Error ? e.message : e);
           }
         }
 
@@ -1109,13 +1155,35 @@ export async function dispatchRequestToolV2(
         const doc = resolveDoctor(ctx, r.doctorIndex);
         if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
         if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        // إن لم يُغطَّ مكانه → يعود إليه تلقائيًّا. وإن غُطّي (الحفظ مُزِّق وقت التغطية)
-        // → لا يُعاد فوق المُغطّي؛ القائد يقرّر أين يوضَع (الذكاء ينفّذ بلا اقتراحات).
+        // التقِط شفت المكان المحفوظ **قبل** الإلغاء (cancelStatus يمسح prev_placement)
+        let returnShift: 'morning' | 'evening' | null = null;
+        try {
+          const { schedule } = await import('../algorithms/schedule');
+          returnShift = await schedule.placementShift({
+            clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day, doctorId: doc.id,
+          });
+        } catch { /* غيابٌ بلا مكان → لا انعكاس */ }
+
+        // إن لم يُغطَّ مكانه → يعود إليه تلقائيًّا. وإن غُطّي → نعيد ترتيب شفته
+        // تلقائيًّا فتُرفع التغطية ويعود هو (لا كرت ولا تدخّل قائد — إشعار علمٍ فقط).
         const res = await requestsV2.cancelStatus(actor, {
           clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
           doctorId: doc.id, restoreToPrevPlace: true,
         });
         if (!res.success) return `Tool error: ${res.error}`;
+
+        let autoReturned = false;
+        if (res.covered && returnShift) {
+          try {
+            const { schedule } = await import('../algorithms/schedule');
+            autoReturned = await schedule.redistributeOnReturn({
+              clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day, shift: returnShift,
+            });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.log('[return-redistribute] failed', e instanceof Error ? e.message : e);
+          }
+        }
 
         // الغياب لم يعد قائمًا → أسقِط هذا اليوم من كروت النقص عند **كلّ** القادة،
         // وأبلِغ القادة (عدا الفاعل) تلقائيًّا بالإلغاء وبمصير مكانه.
@@ -1153,7 +1221,9 @@ export async function dispatchRequestToolV2(
                 ? 'عاد إلى جانب مدرّبه'
                 : rc.shadowSupervisorAbsent
                   ? 'مدرّبه غائبٌ فبقي في الاحتياط'
-                  : res.covered && res.restored
+                  : autoReturned
+                    ? 'عاد إلى الجدول وانتظم الشفت تلقائيًّا'
+                    : res.covered && res.restored
                     ? 'أُعيد إلى بعض خاناته وبعضُها مشغول — حدّد مكان الباقي'
                     : res.covered
                       ? 'مكانه مُغطًّى — حدّد أين يوضَع'
@@ -1162,18 +1232,9 @@ export async function dispatchRequestToolV2(
                         : 'لم يكن منسَّبًا في العيادة';
           const leaders = await getTeamLeaderIds(ctx.clinicId);
           for (const leaderId of leaders) {
-            // مكانه مُغطًّى → **كرت فعلٍ** لكلّ القادة — حتى الفاعل نفسه لو كان قائدًا
-            // (القرار «أين يوضَع العائد» يُتَّخذ داخل الكرت دائمًا، فيفهم الذكاء عمّن
-            // وعن أيّ يومٍ يتكلّم القائد). بدل إشعار العلم، لا الاثنين معًا.
-            if (res.covered) {
-              await notifications.alertLeaderPlacement({
-                clinicId: ctx.clinicId, leaderId,
-                weekStart: String(r.weekStart), day: r.day,
-                doctorId: doc.id, doctorName: doc.name,
-                canceledStatusAr: statusAr === 'الحالة' ? undefined : statusAr,
-                senderId: doc.id, senderName: doc.name,
-              });
-            } else if (leaderId !== actor.id) {
+            // الإلغاء (وأيُّ انعكاسٍ تلقائيّ) = إشعار علمٍ للقائد فقط — لا كرت ولا
+            // تدخّل. المحرّك يعيد الترتيب وحده؛ القائد يُبلَّغ بالمصير لا غير.
+            if (leaderId !== actor.id) {
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
@@ -1207,17 +1268,13 @@ export async function dispatchRequestToolV2(
         }
 
         const cancelBase = `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]}.`;
-        // عاد إلى بعض خاناته وبعضها شغله غيرُه يدويًّا → كرت «تحديد المكان» للباقي
-        if (res.covered && res.restored) {
-          return final(cancelBase + ' أُعيد إلى خاناته الفارغة، وبعضُها مشغولٌ الآن — وصل القادةَ كرتٌ لتحديد مكان الباقي.');
+        // مكانه كان مُغطًّى → أُعيد ترتيب الشفت تلقائيًّا فعاد إلى الجدول (لا كرت).
+        if (autoReturned) {
+          return final(cancelBase + ` عاد ${doc.name} إلى الجدول وانتظم الشفت تلقائيًّا — أُبلغ القادة للعلم.`);
         }
-        // مكانه مُغطّى → لا إرجاع تلقائيًّا؛ القرار «أين يوضَع» يُتَّخذ داخل كرت
-        // «عودة تحتاج مكانًا» الذي وصل القادة للتوّ — لا سؤال هنا (تأكيد نهائيّ).
+        // مُغطًّى لكن تعذّر الترتيب التلقائيّ (لا وصفة محفوظة مثلًا) — أبلِغ بصدق.
         if (res.covered) {
-          const LEADER_PLUS = ['team_leader', 'coordinator', 'super_admin', 'manager'];
-          return final(LEADER_PLUS.includes(actor.role)
-            ? cancelBase + ' مكانه السابق مُغطًّى فلم يُعَد تلقائيًّا — وصلك كرتٌ في المحادثة لتحديد مكانه.'
-            : cancelBase + ' مكانه السابق مُغطًّى فلم يُعَد تلقائيًّا — أُبلغ القادة ليحدّدوا مكانه.');
+          return final(cancelBase + ' مكانه السابق مُغطًّى وتعذّر الترتيب التلقائيّ — أُبلغ القادة.');
         }
         // كن صادقًا: لا تدّعِ الإرجاع إن لم يوجد مكانٌ محفوظ (لم يكن منسَّبًا وقت الغياب).
         return final(res.restored

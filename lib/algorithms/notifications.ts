@@ -39,6 +39,7 @@ export const NotifType = {
   GAP_ALERT: 'gap_alert',               // action: تنبيه الليدر بنقصٍ يحتاج تصرّفًا
   REQUEST_RESULT: 'request_result',     // info: ردّ للطالب (تمّت الموافقة/الرفض)
   TRAINEE_ATTACHED: 'trainee_attached', // info: للمدرّب — أُلحق به متدرّب لهذا اليوم
+  COVERAGE_FILL: 'coverage_fill',       // action: ترتيب تعويض نقصٍ جاهز — للقائد [نفّذ]
 } as const;
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -237,6 +238,57 @@ export async function notifyLeaderOfRequest(args: {
       body: `${args.senderName}: ${args.summary}`,
       data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now },
     });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
+/** ترتيب تعويض نقصٍ جاهز — كرت [نفّذ] للقائد. الفرق محسوبٌ في الكود (لا يُكشَف
+ *  «إعادة توزيع الشفت» — سرّيّة الآليّة). يُحذف القائم المعلّق لنفس (القائد/اليوم/
+ *  الشفت) ويُنشأ محدَّثًا، فلا تكرار. */
+export async function notifyCoverageFill(args: {
+  clinicId: string;
+  leaderId: string;
+  weekStart: string;
+  day: WeekDay;
+  shift: 'morning' | 'evening';
+  absentNames: string[];
+  diff: { seat: string; from: string; to: string }[];
+  slots: Record<string, unknown>[];
+}): Promise<NotifResult> {
+  try {
+    // أزِل القائم المعلّق لنفس الموقف (إنعاشٌ لا تكرار)
+    const { data: existing } = await supabase
+      .from('notifications')
+      .select('id, data')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('type', NotifType.COVERAGE_FILL)
+      .eq('action_status', 'pending');
+    for (const r of (existing || []) as { id: string; data: any }[]) {
+      if (r.data?.day === args.day && r.data?.shift === args.shift
+        && (r.data?.week_start ?? '') === args.weekStart) {
+        await supabase.from('notifications').delete().eq('id', r.id);
+      }
+    }
+    const shiftAr = args.shift === 'morning' ? 'صباحًا' : 'مساءً';
+    const names = args.absentNames.length ? args.absentNames.map(dr).join(' و') : 'النقص';
+    const { error } = await createNotification({
+      clinic_id: args.clinicId,
+      recipient_id: args.leaderId,
+      type: NotifType.COVERAGE_FILL,
+      title: 'تعويض نقص',
+      body: `ترتيب تعويض نقص ${names} — ${DAY_AR[args.day]} ${shiftAr}.`,
+      data: {
+        kind: 'coverage_fill', day: args.day, shift: args.shift,
+        absent_names: args.absentNames, diff: args.diff, slots: args.slots,
+        week_start: args.weekStart, batch_at: Date.now(),
+      },
+      action_type: 'execute',
+      action_status: 'pending',
+      is_read: false,
+    });
+    return error ? fail(error.message) : ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -1659,4 +1711,6 @@ export const notifications = {
   alertLeaderGap, alertLeaderCoverage, notifyLeaderCoverage, upsertLeaderCoverage, resolveGapAlert, resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
   alertLeaderPermissionConflict, resolvePermissionAlertV2,
+  // تعويض النقص (إعادة ترتيب الشفت) — كرت [نفّذ] للقائد
+  notifyCoverageFill,
 };

@@ -361,6 +361,44 @@ export async function loadScheduleData(
   };
 }
 
+// ─── حفظ/تحميل «وصفة البناء» ──────────────────────────────────
+// إعدادات البناء (خطّة الشفت/البورد/الدليقيتر/التريني/التفضيلات/الاستثناءات) لا
+// تُشتقّ من الجدول المحفوظ. نحفظها مع كلّ بناءٍ كي تُعيد التغطيةُ لاحقًا توزيع
+// شفتٍ واحدٍ **بنفس الوصفة** بلا تخمين. (جدول schedule_build_configs.)
+
+/** الوصفة المخزَّنة = مدخلات البناء بلا dryRun (تُعاد كما هي للتوزيع). */
+export type StoredBuildConfig = Omit<ScheduleBuildInput, 'dryRun'>;
+
+/** يحفظ وصفة البناء مع الجدول. غير قاتل: إن لم يُنشأ الجدول بعد لا يكسر الحفظ. */
+export async function saveBuildConfig(input: ScheduleBuildInput): Promise<void> {
+  const { dryRun: _dryRun, ...cfg } = input;
+  const { error } = await supabase
+    .from('schedule_build_configs')
+    .upsert(
+      { clinic_id: input.clinicId, week_start: input.weekStart, config: cfg },
+      { onConflict: 'clinic_id,week_start' },
+    );
+  if (error) {
+    // لا نُفشل الحفظ — فقط ننبّه (غالبًا: الجدول غير مُنشأ، شغّل sql/build_config.sql)
+    console.warn('[saveBuildConfig] تعذّر حفظ وصفة البناء:', error.message);
+  }
+}
+
+/** يحمّل وصفة البناء المحفوظة لـ (عيادة + أسبوع) — null إن لم توجد. */
+export async function loadBuildConfig(
+  clinicId: string,
+  weekStart: string,
+): Promise<StoredBuildConfig | null> {
+  const { data, error } = await supabase
+    .from('schedule_build_configs')
+    .select('config')
+    .eq('clinic_id', clinicId)
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data.config as StoredBuildConfig) ?? null;
+}
+
 /**
  * محمّل خفيف للأطباء فقط (بلا خانات، بلا تاريخ أسبوع).
  * يُستخدم لحقن "دفتر الأطباء" في سياق الذكاء حتى يربط الاسم بالـ id
@@ -1189,8 +1227,232 @@ async function readWeekSlots(
   return { slots, error: null };
 }
 
+// ─── تعويض النقص: إعادة توزيع شفتٍ واحد بالوصفة المحفوظة ──────────
+// عند نقصٍ (غياب/استئذان) نعيد توزيع الشفت المتأثّر بنفس عقل البناء وعصا العدل،
+// لا بمنطق تغطيةٍ خاصّ. نُعيد بناء حالة العصا بإعادة تشغيل أيّام الأسبوع حتى الشفت
+// المستهدف (فحالة الوسط دقيقة). يحسب فقط — لا يكتب؛ القائد يراجع ثمّ يُحفظ.
+export async function redistributeShift(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  shift: Shift;
+  /** غيابات محاكاةٍ للاختبار (في الإنتاج تكون الغيابات مكتوبةً في الجدول أصلًا). */
+  simulateAbsences?: ExtraAbsence[];
+}): Promise<
+  | { success: true; slots: AssignedSlot[]; warnings: string[]; clinicCount: number }
+  | { success: false; error: string }
+> {
+  const { clinicId, weekStart, day, shift, simulateAbsences } = args;
+  const recipe = await loadBuildConfig(clinicId, weekStart);
+  if (!recipe) {
+    return { success: false, error: 'لا توجد وصفة بناءٍ محفوظة لهذا الأسبوع — أعِد بناء الجدول.' };
+  }
+  const { data, error } = await loadScheduleData(clinicId, weekStart);
+  if (error || !data) return { success: false, error: error || 'تعذّر تحميل بيانات الجدول.' };
+
+  const input: ScheduleBuildInput = {
+    ...recipe,
+    clinicId,
+    weekStart,
+    extraAbsences: [...(recipe.extraAbsences || []), ...(simulateAbsences || [])],
+    dryRun: true,
+  };
+
+  const plan = computeWeekPlan(input, data);
+
+  // ── العدالة من الواقع، لا من إعادة الحساب ──
+  // العجلات تُبنى من السجل السابق + ما كُتب فعلاً في الأسبوع الحاليّ حتى ما قبل
+  // (اليوم، الشفت) المستهدف. سابقًا كنّا نعيد حساب الأيام السابقة من الوصفة، فإن
+  // خالف ما طُبّق فعلاً (تغطيةٌ سُجِّلت لاحقًا، أو تبديلٌ يدويّ) بقي الطبيب الذي
+  // انفرد فعلًا في مقدّمة العجلة فتكرّر تحميله. «ما في الجدول هو الحقيقة».
+  const DAY_IDX: Record<WeekDay, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+  const targetOrder = DAY_IDX[day] * 2 + (shift === 'evening' ? 1 : 0);
+  const slotOrder = (s: LoadedSlot): number | null => {
+    const di = DAY_IDX[s.dayOfWeek as WeekDay];
+    if (di == null) return null;
+    if (s.period === 1 || s.period === 2) return di * 2;                 // عيادة/دليقيتر صباح
+    if (s.period === 3 || s.period === 4) return di * 2 + 1;             // عيادة/دليقيتر مساء
+    if (s.status === 'extra' && s.period === 0)                          // احتياط الشفت (بعموده)
+      return di * 2 + (s.clinicNumber === 2 ? 1 : 0);
+    return di < DAY_IDX[day] ? di * 2 : null;                           // غياب/مكان سابق: يومٌ كامل
+  };
+  const priorThisWeek = data.existingSlots.filter((s) => {
+    const o = slotOrder(s);
+    return o != null && o < targetOrder;
+  });
+  const wheels = createWheels(data.doctors, [...data.pastSlots, ...priorThisWeek]);
+
+  // نفس استثناءات التريني المستقلّ كما في البناء
+  const modesForExcl = input.traineeModes || {};
+  const opts = input.traineeOptions || {};
+  const excludeDel = new Set<string>();
+  const excludeEx = new Set<string>();
+  for (const [id, o] of Object.entries(opts)) {
+    if (modesForExcl[id] !== 'independent') continue;
+    if (o.inDelegator === false) excludeDel.add(id);
+    if (o.inReserve === false) excludeEx.add(id);
+  }
+
+  // وزّع الشفت المستهدف فقط — العجلات تحمل تاريخ الأيام السابقة فعليًّا
+  const targetDay = plan.find((d) => d.day === day);
+  if (!targetDay || targetDay.isHoliday) return { success: false, error: 'اليوم المستهدف عطلة أو غير موجود.' };
+  const sp = shift === 'morning' ? targetDay.morning : targetDay.evening;
+  if (!sp) return { success: false, error: 'تعذّر إنتاج بركة الشفت المطلوب.' };
+  const res = distributeShiftWheel(day, data.clinicCount, sp, wheels, input.delegatorEnabled, excludeEx, excludeDel);
+  return { success: true, slots: res.slots, warnings: res.warnings, clinicCount: data.clinicCount };
+}
+
+// ينفّذ تعويض النقص: يكتب مقاعد شفتٍ واحدٍ (بعد موافقة القائد) — يحذف خانات ذلك
+// الشفت النشطة (عيادة/دليقيتر بفتراته + احتياطه) ويُدخل الجديدة. لا يمسّ الشفت
+// الآخر ولا صفوف الغياب (sick/vacation/prev_placement تبقى).
+export async function applyShiftRedistribution(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  shift: Shift;
+  slots: AssignedSlot[];
+}): Promise<{ success: boolean; error?: string }> {
+  const { clinicId, weekStart, day, shift, slots } = args;
+  const periods = SHIFT_PERIODS[shift];
+  const exCol = shift === 'morning' ? 1 : 2; // عمود احتياط الشفت
+
+  // 1. احذف عيادة/دليقيتر النشطة بفترات هذا الشفت
+  const { error: d1 } = await supabase
+    .from('schedule_slots').delete()
+    .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', day)
+    .eq('status', 'active').in('period', periods).in('role', ['clinic', 'delegator']);
+  if (d1) return { success: false, error: `فشل حذف خانات الشفت: ${d1.message}` };
+
+  // 2. احذف احتياط هذا الشفت (status='extra', period=0, عمود الشفت) من البناء/الطلبات/الظلّ
+  const { error: d2 } = await supabase
+    .from('schedule_slots').delete()
+    .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', day)
+    .eq('status', 'extra').eq('period', 0).eq('clinic_number', exCol)
+    .in('source', ['ai', 'shadow', 'request']);
+  if (d2) return { success: false, error: `فشل حذف احتياط الشفت: ${d2.message}` };
+
+  // 3. أدخل الخانات الجديدة (نفس صيغة writeSlots: الاحتياط role='clinic'/status='extra')
+  const rows = slots.map((s) => ({
+    clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+    period: s.period, clinic_number: s.clinicNumber,
+    doctor_id: s.doctor.id, doctor_name: s.doctor.name,
+    role: s.role === 'ex' ? 'clinic' : s.role,
+    status: s.role === 'ex' ? 'extra' : 'active',
+    source: 'request',
+  }));
+  if (rows.length > 0) {
+    const { error: insErr } = await supabase.from('schedule_slots').insert(rows);
+    if (insErr) return { success: false, error: `فشل إدخال الخانات: ${insErr.message}` };
+  }
+  return { success: true };
+}
+
+// فرقُ الشفت (قديم→جديد): لكلّ مقعدٍ تغيّر شاغله. يجمع المدرّب+ظلّه باسمٍ واحد.
+function shiftDiff(
+  current: LoadedSlot[],
+  next: AssignedSlot[],
+  periods: Period[],
+): { seat: string; from: string; to: string }[] {
+  const label = (clinic: number, period: number, role: string) =>
+    role === 'delegator' ? `دليقيتر/ف${period}` : `ع${clinic}/ف${period}`;
+  const push = (m: Map<string, string[]>, k: string, name: string) =>
+    (m.get(k) ?? m.set(k, []).get(k)!).push(name);
+  const cur = new Map<string, string[]>();
+  for (const s of current) {
+    if (!periods.includes(s.period as Period)) continue;
+    if (s.role !== 'clinic' && s.role !== 'delegator') continue;
+    push(cur, `${s.role}|${s.clinicNumber}|${s.period}`, s.doctorName);
+  }
+  const nx = new Map<string, string[]>();
+  for (const s of next) {
+    if (s.role === 'ex') continue;
+    push(nx, `${s.role}|${s.clinicNumber}|${s.period}`, s.doctor.name);
+  }
+  const out: { seat: string; from: string; to: string }[] = [];
+  for (const k of [...new Set([...cur.keys(), ...nx.keys()])].sort()) {
+    const from = (cur.get(k) ?? []).sort().join(' + ') || '—';
+    const to = (nx.get(k) ?? []).sort().join(' + ') || '—';
+    if (from === to) continue;
+    const [role, c, p] = k.split('|');
+    out.push({ seat: label(Number(c), Number(p), role!), from, to });
+  }
+  return out;
+}
+
+// يجهّز تعويض نقصٍ ناتجٍ عن غياب طبيب: يحدّد شفته من مكانه المحفوظ (prev_placement)،
+// يعيد توزيع ذلك الشفت، ويُرجِع الفرق + المقاعد الجديدة (للكتابة عند التنفيذ).
+// null = لا نقص (لم يكن منسَّبًا، أو لا تغيير).
+export async function proposeCoverageForAbsence(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  absentDoctorId: string;
+}): Promise<{ shift: Shift; slots: AssignedSlot[]; diff: { seat: string; from: string; to: string }[]; absentNames: string[] } | null> {
+  const { data } = await loadScheduleData(args.clinicId, args.weekStart);
+  if (!data) return null;
+  const prev = data.existingSlots.filter(
+    (s) => s.dayOfWeek === args.day && s.doctorId === args.absentDoctorId && (s.role as string) === 'prev_placement',
+  );
+  if (prev.length === 0) return null; // لم يكن في عيادة/دليقيتر → لا نقص
+  const shift: Shift = prev.some((p) => p.period >= 3) ? 'evening' : 'morning';
+  const r = await redistributeShift({ clinicId: args.clinicId, weekStart: args.weekStart, day: args.day, shift });
+  if (!r.success) return null;
+  const periods = SHIFT_PERIODS[shift];
+  const current = data.existingSlots.filter(
+    (s) => s.dayOfWeek === args.day && s.status === 'active'
+      && (s.role === 'clinic' || s.role === 'delegator') && periods.includes(s.period as Period),
+  );
+  const diff = shiftDiff(current, r.slots, periods);
+  if (diff.length === 0) return null;
+  // كلّ غائبي هذا الشفت (لهم مكانٌ سابقٌ ضمن فترات الشفت) — لعنوان الكرت يجمعهم
+  const absentNames = [...new Set(
+    data.existingSlots
+      .filter((s) => s.dayOfWeek === args.day && (s.role as string) === 'prev_placement' && periods.includes(s.period as Period))
+      .map((s) => s.doctorName),
+  )];
+  return { shift, slots: r.slots, diff, absentNames };
+}
+
+// شفت الطبيب من مكانه المحفوظ (prev_placement) لذلك اليوم. يُقرأ **قبل الإلغاء**
+// لأنّ cancelStatus يمسح صفوف prev_placement. null = لم يكن منسَّبًا في العيادة.
+export async function placementShift(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  doctorId: string;
+}): Promise<Shift | null> {
+  const { data } = await loadScheduleData(args.clinicId, args.weekStart);
+  if (!data) return null;
+  const prev = data.existingSlots.filter(
+    (s) => s.dayOfWeek === args.day && s.doctorId === args.doctorId && (s.role as string) === 'prev_placement',
+  );
+  if (prev.length === 0) return null;
+  return prev.some((p) => p.period >= 3) ? 'evening' : 'morning';
+}
+
+// عند إلغاء غيابٍ كان مكانه مُغطًّى: العائد متاحٌ الآن (أُزيل صفّ حالته) فيدخل
+// البِركة تلقائيًّا → نعيد ترتيب شفته فتُرفع تغطيةُ من غطّاه ويعود هو إلى الجدول.
+export async function redistributeOnReturn(args: {
+  clinicId: string;
+  weekStart: string;
+  day: WeekDay;
+  shift: Shift;
+}): Promise<boolean> {
+  const r = await redistributeShift({ clinicId: args.clinicId, weekStart: args.weekStart, day: args.day, shift: args.shift });
+  if (!r.success) return false;
+  await applyShiftRedistribution({ clinicId: args.clinicId, weekStart: args.weekStart, day: args.day, shift: args.shift, slots: r.slots });
+  return true;
+}
+
 export const schedule = {
   build,
   saveSlots,
   readWeekSlots,
+  saveBuildConfig,
+  loadBuildConfig,
+  redistributeShift,
+  applyShiftRedistribution,
+  proposeCoverageForAbsence,
+  placementShift,
+  redistributeOnReturn,
 };

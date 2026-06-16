@@ -70,6 +70,8 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
     // gap_alert: تغطية v2 (data.v===2) تُحمّر الزرّ ما دامت معلّقةً وغير مقروءة. بمجرّد
     // فتح القائد للكرت تُعلَّم مقروءةً فيهدأ الأوربّ، ويبقى الكرت للمرجع. القديمة بلا v2 تُستثنى.
     if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n) && !n.is_read;
+    // coverage_fill: كرت تعويض النقص يُحمّر الزرّ ما دام معلّقًا (لا دفع — لون الزرّ فقط)
+    if (n.type === 'coverage_fill') return !n.action_status || n.action_status === 'pending';
     return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
 }
@@ -768,6 +770,240 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   );
 }
 
+// ───────────── كرت تعويض النقص: مسوّدة شفتٍ مصغّرة، يُعاينها القائد ويبدّل بالنقر ─────────────
+type FillSlot = { clinicNumber: number; period: number; role: string; doctorId: string; doctorName: string };
+
+/** يبدّل طبيبين بكامل خاناتهما في الشفت (الفترتان معًا — لا يكسر التزاوج) */
+function swapFillDocs(slots: FillSlot[], idA: string, idB: string): FillSlot[] {
+  if (idA === idB) return slots;
+  const a = slots.find((s) => s.doctorId === idA);
+  const b = slots.find((s) => s.doctorId === idB);
+  if (!a || !b) return slots;
+  return slots.map((s) => {
+    if (s.doctorId === idA) return { ...s, doctorId: b.doctorId, doctorName: b.doctorName };
+    if (s.doctorId === idB) return { ...s, doctorId: a.doctorId, doctorName: a.doctorName };
+    return s;
+  });
+}
+
+function FillCell({ docs, sel, onTap }: { docs: { id: string; name: string }[]; sel: string | null; onTap: (id: string) => void }) {
+  return (
+    <View style={styles.gridCell}>
+      {docs.length > 0 ? docs.map((d, i) => (
+        <TouchableOpacity
+          key={`${d.id}-${i}`}
+          activeOpacity={0.7}
+          hitSlop={{ top: scale(4), bottom: scale(4), left: scale(2), right: scale(2) }}
+          onPress={() => onTap(d.id)}
+          style={[styles.cellDoc, sel === d.id && styles.cellActive]}
+        >
+          <Text numberOfLines={1} style={styles.cellDocTxt}>{d.name}</Text>
+        </TouchableOpacity>
+      )) : <Text style={styles.cellEmpty}>—</Text>}
+    </View>
+  );
+}
+
+// نفس الأطباء في الفترتين = منفرد (يستلم العيادة كاملةً) → حاوية واحدة
+function sameDocs(a: { id: string }[], b: { id: string }[]): boolean {
+  if (a.length === 0 || a.length !== b.length) return false;
+  const sa = new Set(a.map((d) => d.id));
+  return b.every((d) => sa.has(d.id));
+}
+
+function FillRow({ label, left, right, sel, onTap }: {
+  label: string; left: { id: string; name: string }[]; right: { id: string; name: string }[];
+  sel: string | null; onTap: (id: string) => void;
+}) {
+  const merged = sameDocs(left, right);   // منفرد → خانةٌ واحدةٌ تمتدّ على الفترتين
+  return (
+    <View style={styles.gridRow}>
+      <View style={styles.gridLabel}><Text style={styles.gridLabelTxt}>{label}</Text></View>
+      {merged ? (
+        <FillCell docs={left} sel={sel} onTap={onTap} />
+      ) : (
+        <>
+          <FillCell docs={left} sel={sel} onTap={onTap} />
+          <FillCell docs={right} sel={sel} onTap={onTap} />
+        </>
+      )}
+    </View>
+  );
+}
+
+function CoverageFillCard({ notif, clinicId, onDone, setNote }: {
+  notif: ConvoNotif; clinicId?: string; onDone: () => void | Promise<void>; setNote: (s: string) => void;
+}) {
+  const d = notif.data || {};
+  const shift: 'morning' | 'evening' = d.shift === 'evening' ? 'evening' : 'morning';
+  const [pa, pb] = shift === 'morning' ? [1, 2] : [3, 4];
+  const [slots, setSlots] = useState<FillSlot[]>(() => ((d.slots as FillSlot[]) || []).map((s) => ({ ...s })));
+  const [sel, setSel] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // حالة الكرت: معلّق (أحمر) / متجاهَل (دسمس) / تمّ (أخضر — نُفّذ أو دن). يبقى خلال أسبوعه.
+  const status: 'pending' | 'ignored' | 'done' =
+    !notif.action_status || notif.action_status === 'pending' ? 'pending'
+      : notif.action_status === 'ignored' ? 'ignored' : 'done';
+  const resolved = status !== 'pending';
+
+  // درج Done/Dismiss بالسحب يمينًا — يعمل والكرت مغلق فقط (كبقيّة الكروت)
+  const SW_OPEN = scale(140);
+  const tx = useRef(new Animated.Value(0)).current;
+  const swBase = useRef(0);
+  const expandedRef = useRef(false);
+  const closeSwipe = useCallback(() => {
+    Animated.spring(tx, { toValue: 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+    swBase.current = 0;
+  }, [tx]);
+  const horizontal = (g: { dx: number; dy: number }) => Math.abs(g.dx) > Math.abs(g.dy) * 1.2 && Math.abs(g.dx) > 8;
+  const swipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => !expandedRef.current && horizontal(g),
+    onMoveShouldSetPanResponderCapture: (_e, g) => !expandedRef.current && horizontal(g),
+    onPanResponderGrant: () => { tx.stopAnimation((v: number) => { swBase.current = v; }); },
+    onPanResponderMove: (_e, g) => {
+      let x = swBase.current + g.dx;
+      if (x < 0) x = 0; else if (x > SW_OPEN) x = SW_OPEN + (x - SW_OPEN) * 0.12;
+      tx.setValue(Math.min(x, SW_OPEN));
+    },
+    onPanResponderRelease: (_e, g) => {
+      const open = (swBase.current + g.dx) > SW_OPEN * 0.45;
+      Animated.spring(tx, { toValue: open ? SW_OPEN : 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+      swBase.current = open ? SW_OPEN : 0;
+    },
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
+  const mark = useCallback(async (s: 'ignored' | 'done') => {
+    try {
+      const { updateNotificationAction } = await import('../lib/database');
+      await updateNotificationAction(notif.id, s);
+      await onDone();
+    } catch { /* يُعاد بسحبٍ آخر */ }
+  }, [notif.id, onDone]);
+
+  const onToggle = useCallback(() => {
+    if (swBase.current > 0) { closeSwipe(); return; }   // السحب مفتوح؟ النقرة تُغلقه فقط
+    const next = !expanded;
+    expandedRef.current = next;
+    setExpanded(next);
+  }, [expanded, closeSwipe]);
+
+  const onTap = (id: string) => {
+    if (resolved) return;                        // بعد الحلّ: عرضٌ فقط
+    if (!sel) { setSel(id); return; }            // تحديد
+    if (sel === id) { setSel(null); return; }    // نفسه → إلغاء
+    setSlots((s) => swapFillDocs(s, sel, id));    // تبديل ثمّ إلغاء
+    setSel(null);
+  };
+
+  const clinics = [...new Set(slots.filter((s) => s.role === 'clinic').map((s) => s.clinicNumber))].sort((a, b) => a - b);
+  const hasDlg = slots.some((s) => s.role === 'delegator');
+  const exDocs = (() => {
+    const seen = new Set<string>(); const out: { id: string; name: string }[] = [];
+    for (const s of slots) { if (s.role !== 'ex' || seen.has(s.doctorId)) continue; seen.add(s.doctorId); out.push({ id: s.doctorId, name: s.doctorName }); }
+    return out;
+  })();
+  const pick = (role: string, period: number, clinicNum?: number) =>
+    slots.filter((s) => s.role === role && s.period === period && (clinicNum == null || s.clinicNumber === clinicNum))
+      .map((s) => ({ id: s.doctorId, name: s.doctorName }));
+
+  const apply = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (!clinicId) throw new Error('لا توجد عيادة مرتبطة.');
+      const payload = slots.map((s) => ({ day: d.day, period: s.period, clinicNumber: s.clinicNumber, role: s.role, doctor: { id: s.doctorId, name: s.doctorName } }));
+      const { schedule } = await import('../lib/algorithms/schedule');
+      const res = await schedule.applyShiftRedistribution({ clinicId, weekStart: String(d.week_start || ''), day: d.day, shift, slots: payload as never });
+      if (res.success) {
+        const { updateNotificationAction } = await import('../lib/database');
+        await updateNotificationAction(notif.id, 'accepted');   // → أخضر، يبقى ظاهرًا
+        setNote('تمّ ترتيب التعويض.');
+      } else setNote(`تعذّر: ${res.error || ''}`);
+      await onDone();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+    } finally { setBusy(false); }
+  };
+
+  const kind: CardKind = status === 'done' ? 'done' : status === 'ignored' ? 'ignored' : 'coverage';
+  const pillText = status === 'done' ? 'تمّ' : status === 'ignored' ? 'أُهمل' : 'يحتاج تنفيذك';
+
+  return (
+    <View style={styles.swWrap}>
+      {/* درج Done / Dismiss — يُكشَف بالسحب يمينًا */}
+      <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
+        <LinearGradient colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        <View style={styles.swActs}>
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('done'); }}>
+            <Ionicons name="checkmark" size={scale(21)} color="#34D399" />
+            <Text style={[styles.swTxt, { color: '#34D399' }]}>Done</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('ignored'); }}>
+            <Ionicons name="close" size={scale(21)} color="#FB7185" />
+            <Text style={[styles.swTxt, { color: '#FB7185' }]}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
+        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && styles.glassDim}>
+          <TouchableOpacity style={styles.head} onPress={onToggle} activeOpacity={0.8}>
+            <CardBadge kind={kind} live={status === 'pending'} />
+            <View style={styles.headTxt}>
+              <Text style={styles.cardTitle} numberOfLines={2}>{notif.body}</Text>
+              <Pill kind={kind} text={pillText} />
+            </View>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+          </TouchableOpacity>
+
+          {expanded && (
+            <View style={styles.covBody}>
+              {!resolved && (
+                <Text style={styles.fillHint}>
+                  {sel ? 'انقر طبيبًا آخر للتبديل — أو انقر نفسه للإلغاء' : 'راجِع الترتيب — للتبديل انقر طبيبًا ثمّ آخر'}
+                </Text>
+              )}
+              <View style={styles.gridWrap}>
+                <View style={styles.gridHeadRow}>
+                  <View style={styles.gridLabel} />
+                  <View style={styles.gridCellHead}><Text style={styles.gridHeadTxt}>{`P${pa}`}</Text></View>
+                  <View style={styles.gridCellHead}><Text style={styles.gridHeadTxt}>{`P${pb}`}</Text></View>
+                </View>
+                {clinics.map((cn) => (
+                  <FillRow key={`c${cn}`} label={`CL${cn}`} sel={sel} onTap={onTap} left={pick('clinic', pa, cn)} right={pick('clinic', pb, cn)} />
+                ))}
+                {hasDlg && <FillRow label="DLG" sel={sel} onTap={onTap} left={pick('delegator', pa)} right={pick('delegator', pb)} />}
+              </View>
+              {exDocs.length > 0 && (
+                <View style={styles.exWrap}>
+                  <Text style={styles.exHead}>EX</Text>
+                  <View style={styles.exRow}>
+                    {exDocs.map((dd) => (
+                      <TouchableOpacity key={dd.id} activeOpacity={0.7} onPress={() => onTap(dd.id)} style={[styles.exChip, sel === dd.id && styles.cellActive]}>
+                        <Text style={styles.exChipTxt}>{dd.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {!resolved && (busy ? (
+                <ActivityIndicator color="#7C3AED" style={{ marginTop: scale(12) }} />
+              ) : (
+                <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={apply}>
+                  <Text style={styles.primaryBtnTxt}>موافق</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </GlassCard>
+      </Animated.View>
+    </View>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // AICardsView — لوحةُ كروت الإبلاغ المشتركة (تغطية نقص / موافقات / نتائج)
 // ═══════════════════════════════════════════════════════════════
@@ -792,6 +1028,7 @@ export function AICardsView({ user, clinicId }: {
     const items = ((data || []) as ConvoNotif[])
       .filter((n) =>
         isPending(n)
+        || (n.type === 'coverage_fill' && (!n.action_status || n.action_status === 'pending'))
         || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
         || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
@@ -904,6 +1141,9 @@ export function AICardsView({ user, clinicId }: {
           return (
             <CoverageCard key={n.id} notif={n} user={user} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />
           );
+        }
+        if (n.type === 'coverage_fill') {
+          return <CoverageFillCard key={n.id} notif={n} clinicId={clinicId ?? user.clinicId ?? undefined} onDone={loadConvo} setNote={setNote} />;
         }
         if (isPending(n)) {
           const busy = busyId === n.id;
@@ -1112,6 +1352,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     const items = ((data || []) as ConvoNotif[])
       .filter((n) =>
         isPending(n)
+        || (n.type === 'coverage_fill' && (!n.action_status || n.action_status === 'pending'))
         || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
         || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
@@ -1553,6 +1794,26 @@ const styles = StyleSheet.create({
   covBtnDay: { fontSize: scale(12), color: '#C4B5FD', textAlign: 'right', fontWeight: '800', marginBottom: scale(2) },
   // نصّ الذكاء كفقرة (كالنموذج)
   bodyPara: { fontSize: scale(13.5), color: 'rgba(244,241,255,0.66)', textAlign: 'right', lineHeight: scale(21), fontWeight: '500', marginBottom: scale(11) },
+  // سطر فرق تعويض النقص: المقعد + الشاغل الجديد + (كان القديم)
+  // كرت تعويض النقص — مسوّدة الشفت المصغّرة
+  fillHint: { fontSize: scale(11), color: 'rgba(214,196,255,0.7)', textAlign: 'right', marginTop: scale(10) },
+  gridWrap: { marginTop: scale(10), backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: scale(12), padding: scale(10), borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.18)' },
+  gridHeadRow: { flexDirection: 'row-reverse', gap: scale(4), marginBottom: scale(6) },
+  gridCellHead: { flex: 1, alignItems: 'center' },
+  gridHeadTxt: { fontSize: scale(10), fontWeight: '800', color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
+  gridRow: { flexDirection: 'row-reverse', gap: scale(4), marginBottom: scale(4) },
+  gridLabel: { width: scale(46), justifyContent: 'center' },
+  gridLabelTxt: { fontSize: scale(10), fontWeight: '800', color: 'rgba(255,255,255,0.6)', textAlign: 'center' },
+  gridCell: { flex: 1, minHeight: scale(30), borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.22)', borderRadius: scale(7), paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.04)' },
+  cellDoc: { borderRadius: scale(5), paddingVertical: scale(2) },
+  cellActive: { backgroundColor: 'rgba(139,92,246,0.6)' },
+  cellDocTxt: { fontSize: scale(10.5), fontWeight: '700', color: '#fff', textAlign: 'center' },
+  cellEmpty: { fontSize: scale(10), color: 'rgba(255,255,255,0.3)', textAlign: 'center' },
+  exWrap: { marginTop: scale(10), paddingTop: scale(8), borderTopWidth: scale(1), borderTopColor: 'rgba(255,255,255,0.14)' },
+  exHead: { fontSize: scale(10), fontWeight: '800', color: 'rgba(255,255,255,0.55)', textAlign: 'right', marginBottom: scale(6) },
+  exRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(6) },
+  exChip: { borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.3)', borderRadius: scale(7), paddingVertical: scale(4), paddingHorizontal: scale(8), backgroundColor: 'rgba(255,255,255,0.05)' },
+  exChipTxt: { fontSize: scale(10.5), fontWeight: '700', color: '#fff' },
   // الحلول كخيارات عريضة زجاجيّة
   optGroup: { alignSelf: 'stretch', marginBottom: scale(4) },
   optDay: { fontSize: scale(12), color: '#C4B5FD', textAlign: 'right', fontWeight: '800', marginBottom: scale(6), marginTop: scale(2) },
