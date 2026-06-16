@@ -1249,6 +1249,17 @@ export async function dispatchRequestToolV2(
           console.log('[notify-cancel] failed', e instanceof Error ? e.message : e);
         }
 
+        // إلغاءُ أيّ طلبٍ → اسأل صاحبَه (طبيبًا كان أو قائدًا) مَن يُبلِغ: أزرار
+        // [الشفت][المركز][لا داعي] من الكود (القادة وصلهم إشعارهم التلقائيّ، فيُستثنون).
+        {
+          const stAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الطلب';
+          ctx.onAnnounceOffer?.({
+            weekStart: String(r.weekStart), day: r.day,
+            message: `إلغاء ${stAr} ${doc.name} يوم ${DAY_AR[r.day]}.`,
+            subjectId: doc.id, subjectName: doc.name,
+          });
+        }
+
         const rcf = res as {
           permissionCanceled?: boolean; returnedToReserve?: boolean;
           shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];

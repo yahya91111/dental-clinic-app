@@ -774,16 +774,41 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
 type FillSlot = { clinicNumber: number; period: number; role: string; doctorId: string; doctorName: string };
 
 /** يبدّل طبيبين بكامل خاناتهما في الشفت (الفترتان معًا — لا يكسر التزاوج) */
+// يبدّل **مجموعتين** لا فردين: المتدرّب الظلّ يشغل نفس مقاعد مدرّبه تمامًا، فيُحسَب
+// معه (كلّ مَن يشغل نفس مقاعد المختار = مجموعته)، وينتقل معه عند التبديل لا وحده.
 function swapFillDocs(slots: FillSlot[], idA: string, idB: string): FillSlot[] {
   if (idA === idB) return slots;
-  const a = slots.find((s) => s.doctorId === idA);
-  const b = slots.find((s) => s.doctorId === idB);
-  if (!a || !b) return slots;
-  return slots.map((s) => {
-    if (s.doctorId === idA) return { ...s, doctorId: b.doctorId, doctorName: b.doctorName };
-    if (s.doctorId === idB) return { ...s, doctorId: a.doctorId, doctorName: a.doctorName };
-    return s;
-  });
+  const key = (c: number, p: number) => `${c}|${p}`;
+  const seatsOf = (id: string) => {
+    const m = new Map<string, { c: number; p: number; role: string }>();
+    for (const s of slots) if (s.doctorId === id) m.set(key(s.clinicNumber, s.period), { c: s.clinicNumber, p: s.period, role: s.role });
+    return [...m.values()];
+  };
+  const aSeats = seatsOf(idA);
+  const bSeats = seatsOf(idB);
+  if (aSeats.length === 0 || bSeats.length === 0) return slots;
+  const aKeys = new Set(aSeats.map((x) => key(x.c, x.p)));
+  const bKeys = new Set(bSeats.map((x) => key(x.c, x.p)));
+  // نفس المقاعد (مشرف ↔ ظلّه) → لا تبديل (تجنّب التكرار)
+  if (aKeys.size === bKeys.size && [...aKeys].every((k) => bKeys.has(k))) return slots;
+  // المجموعة = كلّ طبيبٍ يشغل **نفس** مقاعد المختار تمامًا (المشرف + ظلاله)
+  const sameSeats = (id: string, keys: Set<string>) => {
+    const ks = new Set(slots.filter((s) => s.doctorId === id).map((s) => key(s.clinicNumber, s.period)));
+    return ks.size === keys.size && [...ks].every((k) => keys.has(k));
+  };
+  const groupOf = (keys: Set<string>) =>
+    [...new Set(slots.filter((s) => keys.has(key(s.clinicNumber, s.period))).map((s) => s.doctorId))].filter((id) => sameSeats(id, keys));
+  const groupA = groupOf(aKeys);
+  const groupB = groupOf(bKeys);
+  const nameOf = (id: string) => slots.find((s) => s.doctorId === id)?.doctorName ?? '';
+  // أزِل مقاعد المجموعتين، ثمّ أعِد: مقاعد A ← أطباء B، ومقاعد B ← أطباء A (مع الحفاظ على دور كلّ مقعد)
+  const out = slots.filter((s) => !aKeys.has(key(s.clinicNumber, s.period)) && !bKeys.has(key(s.clinicNumber, s.period)));
+  const fill = (seats: { c: number; p: number; role: string }[], group: string[]) => {
+    for (const seat of seats) for (const id of group) out.push({ clinicNumber: seat.c, period: seat.p, role: seat.role, doctorId: id, doctorName: nameOf(id) });
+  };
+  fill(aSeats, groupB);
+  fill(bSeats, groupA);
+  return out;
 }
 
 function FillCell({ docs, sel, onTap }: { docs: { id: string; name: string }[]; sel: string | null; onTap: (id: string) => void }) {
