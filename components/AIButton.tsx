@@ -26,10 +26,14 @@ type Props = {
   onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean; freshConversation?: boolean }) => void;
   /** مسح المحادثة (فقاعات + كروت) — اختياريّ */
   onClearConversation?: () => void | Promise<void>;
+  /** تعديل رسالةٍ مشتركة (نتيجة خيار) — للتزامن بين المحادثتين */
+  onPatchMessage?: (id: string, patch: Partial<ChatMessage>) => void;
+  /** بعد إجراءٍ غيّر الجدول (مسح) — لإنعاش الشبكة */
+  onAfterAction?: () => void;
   isLoading?: boolean;
 };
 
-export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, onClearConversation, isLoading }: Props) {
+export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, onClearConversation, onPatchMessage, onAfterAction, isLoading }: Props) {
   const [showChat, setShowChat] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const openChat = () => setShowChat(true);
@@ -73,6 +77,8 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
         messages={messages}
         onSend={onSend}
         onClearConversation={onClearConversation}
+        onPatchMessage={onPatchMessage}
+        onAfterAction={onAfterAction}
         isLoading={isLoading}
       />
     </>

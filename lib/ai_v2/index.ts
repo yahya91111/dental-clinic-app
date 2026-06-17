@@ -23,9 +23,9 @@ import {
   DOCTOR_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
-import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type AnnounceOffer, type SwapOffer } from './tools';
+import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type AnnounceOffer, type SwapOffer, type ConfirmOffer } from './tools';
 import { REQUESTS_TOOLS_V2, dispatchRequestToolV2, FINAL_MARK } from './tools_requests_v2';
-export type { SchedulePreview, AnnounceOffer, SwapOffer } from './tools';
+export type { SchedulePreview, AnnounceOffer, SwapOffer, ConfirmOffer } from './tools';
 
 // ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
 // مهمّة الإشعارات أُلغيت: التغطية والإشعارات صارت ضمن «الطلبات» (المحرّك يكتشف
@@ -118,6 +118,8 @@ export type SendMessageV2Result = {
   announceOffer?: AnnounceOffer;
   /** عرض أزرار التبديل للقائد (طلب/مباشر أو إبلاغ المبدَّلين) — تُنفَّذ بالكود */
   swapOffer?: SwapOffer;
+  /** عرض تأكيدٍ قبل إجراءٍ خطير (مسح الجدول) — الواجهة تعرض [نعم][تراجع] وتنفّذ بالكود */
+  confirmOffer?: ConfirmOffer;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -299,6 +301,7 @@ export async function sendMessageV2(
     let capturedAnnounce: AnnounceOffer | undefined;
     // وأزرار التبديل للقائد (طلب/مباشر، أو إبلاغ المبدَّلين)
     let capturedSwap: SwapOffer | undefined;
+    let capturedConfirm: ConfirmOffer | undefined;
     const toolCtx: V2ToolContext = {
       clinicId: opts.clinicId || '',
       user: opts.user,
@@ -306,6 +309,7 @@ export async function sendMessageV2(
       onPreview: (p) => { capturedPreview = p; },
       onAnnounceOffer: (o) => { capturedAnnounce = o; },
       onSwapOffer: (o) => { capturedSwap = o; },
+      onConfirmOffer: (o) => { capturedConfirm = o; },
     };
 
     const activeTools = bundle.tools;
@@ -446,6 +450,7 @@ export async function sendMessageV2(
       preview: capturedPreview,
       announceOffer: capturedAnnounce,
       swapOffer: capturedSwap,
+      confirmOffer: capturedConfirm,
       usage: {
         inputTokens: inputTokensTotal,
         outputTokens: outputTokensTotal,

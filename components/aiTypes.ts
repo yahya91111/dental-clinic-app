@@ -5,7 +5,7 @@
 // (AISchedulePanel). موضوع في ملفّ محايد حتى لا يملكه أيّ مكوّن.
 // ═══════════════════════════════════════════════════════════════
 
-import type { AnnounceOffer, SwapOffer } from '../lib/ai_v2';
+import type { AnnounceOffer, SwapOffer, ConfirmOffer } from '../lib/ai_v2';
 
 export interface ChatMessage {
   id: string;
@@ -16,4 +16,8 @@ export interface ChatMessage {
   announceOffer?: AnnounceOffer;
   /** أزرار التبديل للقائد (طلب/مباشر، أو إبلاغ المبدَّلين) — تُنفَّذ بالكود */
   swapOffer?: SwapOffer;
+  /** تأكيد إجراءٍ خطير (مسح الجدول) — [نعم، امسح][تراجع] تُنفَّذ بالكود */
+  confirmOffer?: ConfirmOffer;
+  /** نتيجة الخيار بعد تنفيذه — تُخزَّن في الرسالة المشتركة فتتزامن بين المحادثتين */
+  offerResolved?: { text: string; done: boolean };
 }

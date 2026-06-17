@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../lib/scale';
 import { OrbGlyph } from './AIOrb';
 import { AICardsView } from './AIChatModal';
+import AssistantOffers from './AssistantOffers';
 import { ChatMessage } from './aiTypes';
 import { WizardContent, WizardResult, PreviewView } from './ScheduleWizard';
 import type { Clarification, ResolvedClarification, UnsupportedRequest } from '../lib/ai_v2/parseExceptions';
@@ -27,6 +28,10 @@ interface AISchedulePanelProps {
   onAction: (action: PanelAction) => void;
   messages: ChatMessage[];        // owned by the parent — we only render them
   onSend: (text: string) => void; // called on send / when a choice chip is tapped
+  /** تعديل رسالةٍ مشتركة (نتيجة خيار) — للتزامن مع محادثة الضغطة المطوّلة */
+  onPatchMessage?: (id: string, patch: Partial<ChatMessage>) => void;
+  /** بعد إجراءٍ غيّر الجدول (مسح) — لإنعاش الشبكة */
+  onAfterAction?: () => void;
   isLoading?: boolean;            // shows a "typing…" bubble
   contextLabel?: string;          // small line under the header (optional)
   userName?: string;              // اسم المستخدم — للترحيب في رأس المحادثة
@@ -715,8 +720,10 @@ function ChatInputBar({ onSend, light }: { onSend?: (text: string) => void; ligh
 
 // Scrollable chat transcript (bubbles + answer chips). Shared by the orbit chat
 // view and the slide-in chat panel so both render the same conversation.
-function ChatBody({ messages, isLoading, onSend, style, light, header }: {
+function ChatBody({ messages, isLoading, onSend, style, light, header, user, clinicId, onPatchMessage, onAfterAction }: {
   messages: ChatMessage[]; isLoading?: boolean; onSend: (text: string) => void; style?: any; light?: boolean; header?: React.ReactNode;
+  user?: { id: string; name: string; role: string; clinicId?: string | null }; clinicId?: string | null;
+  onPatchMessage?: (id: string, patch: Partial<ChatMessage>) => void; onAfterAction?: () => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const kb = useKeyboardHeight();
@@ -747,6 +754,20 @@ function ChatBody({ messages, isLoading, onSend, style, light, header }: {
         const isUser = m.role === 'user';
         const isLastAssistant = !isUser && mi === messages.length - 1;
         const { text, choices } = isLastAssistant && !isLoading ? parseChoices(m.content) : { text: m.content, choices: [] as string[] };
+        // رسالةٌ تحمل عرضًا → كرتٌ كامل (نصّها + أزرارها) بلا فقاعة منفصلة، يتزامن مع الضغطة المطوّلة
+        const hasOffer = !isUser && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
+        if (hasOffer && user) {
+          return (
+            <AssistantOffers
+              key={m.id}
+              message={m}
+              user={user}
+              clinicId={clinicId}
+              onResolved={(rtext, done) => onPatchMessage?.(m.id, { offerResolved: { text: rtext, done } })}
+              onDone={onAfterAction}
+            />
+          );
+        }
         return (
           <View key={m.id}>
             <View style={{
@@ -847,7 +868,7 @@ function UnsupportedCards({ items }: { items: UnsupportedRequest[] }) {
   );
 }
 
-export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, isLoading, contextLabel, userName, user, clinicId, onCreateSchedule, chatPreview, chatPreviewSaving, chatPreviewError, onSaveChatPreview, onDiscardChatPreview }: AISchedulePanelProps) {
+export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, onPatchMessage, onAfterAction, isLoading, contextLabel, userName, user, clinicId, onCreateSchedule, chatPreview, chatPreviewSaving, chatPreviewError, onSaveChatPreview, onDiscardChatPreview }: AISchedulePanelProps) {
   const morph = useRef(new Animated.Value(0)).current;       // 0 = knot A .. 1 = straight C
   const gather = useRef(new Animated.Value(0)).current;      // 0 = thin colored threads .. 1 = thick page surface
   const surfaceOp = useRef(new Animated.Value(0)).current;   // real page surface
@@ -1220,6 +1241,10 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
               messages={messages}
               isLoading={isLoading}
               onSend={onSend}
+              user={user}
+              clinicId={clinicId}
+              onPatchMessage={onPatchMessage}
+              onAfterAction={onAfterAction}
               style={{ position: 'absolute', top: scale(84), left: 0, right: 0, bottom: scale(94) }}
             />
 
@@ -1330,6 +1355,10 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
                   messages={messages}
                   isLoading={isLoading}
                   onSend={onSend}
+                  user={user}
+                  clinicId={clinicId}
+                  onPatchMessage={onPatchMessage}
+                  onAfterAction={onAfterAction}
                   header={<><UnsupportedCards items={unsupported} /><ClarifyCards clarifications={clarifications} onResolve={resolveClar} /></>}
                   style={{ position: 'absolute', top: scale(132), left: 0, right: 0, bottom: scale(94) }}
                 />

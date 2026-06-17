@@ -140,6 +140,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         announceOffer: response.announceOffer,
         // القائد طرفٌ في تبديل أو بدّل اثنين؟ → أزرار القرار/الإبلاغ تحت الردّ
         swapOffer: response.swapOffer,
+        // طلب مسح الجدول؟ → أزرار تأكيد [نعم، امسح][تراجع] تُنفَّذ بالكود
+        confirmOffer: response.confirmOffer,
       };
       setAiMessages(prev => [...prev, assistantMsg]);
       aiHistoryRef.current.push({ role: 'assistant', content: response.message });
@@ -156,6 +158,10 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     // Reset state after delay
     setTimeout(() => setAiState('idle'), 2000);
   };
+
+  // تعديل رسالةٍ في المحادثة المشتركة (نتيجة خيارٍ نُفِّذ) — تتزامن بين المحادثتين
+  const patchAiMessage = (id: string, patch: Partial<ChatMessage>) =>
+    setAiMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
 
   // مسح محادثة الذكاء: فقاعات الذاكرة + كروت محادثة الذكاء من قاعدة البيانات
   const handleClearConversation = async () => {
@@ -654,6 +660,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           messages={aiMessages}
           onSend={handleAISend}
           onClearConversation={handleClearConversation}
+          onPatchMessage={patchAiMessage}
+          onAfterAction={loadSchedule}
           isLoading={aiLoading}
         />
       )}
@@ -668,6 +676,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         }}
         messages={aiMessages}
         onSend={handleAISend}
+        onPatchMessage={patchAiMessage}
+        onAfterAction={loadSchedule}
         isLoading={aiLoading}
         contextLabel={`Schedule — ${activeTab === 'daily_duty' ? 'Daily Duty' : activeTab === 'doctors' ? 'Doctors' : activeTab === 'vacation' ? 'Vacation' : 'Weekend'}`}
         userName={user?.name}
