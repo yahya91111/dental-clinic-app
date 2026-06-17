@@ -19,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { getNotifications, markAsRead, subscribeToNotifications } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
 import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
-import type { CoverageChoice } from '../lib/ai_v2/tools_requests_v2';
+import AssistantOffers from './AssistantOffers';
+import { CardBadge, Pill, GlassCard, cardStyles, type CardKind } from './AICard';
 import { ChatMessage } from './aiTypes';
 import { scale } from '../lib/scale';
 
@@ -33,6 +34,10 @@ type Props = {
   onSend: (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean; freshConversation?: boolean }) => void;
   /** مسح المحادثة (فقاعات الذاكرة + كروت قاعدة البيانات) */
   onClearConversation?: () => void | Promise<void>;
+  /** تعديل رسالةٍ مشتركة (نتيجة خيار) — للتزامن بين المحادثتين */
+  onPatchMessage?: (id: string, patch: Partial<ChatMessage>) => void;
+  /** بعد إجراءٍ غيّر الجدول (مسح) — لإنعاش الشبكة */
+  onAfterAction?: () => void;
   isLoading?: boolean;
 };
 
@@ -125,72 +130,6 @@ function coverageDays(d: Record<string, any>): SeedDay[] {
   return [];
 }
 
-/** حلول نقصٍ واحد — نصًّا، بلا أقواس. */
-function gapSolution(g: SeedGap, reserveStr: string): string {
-  if (g.kind === 'delegator_combo') {
-    // عيادة الغائب + الدليقيتر معًا → **خياران منفصلان مُسمّيان** (الأول/الثاني)
-    const A = g.optionA || [];
-    const B = g.optionB || [];
-    const lines: string[] = [`  نقص مركّب: عيادة ${g.clinicNumber} + الدليقيتر (يُغطّيان معًا). خياران منفصلان:`];
-    if (A.length) {
-      const a0 = A[0];
-      const back0 = a0.backfill ? ` ويستلم ${dr(a0.backfill.name)} عيادة ${a0.coverClinic} كاملة` : '';
-      lines.push(`  **الخيار الأول:** ${dr(a0.cover.name)} يحلّ محلّ الغائب (عيادته + الدليقيتر)،${back0}.`);
-      const altA = A.slice(1).map((o) => dr(o.cover.name));
-      if (altA.length) lines.push(`     (بدائل المُغطّي: ${altA.join('، ')})`);
-    }
-    if (B.length) {
-      const b0 = B[0];
-      const col = g.clinicColleague ? `${dr(g.clinicColleague.name)} يستلم عيادة ${g.clinicNumber} كاملة، و` : '';
-      lines.push(`  **الخيار الثاني:** ${col}عيادة ${b0.clinicNumber} (${dr(b0.a.name)} و${dr(b0.b.name)}) تتولّى الدليقيتر بالتناوب.`);
-      const altB = B.slice(1).map((o) => `عيادة ${o.clinicNumber}`);
-      if (altB.length) lines.push(`     (بدائل عيادة الدليقيتر: ${altB.join('، ')})`);
-    }
-    if (reserveStr) lines.push(`  أو الاحتياطي: ${reserveStr}.`);
-    return lines.join('\n');
-  }
-  if (g.kind === 'delegator') {
-    const names = (g.candidates || []).map((x) => dr(x.name));
-    const opts: string[] = [];
-    if (names.length) opts.push(`${names.join(' أو ')} (متفرّغون في تلك الفترة)`);
-    if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
-    return `  - الدليقيتر: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
-  }
-  const opts: string[] = [];
-  if (g.twoPeriodColleague) opts.push(`${dr(g.twoPeriodColleague.name)} (زميله في العيادة) يستلم الفترتين`);
-  for (const f of g.fullCandidates || []) opts.push(`${dr(f.name)} (متفرّغ) يستلمها كاملة`);
-  // إعادة توزيع اليوم — كلّ خيار: طبيبٌ ينفرد بالعيادة وزميله يستلم عيادتهما كاملة،
-  // والدليقيتر يبقى بالتناوب إن أمكن وإلّا ذاب
-  for (const ro of g.reshapeOptions || []) {
-    const rsMoves = ro.moves || [];
-    const rsMain = dr(rsMoves.find((m) => m.clinic === g.clinicNumber)?.doctor?.name);
-    if (!rsMain) continue;
-    const rsTails = [...new Set(
-      rsMoves.filter((m) => (m.clinic ?? 0) > 0 && m.clinic !== g.clinicNumber)
-        .map((m) => `يبقى ${dr(m.doctor?.name)} في عيادة ${m.clinic} كاملة`),
-    )];
-    const rsDelegs = [...new Set(
-      rsMoves.filter((m) => m.clinic === 0).map((m) => dr(m.doctor?.name)).filter(Boolean),
-    )];
-    if (rsDelegs.length) {
-      rsTails.push(rsDelegs.length > 1
-        ? `يتناوب ${rsDelegs.join(' و')} على الدليقيتر`
-        : `يستلم ${rsDelegs[0]} الدليقيتر`);
-    }
-    opts.push(`إعادة توزيع اليوم: يستلم ${rsMain} العيادة منفردًا` +
-      (rsTails.length ? ` و${rsTails.join(' و')}` : ''));
-  }
-  if (reserveStr) opts.push(`الاحتياطي: ${reserveStr}`);
-  // لا حلّ كامل؟ المعادلة تقترح تغطيةً جزئيّة: متفرّغ كلّ فترةٍ على حدة
-  const partialNames = [...new Set(
-    (g.partials || []).flatMap((p) => (p.candidates || []).map((x) => dr(x.name))),
-  )];
-  if (!opts.length && partialNames.length) {
-    return `  - عيادة ${g.clinicNumber}: لا أحد متاحًا لليوم كاملًا؛ تغطية جزئيّة ممكنة: ${partialNames.join(' أو ')} (كلٌّ في وقته المتاح)`;
-  }
-  return `  - عيادة ${g.clinicNumber}: ${opts.length ? opts.join('، أو ') : 'لا حلّ متاح حاليًّا'}`;
-}
-
 function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
   const d = n.data || {};
   // كرت «استئذان يحتاج ترتيبًا»: طبيبٌ استأذن وهو يستلم خانةً في فترةٍ يحجبها
@@ -269,43 +208,8 @@ function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
       `الطبيب العائد: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
     ].join('\n');
   }
-  const days = coverageDays(d);
-  const rawNames = [...new Set(days.map((x) => x.absentName).filter(Boolean))] as string[];
-  const multi = rawNames.length > 1;
-  const absentName = rawNames.length
-    ? rawNames.map((x) => dr(x)).join(' و')
-    : dr(String(d.absent_doctor_name || ''));
-
-  // كتلة لكلّ بند (يوم، غائب): «يوم الأحد — غياب فلان: …حلول» أو «لا نقص — مغطّى».
-  const dayBlocks = days.map((c) => {
-    const dayAr = DAY_AR_SEED[c.day] || c.day || '';
-    const who = multi && c.absentName ? ` — غياب ${dr(c.absentName)}` : '';
-    const gaps: SeedGap[] = c.gaps || [];
-    const reserves: SeedDoc[] = c.reserves || [];
-    const reserveStr = reserves.length ? reserves.map((x) => dr(x.name)).join(' أو ') : '';
-    if (!gaps.length) return `• يوم ${dayAr}${who}: لا نقص — اليوم مغطّى، لا حاجة لإجراء.`;
-    return [`• يوم ${dayAr}${who}:`, ...gaps.map((g) => gapSolution(g, reserveStr))].join('\n');
-  });
-
-  return [
-    'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): غاب طبيبٌ أو أكثر في يومٍ أو أكثر، وقد ينشأ نقصٌ',
-    'في بعض الأيّام. تكلّم مع القائد كأنّك لاحظتَ ذلك بنفسك.',
-    '',
-    `**القائمة أدناه فيها ${days.length} ${days.length === 2 ? 'بندان' : 'بنود'} (بندٌ لكلّ غائبٍ في يوم). يجب أن يحتوي ردّك على`,
-    `${days.length} فقرات — فقرةٌ لكلّ بند بالترتيب، تبدأ بـ«يوم …». لا تدمج بندين، ولا تُسقط أيّ`,
-    'بند، ولا تكتفِ بآخر بند.** للبند الذي فيه نقص اذكر مكانه (بلا فترات) ثمّ حلوله؛ وللبند بلا',
-    'نقص قل إنّه مغطّى ولا حاجة لإجراء. **اعرض الحلول كنصّ (نقاط)؛ لا أقواس [ ] ولا أزرار.** لا',
-    'تذكر حلًّا غير موجود. اليوم الواحد قد يجمع غائبَين أو أكثر — سمِّ صاحب كلّ نقص في فقرته،',
-    'وعند التنفيذ مرّر رقم **صاحب ذلك النقص** للأداة لا غائبًا آخر. عند ردّ القائد على بندٍ نفّذ',
-    'بالأداة المناسبة **لذلك اليوم** (مرّر day الصحيح، لا تذكر فترةً، ولا تستعمل place_in_clinic):',
-    'نقصٌ مركّب (عيادة+دليقيتر) → **apply_coverage_option**؛ نقصٌ بسيط (عيادة فقط أو دليقيتر فقط) → **cover_gap**؛',
-    'اختار أحد خيارات «إعادة توزيع اليوم» → **reshape_day** بالمنفرد المختار (soloDoctorIndex) — المحرّك ينفّذ كلّ النقلات.',
-    '',
-    `الأسبوع: ${d.week_start || ''}`,
-    absentName ? `${multi ? 'الأطبّاء الغائبون' : 'الطبيب الغائب'}: ${absentName}` : '',
-    `البنود والحلول (${days.length}):`,
-    ...dayBlocks,
-  ].filter(Boolean).join('\n');
+  // التغطية انتقلت إلى بناء الجدول (كرت coverage_fill) — هذا الكرت لم يعد يُنشأ للنقص.
+  return '';
 }
 
 /** عنوان الكرت الثابت: الطبيب الغائب + أيّام النقص (بلا حلول وبلا فترات). */
@@ -321,129 +225,7 @@ function coverageTitle(n: ConvoNotif): string {
     const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
     return `عودة تحتاج مكانًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
   }
-  const days = coverageDays(d);
-  const gapEntries = days.filter((c) => (c.gaps?.length || 0) > 0);
-  const rawNames = [...new Set(
-    (gapEntries.length ? gapEntries : days).map((x) => x.absentName).filter(Boolean),
-  )] as string[];
-  const absentName = rawNames.length
-    ? rawNames.map((x) => dr(x)).join(' و')
-    : dr(String(d.absent_doctor_name || ''));
-  const gapDays = [...new Set(gapEntries.map((c) => DAY_AR_SEED[c.day] || c.day))];
-  const list = gapDays.join('، ');
-  return `نقص${absentName ? ` — ${absentName}` : ''}${list ? `: ${list}` : ''}`;
-}
-
-/**
- * أزرار التغطية — تُبنى **من حقائق الكرت نفسها** (بالهويّات) لا من نصّ الذكاء، فكلّ
- * زرّ يطابق حلًّا ذكره النصّ حرفيًّا. الضغط يُنفَّذ بالكود مباشرةً (applyCoverageChoice)
- * بلا أيّ نداءٍ للنموذج. الكتابة الحرّة تبقى متاحةً لما هو خارج الخيارات.
- */
-type CovBtn = { label: string; choice: CoverageChoice };
-
-type CovBtnGroup = { day: string; dayAr: string; absentId: string; absentName: string; btns: CovBtn[] };
-
-function buildCoverageButtons(d: Record<string, any>): CovBtnGroup[] {
-  const topId = String(d.absent_doctor_id || '');
-  const topName = String(d.absent_doctor_name || '');
-  const out: CovBtnGroup[] = [];
-  for (const c of coverageDays(d)) {
-    const gaps: SeedGap[] = c.gaps || [];
-    if (!gaps.length) continue;
-    const reserves = (c.reserves || []).filter((x): x is { id: string; name: string } => !!x.id);
-    const btns: CovBtn[] = [];
-    for (const g of gaps) {
-      if (g.kind === 'delegator_combo') {
-        const a0 = (g.optionA || [])[0];
-        if (a0?.cover?.id) {
-          btns.push({
-            label: `الخيار الأول — ${dr(a0.cover.name)}`,
-            choice: { kind: 'option_a', coverId: a0.cover.id, coverName: a0.cover.name },
-          });
-        }
-        const b0 = (g.optionB || [])[0];
-        if (b0) {
-          btns.push({
-            label: `الخيار الثاني — عيادة ${b0.clinicNumber} بالتناوب`,
-            choice: { kind: 'option_b', delegatorClinicNumber: b0.clinicNumber },
-          });
-        }
-        for (const rsv of reserves) {
-          btns.push({
-            label: `الاحتياطي ${dr(rsv.name)}`,
-            choice: { kind: 'option_a', coverId: rsv.id, coverName: rsv.name },
-          });
-        }
-      } else if (g.kind === 'delegator') {
-        for (const cand of (g.candidates || []).slice(0, 3)) {
-          if (!cand.id) continue;
-          btns.push({
-            label: `${dr(cand.name)} — الدليقيتر`,
-            choice: { kind: 'cover_gap', location: 'delegator', coverId: cand.id, coverName: cand.name },
-          });
-        }
-        for (const rsv of reserves) {
-          btns.push({
-            label: `الاحتياطي ${dr(rsv.name)} — الدليقيتر`,
-            choice: { kind: 'cover_gap', location: 'delegator', coverId: rsv.id, coverName: rsv.name },
-          });
-        }
-      } else {
-        // نقص عيادة بسيط — الزميل/المتفرّغ يستلمها، أو الاحتياطي، أو جزئيًّا
-        // (المحرّك يُغطّي تلقائيًّا الفترات المتاحة للمضغوط عليه — نفس النداء)
-        const where = gaps.length > 1 ? ` — عيادة ${g.clinicNumber}` : '';
-        const mate = g.twoPeriodColleague;
-        if (mate?.id) {
-          btns.push({
-            label: `${dr(mate.name)} يستلم الفترتين${where}`,
-            choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: mate.id, coverName: mate.name },
-          });
-        }
-        for (const f of (g.fullCandidates || []).filter((x): x is { id: string; name: string } => !!x.id)) {
-          btns.push({
-            label: `${dr(f.name)} يستلمها كاملة${where}`,
-            choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: f.id, coverName: f.name },
-          });
-        }
-        // إعادة توزيع اليوم — زرٌّ لكلّ خيار (يحمل المنفرد المختار)
-        for (const ro of g.reshapeOptions || []) {
-          const rsSolo = (ro.moves || []).find((m) => m.clinic === g.clinicNumber)?.doctor;
-          if (!rsSolo?.id) continue;
-          btns.push({
-            label: `إعادة توزيع اليوم: ${dr(rsSolo.name)} منفردًا${where}`,
-            choice: { kind: 'reshape', clinicNumber: g.clinicNumber, soloId: rsSolo.id },
-          });
-        }
-        for (const rsv of reserves) {
-          btns.push({
-            label: `الاحتياطي ${dr(rsv.name)}${where}`,
-            choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: rsv.id, coverName: rsv.name },
-          });
-        }
-        // حلول جزئيّة — تظهر فقط حين لا حلّ كامل (هكذا يبنيها المحرّك)
-        const seenPartial = new Set(btns.map((b) => b.label));
-        for (const p of g.partials || []) {
-          for (const cand of (p.candidates || []).filter((x): x is { id: string; name: string } => !!x.id)) {
-            const label = `${dr(cand.name)} — وقته المتاح${where}`;
-            if (seenPartial.has(label)) continue;
-            seenPartial.add(label);
-            btns.push({
-              label,
-              choice: { kind: 'cover_gap', location: 'clinic', clinicNumber: g.clinicNumber, coverId: cand.id, coverName: cand.name },
-            });
-          }
-        }
-      }
-    }
-    if (btns.length) {
-      out.push({
-        day: c.day, dayAr: DAY_AR_SEED[c.day] || c.day,
-        absentId: String(c.absentId || topId), absentName: String(c.absentName || topName),
-        btns,
-      });
-    }
-  }
-  return out;
+  return 'نقص';
 }
 
 const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل صياغة الذكاء داخل الكرت (لا تُعرَض)
@@ -453,62 +235,6 @@ const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل 
  * الذكاء الحلول بسياق هذا النقص وحده (sendMessageV2 بحقائقه). يحلّ تشويش تعدّد
  * الطلبات: كلّ كرت حديثه منفصل. أوّل فتح يُعلّم الكرت مقروءًا فيهدأ الأوربّ.
  */
-// ═══════════════════════════════════════════════════════════════
-// Aurora (فاتح) — لغةُ الكروت: شارةُ نوعٍ + حبّةُ حالة + سطحٌ زجاجيّ مضيء
-// ═══════════════════════════════════════════════════════════════
-type CardKind = 'coverage' | 'decision' | 'swap' | 'done' | 'ignored' | 'info';
-// ألوانٌ أزهى للخلفيّة الداكنة (مطابِقة للنموذج)
-const KIND: Record<CardKind, { accent: string; soft: string; line: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  coverage: { accent: '#FBBF24', soft: 'rgba(251,191,36,0.18)',  line: 'rgba(251,191,36,0.40)',  icon: 'warning' },
-  decision: { accent: '#A78BFA', soft: 'rgba(167,139,250,0.18)', line: 'rgba(167,139,250,0.40)', icon: 'help-circle' },
-  swap:     { accent: '#A78BFA', soft: 'rgba(167,139,250,0.18)', line: 'rgba(167,139,250,0.40)', icon: 'swap-horizontal' },
-  done:     { accent: '#34D399', soft: 'rgba(52,211,153,0.18)',  line: 'rgba(52,211,153,0.40)',  icon: 'checkmark-circle' },
-  ignored:  { accent: '#94A3B8', soft: 'rgba(148,163,184,0.16)', line: 'rgba(148,163,184,0.32)', icon: 'help-circle' },
-  info:     { accent: '#A99FD0', soft: 'rgba(169,159,208,0.14)', line: 'rgba(169,159,208,0.26)', icon: 'information-circle' },
-};
-
-function CardBadge({ kind, live }: { kind: CardKind; live?: boolean }) {
-  const k = KIND[kind];
-  return (
-    <View style={[styles.badge, { backgroundColor: k.soft, borderColor: k.line }]}>
-      <Ionicons name={k.icon} size={scale(20)} color={k.accent} />
-      {live && <View style={[styles.badgeDot, { backgroundColor: k.accent }]} />}
-    </View>
-  );
-}
-
-function Pill({ kind, text }: { kind: CardKind; text: string }) {
-  const k = KIND[kind];
-  return (
-    <View style={[styles.pill, { backgroundColor: k.soft, borderColor: k.line }]}>
-      <Text style={[styles.pillTxt, { color: k.accent }]}>{text}</Text>
-    </View>
-  );
-}
-
-// السطح الزجاجيّ الفاتح + خطٌّ علويٌّ متلاشٍ بلون النوع + توهّجٌ للكروت الحيّة
-function GlassCard({ kind, glow, children, style }: {
-  kind: CardKind; glow?: boolean; children: React.ReactNode; style?: any;
-}) {
-  const k = KIND[kind];
-  return (
-    <View style={[styles.glass, glow && { shadowColor: k.accent, shadowOpacity: 0.30, shadowRadius: scale(18) }, style]}>
-      {/* لوحٌ زجاجيٌّ داكنٌ قائمٌ بذاته (على الخلفيّة الفاتحة) — أفتح أعلى (إضاءة) وأعمق أسفل */}
-      <LinearGradient
-        colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
-        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-        style={styles.glassFill}
-      />
-      <LinearGradient
-        colors={['transparent', k.accent, 'transparent']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={styles.accentLine}
-      />
-      {children}
-    </View>
-  );
-}
-
 function CoverageCard({ notif, user, clinicId, onSeen }: {
   notif: ConvoNotif;
   user: { id: string; name: string; role: string; clinicId?: string | null; clinicName?: string };
@@ -619,48 +345,6 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
     runTurn([...history, { role: 'user', content: t }]);
   }, [history, loading, runTurn]);
 
-  // ─── أزرار الحلول: تنفيذٌ بالكود مباشرةً، لا نداء للنموذج ───
-  // التأكيد يُضاف للخيط محليًّا فقط (لا persist): المحرّك يَشطب النقص من بيانات
-  // الكرت ويُبطل الخيط بنفسه (resolveCoverageV2)، وإعادة حفظ الخيط هنا كانت
-  // ستُعيد البيانات القديمة فوق المحدَّثة.
-  const [covBusy, setCovBusy] = useState<string | null>(null);
-  const [doneDays, setDoneDays] = useState<Record<string, boolean>>({});
-  // كلّ مجموعة أزرار تحمل غائبها (الكرت قد يجمع أكثر من غائب لليوم نفسه) —
-  // التنفيذ والشطب يستهدفان بند (اليوم، الغائب) بعينه.
-  const handleChoice = useCallback(async (
-    day: string, absent: { id: string; name: string }, label: string, choice: CoverageChoice,
-  ) => {
-    if (covBusy || loading) return;
-    setCovBusy(`${day}|${absent.id}|${label}`);
-    try {
-      const { applyCoverageChoice } = await import('../lib/ai_v2/tools_requests_v2');
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const d = notif.data || {};
-      if (!absent.id) throw new Error('بيانات الكرت ناقصة.');
-      const res = await applyCoverageChoice({
-        clinicId: cid,
-        actor: { id: user.id, name: user.name, role: user.role },
-        weekStart: String(d.week_start || ''), day,
-        absent, choice,
-      });
-      const text = res.success ? (res.info || 'تمّ.') : (res.error || 'تعذّر التنفيذ.');
-      if (res.success) setDoneDays((p) => ({ ...p, [`${day}|${absent.id}`]: true }));
-      setHistory((h) => [...h, { role: 'assistant', content: text }]);
-      onSeen(); // يجلب بيانات الكرت بعد شطب النقص (يُغلق إن لم يبقَ نقص)
-    } catch (e) {
-      setHistory((h) => [...h, { role: 'assistant', content: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }]);
-    } finally {
-      setCovBusy(null);
-    }
-  }, [covBusy, loading, clinicId, user, notif.data, onSeen]);
-
-  // مجموعات الأزرار من حقائق الكرت — بندٌ نُفّذ حلُّه يسقط فورًا
-  const covButtonDays = status === 'pending'
-    ? buildCoverageButtons(notif.data || {}).filter((g) => !doneDays[`${g.day}|${g.absentId}`])
-    : [];
-  const covMultiAbsent = new Set(covButtonDays.map((g) => g.absentId)).size > 1;
-
   // ما يُعرَض: تجاوز رسالة التشغيل الخفيّة (index 0)، وآخر ردّ يحمل خياراته كأزرار
   const shown = history.filter((m, i) => !(i === 0 && m.role === 'user' && m.content === SEED_TRIGGER));
 
@@ -693,18 +377,18 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
       </Animated.View>
 
       <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
-        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && styles.glassDim}>
-          <TouchableOpacity style={styles.head} onPress={onToggle} activeOpacity={0.8}>
+        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && cardStyles.glassDim}>
+          <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
             <CardBadge kind={kind} live={status === 'pending'} />
-            <View style={styles.headTxt}>
-              <Text style={styles.cardTitle} numberOfLines={2}>{coverageTitle(notif)}</Text>
+            <View style={cardStyles.headTxt}>
+              <Text style={cardStyles.cardTitle} numberOfLines={2}>{coverageTitle(notif)}</Text>
               <Pill kind={kind} text={pillText} />
             </View>
             <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
           </TouchableOpacity>
 
       {expanded && (
-        <View style={styles.covBody}>
+        <View style={cardStyles.covBody}>
           {/* نصّ الذكاء كفقرات (كالنموذج)، وردّ المستخدم كفقاعةٍ بنفسجيّة */}
           {shown.map((m, i) => (
             m.role === 'assistant'
@@ -716,34 +400,6 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
               )
           ))}
           {loading && <ActivityIndicator color="#7C3AED" style={{ marginVertical: scale(6) }} />}
-
-          {/* الحلول المقترحة — خياراتٌ عريضةٌ زجاجيّة (كالنموذج)، مجموعةٌ لكلّ يوم */}
-          {!loading && shown.some((m) => m.role === 'assistant') && covButtonDays.map((g) => (
-            <View key={`${g.day}|${g.absentId}`} style={styles.optGroup}>
-              {covButtonDays.length > 1 && (
-                <Text style={styles.optDay}>
-                  {g.dayAr}{covMultiAbsent && g.absentName ? ` — غياب ${dr(g.absentName)}` : ''}
-                </Text>
-              )}
-              {g.btns.map((b) => {
-                const k = `${g.day}|${g.absentId}|${b.label}`;
-                const busy = covBusy === k;
-                return busy ? (
-                  <ActivityIndicator key={k} color="#7C3AED" style={{ marginVertical: scale(8) }} />
-                ) : (
-                  <TouchableOpacity
-                    key={k}
-                    style={styles.opt}
-                    activeOpacity={0.8}
-                    disabled={!!covBusy}
-                    onPress={() => handleChoice(g.day, { id: g.absentId, name: g.absentName }, b.label, b.choice)}
-                  >
-                    <Text style={styles.optTxt}>{b.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
 
           {/* خانة حلٍّ مختلف — زرّ الإرسال (سهم) يمينًا */}
           <View style={styles.covInputRow}>
@@ -946,6 +602,13 @@ function CoverageFillCard({ notif, clinicId, onDone, setNote }: {
         const { updateNotificationAction } = await import('../lib/database');
         await updateNotificationAction(notif.id, 'accepted');   // → أخضر، يبقى ظاهرًا
         setNote('تمّ ترتيب التعويض.');
+        // موازنةٌ صامتة لبقيّة الأسبوع (والأسابيع المبنيّة بعده) حفاظًا على العدالة:
+        // نكتب ما تغيّر فقط، **بلا إشعار** — إشعار مرضيّة الطبيب وحده يكفي للانطباع بأنّ الجدول تغيّر.
+        try {
+          await schedule.rebalanceForward({
+            clinicId, weekStart: String(d.week_start || ''), fromDay: d.day, fromShift: shift,
+          });
+        } catch { /* الموازنة تحسينٌ — لا تُفشِل التغطية المنفَّذة */ }
       } else setNote(`تعذّر: ${res.error || ''}`);
       await onDone();
     } catch (e) {
@@ -974,18 +637,18 @@ function CoverageFillCard({ notif, clinicId, onDone, setNote }: {
       </Animated.View>
 
       <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
-        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && styles.glassDim}>
-          <TouchableOpacity style={styles.head} onPress={onToggle} activeOpacity={0.8}>
+        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && cardStyles.glassDim}>
+          <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
             <CardBadge kind={kind} live={status === 'pending'} />
-            <View style={styles.headTxt}>
-              <Text style={styles.cardTitle} numberOfLines={2}>{notif.body}</Text>
+            <View style={cardStyles.headTxt}>
+              <Text style={cardStyles.cardTitle} numberOfLines={2}>{notif.body}</Text>
               <Pill kind={kind} text={pillText} />
             </View>
             <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
           </TouchableOpacity>
 
           {expanded && (
-            <View style={styles.covBody}>
+            <View style={cardStyles.covBody}>
               {!resolved && (
                 <Text style={styles.fillHint}>
                   {sel ? 'انقر طبيبًا آخر للتبديل — أو انقر نفسه للإلغاء' : 'راجِع الترتيب — للتبديل انقر طبيبًا ثمّ آخر'}
@@ -1138,10 +801,10 @@ export function AICardsView({ user, clinicId }: {
             const label = pr.side === 'other' ? 'اطلب من الشفت الآخر' : 'اطلب من فترتك';
             return (
               <GlassCard key={n.id} kind="swap" glow style={styles.feedCard}>
-                <View style={styles.head}>
+                <View style={cardStyles.head}>
                   <CardBadge kind="swap" live />
-                  <View style={styles.headTxt}>
-                    <Text style={styles.cardTitle}>تنبيه استئذان</Text>
+                  <View style={cardStyles.headTxt}>
+                    <Text style={cardStyles.cardTitle}>تنبيه استئذان</Text>
                     <Text style={styles.cardBody}>{n.body}</Text>
                   </View>
                 </View>
@@ -1174,10 +837,10 @@ export function AICardsView({ user, clinicId }: {
           const busy = busyId === n.id;
           return (
             <GlassCard key={n.id} kind="decision" glow style={styles.feedCard}>
-              <View style={styles.head}>
+              <View style={cardStyles.head}>
                 <CardBadge kind="decision" live />
-                <View style={styles.headTxt}>
-                  <Text style={styles.cardTitle}>بانتظار قرارك</Text>
+                <View style={cardStyles.headTxt}>
+                  <Text style={cardStyles.cardTitle}>بانتظار قرارك</Text>
                   <Text style={styles.cardBody}>{n.body}</Text>
                 </View>
               </View>
@@ -1220,7 +883,7 @@ export function AICardsView({ user, clinicId }: {
   );
 }
 
-export default function AIChatModal({ visible, onClose, user, clinicId, messages, onSend, onClearConversation, isLoading }: Props) {
+export default function AIChatModal({ visible, onClose, user, clinicId, messages, onSend, onClearConversation, onPatchMessage, onAfterAction, isLoading }: Props) {
   const [convo, setConvo] = useState<ConvoNotif[]>([]);
   const [input, setInput] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1228,145 +891,11 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   const [view, setView] = useState<'chat' | 'cards'>('chat'); // تبويبٌ مؤقّت: المحادثة / كروت الإبلاغ
   const scrollRef = useRef<ScrollView>(null);
 
-  // أزرار الإبلاغ بعد غيابٍ ذاتيّ: الضغط يُنفَّذ **بالكود مباشرةً** (announceAbsence)
-  // — النموذج لا يسأل ولا يشارك. النتيجة تحلّ محلّ الأزرار (لكلّ رسالة على حدة).
-  const [annResults, setAnnResults] = useState<Record<string, string>>({});
-  const [annBusyId, setAnnBusyId] = useState<string | null>(null);
-  const handleAnnounce = useCallback(async (m: ChatMessage, choice: 'shift' | 'center' | 'none') => {
-    const offer = m.announceOffer;
-    if (!offer || annBusyId) return;
-    if (choice === 'none') {
-      setAnnResults((p) => ({ ...p, [m.id]: 'حسنًا — بلا إبلاغ.' }));
-      return;
-    }
-    setAnnBusyId(m.id);
-    try {
-      const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const res = await announceAbsence({
-        clinicId: cid, sender: { id: user.id, name: user.name },
-        audience: choice, message: offer.message, subjectId: offer.subjectId,
-      });
-      setAnnResults((p) => ({
-        ...p,
-        [m.id]: res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}`,
-      }));
-    } catch (e) {
-      setAnnResults((p) => ({ ...p, [m.id]: e instanceof Error ? e.message : 'خطأ غير متوقّع.' }));
-    } finally {
-      setAnnBusyId(null);
-    }
-  }, [annBusyId, clinicId, user]);
-
   // أزرار التبديل للقائد: [أرسل طلبًا]/[بدّل مباشرة] حين يكون طرفًا، و[أبلغهما]/[لا داعي]
   // بعد تبديله اثنين، وأزرار اقتراحات الاستئذان المتعارض (زميل/فترة/شفت آخر) —
   // الضغط يُنفَّذ **بالكود مباشرةً**، لا نداء للنموذج.
   const [swapResults, setSwapResults] = useState<Record<string, { text: string; ok: boolean }>>({});
   const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
-  // عرضٌ بديلٌ يحلّ محلّ m.swapOffer محلّيًّا: بعد حسم استئذانٍ مبهمٍ بزرَّي بداية/
-  // نهاية، إن نتج تعارضٌ نضع عرض تبديل الفترة هنا فتظهر أزراره في نفس الفقاعة.
-  const [offerOverride, setOfferOverride] = useState<Record<string, ChatMessage['swapOffer']>>({});
-  const handleSwapOffer = useCallback(async (
-    m: ChatMessage,
-    choice: 'request' | 'direct' | 'notify' | 'none' | 'perm_colleague' | 'perm_period' | 'perm_other'
-      | 'perm_start' | 'perm_end',
-  ) => {
-    const offer = offerOverride[m.id] ?? m.swapOffer;
-    if (!offer || swapBusyId) return;
-    if (choice === 'none') {
-      setSwapResults((p) => ({ ...p, [m.id]: { text: 'حسنًا — بلا إبلاغ.', ok: true } }));
-      return;
-    }
-    // حسم استئذانٍ مبهم: بداية/نهاية → تسجيلٌ بالكود مباشرةً (بلا جولة نموذج).
-    if (offer.kind === 'permission_clarify' && (choice === 'perm_start' || choice === 'perm_end')) {
-      setSwapBusyId(m.id);
-      try {
-        const cid = clinicId || user.clinicId;
-        if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-        const mod = await import('../lib/ai_v2/tools_requests_v2');
-        const out = await mod.resolvePermissionByCode({
-          clinicId: cid, user: { id: user.id, name: user.name, role: user.role },
-          doctorId: offer.doctorId, doctorName: offer.doctorName,
-          weekStart: offer.weekStart, day: offer.day,
-          status: choice === 'perm_start' ? 'permission_start' : 'permission_end',
-          shift: offer.shift,
-        });
-        if (out.swapOffer) {
-          // تعارضٌ → اعرض أزرار تبديل الفترة في نفس الفقاعة، وأبقِ سطر التأكيد
-          setOfferOverride((p) => ({ ...p, [m.id]: out.swapOffer }));
-          setSwapResults((p) => ({ ...p, [m.id]: { text: out.text, ok: false } }));
-        } else {
-          setSwapResults((p) => ({ ...p, [m.id]: { text: out.text, ok: true } }));
-        }
-      } catch (e) {
-        setSwapResults((p) => ({ ...p, [m.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
-      } finally {
-        setSwapBusyId(null);
-      }
-      return;
-    }
-    setSwapBusyId(m.id);
-    try {
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const mod = await import('../lib/ai_v2/tools_requests_v2');
-      let res: { success: boolean; info?: string; error?: string } | null = null;
-      if (offer.kind === 'ask_mode' && choice === 'request') {
-        res = await mod.sendSwapRequestByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          targetId: offer.target.id, targetName: offer.target.name,
-        });
-      } else if (offer.kind === 'ask_mode' && choice === 'direct') {
-        res = await mod.directSwapByCode({
-          clinicId: cid, actor: { id: user.id, role: user.role },
-          weekStart: offer.weekStart, day: offer.day,
-          targetId: offer.target.id, targetName: offer.target.name,
-          actorName: user.name,
-        });
-      } else if (offer.kind === 'offer_notify' && choice === 'notify') {
-        res = await mod.notifySwappedPair({
-          clinicId: cid, sender: { id: user.id, name: user.name },
-          day: offer.day, a: offer.a, b: offer.b,
-        });
-      } else if (offer.kind === 'permission_fix' && choice === 'perm_colleague' && offer.colleague) {
-        res = await mod.sendSwapRequestByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          targetId: offer.colleague.id, targetName: offer.colleague.name,
-          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
-        });
-      } else if (offer.kind === 'permission_fix' && choice === 'perm_period' && offer.period) {
-        res = await mod.sendSwapRequestModeByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          mode: { kind: 'period', period: offer.period },
-          excludePeriods: offer.blocked,
-          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
-        });
-      } else if (offer.kind === 'permission_fix' && choice === 'perm_other') {
-        res = await mod.sendSwapRequestModeByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          mode: { kind: 'other_shift' },
-          excludePeriods: offer.blocked,
-          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
-        });
-      }
-      if (res) {
-        setSwapResults((p) => ({
-          ...p,
-          [m.id]: { text: res!.success ? (res!.info || 'تمّ.') : `تعذّر: ${res!.error || ''}`, ok: res!.success },
-        }));
-      }
-    } catch (e) {
-      setSwapResults((p) => ({ ...p, [m.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
-    } finally {
-      setSwapBusyId(null);
-    }
-  }, [swapBusyId, clinicId, user, offerOverride]);
-
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
@@ -1519,6 +1048,21 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                     ? parseChoices(m.content)
                     : { text: m.content, choices: [] as string[] };
                   const isLast = it === mergedItems[mergedItems.length - 1];
+                  // رسالةٌ تحمل عرضًا (إبلاغ/تبديل/تأكيد) → كرتٌ كامل يضمّ نصّها وأزرارها
+                  // (لا فقاعة منفصلة)، وتتزامن نتيجته بين المحادثتين عبر onPatchMessage.
+                  const hasOffer = m.role === 'assistant' && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
+                  if (hasOffer) {
+                    return (
+                      <AssistantOffers
+                        key={m.id}
+                        message={m}
+                        user={user}
+                        clinicId={clinicId ?? user.clinicId}
+                        onResolved={(rtext, done) => onPatchMessage?.(m.id, { offerResolved: { text: rtext, done } })}
+                        onDone={onAfterAction}
+                      />
+                    );
+                  }
                   return (
                     <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
                       {!!text && (
@@ -1538,100 +1082,6 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                           ))}
                         </View>
                       )}
-                      {/* أزرار الإبلاغ بعد غيابٍ ذاتيّ — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
-                      {m.role === 'assistant' && !!m.announceOffer && (
-                        annResults[m.id] ? (
-                          <Text style={styles.annNote}>{annResults[m.id]}</Text>
-                        ) : annBusyId === m.id ? (
-                          <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
-                        ) : (
-                          <>
-                            <Text style={styles.annAsk}>هل تُبلَّغ الجهات؟</Text>
-                            <View style={styles.chipRow}>
-                              <TouchableOpacity style={styles.chip} onPress={() => handleAnnounce(m, 'shift')}>
-                                <Text style={styles.chipTxt}>الشفت</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity style={styles.chip} onPress={() => handleAnnounce(m, 'center')}>
-                                <Text style={styles.chipTxt}>المركز</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity style={styles.chip} onPress={() => handleAnnounce(m, 'none')}>
-                                <Text style={styles.chipTxt}>لا داعي</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </>
-                        )
-                      )}
-                      {/* أزرار التبديل/التوضيح — تنفيذ بالكود مباشرةً، لا نداء للنموذج */}
-                      {m.role === 'assistant' && !!m.swapOffer && (() => {
-                        // العرض الفعليّ: بديلٌ محلّيٌّ (بعد حسم استئذانٍ مبهم) أو الأصليّ
-                        const eff = offerOverride[m.id] ?? m.swapOffer;
-                        if (!eff) return null;
-                        if (swapResults[m.id]?.ok) {
-                          // نجاحٌ (أو «لا داعي») → نتيجةٌ فقط، تختفي الأزرار
-                          return <Text style={styles.annNote}>{swapResults[m.id].text}</Text>;
-                        }
-                        if (swapBusyId === m.id) {
-                          return <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />;
-                        }
-                        // فشلٌ أو لا محاولة بعد → أبقِ الأزرار ظاهرةً (مع ملاحظةٍ فوقها
-                        // إن وُجدت) كي يختار خيارًا آخر بلا أن يُحصَر.
-                        return (
-                          <>
-                            {!!swapResults[m.id] && !swapResults[m.id].ok && (
-                              <Text style={styles.annNote}>{swapResults[m.id].text}</Text>
-                            )}
-                            {eff.kind === 'permission_clarify' ? (
-                              <View style={styles.chipRow}>
-                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_start')}>
-                                  <Text style={styles.chipTxt}>بداية الدوام</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_end')}>
-                                  <Text style={styles.chipTxt}>نهاية الدوام</Text>
-                                </TouchableOpacity>
-                              </View>
-                            ) : eff.kind === 'ask_mode' ? (
-                              <View style={styles.chipRow}>
-                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'request')}>
-                                  <Text style={styles.chipTxt}>أرسل طلبًا</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'direct')}>
-                                  <Text style={styles.chipTxt}>بدّل مباشرة</Text>
-                                </TouchableOpacity>
-                              </View>
-                            ) : eff.kind === 'permission_fix' ? (
-                              <View style={styles.chipRow}>
-                                {!!eff.colleague && (
-                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_colleague')}>
-                                    <Text style={styles.chipTxt}>{`زميلك بالعيادة (${eff.colleague.name})`}</Text>
-                                  </TouchableOpacity>
-                                )}
-                                {!!eff.period && (
-                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_period')}>
-                                    <Text style={styles.chipTxt}>الفترة الأخرى</Text>
-                                  </TouchableOpacity>
-                                )}
-                                {eff.otherShift && (
-                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'perm_other')}>
-                                    <Text style={styles.chipTxt}>الشفت الثاني</Text>
-                                  </TouchableOpacity>
-                                )}
-                              </View>
-                            ) : (
-                              <>
-                                <Text style={styles.annAsk}>هل يُبلَّغ الطرفان بالتبديل؟</Text>
-                                <View style={styles.chipRow}>
-                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'notify')}>
-                                    <Text style={styles.chipTxt}>أبلغهما</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity style={styles.chip} onPress={() => handleSwapOffer(m, 'none')}>
-                                    <Text style={styles.chipTxt}>لا داعي</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
                     </View>
                   );
                 }
@@ -1767,28 +1217,8 @@ const styles = StyleSheet.create({
 
   empty: { textAlign: 'center', color: 'rgba(244,241,255,0.5)', marginTop: scale(46), fontSize: scale(13.5), fontWeight: '600', letterSpacing: scale(0.3) },
 
-  // ════════ Aurora (داكن) — السطح الزجاجيّ ════════
-  glass: {
-    alignSelf: 'stretch', borderRadius: scale(22),
-    backgroundColor: 'rgba(38,33,82,0.94)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: scale(15), paddingTop: scale(15), paddingBottom: scale(14),
-    shadowColor: '#2A1A52', shadowOpacity: 0.35, shadowRadius: scale(16), shadowOffset: { width: 0, height: scale(8) }, elevation: 6,
-  },
-  glassFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: scale(22) },
-  glassDim: { opacity: 0.6 },
+  // ════════ Aurora (داكن) — لغة الكروت المشتركة في AICard.tsx ════════
   feedCard: { marginBottom: scale(14) },
-  accentLine: { position: 'absolute', top: 0, left: 0, right: 0, height: scale(2.5) },
-
-  head: { flexDirection: 'row-reverse', alignItems: 'center', gap: scale(11) },
-  headTxt: { flex: 1, alignItems: 'flex-end' },
-  badge: { width: scale(38), height: scale(38), borderRadius: scale(13), alignItems: 'center', justifyContent: 'center', borderWidth: scale(1) },
-  badgeDot: {
-    position: 'absolute', top: -scale(2), right: -scale(2), width: scale(9), height: scale(9), borderRadius: scale(5),
-    borderWidth: scale(1.5), borderColor: 'rgba(30,27,75,0.9)',
-  },
-  pill: { alignSelf: 'flex-end', marginTop: scale(4), paddingHorizontal: scale(9), paddingVertical: scale(3), borderRadius: scale(999), borderWidth: scale(1) },
-  pillTxt: { fontSize: scale(11), fontWeight: '800' },
-  cardTitle: { fontSize: scale(15), fontWeight: '800', color: '#F4F1FF', textAlign: 'right', lineHeight: scale(22) },
   cardBody: { fontSize: scale(13), color: 'rgba(244,241,255,0.66)', textAlign: 'right', lineHeight: scale(20), fontWeight: '500', marginTop: scale(3) },
 
   // ── كرت معلوماتيّ (خافت، داكن) ──
@@ -1803,7 +1233,6 @@ const styles = StyleSheet.create({
   infoTxt: { flex: 1, fontSize: scale(13), color: 'rgba(244,241,255,0.6)', textAlign: 'right', lineHeight: scale(20), fontWeight: '500' },
 
   // ── جسم التغطية: نصٌّ + حلولٌ زجاجيّة + إدخال ──
-  covBody: { marginTop: scale(12), paddingTop: scale(12), borderTopWidth: scale(1), borderTopColor: 'rgba(255,255,255,0.10)' },
   msg: { maxWidth: '88%', borderRadius: scale(15), paddingHorizontal: scale(12), paddingVertical: scale(10), marginBottom: scale(8) },
   msgUser: { alignSelf: 'flex-start', backgroundColor: '#7C3AED' },
   msgAI: { alignSelf: 'flex-end', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.14)' },

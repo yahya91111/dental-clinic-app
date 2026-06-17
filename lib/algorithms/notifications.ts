@@ -17,12 +17,17 @@
 
 import { supabase } from '../supabase';
 import { createNotification, getAllGroupMembers } from '../database';
-import {
-  swapInSchedule,
-  type WeekDay,
-  type Gap,
-  type CoverageCandidate,
-} from './requests';
+import { swapInSchedule, type WeekDay, type Shift } from './requests_v2';
+
+// نوعان صغيران كانا في وحدة الطلبات القديمة (V1، حُذفت) — أُبقيا هنا حيث يُستعملان
+// وحدهما (طلبات التغطية بالعرض broadcast). كلّ المنطق صار في requests_v2.
+type Gap = { clinicNumber: number; period: number; shift: Shift };
+type CoverageCandidate = {
+  doctorId: string;
+  doctorName: string;
+  clinicNumber: number;   // عيادته الحاليّة
+  period: number;         // الفترة الأخرى التي يعمل فيها
+};
 
 // ─── أنواع ─────────────────────────────────────────────────────
 export type NotifResult = { success: boolean; error?: string };
@@ -55,6 +60,20 @@ const DAY_AR: Record<WeekDay, string> = {
 };
 const periodLabel = (p: number): string =>
   ['', 'الأولى', 'الثانية', 'الثالثة', 'الرابعة'][p] || `${p}`;
+
+const DAY_OFFSET: Record<WeekDay, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+/** تاريخ يومٍ من الأسبوع (weekStart = أحد) بصيغة «d/M» — فارغٌ إن تعذّر. */
+function dayDate(weekStart: string | undefined, day: WeekDay): string {
+  if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return '';
+  const d = new Date(`${weekStart}T00:00:00`);
+  d.setDate(d.getDate() + DAY_OFFSET[day]);
+  return `${d.getDate()}/${d.getMonth() + 1}`;
+}
+/** «الأحد 14/6» — اسم اليوم متبوعًا بتاريخه (يسقط التاريخ بهدوءٍ إن غاب الأسبوع). */
+function dayWithDate(weekStart: string | undefined, day: WeekDay): string {
+  const dt = dayDate(weekStart, day);
+  return dt ? `${DAY_AR[day]} ${dt}` : DAY_AR[day];
+}
 
 /** «د. اسم» مرّة واحدة فقط — الأسماء المخزَّنة قد تحمل اللقب أصلاً (لا «د.د.»). */
 const dr = (name?: string): string => {
@@ -187,7 +206,10 @@ export async function notifyLeaderOfRequest(args: {
   weekStart?: string;  // للتجميع (طلبات نفس الأسبوع)
   day?: string;        // مفتاح التمييز (لا يتكرّر السطر لو أُعيد نفس اليوم)
   standalone?: boolean; // حدثٌ مميَّز (إلغاء/إرجاع) لا يُدمَج في إشعار سابق — إشعار جديد دائمًا
+  scheduleChanged?: boolean; // الطلب غيّر الجدول → يُذيَّل الإشعار بسطر «راجِع الجدول»
 }): Promise<NotifResult> {
+  // ذيلٌ يُلحَق بإشعار القائد متى مسّ الطلبُ الجدول (غياب/إلغاء) — كي يطّلع على التغيير
+  const REVIEW_LINE = '📋 راجِع الجدول لمتابعة التغيير.';
   try {
     const now = Date.now();
     // الإلغاء/الإرجاع يصل **مستقلًّا** (standalone): حدثٌ مميَّز لا يُدمَج في إشعار
@@ -219,10 +241,12 @@ export async function notifyLeaderOfRequest(args: {
         const i = args.day != null ? items.findIndex((x) => x.day === args.day) : -1;
         const entry = { day: args.day, summary: args.summary };
         if (i >= 0) items[i] = entry; else items.push(entry);
-        const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`;
+        const changed = args.scheduleChanged || !!existing.data?.schedule_changed;
+        const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`
+          + (changed ? `\n${REVIEW_LINE}` : '');
         await supabase
           .from('notifications')
-          .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now }, body, is_read: false })
+          .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now, schedule_changed: changed }, body, is_read: false })
           .eq('id', existing.id);
         return ok();
       }
@@ -235,8 +259,8 @@ export async function notifyLeaderOfRequest(args: {
       senderName: args.senderName,
       type: NotifType.REQUEST_INFO,
       title: 'طلب جديد',
-      body: `${args.senderName}: ${args.summary}`,
-      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now },
+      body: `${args.senderName}: ${args.summary}` + (args.scheduleChanged ? `\n${REVIEW_LINE}` : ''),
+      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now, schedule_changed: !!args.scheduleChanged },
     });
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -278,7 +302,7 @@ export async function notifyCoverageFill(args: {
       recipient_id: args.leaderId,
       type: NotifType.COVERAGE_FILL,
       title: 'تعويض نقص',
-      body: `ترتيب تعويض نقص ${names} — ${DAY_AR[args.day]} ${shiftAr}.`,
+      body: `ترتيب تعويض نقص ${names} — ${dayWithDate(args.weekStart, args.day)} ${shiftAr}.`,
       data: {
         kind: 'coverage_fill', day: args.day, shift: args.shift,
         absent_names: args.absentNames, diff: args.diff, slots: args.slots,
@@ -1176,38 +1200,6 @@ export async function cancelSwapGroup(args: {
 // طلب قرار — تنبيه الليدر بنقصٍ يحتاج تصرّفًا (تصعيد)
 // ═══════════════════════════════════════════════════════════════
 
-/**
- * يفتح كرت تغطيةٍ للّيدر بنصٍّ افتتاحيّ **حتميّ جاهز** (يكتبه المحرّك ويُعرَض كما
- * هو). الذكاء لا يصوغ الافتتاحيّة — يقرؤها ويُكمل. صامت (لا رنّة) كنوع gap_alert.
- */
-export async function alertLeaderCoverage(args: {
-  clinicId: string;
-  leaderId: string;
-  weekStart: string;
-  day: WeekDay;
-  gap: Gap;
-  brief: string;
-  absentDoctorName?: string;
-  twoPeriods?: { id: string; name: string } | null;
-  reserves?: { id: string; name: string }[];
-  senderId?: string;
-  senderName?: string;
-}): Promise<{ success: boolean; error?: string; id?: string }> {
-  const { id, error } = await sendAction({
-    clinicId: args.clinicId, recipientId: args.leaderId,
-    senderId: args.senderId, senderName: args.senderName,
-    type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
-    body: args.brief,
-    data: {
-      clinic_id: args.clinicId, week_start: args.weekStart, day: args.day, gap: args.gap,
-      absent_doctor_name: args.absentDoctorName,
-      two_periods: args.twoPeriods ?? null,
-      reserves: args.reserves ?? [],
-    },
-  });
-  return { success: !error, error, id };
-}
-
 /** نصّ جسم كرت النقص (للعرض في القائمة): أسماء الغائبين (الكرت قد يجمع أكثر من
  *  غائب لليوم نفسه — كلّ بندٍ يحمل absentName) + أيّام النقص الفعليّة. */
 function coverageBody(
@@ -1221,112 +1213,6 @@ function coverageBody(
   return gapDays.length
     ? `نقصٌ بغياب ${nameStr} — ${gapDays.join('، ')}.`
     : `نقصٌ بغياب ${nameStr}.`;
-}
-
-/**
- * v2 متعدّد الأيّام **ومتعدّد الغائبين** — كرتٌ واحد للقائد:
- *  • أيّام غياب الطبيب نفسه (في الأسبوع نفسه ومن نفس الجلسة الزمنيّة) تُلحَق بكرته.
- *  • وغيابُ طبيبٍ **آخر في يومٍ فيه نقصٌ معلّق أصلًا** ينضمّ إلى الكرت نفسه (بلا قيد
- *    النافذة): طبيبان مرضية بنفس اليوم = كرتٌ واحد بأسمائهما، فيُقترح حلّ اليوم مرّةً
- *    واحدة. كلّ بندٍ في days[] يحمل (اليوم + هويّة غائبه) — اليوم قد يتكرّر بغائبَين.
- * يستبدل بند (اليوم، الغائب) إن تكرّر، ويُبطل الخيط المحفوظ كي يُعيد الذكاء صياغة
- * الكلّ دفعةً واحدة؛ وإلّا أنشأ كرتًا جديدًا — **فقط إن كان لهذا اليوم نقصٌ فعليّ**
- * (يومٌ بلا نقص وحده لا يستحقّ تنبيهًا، لكنه يُذكَر «مغطّى» إن انضمّ لكرتٍ فيه نقص).
- * dayBrief = CoverageBrief (gaps فارغة = يومٌ بلا نقص). صامت كـ gap_alert.
- */
-export async function upsertLeaderCoverage(args: {
-  clinicId: string;
-  leaderId: string;
-  weekStart: string;
-  day: WeekDay;
-  absentDoctorId: string;
-  absentDoctorName: string;
-  dayBrief: { day: WeekDay; gaps?: unknown[] } & Record<string, unknown>;
-  dayHasGap: boolean;
-  senderId?: string;
-  senderName?: string;
-}): Promise<{ success: boolean; error?: string; id?: string }> {
-  try {
-    const now = Date.now();
-    const { data: rows } = await supabase
-      .from('notifications')
-      .select('id, data, action_status')
-      .eq('clinic_id', args.clinicId)
-      .eq('recipient_id', args.leaderId)
-      .eq('type', NotifType.GAP_ALERT);
-    const cards = ((rows || []) as { id: string; data: any; action_status: string | null }[]).filter(
-      (r) => {
-        const d = r.data || {};
-        const pending = !r.action_status || r.action_status === 'pending';
-        return pending && d.v === 2 && !d.placement && !d.perm_retry && d.week_start === args.weekStart;
-      },
-    );
-    // مالك البند: البنود الجديدة تحمل absentId؛ القديمة (بندٌ واحد لغائب الكرت) لا.
-    const entryOwner = (x: Record<string, unknown>, d: any) =>
-      String((x as { absentId?: string }).absentId || d?.absent_doctor_id || '');
-    // ١) غيابٌ فيه نقص + كرتٌ معلّق فيه نقصٌ لليوم نفسه → انضمام (بلا قيد النافذة)
-    // ٢) وإلّا: كرت الغائب نفسه من نفس الجلسة (النافذة الزمنيّة) — تجميع متعدّد الأيّام
-    const sameDayCard = args.dayHasGap
-      ? cards.find((r) =>
-        (Array.isArray(r.data?.days) ? (r.data.days as { day: WeekDay; gaps?: unknown[] }[]) : [])
-          .some((x) => x.day === args.day && (x.gaps?.length || 0) > 0))
-      : undefined;
-    const ownCard = cards.find(
-      (r) => r.data?.absent_doctor_id === args.absentDoctorId
-        && now - (r.data?.batch_at ?? 0) < BATCH_WINDOW_MS,
-    );
-    const existing = sameDayCard || ownCard;
-
-    if (existing) {
-      const days: { day: WeekDay }[] = Array.isArray(existing.data?.days) ? existing.data.days.slice() : [];
-      const i = days.findIndex(
-        (x) => x.day === args.day && entryOwner(x, existing.data) === args.absentDoctorId,
-      );
-      if (i >= 0) days[i] = args.dayBrief;
-      else if (
-        args.dayHasGap
-        || existing.data?.absent_doctor_id === args.absentDoctorId
-        || days.some((x) => entryOwner(x, existing.data) === args.absentDoctorId)
-      ) {
-        days.push(args.dayBrief);
-      } else {
-        // يومٌ بلا نقص لغائبٍ لا قصّة له في هذا الكرت — لا يُضاف ضجيجًا ولا يُمسّ الكرت
-        return { success: true, id: existing.id };
-      }
-      const nextData = { ...existing.data, days, batch_at: now };
-      delete (nextData as Record<string, unknown>).thread; // أبطِل الخيط ليُعاد التوليد بكلّ الأيّام
-      // لو لم يبقَ أيّ نقص فعليّ (استُبدلت كلّ الأيّام بنسخٍ مغطّاة) → أغلِق الكرت كي لا
-      // يبقى معلّقًا كاذبًا «نقص» بلا نقص.
-      const anyGap = (days as { gaps?: unknown[] }[]).some((d) => (d.gaps?.length || 0) > 0);
-      await supabase
-        .from('notifications')
-        .update({
-          data: nextData,
-          body: coverageBody(args.absentDoctorName, days as { day: WeekDay; gaps?: unknown[] }[]),
-          is_read: !anyGap,                            // نقصٌ جديد → يحمرّ؛ لا نقص → يهدأ
-          action_status: anyGap ? 'pending' : 'accepted',
-        })
-        .eq('id', existing.id);
-      return { success: true, id: existing.id };
-    }
-
-    // لا كرت سابق → أنشئ فقط إن كان لهذا اليوم نقصٌ فعليّ
-    if (!args.dayHasGap) return { success: true };
-    const { id, error } = await sendAction({
-      clinicId: args.clinicId, recipientId: args.leaderId,
-      senderId: args.senderId, senderName: args.senderName,
-      type: NotifType.GAP_ALERT, title: 'نقص يحتاج تغطية',
-      body: coverageBody(args.absentDoctorName, [args.dayBrief]),
-      data: {
-        v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
-        absent_doctor_id: args.absentDoctorId, absent_doctor_name: args.absentDoctorName,
-        days: [args.dayBrief], batch_at: now,
-      },
-    });
-    return { success: !error, error, id };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
-  }
 }
 
 /**
@@ -1651,7 +1537,7 @@ export const notifications = {
   swapGroupsStatus, cancelSwapGroup, notifyLeadersCrossShiftSwap,
   invalidateSwapsTouching,
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
-  alertLeaderCoverage, resolveGapAlert, resolveCoverageV2,
+  resolveGapAlert, resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
   alertLeaderPermissionConflict, resolvePermissionAlertV2,
   // تعويض النقص (إعادة ترتيب الشفت) — كرت [نفّذ] للقائد
