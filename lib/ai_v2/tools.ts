@@ -72,8 +72,8 @@ export type ConfirmOffer = {
  * عرض أزرارٍ بعد أداة التبديل (تُنفَّذ بالكود مباشرةً — النموذج لا يسأل):
  *  • ask_mode: القائد طرفٌ في التبديل → [أرسل طلبًا] أو [بدّل مباشرة].
  *  • offer_notify: القائد بدّل اثنين → [أبلغهما] أو [لا داعي].
- *  • permission_fix: استأذن وهو يستلم وقت استئذانه → اقتراحات تبديل فترته:
- *    [زميل عيادته] / [كلّ الفترة المكمّلة] / [الشفت الآخر] (الأخير قبل اليوم بيومٍ فأكثر).
+ *  • permission_clarify: استئذانٌ مبهم → [بداية]/[نهاية] يحسمانه بالكود.
+ * (تعارض الاستئذان صار تبديلًا تلقائيًّا صامتًا في المحرّك — لا أزرار.)
  */
 export type SwapOffer =
   | { kind: 'ask_mode'; weekStart: string; day: string; target: { id: string; name: string } }
@@ -86,15 +86,6 @@ export type SwapOffer =
   | {
     kind: 'offer_notify'; weekStart: string; day: string;
     a: { id: string; name: string }; b: { id: string; name: string };
-  }
-  | {
-    kind: 'permission_fix'; weekStart: string; day: string;
-    blocked: number[];                        // الفترات التي يحجبها الاستئذان
-    colleague?: { id: string; name: string }; // زميل نفس العيادة بالفترة المكمّلة
-    period?: number;                          // الفترة المكمّلة — هدف «كلّ الفترة»
-    otherShift: boolean;                      // يُعرض «الشفت الآخر» (يومٌ فأكثر قبل الموعد)
-    statusAr?: string;                        // «استئذان نهاية الدوام» — لكرت القائد عند التصعيد
-    leaderIds?: string[];                     // قادة العيادة — للتصعيد إن رفض الشفتان
   };
 
 export type V2Tool = {

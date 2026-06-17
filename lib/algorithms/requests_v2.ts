@@ -48,11 +48,9 @@ export type GapLocation =
 export type StatusResult = RequestResult & { gaps?: GapLocation[] };
 
 /**
- * حقائق الاستئذان المحسوبة لحظة تسجيله (يُرجعها المحرّك ليبني عليها الطرف الأعلى
- * الإشعارات والاقتراحات — المحرّك يحسب ولا يراسل):
+ * حقائق الاستئذان المحسوبة لحظة تسجيله (المحرّك يحسب وينفّذ التبديل، والذكاء يُخبر):
  *  • conflict: الطبيب يستلم خانةً في فترةٍ يحجبها استئذانه (بداية→١/٣، نهاية→٢/٤)
- *  • targetPeriod: الفترة المكمّلة في شفته — هدف اقتراح «التبديل مع كلّ الفترة»
- *  • colleague: زميله في نفس العيادة بالفترة المكمّلة (إن خلا هو نفسه من الحجب)
+ *  • swap: نتيجة التبديل التلقائيّ الصامت عند التعارض — مع مَن تمّ، أو تعذّره وسببه
  *  • covered: كان غائبًا (مرضية/تفرّغ) ومكانه مُغطًّى — صار مستأذنًا بلا مركز
  *  • wasReserve: كان احتياطيًّا — بقي احتياطًا والعلامة أُضيفت (تعايش)
  *  • shadowToReserve: ظلٌّ استأذن — نُقل إلى الاحتياط وحده، وإلغاؤه يعيده لمدرّبه
@@ -60,8 +58,7 @@ export type StatusResult = RequestResult & { gaps?: GapLocation[] };
 export type PermissionInfo = {
   conflict: boolean;
   blocked: number[];
-  targetPeriod?: number;
-  colleague?: { id: string; name: string };
+  swap?: { withId: string; withName: string } | { none: true; reason: 'no_candidate' | 'delegator_left' };
   covered?: boolean;
   convertedFromAr?: string;
   wasReserve?: boolean;
@@ -248,6 +245,74 @@ async function returnShadowsWithSupervisor(args: {
     names.push(t.doctor_name);
   }
   return names;
+}
+
+/**
+ * تبديلٌ تلقائيٌّ صامت عند تعارض الاستئذان: المُستأذِن يستلم خانةً في فترةٍ يحجبها
+ * استئذانه → يُبادَل مقعده مع طبيبٍ في الفترة الحاضرة كي يعمل وقت حضوره ويُغطَّى المحجوب.
+ *  ① زميل نفس العيادة بالفترة الأخرى (إن كان نظيفًا: ليس تخفيفًا/مستأذنًا نفس الفترة/ظلًّا).
+ *  ② وإلّا طبيب عيادة أخرى بالفترة الحاضرة — الأقلّ إخلالًا بميزان الفترات
+ *     (#1: مبدئيًّا الأدنى رقم عيادة — يُحسَّن لاحقًا).
+ *  ③ تعارضٌ على دليقيتر (لا زميل عيادة) → تُترك شاغرة بلا تبديل.
+ *  ④ المُستأذِن مشغولٌ أصلًا في الفترة الحاضرة (مضيف: عيادة+دليقيتر) أو لا مرشّح → لا تبديل.
+ * يُطبّق التبديل (مبادلة ملكيّة خانتين) ويتبعه الظلّ، ويُرجِع نتيجةً للعرض/الإشعار.
+ */
+async function autoResolvePermissionConflict(args: {
+  clinicId: string; weekStart: string; day: WeekDay;
+  doctorId: string; doctorName: string;
+  conflictSlots: { period: number; clinic_number: number }[];
+}): Promise<{ withId: string; withName: string } | { none: true; reason: 'no_candidate' | 'delegator_left' }> {
+  const { clinicId, weekStart, day, doctorId, doctorName, conflictSlots } = args;
+  const comp = (p: number) => (p === 1 ? 2 : p === 2 ? 1 : p === 3 ? 4 : 3);
+
+  // الدليقيتر بلا زميل عيادة — يُترك شاغرًا
+  const clinicConflict = conflictSlots.find((c) => c.clinic_number > 0);
+  if (!clinicConflict) return { none: true, reason: 'delegator_left' };
+  const Pblocked = clinicConflict.period;
+  const Pother = comp(Pblocked);
+  const C = clinicConflict.clinic_number;
+
+  const rows = await loadDay(clinicId, weekStart, day);
+  // المُستأذِن مشغولٌ أصلًا في الفترة الحاضرة (مضيفٌ له دليقيتر/عيادة فيها) → لا مكان
+  // يُبادَل إليه؛ خانته المحجوبة تبقى بعلامته ويُعلَم الليدر «لا بديل».
+  if (rows.some((r) => r.doctor_id === doctorId && r.status === 'active' && r.period === Pother
+    && (r.role === 'clinic' || r.role === 'delegator'))) {
+    return { none: true, reason: 'no_candidate' };
+  }
+  const holderSeat = rows.find(
+    (r) => r.doctor_id === doctorId && r.status === 'active' && r.period === Pblocked
+      && r.clinic_number === C && r.role === 'clinic',
+  );
+  if (!holderSeat) return { none: true, reason: 'no_candidate' };
+
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const lightDuty = new Set(((members || []) as { doctor_id: string; work_status?: string }[])
+    .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id));
+
+  // مرشّحٌ صالح: خانة عيادة نشطة في الفترة الحاضرة، ليس المُستأذِن ولا ظلًّا ولا تخفيفًا،
+  // وليس غائبًا/مستأذنًا عن الفترة المحجوبة (فهو سيستلمها).
+  const eligible = (r: Row): boolean => {
+    if (r.doctor_id === doctorId || r.role !== 'clinic' || r.status !== 'active' || r.period !== Pother) return false;
+    if (r.source === 'shadow' || lightDuty.has(r.doctor_id)) return false;
+    const abs = covererAbsence(rows, r.doctor_id);
+    return !abs.hardAr && !abs.blocked.has(Pblocked);
+  };
+
+  // ① زميل نفس العيادة أوّلًا، ② وإلّا عيادة أخرى (الأقلّ إخلالًا بالميزان — مبدئيًّا الأدنى رقمًا)
+  const partner = rows.find((r) => r.clinic_number === C && eligible(r))
+    ?? rows.filter((r) => r.clinic_number !== C && eligible(r))
+      .sort((a, b) => a.clinic_number - b.clinic_number)[0];
+  if (!partner) return { none: true, reason: 'no_candidate' };
+
+  // مبادلة ملكيّة الخانتين: المُستأذِن يأخذ الفترة الحاضرة، والمرشّح يأخذ المحجوبة.
+  await applySlotChanges({
+    updates: [
+      { id: holderSeat.id, doctor_id: partner.doctor_id, doctor_name: partner.doctor_name },
+      { id: partner.id, doctor_id: doctorId, doctor_name: doctorName },
+    ],
+  });
+  await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, partner.doctor_id], preRows: rows });
+  return { withId: partner.doctor_id, withName: partner.doctor_name };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -534,9 +599,10 @@ export async function setScheduleStatus(
     // طبّق كلّ تغييرات الحالة دفعةً واحدة (ذرّيًّا): الحذف ثمّ الإضافة في معاملة واحدة
     await applySlotChanges({ deleteIds: pendDel, inserts: pendIns });
 
-    // ── حقائق الاستئذان: هل يستلم خانةً في فترةٍ يحجبها استئذانه؟ ──
-    // بداية الدوام تحجب أولى فترتي الشفت (١/٣)، ونهايته تحجب الأخيرة (٢/٤).
-    // الزميل المقترح: شريك نفس العيادة في الفترة المكمّلة، إن خلا هو نفسه من الحجب.
+    // ── تعارض الاستئذان: يستلم خانةً في فترةٍ يحجبها استئذانه؟ ──
+    // بداية الدوام تحجب أولى فترتي الشفت (١/٣)، نهايته تحجب الأخيرة (٢/٤). عند التعارض:
+    // **تبديلٌ تلقائيٌّ صامت** يحسبه المحرّك وينفّذه فورًا (زميل العيادة، وإلّا عيادة أخرى)،
+    // والذكاء يُخبر فقط — لا أزرار. الاحتياطيّ المستأذِن لا يُبدَّل (لا خانة عيادة يستلمها).
     let permission: PermissionInfo | undefined;
     if (toPermission) {
       const blocked = status === 'permission_start'
@@ -544,34 +610,11 @@ export async function setScheduleStatus(
         : [effShift === 'evening' ? 4 : 2];
       const placed = permPlacedRows ?? [];
       const conflictSlots = placed.filter((p) => blocked.includes(p.period));
-      const comp = (p: number) => (p === 1 ? 2 : p === 2 ? 1 : p === 3 ? 4 : 3);
-      let colleague: { id: string; name: string } | undefined;
-      let targetPeriod: number | undefined;
-      if (conflictSlots.length > 0) {
-        targetPeriod = comp(conflictSlots[0]!.period);
-        const periodsOf = (id: string) => rows
-          .filter((r) => r.doctor_id === id && r.status === 'active' && r.period > 0
-            && (r.role === 'clinic' || r.role === 'delegator'))
-          .map((r) => r.period);
-        // لا نَعرض شريكًا لا يصلح للتبديل: تخفيف العمل مُستبعَدٌ كلّيًّا، والظلّ ليس
-        // زميلًا مستقلًّا (يُلاصق مدرّبه). فالزرّ يظهر فقط حين يكون التبديل صالحًا.
-        const { data: mem } = await getAllGroupMembers(clinicId);
-        const lightDuty = new Set(((mem || []) as { doctor_id: string; work_status?: string }[])
-          .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id));
-        for (const cs of conflictSlots) {
-          if (cs.clinic_number <= 0) continue; // الدليقيتر بلا «زميل عيادة»
-          const mateRow = rows.find(
-            (r) => r.doctor_id !== doctorId && r.status === 'active'
-              && r.period === comp(cs.period) && r.clinic_number === cs.clinic_number
-              && r.role === 'clinic' && r.source !== 'shadow', // الظلّ ليس زميلًا
-          );
-          if (mateRow && !lightDuty.has(mateRow.doctor_id) // تخفيف العمل لا يُبدَّل معه
-            && !periodsOf(mateRow.doctor_id).some((p) => blocked.includes(p))) {
-            colleague = { id: mateRow.doctor_id, name: mateRow.doctor_name };
-            targetPeriod = comp(cs.period);
-            break;
-          }
-        }
+      let swap: PermissionInfo['swap'];
+      if (conflictSlots.length > 0 && !permWasReserve) {
+        swap = await autoResolvePermissionConflict({
+          clinicId, weekStart, day, doctorId, doctorName, conflictSlots,
+        });
       }
       // احتياطيٌّ استأذن — العلامة أُضيفت والاحتياط باقٍ: نصّ «لن يُستدعى» بفترته
       let wasReserveNoteAr: string | undefined;
@@ -581,7 +624,7 @@ export async function setScheduleStatus(
         wasReserveNoteAr = `لا يزال احتياطًا — لن يُستدعى في الفترة ${ps ? firstP : firstP + 1}`;
       }
       permission = {
-        conflict: conflictSlots.length > 0, blocked, targetPeriod, colleague,
+        conflict: conflictSlots.length > 0, blocked, swap,
         covered: permCovered || undefined, convertedFromAr: permConvertedFromAr,
         wasReserve: permWasReserve || undefined, wasReserveNoteAr,
       };
@@ -1547,93 +1590,6 @@ async function mirrorShadows(args: {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// مصالحةُ التخفيف — يُستدعى بعد كلّ إعادة تشكيلٍ للتغطية
-// ═══════════════════════════════════════════════════════════════
-/**
- * طبيبُ التخفيف لا يبقى وحده في عيادته: يعمل **فترةً واحدة** وله **شريكٌ** يكمل الفترة
- * الأخرى. التغطية قد تنقل الأطبّاء فتسحب شريكه أو تُعطيه فترةً ثانية (كأن يستلم العيادة
- * كاملة بديلًا) — وكلاهما خطأ. نُصلح بعد كلّ عمليّة:
- *  ① التخفيف يحتفظ بفترةٍ واحدة فقط (نُبقي خانة البناء الأصليّة لا خانة التغطية، فالفائض يُحذَف).
- *  ② إن خلت الفترة الأخرى من عيادته من شريكٍ (غير ظلّ) → نسحب طبيبًا من **الدليقيتر** في تلك
- *     الفترة (العيادة أهمّ من الدليقيتر — يُضحّى به)، ويتبعه ظلُّه آليًّا.
- *  ③ لا دليقيترَ متفرّغ (شحّ: أطباء = عيادات) → تبقى الفترة الأخرى نقصًا مقبولًا.
- */
-async function ensureLightDutyNotAlone(args: {
-  clinicId: string; weekStart: string; day: WeekDay;
-}): Promise<void> {
-  const { clinicId, weekStart, day } = args;
-  const rows = await loadDay(clinicId, weekStart, day);
-  const { data: members } = await getAllGroupMembers(clinicId);
-  const ldIds = new Set(
-    ((members || []) as { doctor_id: string; work_status?: string }[])
-      .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id),
-  );
-  if (ldIds.size === 0) return;
-
-  const inScope = (r: Row) => r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator');
-  const keysOf = (id: string) =>
-    new Set(rows.filter((r) => r.doctor_id === id && inScope(r)).map((r) => `${r.period}|${r.clinic_number}|${r.role}`));
-  // الظلّ: متدرّبٌ خاناته تطابق خانات مدرّبه تمامًا — لا يُحسب شريكًا مستقلًّا
-  const shadowIds = new Set<string>();
-  for (const m of (members || []) as { doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null }[]) {
-    if (m.work_status !== 'trainee' || !m.supervisor_doctor_id) continue;
-    const tk = [...keysOf(m.doctor_id)];
-    const sk = keysOf(m.supervisor_doctor_id);
-    if (tk.length > 0 && tk.length === sk.size && tk.every((k) => sk.has(k))) shadowIds.add(m.doctor_id);
-  }
-
-  const clinicRowsActive = () => rows.filter((r) => r.role === 'clinic' && r.status === 'active' && r.period > 0);
-  const delegRowsActive = () => rows.filter((r) => r.role === 'delegator' && r.status === 'active' && r.period > 0);
-  const mkClinicRow = (cn: number, P: number, id: string, name: string) => ({
-    clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-    period: P, clinic_number: cn, doctor_id: id, doctor_name: name,
-    role: 'clinic', status: 'active', source: 'request',
-  });
-
-  const deleteIds: string[] = [];
-  const inserts: Record<string, unknown>[] = [];
-  const movedIds: string[] = [];
-  const dropped = new Set<string>(); // معرّفات صفوفٍ حُذفت محليًّا (لئلّا تُحسب موجودة)
-
-  for (const shift of [[1, 2], [3, 4]] as number[][]) {
-    const [pA, pB] = shift;
-    for (const ld of ldIds) {
-      const ldClinic = clinicRowsActive()
-        .filter((r) => r.doctor_id === ld && shift.includes(r.period) && !dropped.has(r.id));
-      if (ldClinic.length === 0) continue;
-      // ① فترةٌ واحدة فقط: نُبقي خانة البناء الأصليّة (source != 'request')، وإلّا الأدنى فترةً
-      ldClinic.sort((a, b) => a.period - b.period);
-      const keep = ldClinic.find((r) => r.source !== 'request') ?? ldClinic[0]!;
-      for (const extra of ldClinic) {
-        if (extra.id === keep.id) continue;
-        deleteIds.push(extra.id); dropped.add(extra.id);
-      }
-      const C = keep.clinic_number;
-      const otherP = keep.period === pA ? pB : pA;
-      // ② شريكٌ (غير ظلّ) في الفترة الأخرى من عيادته؟ (مع مراعاة ما حُذف/أُدرج محليًّا)
-      const hasPartner = clinicRowsActive().some(
-        (r) => r.clinic_number === C && r.period === otherP && r.doctor_id !== ld
-          && !dropped.has(r.id) && !shadowIds.has(r.doctor_id),
-      ) || inserts.some((i) => i.clinic_number === C && i.period === otherP);
-      if (hasPartner) continue;
-      // ③ اسحب شريكًا من الدليقيتر في الفترة الأخرى (يُضحّى بالدليقيتر — العيادة أهمّ)
-      const cand = delegRowsActive().find(
-        (r) => r.period === otherP && !dropped.has(r.id)
-          && !ldIds.has(r.doctor_id) && !shadowIds.has(r.doctor_id),
-      );
-      if (!cand) continue; // شحّ: لا دليقيتر متفرّغ — الفترة الأخرى نقصٌ مقبول
-      deleteIds.push(cand.id); dropped.add(cand.id);
-      inserts.push(mkClinicRow(C, otherP, cand.doctor_id, cand.doctor_name));
-      movedIds.push(cand.doctor_id);
-    }
-  }
-
-  if (deleteIds.length + inserts.length === 0) return;
-  await applySlotChanges({ deleteIds, inserts });
-  await mirrorShadows({ clinicId, weekStart, day, supervisorIds: movedIds, preRows: rows });
-}
-
-// ═══════════════════════════════════════════════════════════════
 // التنسيب — وضع طبيب داخل عيادة/فترات (العكس: من غياب إلى داخل العيادة)
 // ═══════════════════════════════════════════════════════════════
 
@@ -1974,7 +1930,6 @@ export const requestsV2 = {
   setScheduleStatus, cancelStatus, computeCoverageBrief, computeDayCoverageBriefs,
   swapInSchedule, swapFullPositions, listSwapTargets,
   placeInClinic, placeAsDelegator,
-  ensureLightDutyNotAlone,
   attachTraineeForDay,
   clearWeek,
   setClinicCount, moveDoctorGroup, setDoctorGroupStatus,

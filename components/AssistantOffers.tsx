@@ -123,29 +123,6 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
           clinicId: cid, sender: { id: user.id, name: user.name },
           day: offer.day, a: offer.a, b: offer.b,
         });
-      } else if (offer.kind === 'permission_fix' && choice === 'perm_colleague' && offer.colleague) {
-        res = await mod.sendSwapRequestByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          targetId: offer.colleague.id, targetName: offer.colleague.name,
-          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
-        });
-      } else if (offer.kind === 'permission_fix' && choice === 'perm_period' && offer.period) {
-        res = await mod.sendSwapRequestModeByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          mode: { kind: 'period', period: offer.period },
-          excludePeriods: offer.blocked,
-          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
-        });
-      } else if (offer.kind === 'permission_fix' && choice === 'perm_other') {
-        res = await mod.sendSwapRequestModeByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          mode: { kind: 'other_shift' },
-          excludePeriods: offer.blocked,
-          perm: { blocked: offer.blocked, targetPeriod: offer.period, statusAr: offer.statusAr || 'استئذان', leaderIds: offer.leaderIds || [] },
-        });
       }
       if (res) {
         if (res.success) resolve(res.info || 'تمّ.', true);
@@ -235,12 +212,6 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
                       <>
                         <Opt label="أرسل طلبًا" onPress={() => handleSwap('request')} />
                         <Opt label="بدّل مباشرة" onPress={() => handleSwap('direct')} />
-                      </>
-                    ) : eff.kind === 'permission_fix' ? (
-                      <>
-                        {!!eff.colleague && <Opt label={`زميلك بالعيادة (${eff.colleague.name})`} onPress={() => handleSwap('perm_colleague')} />}
-                        {!!eff.period && <Opt label="الفترة الأخرى" onPress={() => handleSwap('perm_period')} />}
-                        {eff.otherShift && <Opt label="الشفت الثاني" onPress={() => handleSwap('perm_other')} />}
                       </>
                     ) : (
                       <>

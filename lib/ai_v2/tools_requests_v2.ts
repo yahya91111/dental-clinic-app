@@ -712,8 +712,18 @@ export async function dispatchRequestToolV2(
                 continue;
               }
               if (leaderId !== actor.id) {
-                // علم الاستئذان يحمل ملاحظة التعارض إن وُجد (يستلم وقت استئذانه)
-                const note = perm?.conflict ? ' — يستلم وقتَ استئذانه ويلزم تبديل فترة عمله' : '';
+                // علم الاستئذان يحمل نتيجة التبديل التلقائيّ الصامت (المحرّك نفّذه):
+                // «تمّ تبديله مع فلان» أو «لا بديل يغطّي فترته» — إشعارٌ واحدٌ للعلم.
+                let note = '';
+                if (perm && (status === 'permission_start' || status === 'permission_end')) {
+                  const sw = perm.swap;
+                  if (sw && 'withName' in sw) note = ` — وتمّ تبديله مع ${sw.withName}`;
+                  else if (sw && 'none' in sw) {
+                    note = sw.reason === 'delegator_left'
+                      ? ' — ودوره دليقيتر تلك الفترة بلا بديل'
+                      : ' — ولا يوجد بديلٌ يغطّي فترته';
+                  }
+                }
                 await notifications.notifyLeaderOfRequest({
                   clinicId: ctx.clinicId, leaderId,
                   senderId: doc.id, senderName: doc.name,
@@ -723,9 +733,6 @@ export async function dispatchRequestToolV2(
                   scheduleChanged: ABSENCE.includes(status),
                 });
               }
-              // تعارض الاستئذان: لا يصل القائد كرتٌ عند التسجيل. الكرت «استئذان يحتاج
-              // ترتيبًا» يُؤجَّل حتى يرفض الجميع التبديل مع صاحب الاستئذان في الشفتين
-              // (يُرسَل عندئذٍ من مسار استنفاد طلب التبديل) — فالكرت = المشكلة الحقيقيّة.
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -762,35 +769,6 @@ export async function dispatchRequestToolV2(
           }
         }
 
-        // استئذانٌ يتعارض مع استلامه → اقتراحات تبديل الفترة **أزرارًا من الكود**
-        // (زميل العيادة / كلّ الفترة / الشفت الآخر — الأخير قبل اليوم بيومٍ فأكثر)،
-        // وسطرٌ لطيف من المحرّك. لا أزرار إبلاغٍ هنا — الأولويّة لحلّ التعارض.
-        if (perm?.conflict) {
-          const dayDate = new Date(`${wsEff}T00:00:00`);
-          dayDate.setDate(dayDate.getDate() + DAYS.indexOf(r.day as (typeof DAYS)[number]));
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const otherShift = dayDate.getTime() - today.getTime() >= 24 * 3600 * 1000;
-          if (actor.id === doc.id) {
-            // قادة العيادة للتصعيد إن رفض الشفتان (كرت القائد يُؤجَّل لتلك اللحظة).
-            const permLeaders = await getTeamLeaderIds(ctx.clinicId);
-            ctx.onSwapOffer?.({
-              kind: 'permission_fix', weekStart: wsEff, day: r.day,
-              blocked: perm.blocked, colleague: perm.colleague,
-              period: perm.targetPeriod, otherShift,
-              statusAr: STATUS_AR[status] || 'استئذان', leaderIds: permLeaders,
-            });
-            return final(
-              `سُجّل ${STATUS_AR[status]} لك يوم ${DAY_AR[r.day]} — لكنّك تستلم وقتَ ` +
-              'استئذانك، والأجمل أن تبدّل فترة عملك كي لا تبقى عيادتك معلّقةً عليك. ' +
-              'اختر من الأزرار ما يناسبك.',
-            );
-          }
-          return final(
-            `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff}) — ` +
-            'لكنّه يستلم وقتَ استئذانه ويلزم تبديل فترة عمله. وصل القادةَ تنبيهٌ بذلك.',
-          );
-        }
         // ظلٌّ استأذن → نُقل إلى الاحتياط وحده (لا تعارض ولا أزرار) — رسالة خاصّة
         if (perm?.shadowToReserve) {
           return final(actor.id === doc.id
@@ -813,9 +791,23 @@ export async function dispatchRequestToolV2(
         // والنتيجة نهائيّة: الكود يعرض التأكيد والأزرار تحته بلا جولة نموذج.
         const keptPermAr = (res as { keptPermissionAr?: string }).keptPermissionAr;
         const backShadows = (res as { returnedShadows?: string[] }).returnedShadows;
+        // نتيجة التبديل التلقائيّ الصامت (استئذانٌ متعارض): المحرّك بدّل الفترة فعلًا — نُخبر فقط.
+        let permSwapAr = '';
+        if (perm && (status === 'permission_start' || status === 'permission_end')) {
+          const sw = perm.swap;
+          const self = actor.id === doc.id;
+          if (sw && 'withName' in sw) {
+            permSwapAr = self ? ` — وبُدّلت فترتك مع ${sw.withName} تلقائيًّا` : ` — وبُدّلت فترته مع ${sw.withName}`;
+          } else if (sw && 'none' in sw) {
+            permSwapAr = sw.reason === 'delegator_left'
+              ? (self ? ' — ودورك دليقيتر تلك الفترة، تُركت شاغرة وأُبلغ القائد' : ' — ودوره دليقيتر تلك الفترة بلا بديل')
+              : (self ? ' — ولا زميل متاح لتبديل فترتك، وأُبلغ القائد' : ' — ولا بديل يغطّي فترته');
+          }
+        }
         const base = `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff})` +
           `${perm?.wasReserve ? ` — ${perm.wasReserveNoteAr || 'لا يزال احتياطًا ولن يُستدعى وقتَ استئذانه'}` : ''}` +
           `${keptPermAr ? ` — وهو ${keptPermAr}` : ''}` +
+          `${permSwapAr}` +
           `${backShadows?.length ? ` — وعاد معه ظلُّه ${backShadows.join(' و')}` : ''}.`;
         if (actor.id === doc.id && ABSENCE.includes(status)) {
           ctx.onAnnounceOffer?.({
