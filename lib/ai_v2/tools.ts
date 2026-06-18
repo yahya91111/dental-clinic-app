@@ -118,6 +118,9 @@ export type V2ToolContext = {
   onSwapOffer?: (offer: SwapOffer) => void;
   /** تُستدعى حين يلزم تأكيدٌ قبل إجراءٍ خطير (مسح الجدول) — أزرارٌ تُنفَّذ بالكود */
   onConfirmOffer?: (offer: ConfirmOffer) => void;
+  /** يكتم إشعار العلم للقائد داخل إلغاء/تسجيل الحالة — يستعمله النقل (move) كي يُرسل
+   *  إشعارًا **واحدًا** مجمّعًا بدل إشعارَي الإلغاء والتسجيل. الكروت الوظيفيّة تبقى. */
+  suppressLeaderInfo?: boolean;
 };
 
 /**

@@ -453,6 +453,31 @@ const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
     },
   },
   {
+    name: 'move_schedule_status',
+    description:
+      'ينقل حالة طبيبٍ من يومٍ إلى آخر (إلغاء المصدر + تسجيل الوجهة) **بإشعارٍ واحدٍ** ' +
+      'للقائد. للطلبات المركّبة من نوع «ألغِ كذا اليوم الفلانيّ واجعله اليوم الفلانيّ». ' +
+      'يشمل **تغيير النوع** (مثلًا: مرضية الأربعاء ← استئذان الثلاثاء). الطبيب لنفسه؛ ' +
+      'الليدر لأيّ أحد. اترك `toStatus` فارغًا لنقل **نفس نوع المصدر** كما هو. الوجهة ' +
+      'استئذانٌ بلا بداية/نهاية؟ مرّر `toStatus:"permission"` — النظام يسأل بزرَّين. لم ' +
+      'يُسمَّ يوم المصدر وله أكثر من حالة؟ اترك `fromDay` فارغًا — النظام يسأل.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        doctorIndex: { type: 'integer' },
+        fromDay: { type: 'string', enum: [...DAYS], description: 'يوم المصدر (يُلغى) — فارغٌ إن لم يُسمَّ وله أكثر من حالة.' },
+        toDay: { type: 'string', enum: [...DAYS], description: 'يوم الوجهة (يُسجَّل).' },
+        toStatus: {
+          type: 'string', enum: ['permission', 'permission_start', 'permission_end', 'sick_leave', 'vacation'],
+          description: 'نوع الوجهة — فارغٌ = نفس نوع المصدر.',
+        },
+        shift: { type: 'string', enum: ['morning', 'evening'], description: 'لتحديد خانة EX للوجهة عند اللزوم.' },
+      },
+      required: ['weekStart', 'doctorIndex', 'toDay'],
+    },
+  },
+  {
     name: 'place_in_clinic',
     description:
       'يضع طبيبًا في عيادة وفتراتٍ محدّدة (العكس: من غياب إلى داخل العيادة). الطبيب ' +
@@ -717,9 +742,10 @@ export async function dispatchRequestToolV2(
                 });
                 continue;
               }
-              if (leaderId !== actor.id) {
+              if (leaderId !== actor.id && !ctx.suppressLeaderInfo) {
                 // علم الاستئذان يحمل نتيجة التبديل التلقائيّ الصامت (المحرّك نفّذه):
                 // «تمّ تبديله مع فلان» أو «لا بديل يغطّي فترته» — إشعارٌ واحدٌ للعلم.
+                // (النقل يكتمه ليُرسل إشعارًا مجمّعًا واحدًا.)
                 let note = '';
                 if (perm && (status === 'permission_start' || status === 'permission_end')) {
                   const sw = perm.swap;
@@ -1106,7 +1132,7 @@ export async function dispatchRequestToolV2(
           for (const leaderId of leaders) {
             // الإلغاء (وأيُّ انعكاسٍ تلقائيّ) = إشعار علمٍ للقائد فقط — لا كرت ولا
             // تدخّل. المحرّك يعيد الترتيب وحده؛ القائد يُبلَّغ بالمصير لا غير.
-            if (leaderId !== actor.id) {
+            if (leaderId !== actor.id && !ctx.suppressLeaderInfo) {
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
@@ -1166,6 +1192,78 @@ export async function dispatchRequestToolV2(
           ? cancelBase.replace('.', ' وإرجاعه إلى مكانه في العيادة' +
               `${rcf.returnedShadows?.length ? ` — وعاد معه ظلُّه ${rcf.returnedShadows.join(' و')}` : ''}.`)
           : cancelBase + ' (لا مكان محفوظ لإرجاعه — لم يكن منسَّبًا في العيادة وقت الغياب.)');
+      }
+
+      case 'move_schedule_status': {
+        const doc = resolveDoctor(ctx, r.doctorIndex);
+        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        if (!isDay(r.toDay)) return 'Tool error: يوم الوجهة غير صالح.';
+        const wsEff = String(r.weekStart);
+        const { requestsV2 } = await import('../algorithms/requests_v2');
+
+        // المصدر من القاعدة (لا تخمين). يوم المصدر: مُسمّى أو يُستنتَج/يُسأل بكرت.
+        const cands = await requestsV2.listDoctorStatuses({
+          clinicId: ctx.clinicId, weekStart: wsEff, doctorId: doc.id,
+        });
+        let fromDay: WeekDay | null = isDay(r.fromDay) ? r.fromDay : null;
+        if (!fromDay) {
+          const days = Array.from(new Set(cands.map((c) => c.day)));
+          if (days.length === 0) return final(`لا حالة مسجّلة لـ${doc.name} هذا الأسبوع لنقلها.`);
+          if (days.length > 1) {
+            const opts = days.map((d) => `[${DAY_AR[d]}]`).join(' ');
+            return final(`لـ${doc.name} حالاتٌ في أكثر من يوم — أيّ يومٍ تنقل؟ ${opts}`);
+          }
+          fromDay = days[0];
+        }
+        const srcStatus = cands.find((c) => c.day === fromDay)?.status;
+        if (!srcStatus) return final(`لا حالة لـ${doc.name} يوم ${DAY_AR[fromDay]} لنقلها.`);
+
+        // الوجهة: المُمرَّرة أو نفس نوع المصدر. وجهةٌ استئذانٌ مبهمة (`permission`):
+        //  • المصدر استئذانٌ أصلًا → احفظ نوعه (بداية/نهاية) — نقلٌ لنفس الحالة بلا سؤال.
+        //  • المصدر مرضية/تفرّغ (تغيير نوعٍ إلى استئذان) → اسأل بداية/نهاية بكرت.
+        let toStatus = typeof r.toStatus === 'string' && r.toStatus ? r.toStatus : srcStatus;
+        if (toStatus === 'permission') {
+          if (srcStatus === 'permission_start' || srcStatus === 'permission_end') toStatus = srcStatus;
+          else return final(`استئذانُ ${doc.name} يوم ${DAY_AR[r.toDay]}: بدايةَ الدوام أم نهايتَه؟ [بداية الدوام] [نهاية الدوام]`);
+        }
+        if (!['sick_leave', 'vacation', 'permission_start', 'permission_end'].includes(toStatus)) {
+          return 'Tool error: نوع الوجهة غير صالح.';
+        }
+        if (fromDay === r.toDay && toStatus === srcStatus) {
+          return final(`${STATUS_AR[srcStatus]} ${doc.name} يوم ${DAY_AR[fromDay]} كما هي — لا نقل.`);
+        }
+
+        // إلغاء المصدر ثمّ تسجيل الوجهة بإشعارٍ **مكتوم** (لا إشعارَي علمٍ منفصلَين ولا
+        // أزرار إبلاغ) — يُعاد استعمال منطق الإلغاء/التسجيل كاملًا (تبديل، تغطية…).
+        const subCtx: V2ToolContext = { ...ctx, suppressLeaderInfo: true, onAnnounceOffer: undefined };
+        const cancelRaw = await dispatchRequestToolV2('cancel_schedule_status', {
+          weekStart: wsEff, day: fromDay, doctorIndex: r.doctorIndex,
+        }, subCtx);
+        if (!cancelRaw.startsWith(FINAL_MARK)) return cancelRaw;
+        const setRaw = await dispatchRequestToolV2('set_schedule_status', {
+          weekStart: wsEff, day: r.toDay, doctorIndex: r.doctorIndex, status: toStatus,
+          ...(r.shift === 'evening' || r.shift === 'morning' ? { shift: r.shift } : {}),
+        }, subCtx);
+        if (!setRaw.startsWith(FINAL_MARK)) return setRaw;
+
+        // إشعارٌ واحدٌ مجمّع للقادة (عدا الفاعل) — حدثُ نقلٍ واحد.
+        try {
+          const { notifications } = await import('../algorithms/notifications');
+          for (const leaderId of await getTeamLeaderIds(ctx.clinicId)) {
+            if (leaderId !== actor.id) {
+              await notifications.notifyLeaderOfRequest({
+                clinicId: ctx.clinicId, leaderId, senderId: doc.id, senderName: doc.name,
+                summary: `نقل ${doc.name}: ${STATUS_AR[srcStatus]} ${DAY_AR[fromDay]} → ${STATUS_AR[toStatus]} يوم ${dayWithDate(wsEff, r.toDay)}`,
+                weekStart: wsEff, day: r.toDay, standalone: true, scheduleChanged: true,
+              });
+            }
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.log('[notify-move] failed', e instanceof Error ? e.message : e);
+        }
+
+        return final(`تمّ النقل: ${doc.name} — ${STATUS_AR[srcStatus]} ${DAY_AR[fromDay]} أصبحت ${STATUS_AR[toStatus]} ${DAY_AR[r.toDay]}.`);
       }
 
       case 'place_in_clinic': {
