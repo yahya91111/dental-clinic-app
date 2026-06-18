@@ -142,6 +142,96 @@ export function solveShiftPeriods(
   };
 }
 
+// ═══════════════════════════════════════════════════════════════
+// محور الأدوار الثقيلة (انفراد/دليقيتر) — تسويةٌ بالحداثة **عبر الأيّام**.
+//
+// هذا قلب «الامتصاص قبل الحدث»: المقاعد الثقيلة في النافذة (ما لم يقع بعدُ) تُعاد
+// قسمتُها بالحداثة — الأكثر استحقاقاً (الأقدم ظهوراً) يأخذ أوّل مقعدٍ **مؤهَّلٍ**،
+// ولو كان يوماً **قبل** الحدث، ما دام مستقبلاً. فيتسوّى العدل فوراً لا تدريجاً.
+//
+// قاعدة الحداثة (لا المجاميع): العائد من إجازةٍ طويلة ختمُه أقدم → يأخذ **دوراً
+// واحداً** تعويضاً ثمّ يرجع آخر الطابور (لا تكدّس). يطابق منطق order في العجلة.
+// ═══════════════════════════════════════════════════════════════
+
+/** مقعدٌ ثقيلٌ قابلٌ لإعادة القسمة في شفته (انفراد أو دليقيتر). */
+export type HeavySeat = {
+  id: string;            // معرّفٌ للإيصال (مثلاً «الثلاثاء-ص-ع٣»)
+  stamp: string;         // ختم الشفت الزمنيّ (أسبوع#يوم#صباح|مساء) — للترتيب والحداثة
+  kind: 'solo' | 'delegator';
+  eligible: string[];    // المؤهَّلون المتاحون لهذا المقعد في شفته
+  current: string;       // الشاغل الحاليّ (id)
+};
+
+export type HeavyReceipt = {
+  assignments: { seatId: string; from: string; to: string }[]; // التغييرات فقط
+  maxStaleBefore: number; // أقدم ختمٍ (رتبة) لطبيبٍ **مؤهَّلٍ** بقي بلا دور — قبل
+  maxStaleAfter: number;  // وبعد (أصغر = أعدل: لم يُترَك الأكثر استحقاقاً)
+  owedRespected: boolean; // لكلّ مقعد: الشاغل المختار ليس أحدثَ من مؤهَّلٍ تُرك
+  notes: string[];
+};
+
+/**
+ * يعيد قسمة مقاعد ثقيلة بالحداثة (الأقدم أوّلاً) **بالظلّ**. يبدأ من آخر ظهورٍ لكلّ
+ * طبيب (priorLast)، يعالج المقاعد بترتيبها الزمنيّ، ويمنح كلّ مقعدٍ لأكثر مؤهَّليه
+ * استحقاقاً (أقدم ختم) ثمّ يحدّث ختمه — فيدور دوراً واحداً ويعود آخر الطابور.
+ * يُصدر إيصالاً مدقَّقاً. **لا يكتب شيئاً**.
+ */
+export function solveHeavyRecency(
+  doctors: LoadedDoctor[], priorLast: Map<string, string>, seats: HeavySeat[],
+): HeavyReceipt {
+  const nameOf = new Map(doctors.map((d) => [d.id, d.name] as const));
+  const last = new Map<string, string>();
+  for (const d of doctors) last.set(d.id, priorLast.get(d.id) ?? '');
+  // رتبة الأقدميّة (لقياس «أقدم مؤهَّلٍ تُرك»): الأقدم ختماً = رتبةٌ أصغر.
+  const ordered = [...new Set([...doctors.map((d) => d.id)])]
+    .sort((a, b) => (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || (nameOf.get(a) ?? '').localeCompare(nameOf.get(b) ?? ''));
+  const rank = new Map(ordered.map((id, i) => [id, i] as const));
+
+  // أكبر «بياتٍ» لمؤهَّلٍ بقي بلا دور خلال النافذة (للمقارنة قبل/بعد).
+  const maxStaleOf = (assign: (seat: HeavySeat) => string): number => {
+    let worst = 0;
+    for (const seat of [...seats].sort((a, b) => a.stamp.localeCompare(b.stamp))) {
+      const chosen = assign(seat);
+      for (const e of seat.eligible) {
+        if (e === chosen) continue;
+        // مؤهَّلٌ أقدم من المختار تُرك؟ مقدار تجاوز الرتبة = شدّة الظلم.
+        const gap = (rank.get(chosen) ?? 0) - (rank.get(e) ?? 0);
+        if (gap > worst) worst = gap;
+      }
+    }
+    return worst;
+  };
+  const staleBefore = maxStaleOf((seat) => seat.current);
+
+  // قرار الحلّال: أقدم مؤهَّلٍ أوّلاً، ثمّ تحديث ختمه (دورةٌ واحدة ثمّ يدور).
+  const assignments: HeavyReceipt['assignments'] = [];
+  let owedRespected = true;
+  const sorted = [...seats].sort((a, b) => a.stamp.localeCompare(b.stamp));
+  const chosenBy = new Map<string, string>();
+  for (const seat of sorted) {
+    const pick = [...seat.eligible].sort((a, b) =>
+      (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || (nameOf.get(a) ?? '').localeCompare(nameOf.get(b) ?? ''),
+    )[0];
+    if (!pick) { owedRespected = false; continue; } // مقعدٌ بلا مؤهَّل (لا يفترض)
+    chosenBy.set(seat.id, pick);
+    // تدقيق: لا مؤهَّلٌ أقدم من المختار تُرك (الاختيار argmin → دائماً صحيح).
+    for (const e of seat.eligible) {
+      if (e !== pick && (last.get(e) ?? '') < (last.get(pick) ?? '')) owedRespected = false;
+    }
+    if (pick !== seat.current) {
+      assignments.push({ seatId: seat.id, from: nameOf.get(seat.current) ?? seat.current, to: nameOf.get(pick) ?? pick });
+    }
+    if (seat.stamp > (last.get(pick) ?? '')) last.set(pick, seat.stamp);
+  }
+  const staleAfter = maxStaleOf((seat) => chosenBy.get(seat.id) ?? seat.current);
+
+  const notes: string[] = [];
+  if (assignments.length === 0) notes.push('قسمة الأدوار الثقيلة عادلةٌ أصلاً — لا إعادة قسمة.');
+  else notes.push(`${assignments.length} إعادة قسمة، أقصى بياتٍ ${staleBefore}→${staleAfter}.`);
+
+  return { assignments, maxStaleBefore: staleBefore, maxStaleAfter: staleAfter, owedRespected, notes };
+}
+
 /** تقسيم سجلٍّ إلى (سياق، شفت مستهدف) بمفتاح أسبوع/يوم/شفت — أداةٌ للحلّال والاختبار. */
 export function splitTargetShift(
   slots: LoadedSlot[], weekStart: string, day: string, shift: 'morning' | 'evening',
