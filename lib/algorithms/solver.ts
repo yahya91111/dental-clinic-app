@@ -326,6 +326,36 @@ export function solveDisturbance(
   return solveHeavyRecency(doctors, prior, seats);
 }
 
+// ─── التوازن عبر الأيّام — «اللمس بقدر الحاجة، عبر شفتات عدّة أيّام» ───
+// نفس المنطق المُوجَّه بالحدث، لكن على نافذةٍ تمتدّ أيّامًا: المقاعد مرتّبةٌ زمنيًّا
+// (solveHeavyRecency يفرزها بالختم) فالحداثة تتدفّق عبر الأيّام، والقيد «مقعدٌ واحدٌ
+// للطبيب في الشفت» يبقى لكلّ ختمٍ على حدة. يلمس يومًا أو يومين أو أكثر بقدر ما يلزم.
+// fromStamp (اختياريّ) = نبدأ من شفت الحدث فصاعدًا (نافذة التأثّر) — فبلا حدثٍ صفر لمس.
+
+/** يستخرج رتبة اليوم من ختم المقعد (`...|week#dayIdx#half|...`). */
+const dayOfSeatId = (seatId: string): number => {
+  const st = seatId.split('|')[1] ?? '';
+  const di = Number(st.split('#')[1]);
+  return Number.isNaN(di) ? -1 : di;
+};
+
+/**
+ * يوازن نافذةً متعدّدة الأيّام ردًّا على حدث (غياب قد يمتدّ أيّامًا / عودة). يبني على
+ * القسمة الحاليّة، يبدأ من شفت الحدث (fromStamp) فصاعدًا، ويلمس بأقلّ ما يحقّق العدل
+ * عبر الأيّام. priorLast = الحداثة الداخلة لأوّل شفتٍ في النافذة من التاريخ الحقيقيّ.
+ * يُصدر الإيصال + قائمة الأيّام الملموسة. **لا يكتب شيئًا**.
+ */
+export function rebalanceDays(
+  doctors: LoadedDoctor[], windowSeats: HeavySeat[], priorLast: Map<string, string>,
+  dist: Disturbance = {}, fromStamp = '',
+): HeavyReceipt & { daysTouched: number[] } {
+  const seats = fromStamp ? windowSeats.filter((s) => s.stamp >= fromStamp) : windowSeats;
+  const rec = solveDisturbance(doctors, seats, priorLast, dist);
+  const days = new Set<number>();
+  for (const a of rec.assignments) { const di = dayOfSeatId(a.seatId); if (di >= 0) days.add(di); }
+  return { ...rec, daysTouched: [...days].sort((x, y) => x - y) };
+}
+
 /** آخر ظهورٍ لكلّ طبيبٍ في دورٍ ثقيل (انفراد أو دليقيتر) من سجلٍّ تاريخيّ — priorLast. */
 export function lastHeavyStamps(historySlots: LoadedSlot[]): Map<string, string> {
   const last = new Map<string, string>();
