@@ -298,8 +298,11 @@ export function extractHeavySeats(shiftSlots: LoadedSlot[], poolIds?: Set<string
 // بلا حدث: لمسٌ صفر (الشاغلون الحاليّون هم الأحقّ عند الدخول للشفت بحداثة التاريخ).
 // مع حدث: يلمس ٢ أو ٣ أو ٥… بقدر ما يتطلّبه إصلاح الظلم — لا أكثر.
 export type Disturbance = {
-  /** غائبون هذا الشفت: يُفرَّغون ويُسقَطون من الأهليّة. */
+  /** غائبون في **كلّ** النافذة (إجازة ممتدّة): يُسقَطون من كلّ المقاعد. */
   absentIds?: string[];
+  /** غائبون في شفتاتٍ **محدّدة** (ختم→معرّفات): يُسقَطون من تلك الشفتات فقط — كي لا
+   *  يُعامَل غائبُ يومٍ غائبًا في بقيّة الأيّام (دقّةٌ ضروريّة عبر الأيّام). */
+  absentByStamp?: Map<string, string[]>;
   /** عائدون/مُتاحون الآن: يُضافون للأهليّة بحداثتهم القديمة (الأحقّ يأخذ دورًا). */
   extraEligible?: { id: string; lastStamp: string }[];
 };
@@ -313,13 +316,15 @@ export type Disturbance = {
 export function solveDisturbance(
   doctors: LoadedDoctor[], shiftSeats: HeavySeat[], priorLast: Map<string, string>, dist: Disturbance = {},
 ): HeavyReceipt {
-  const absent = new Set(dist.absentIds ?? []);
+  const absentAll = new Set(dist.absentIds ?? []);
   const prior = new Map(priorLast);
   for (const ex of dist.extraEligible ?? []) prior.set(ex.id, ex.lastStamp);
   const extraIds = (dist.extraEligible ?? []).map((e) => e.id);
-  // أهليّةٌ معدّلةٌ بالحدث: نُسقِط الغائبين، ونضيف المُتاحين الجدد (إن كانوا أطبّاء معروفين).
+  // أهليّةٌ معدّلةٌ بالحدث: نُسقِط الغائبين (الممتدّ من كلّ الشفتات، والمحدّد من شفته
+  // فقط)، ونضيف المُتاحين الجدد. الإسقاط لكلّ مقعدٍ حسب ختمه.
   const seats = shiftSeats.map((s) => {
-    let elig = s.eligible.filter((id) => !absent.has(id));
+    const absentHere = new Set([...absentAll, ...(dist.absentByStamp?.get(s.stamp) ?? [])]);
+    let elig = s.eligible.filter((id) => !absentHere.has(id));
     for (const id of extraIds) if (!elig.includes(id)) elig = [...elig, id];
     return { ...s, eligible: elig };
   });
