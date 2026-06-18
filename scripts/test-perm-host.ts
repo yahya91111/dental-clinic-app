@@ -49,6 +49,11 @@ async function main() {
   check('اللقطة أُزيلت', prevRows(rows, host.id).length === 0, `prev=${prevRows(rows, host.id).length}`);
   check('لا علامة استئذان باقية', !rows.some((r) => r.doctor_id === host.id && r.period === 0 && (r.status === 'permission_start' || r.status === 'permission_end')), '');
   check('الردّ يذكر إعادة ترتيب الشفت', /أُعيد ترتيب الشفت/.test(raw), raw.slice(0, 90));
+  const hostSeats = rows.filter((r) => r.doctor_id === host.id && r.status === 'active' && r.period > 0);
+  const backClinic = hostSeats.some((r) => r.role === 'clinic');
+  const backDelegator = hostSeats.some((r) => r.role === 'delegator');
+  console.log('  مقاعد المُضيف بعد العودة:', hostSeats.map((r) => `${r.role} p${r.period} c${r.clinic_number}`).join(' + ') || '(لا شيء)');
+  console.log(`  → رجع عيادة؟ ${backClinic} | رجع دليقيتر؟ ${backDelegator} ⇒ ${backClinic && backDelegator ? 'مُضيف' : backClinic ? 'عيادة فقط' : 'غير ذلك'}`);
 
   console.log(`\n====== النتيجة: ${pass} PASS / ${fail} FAIL ======`);
   if (fails.length) { console.log('الإخفاقات:'); fails.forEach((f) => console.log('  • ' + f)); }
