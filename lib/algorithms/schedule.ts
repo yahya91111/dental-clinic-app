@@ -1604,6 +1604,18 @@ function placementSigs(items: SigItem[], periods: Period[], exCol: number): Map<
  * لكلّ شفت: يعيد الحساب بنفس الوصفة، يقارن بالمكتوب، ويكتب المتغيّر فقط.
  * يُرجِع الأسابيع التي تغيّرت فعلًا (مع مَن تبدّل مقعده) — لإشعارٍ واحدٍ لكلّ أسبوع.
  */
+/** أوّل شفتٍ **لم يقع بعدُ** في أسبوعٍ، نسبةً إلى «اليوم» (ISO) — أساسُ مرساة «الآن».
+ *  اليوم قبل الأسبوع → كلّه مستقبل (الأحد صباحًا)؛ داخل الأسبوع → أوّل يومٍ **بعده**
+ *  (فالاثنين متاحٌ لتعويض غياب الثلاثاء حين يكون اليوم الأحد)؛ انقضى الأسبوع → null
+ *  (يُرحَّل التوازن للأسابيع التالية). يمنح العجلةَ أكبر مساحةٍ بلا مساسٍ بما حدث. */
+export function firstFutureShift(weekStart: string, todayISO: string): { day: WeekDay; shift: Shift } | null {
+  const diff = Math.round((Date.parse(todayISO) - Date.parse(weekStart)) / 86400000);
+  const nextIdx = diff + 1; // أوّل يومٍ بعد اليوم
+  if (nextIdx <= 0) return { day: WEEK_DAYS_ORDER[0]!, shift: 'morning' };
+  if (nextIdx > 4) return null;
+  return { day: WEEK_DAYS_ORDER[nextIdx]!, shift: 'morning' };
+}
+
 export async function rebalanceForward(args: {
   clinicId: string;
   weekStart: string;
@@ -1611,14 +1623,24 @@ export async function rebalanceForward(args: {
   fromShift: Shift;
   /** كم أسبوعًا مبنيًّا نمسح للأمام (يتوقّف تلقائيًّا عند أوّل أسبوعٍ غير مبنيّ). */
   maxWeeks?: number;
+  /** اليوم (ISO) — إن مُرِّر فالمرساة «أوّل شفتٍ لم يقع بعدُ» (أوسع نافذةٍ للعدل،
+   *  تشمل أيّام هذا الأسبوع **قبل** الحدث ما دامت مستقبلًا) بدل «بعد يوم الحدث». */
+  today?: string;
 }): Promise<{ changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] }> {
   const DAY_IDX: Record<WeekDay, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
   const maxWeeks = args.maxWeeks ?? 4;
   const changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] = [];
 
   let week = args.weekStart;
-  // الأسبوع المرساة: نبدأ من الشفت التالي للمرساة (المرساة نفسها عُولجت بالكرت).
-  let startOrder = DAY_IDX[args.fromDay] * 2 + (args.fromShift === 'evening' ? 1 : 0) + 1;
+  // مرساة «الآن»: أوّل شفتٍ لم يقع بعدُ (ضمنًا) — أوسع نافذة. وإلّا (افتراضيّ): الشفت
+  // التالي ليوم الحدث (المرساة نفسها عُولجت بالكرت).
+  let startOrder: number;
+  if (args.today) {
+    const sf = firstFutureShift(args.weekStart, args.today);
+    startOrder = sf ? DAY_IDX[sf.day] * 2 + (sf.shift === 'evening' ? 1 : 0) : 10;
+  } else {
+    startOrder = DAY_IDX[args.fromDay] * 2 + (args.fromShift === 'evening' ? 1 : 0) + 1;
+  }
 
   for (let wi = 0; wi < maxWeeks; wi++) {
     const recipe = await loadBuildConfig(args.clinicId, week);
@@ -1684,4 +1706,5 @@ export const schedule = {
   placementShift,
   redistributeOnReturn,
   rebalanceForward,
+  firstFutureShift,
 };

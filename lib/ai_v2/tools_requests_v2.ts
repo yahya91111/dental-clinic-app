@@ -286,6 +286,14 @@ const WORK_AR: Record<string, string> = {
 export const FINAL_MARK = '⟦FINAL⟧';
 const final = (text: string) => `${FINAL_MARK}${text}`;
 
+/** «اليوم» (ISO) لمرساة إعادة التوازن من «الآن»: من إدخال الأداة (`today`) للاختبار،
+ *  وإلّا تاريخ النظام الحقيقيّ. يجعل العجلةَ توازِن كلّ ما لم يقع بعدُ (أوسع نافذة). */
+function todayISOFrom(r: Record<string, unknown>): string {
+  if (typeof r.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.today)) return r.today;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * بعد أيّ تغطية: أعد حساب حقائق اليوم (المعادلة من جديد) وحدّث كروت **كلّ**
  * القادة بها — يدعم التغطية الجزئيّة: ما بقي نقصًا يظهر بمرشّحيه الفعليّين
@@ -772,6 +780,22 @@ export async function dispatchRequestToolV2(
           }
         }
 
+        // استئذانٌ بدّل مقعداً (تبديلٌ تلقائيّ) → وازِن **من الآن** (أوّل شفتٍ لم يقع بعدُ،
+        // يشمل أيّام هذا الأسبوع قبل الحدث) عبر الأسابيع المبنيّة، صامتًا وفرقاً فقط.
+        if ((status === 'permission_start' || status === 'permission_end')
+          && perm?.swap && 'withName' in perm.swap) {
+          try {
+            const { schedule } = await import('../algorithms/schedule');
+            await schedule.rebalanceForward({
+              clinicId: ctx.clinicId, weekStart: wsEff, fromDay: r.day, fromShift: effShift,
+              today: todayISOFrom(r),
+            });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.log('[rebalance-forward perm] failed', e instanceof Error ? e.message : e);
+          }
+        }
+
         // ترتيب تعويض النقص (الجديد): غيابٌ كاملٌ (مرضية/تفرّغ) أخرج الطبيب من عيادته
         // → خوارزميّة الجدول تُرتّب تعويض الشفت، ويصل القائدَ كرت [نفّذ] بالفرق.
         // الفرق محسوبٌ في الكود (لا يُكشَف «إعادة التوزيع» — سرّيّة الآليّة).
@@ -1072,13 +1096,14 @@ export async function dispatchRequestToolV2(
           }
         }
 
-        // عودة الطبيب غيّرت يومه (سواءٌ أُعيد ترتيب الشفت أو عاد لمقعدٍ فارغ) →
-        // وازِن مستقبل الأسبوع (والأسابيع المبنيّة بعده) صامتًا، واكتب ما تغيّر فقط — **بلا إشعار**.
+        // عودة الطبيب غيّرت يومه → وازِن **من الآن** (أوّل شفتٍ لم يقع بعدُ، يشمل أيّام
+        // هذا الأسبوع قبل الحدث) عبر الأسابيع المبنيّة، صامتًا وفرقاً فقط — **بلا إشعار**.
         if (returnShift && (autoReturned || res.restored)) {
           try {
             const { schedule } = await import('../algorithms/schedule');
             await schedule.rebalanceForward({
               clinicId: ctx.clinicId, weekStart: String(r.weekStart), fromDay: r.day, fromShift: returnShift,
+              today: todayISOFrom(r),
             });
           } catch (e) {
             // eslint-disable-next-line no-console
