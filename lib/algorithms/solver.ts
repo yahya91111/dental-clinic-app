@@ -225,16 +225,22 @@ export function solveHeavyRecency(
       (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || tie(a) - tie(b),
     )[0];
     if (!pick) { owedRespected = false; continue; } // مقعدٌ بلا مؤهَّلٍ متاح (نادر)
-    chosenBy.set(seat.id, pick);
-    taken.add(pick); takenInStamp.set(seat.stamp, taken);
-    // تدقيق: لا مؤهَّلٌ متاحٌ أقدم من المختار تُرك (الاختيار argmin → دائماً صحيح).
+    // **تحسّنٌ صارم فقط** (تفاعلٌ لا إعادةُ بناء): نُبقي الشاغل الحاليّ ما لم يوجد
+    // مؤهَّلٌ **أحقَّ منه فعلاً** (ختمُه أقدم). فلا churn على أسبوعٍ عادلٍ أصلاً —
+    // الحلّال يتحرّك فقط حين يكون هناك ظلمٌ يُصلَح (غيابٌ/عودة).
+    const curLast = last.get(seat.current) ?? '';
+    const pickLast = last.get(pick) ?? '';
+    const chosen = (cands.includes(seat.current) && !(pickLast < curLast)) ? seat.current : pick;
+    chosenBy.set(seat.id, chosen);
+    taken.add(chosen); takenInStamp.set(seat.stamp, taken);
+    // تدقيق: لا مؤهَّلٌ متاحٌ أقدم من المختار تُرك دون داعٍ (نسمح بإبقاء الشاغل عند التعادل).
     for (const e of cands) {
-      if (e !== pick && (last.get(e) ?? '') < (last.get(pick) ?? '')) owedRespected = false;
+      if (e !== chosen && (last.get(e) ?? '') < (last.get(chosen) ?? '')) owedRespected = false;
     }
-    if (pick !== seat.current) {
-      assignments.push({ seatId: seat.id, from: nameOf.get(seat.current) ?? seat.current, to: nameOf.get(pick) ?? pick });
+    if (chosen !== seat.current) {
+      assignments.push({ seatId: seat.id, from: nameOf.get(seat.current) ?? seat.current, to: nameOf.get(chosen) ?? chosen });
     }
-    if (seat.stamp > (last.get(pick) ?? '')) last.set(pick, seat.stamp);
+    if (seat.stamp > (last.get(chosen) ?? '')) last.set(chosen, seat.stamp);
   }
   const staleAfter = maxStaleOf((seat) => chosenBy.get(seat.id) ?? seat.current);
 
@@ -251,13 +257,18 @@ export function solveHeavyRecency(
 // مَن كان **حاضراً عاملاً** ذلك الشفت (له عيادة/دليقيتر نشط) — مرشّحو المبادلة الواقعيّون.
 const heavyStamp = (s: LoadedSlot): string => `${s.weekStart}#${DAY_IDX[s.dayOfWeek] ?? 0}#${s.period <= 2 ? 0 : 1}`;
 
-/** يستخرج المقاعد الثقيلة لشفتٍ واحد من خاناته النشطة. */
-export function extractHeavySeats(shiftSlots: LoadedSlot[]): HeavySeat[] {
+/** يستخرج المقاعد الثقيلة لشفتٍ واحد من خاناته النشطة.
+ *  poolIds (اختياريّ) = بِركة المؤهَّلين للأدوار الثقيلة كما تراها العجلة (تستثني
+ *  البورد والظلال والتخفيف من عجلة الدليقيتر). إن مُرِّرت، تُقصَر الأهليّة عليها
+ *  (مع ضمان بقاء الشاغل الحاليّ مؤهَّلاً لمقعده دائماً). */
+export function extractHeavySeats(shiftSlots: LoadedSlot[], poolIds?: Set<string>): HeavySeat[] {
   const active = shiftSlots.filter((s) => s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator'));
   if (active.length === 0) return [];
   const stamp = heavyStamp(active[0]!);
-  // الحاضرون العاملون = الأهليّة (مرشّحو المبادلة لأيّ مقعدٍ ثقيلٍ في الشفت).
-  const eligible = [...new Set(active.map((s) => s.doctorId))];
+  // الأهليّة = الحاضرون العاملون، مقصورةً على بِركة المؤهَّلين إن وُجدت.
+  const working = [...new Set(active.map((s) => s.doctorId))];
+  const base = poolIds ? working.filter((id) => poolIds.has(id)) : working;
+  const eligibleFor = (current: string) => (base.includes(current) ? base : [...base, current]);
   const seats: HeavySeat[] = [];
   // انفراد: (طبيب|عيادة) بفترتين.
   const clinicCount = new Map<string, { id: string; clinic: number; n: number }>();
@@ -268,12 +279,12 @@ export function extractHeavySeats(shiftSlots: LoadedSlot[]): HeavySeat[] {
     e.n++; clinicCount.set(k, e);
   }
   for (const e of clinicCount.values()) {
-    if (e.n === 2) seats.push({ id: `solo|${stamp}|c${e.clinic}`, stamp, kind: 'solo', eligible, current: e.id });
+    if (e.n === 2) seats.push({ id: `solo|${stamp}|c${e.clinic}`, stamp, kind: 'solo', eligible: eligibleFor(e.id), current: e.id });
   }
   // دليقيتر: مقعدٌ لكلّ دور دليقيتر (نميّزه بالفترة كي لا يندمج مقعدان).
   for (const s of active) {
     if (s.role !== 'delegator') continue;
-    seats.push({ id: `del|${stamp}|p${s.period}|${s.doctorId}`, stamp, kind: 'delegator', eligible, current: s.doctorId });
+    seats.push({ id: `del|${stamp}|p${s.period}|${s.doctorId}`, stamp, kind: 'delegator', eligible: eligibleFor(s.doctorId), current: s.doctorId });
   }
   return seats;
 }

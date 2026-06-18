@@ -29,6 +29,12 @@ async function main() {
   const { data, error } = await loadScheduleData(CID, WEEK);
   if (error || !data) { console.error('تعذّر التحميل:', error); process.exit(1); }
 
+  // بِركة المؤهَّلين للأدوار الثقيلة كما تراها العجلة: تستثني البورد (لا يدخل عجلة
+  // الدليقيتر)، والمتدرّبين الظلال، والتخفيف (يُزاوَج، لا ينفرد/يدلّق). فيرتفع التوافق.
+  const poolIds = new Set(data.doctors
+    .filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty')
+    .map((d) => d.id));
+
   // ① استخراج مقاعد الأسبوع الثقيلة من الجدول الحقيقيّ (انفراد + دليقيتر)، شفتاً بشفت.
   const seats: HeavySeat[] = [];
   for (let order = 0; order < 10; order++) {
@@ -36,7 +42,7 @@ async function main() {
     const shift: Shift = order % 2 === 0 ? 'morning' : 'evening';
     const periods = shift === 'morning' ? [1, 2] : [3, 4];
     const shiftSlots = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day] && periods.includes(s.period));
-    seats.push(...extractHeavySeats(shiftSlots));
+    seats.push(...extractHeavySeats(shiftSlots, poolIds));
   }
   const soloN = seats.filter((s) => s.kind === 'solo').length;
   const delN = seats.filter((s) => s.kind === 'delegator').length;
