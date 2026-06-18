@@ -23,7 +23,7 @@ async function main() {
   const { notifications } = await import('../lib/algorithms/notifications');
   for (const d of DAYS) {
     await requestsV2.cancelStatus({ id: mo.id, role: 'team_leader' }, { clinicId: CID, weekStart: WEEK, day: d as any, doctorId: mo.id, restoreToPrevPlace: true }).catch(() => {});
-    await notifications.cancelSwapGroup({ requesterId: mo.id, weekStart: WEEK, day: d as any }).catch(() => {});
+    if (!process.env.NOCLEAN) await notifications.cancelSwapGroup({ requesterId: mo.id, weekStart: WEEK, day: d as any }).catch(() => {});
   }
 
   // أيّام محمد المنسَّبة (عيادة) — نبني الطلب على أيّامٍ يعمل فيها فعلًا

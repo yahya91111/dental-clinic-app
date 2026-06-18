@@ -343,6 +343,10 @@ export async function sendMessageV2(
     let outputTokensTotal = 0;
     let roundsUsed = 0;
     let lastStopReason: string | undefined;
+    // احتياطٌ للطلب المركّب: نجمع تأكيدات الأدوات النهائيّة (① نجاحات) وأخطاءها (②) عبر
+    // الجولات. إن سكت النموذج (نصّ فارغ) بعد فشلٍ جزئيّ، نعرضها بدل ردٍّ فارغ.
+    const finalFallback: string[] = [];
+    const sideNotes: string[] = [];
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       roundsUsed = round + 1;
@@ -407,7 +411,11 @@ export async function sendMessageV2(
           const isFinal = raw.startsWith(FINAL_MARK);
           const result = isFinal ? raw.slice(FINAL_MARK.length) : raw;
           if (isFinal) finalTexts.push(result);
-          else allFinal = false;
+          else {
+            allFinal = false;
+            // ② فعلٌ فشل (Tool error) — احفظه مصاغًا احتياطًا لو سكت النموذج
+            if (result.startsWith('Tool error')) sideNotes.push('⚠️ ' + result.replace(/^Tool error:\s*/, ''));
+          }
           // eslint-disable-next-line no-console
           console.log(
             `[AI V2 round ${round + 1}] TOOL ${block.name}${isFinal ? ' [final]' : ''} →`,
@@ -423,6 +431,8 @@ export async function sendMessageV2(
 
       // احتفظ بآخر نصّ غير فارغ عبر الجولات (قد يكون الإجابة النهائية)
       if (roundText.trim()) lastNonEmptyText = roundText;
+      // ① اجمع تأكيدات النجاح النهائيّة عبر الجولات (احتياطٌ ضدّ ردٍّ فارغ)
+      if (finalTexts.length) finalFallback.push(...finalTexts);
 
       // انتهاء الدورة: لا أدوات → هذه الجولة هي الإجابة النهائية. إن كانت فارغة
       // فالإجابة جاءت في جولة الأداة السابقة → استعملها بدل ترك الردّ فارغًا.
@@ -447,17 +457,24 @@ export async function sendMessageV2(
     }
 
     if (!allText.trim()) {
-      const reason =
-        roundsUsed >= MAX_TOOL_ROUNDS
-          ? `تجاوزت ${MAX_TOOL_ROUNDS} جولات أدوات.`
-          : lastStopReason === 'max_tokens'
-            ? 'الرد كان طويلاً وانقطع.'
-            : 'الذكاء انتهى بدون رد نصي.';
-      return {
-        success: false,
-        message: '',
-        error: reason,
-      };
+      // طلبٌ مركّبٌ نفّذ أفعالًا ثمّ سكت النموذج → اعرض التأكيدات الناجحة + أسباب الفشل
+      // (① + ②) بدل ردٍّ فارغ. لا يُكسَر تحسين التكلفة — يعمل فقط عند الفراغ.
+      const fallback = [...finalFallback, ...sideNotes].join('\n').trim();
+      if (fallback) {
+        allText = fallback;
+      } else {
+        const reason =
+          roundsUsed >= MAX_TOOL_ROUNDS
+            ? `تجاوزت ${MAX_TOOL_ROUNDS} جولات أدوات.`
+            : lastStopReason === 'max_tokens'
+              ? 'الرد كان طويلاً وانقطع.'
+              : 'الذكاء انتهى بدون رد نصي.';
+        return {
+          success: false,
+          message: '',
+          error: reason,
+        };
+      }
     }
 
     return {
