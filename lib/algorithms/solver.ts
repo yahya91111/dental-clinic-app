@@ -97,10 +97,12 @@ export function solveShiftPeriods(
   for (const p of pairs) {
     const aId = p.f1.doctorId, bId = p.f2.doctorId;
     const ba = running.get(aId) ?? 0, bb = running.get(bId) ?? 0;
-    // مَن يأخذ ف١؟ الأقلّ ميزاناً. عند التساوي **لا نبدّل** — المبادلة لا تحسّن
-    // الخلل (لاطئة)، فنتجنّب ضجيجاً بلا فائدة. نبدّل فقط حين يكون شاغل ف١ الحاليّ
-    // أعلى ميزاناً فعلاً (تحسّنٌ صارم).
-    const shouldSwap = ba > bb;
+    // نبدّل فقط إذا قلّ **إجماليّ |الخلل|** فعلاً (تحسّنٌ صارم عالميّ، لا قاعدة
+    // محليّة فقط): مساهمة الوضع الحاليّ |ba+1|+|bb−1| مقابل المبدَّل |ba−1|+|bb+1|.
+    // فلا مبادلةٌ لاطئة (نفس |الخلل|) ولا حين يكون الميزانان بنفس الإشارة بعيدَين.
+    const curCost = Math.abs(ba + 1) + Math.abs(bb - 1);
+    const swapCost = Math.abs(ba - 1) + Math.abs(bb + 1);
+    const shouldSwap = swapCost < curCost;
     const f1Id = shouldSwap ? bId : aId;
     const f2Id = shouldSwap ? aId : bId;
     if (shouldSwap) {
