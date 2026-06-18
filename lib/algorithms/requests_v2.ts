@@ -348,6 +348,19 @@ async function autoResolvePermissionConflict(args: {
         && r.period === Pblocked && r.role === 'delegator')
     : undefined;
 
+  // لقطةُ مقعد المُستأذِن **الأصليّ** قبل التبديل (صفّ PREV_ROLE — نفس آليّة الغياب):
+  // تُعلِم العودةَ أنّ تبديلاً حدث، وتمنح placementShift شفتَه، فيُعاد حساب الشفت عند
+  // الإلغاء (يعود لمقعده إن ثبت العالم، أو يُشتقّ الصواب إن تغيّر).
+  const snapshotRows = [
+    { period: holderSeat.period, clinic_number: holderSeat.clinic_number },
+    ...(hostDelegator ? [{ period: hostDelegator.period, clinic_number: hostDelegator.clinic_number }] : []),
+  ].map((s) => ({
+    clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+    period: s.period, clinic_number: s.clinic_number,
+    doctor_id: doctorId, doctor_name: doctorName,
+    role: PREV_ROLE, status: 'active', source: 'request',
+  }));
+
   // مبادلة ملكيّة الخانتين: المُستأذِن يأخذ الفترة الحاضرة، والمرشّح يأخذ المحجوبة.
   // وفي المُضيف: ينتقل دليقيتر المُستأذِن (الحاضر) للمرشّح فيعمل المرشّح الفترتين.
   await applySlotChanges({
@@ -358,6 +371,7 @@ async function autoResolvePermissionConflict(args: {
         ? [{ id: hostDelegator.id, doctor_id: partner.doctor_id, doctor_name: partner.doctor_name }]
         : []),
     ],
+    inserts: snapshotRows,
     ...(partnerDelegatorPblocked ? { deleteIds: [partnerDelegatorPblocked.id] } : {}),
   });
   await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, partner.doctor_id], preRows: rows });
@@ -713,6 +727,8 @@ export async function cancelStatus(
   covered?: boolean;
   canceledStatus?: string;
   permissionCanceled?: boolean;       // أُزيلت علامة استئذانٍ وهو في عيادته — لا إرجاع
+  permSwapReverted?: boolean;         // عُكِس تبديل الاستئذان حرفيًّا (عالمٌ ثابت)
+  permSwapRecompute?: boolean;        // مُضيفٌ/عالمٌ متغيّر → تُعيد الطبقة الأعلى حساب الشفت
   returnedToReserve?: boolean;        // أُزيلت العلامة وبقي احتياطًا كما كان
   shadowReturned?: boolean;           // ظلٌّ عاد إلى جانب مدرّبه
   shadowSupervisorAbsent?: boolean;   // ظلٌّ أُلغيت حالته ومدرّبه غائب — بقي احتياطًا
@@ -801,9 +817,45 @@ export async function cancelStatus(
         // (لما قبل الاحتياط) يبقى لإلغاء الاحتياط لاحقًا.
         return { success: true, returnedToReserve: true, canceledStatus: permRows[0]!.status };
       }
-      // حفظٌ بائت بلا غيابٍ معه؟ نظّفه كي لا يُستعاد خطأً لاحقًا.
+      // لقطةُ تبديلٍ محفوظة (الاستئذان بدّل مقعداً)؟ قاعدة العودة الموحّدة:
+      //  • تبديلٌ بسيط (لقطةُ مقعدٍ واحد) والعالم ثابت → نعكسه **حرفيًّا** (رخيصٌ ودقيق:
+      //    المُستأذِن يعود لمقعده، والشريك يعود لمقعد المُستأذِن الحاليّ).
+      //  • مُضيفٌ (لقطتان) أو العالم تغيّر → يُعيد المحرّك حساب الشفت (الطبقة الأعلى).
+      let permSwapReverted = false;
+      let permSwapRecompute = false;
+      if (prev.length > 0) {
+        const myName = prev[0]!.doctor_name;
+        if (prev.length === 1 && prev[0]!.clinic_number > 0) {
+          const t = prev[0]!;
+          const occ = rows.find((r) => r.status === 'active' && r.role === 'clinic'
+            && r.period === t.period && r.clinic_number === t.clinic_number && r.doctor_id !== doctorId);
+          const acur = rows.find((r) => r.status === 'active' && r.role === 'clinic'
+            && r.doctor_id === doctorId && r.period > 0);
+          const alreadyHome = rows.some((r) => r.status === 'active' && r.role === 'clinic'
+            && r.period === t.period && r.clinic_number === t.clinic_number && r.doctor_id === doctorId);
+          if (!alreadyHome && occ && acur) {
+            await applySlotChanges({
+              updates: [
+                { id: occ.id, doctor_id: doctorId, doctor_name: myName },
+                { id: acur.id, doctor_id: occ.doctor_id, doctor_name: occ.doctor_name },
+              ],
+            });
+            await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, occ.doctor_id], preRows: rows });
+            permSwapReverted = true;
+          } else {
+            permSwapRecompute = true; // العالم تغيّر — لا عكسٌ آمن
+          }
+        } else {
+          permSwapRecompute = true; // مُضيفٌ — يُعيد المحرّك الحساب
+        }
+      }
       await deleteRows(prev.map((r) => r.id));
-      return { success: true, permissionCanceled: true, canceledStatus: permRows[0]!.status };
+      return {
+        success: true, permissionCanceled: true,
+        permSwapReverted: permSwapReverted || undefined,
+        permSwapRecompute: permSwapRecompute || undefined,
+        canceledStatus: permRows[0]!.status,
+      };
     }
 
     // ── غيابٌ كامل (مرضية/تفرّغ) أو احتياط ──

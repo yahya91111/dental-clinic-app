@@ -1057,7 +1057,10 @@ export async function dispatchRequestToolV2(
         if (!res.success) return `Tool error: ${res.error}`;
 
         let autoReturned = false;
-        if (res.covered && returnShift) {
+        // غيابٌ مُغطًّى عاد، **أو** استئذانٌ بدّل مقعداً أُلغي → نُعيد حساب الشفت من
+        // الواقع: يعود لمقعده الصحيح (إن ثبت العالم) أو يُشتقّ الصواب (إن تغيّر). قاعدةٌ
+        // واحدةٌ للغياب والاستئذان.
+        if ((res.covered || (res as { permSwapRecompute?: boolean }).permSwapRecompute) && returnShift) {
           try {
             const { schedule } = await import('../algorithms/schedule');
             autoReturned = await schedule.redistributeOnReturn({
@@ -1108,11 +1111,11 @@ export async function dispatchRequestToolV2(
           await refreshCoverageCards(ctx.clinicId, String(r.weekStart), r.day, { id: doc.id, name: doc.name });
           const statusAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الحالة';
           const rc = res as {
-            permissionCanceled?: boolean; returnedToReserve?: boolean;
+            permissionCanceled?: boolean; permSwapReverted?: boolean; permSwapRecompute?: boolean; returnedToReserve?: boolean;
             shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
           };
           const fate = rc.permissionCanceled
-            ? 'أُزيلت علامة الاستئذان ومكانه في الجدول كما هو'
+            ? ((rc.permSwapReverted || rc.permSwapRecompute) ? 'أُزيلت العلامة وعاد إلى مقعده (عُكِس التبديل)' : 'أُزيلت علامة الاستئذان ومكانه في الجدول كما هو')
             : rc.returnedToReserve
               ? 'أُزيلت العلامة وبقي احتياطًا كما كان'
               : rc.shadowReturned
@@ -1161,12 +1164,15 @@ export async function dispatchRequestToolV2(
         }
 
         const rcf = res as {
-          permissionCanceled?: boolean; returnedToReserve?: boolean;
+          permissionCanceled?: boolean; permSwapReverted?: boolean; permSwapRecompute?: boolean; returnedToReserve?: boolean;
           shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
         };
-        // إلغاء استئذان: الطبيب في عيادته أصلًا — تُزال العلامة فقط، لا «إرجاع»
+        // إلغاء استئذان: إن لم يكن بدّل مقعداً → تُزال العلامة فقط. وإن بدّل → يعود إلى
+        // مقعده: عكسٌ حرفيّ (عالمٌ ثابت) أو إعادة حسابٍ للشفت (مُضيف/عالمٌ متغيّر).
         if (rcf.permissionCanceled) {
-          return final(`تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — أُزيلت العلامة ومكانه في الجدول كما هو.`);
+          return final(rcf.permSwapReverted || rcf.permSwapRecompute
+            ? `تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — وعاد إلى مقعده${rcf.permSwapRecompute ? ' وأُعيد ترتيب الشفت' : ''}.`
+            : `تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — أُزيلت العلامة ومكانه في الجدول كما هو.`);
         }
         if (rcf.returnedToReserve) {
           return final(`تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — يبقى احتياطًا كما كان.`);
