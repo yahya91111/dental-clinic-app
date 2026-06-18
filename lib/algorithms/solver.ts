@@ -281,12 +281,49 @@ export function extractHeavySeats(shiftSlots: LoadedSlot[], poolIds?: Set<string
   for (const e of clinicCount.values()) {
     if (e.n === 2) seats.push({ id: `solo|${stamp}|c${e.clinic}`, stamp, kind: 'solo', eligible: eligibleFor(e.id), current: e.id });
   }
-  // دليقيتر: مقعدٌ لكلّ دور دليقيتر (نميّزه بالفترة كي لا يندمج مقعدان).
-  for (const s of active) {
-    if (s.role !== 'delegator') continue;
-    seats.push({ id: `del|${stamp}|p${s.period}|${s.doctorId}`, stamp, kind: 'delegator', eligible: eligibleFor(s.doctorId), current: s.doctorId });
+  // دليقيتر: مقعدٌ **لكلّ طبيبٍ** له دور دليقيتر في الشفت (لا لكلّ فترة) — فالمنفرد
+  // بالدليقيتر (فترتان لطبيبٍ واحد) مقعدٌ واحد، كالمنفرد بالعيادة تمامًا. وإلّا خرق
+  // قيدُ «مقعدٌ واحدٌ للطبيب في الشفت» نفسَه عند الأساس فأحدث لمسًا زائفًا.
+  const delDocs = new Set<string>();
+  for (const s of active) if (s.role === 'delegator') delDocs.add(s.doctorId);
+  for (const id of delDocs) {
+    seats.push({ id: `del|${stamp}|${id}`, stamp, kind: 'delegator', eligible: eligibleFor(id), current: id });
   }
   return seats;
+}
+
+// ─── الحلّال المُوجَّه بالحدث — «يلمس ما تأثّر، بقدر الحاجة» ───
+// على حدثٍ في شفت (غياب/عودة)، يعيد قسمة **مقاعد ذلك الشفت فقط** بأقلّ لمسٍ يحقّق
+// العدل: يبقي كلّ شاغلٍ حاليٍّ ما لم يُجبَر (غائب) أو يوجد أحقُّ منه أُتيح بالحدث.
+// بلا حدث: لمسٌ صفر (الشاغلون الحاليّون هم الأحقّ عند الدخول للشفت بحداثة التاريخ).
+// مع حدث: يلمس ٢ أو ٣ أو ٥… بقدر ما يتطلّبه إصلاح الظلم — لا أكثر.
+export type Disturbance = {
+  /** غائبون هذا الشفت: يُفرَّغون ويُسقَطون من الأهليّة. */
+  absentIds?: string[];
+  /** عائدون/مُتاحون الآن: يُضافون للأهليّة بحداثتهم القديمة (الأحقّ يأخذ دورًا). */
+  extraEligible?: { id: string; lastStamp: string }[];
+};
+
+/**
+ * يعيد قسمة مقاعد **شفتٍ واحد** ردًّا على حدثٍ فيه — بأقلّ لمسٍ يحقّق العدل. يبني
+ * على القسمة الحاليّة كأساسٍ عادل (لا يعيد بناءها)، ويتحرّك فقط للمجبَر أو للأحقّ
+ * الذي أتاحه الحدث. priorLast = الحداثة الداخلة للشفت من **التاريخ الحقيقيّ قبله**.
+ * يُصدر إيصالًا مدقَّقًا. **لا يكتب شيئًا**.
+ */
+export function solveDisturbance(
+  doctors: LoadedDoctor[], shiftSeats: HeavySeat[], priorLast: Map<string, string>, dist: Disturbance = {},
+): HeavyReceipt {
+  const absent = new Set(dist.absentIds ?? []);
+  const prior = new Map(priorLast);
+  for (const ex of dist.extraEligible ?? []) prior.set(ex.id, ex.lastStamp);
+  const extraIds = (dist.extraEligible ?? []).map((e) => e.id);
+  // أهليّةٌ معدّلةٌ بالحدث: نُسقِط الغائبين، ونضيف المُتاحين الجدد (إن كانوا أطبّاء معروفين).
+  const seats = shiftSeats.map((s) => {
+    let elig = s.eligible.filter((id) => !absent.has(id));
+    for (const id of extraIds) if (!elig.includes(id)) elig = [...elig, id];
+    return { ...s, eligible: elig };
+  });
+  return solveHeavyRecency(doctors, prior, seats);
 }
 
 /** آخر ظهورٍ لكلّ طبيبٍ في دورٍ ثقيل (انفراد أو دليقيتر) من سجلٍّ تاريخيّ — priorLast. */
