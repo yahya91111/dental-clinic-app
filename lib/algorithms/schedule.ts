@@ -893,6 +893,57 @@ async function writeSlots(
   return null;
 }
 
+// ─── لصق عمود الغياب/الاستئذان بشفت الطبيب الصحيح ──────────────
+// حالةٌ (طبيّة/تفرّغ/استئذان) سُجّلت لأسبوعٍ لم يكن مبنيًّا حينها لا تعرف شفت الطبيب
+// (لا تنسيب) فتُكتب بعمودٍ مخمَّن (صباح افتراضًا). عند البناء/الحفظ صار الشفت معلومًا
+// → نصحّح العمود (الصباح=1، المساء=2). idempotent: يمسّ المنحرف فقط.
+//  • القروب (group_a/group_b): الشفت من خطّة شفت القروب.
+//  • البورد: من سيناريو البورد لذلك اليوم (كلّه صباح/مساء/أيّام مسائيّة).
+//  • AGD أو بورد بجدولٍ منفصل: يُترك كما هو (لاحقًا).
+const SNAP_STATUSES = new Set(['sick_leave', 'vacation', 'permission_start', 'permission_end']);
+
+function boardShiftForDay(day: WeekDay, config: BoardConfig): Shift | null {
+  switch (config.scenario.kind) {
+    case 'all_morning': return 'morning';
+    case 'all_evening': return 'evening';
+    case 'hybrid_evening_days': return config.scenario.eveningDays.includes(day) ? 'evening' : 'morning';
+    case 'separate_schedule': return null; // خارج الجدول الرئيسيّ
+    default: return null;
+  }
+}
+
+function computeAbsenceColFixes(
+  existingSlots: LoadedSlot[],
+  doctors: LoadedDoctor[],
+  aShiftPlan: AShiftPlan,
+  boardConfig?: BoardConfig,
+): Map<number, string[]> {
+  const colFixes = new Map<number, string[]>();
+  for (const s of existingSlots) {
+    if (s.period !== 0 || !SNAP_STATUSES.has(s.status)) continue;
+    const doc = doctors.find((d) => d.id === s.doctorId);
+    if (!doc) continue;
+    const gk = doc.groupTemplate.key;
+    let workShift: Shift | null = null;
+    if (gk === 'group_a' || gk === 'group_b') {
+      const aShift = aShiftPlan[s.dayOfWeek as WeekDay];
+      if (aShift) workShift = gk === 'group_a' ? aShift : (aShift === 'morning' ? 'evening' : 'morning');
+    } else if (gk === 'board' && boardConfig) {
+      workShift = boardShiftForDay(s.dayOfWeek as WeekDay, boardConfig);
+    }
+    if (!workShift) continue; // AGD / بورد منفصل — لاحقًا
+    const col = workShift === 'morning' ? 1 : 2;
+    if (s.clinicNumber !== col) (colFixes.get(col) ?? colFixes.set(col, []).get(col)!).push(s.id);
+  }
+  return colFixes;
+}
+
+async function applyColFixes(colFixes: Map<number, string[]>): Promise<void> {
+  for (const [col, ids] of colFixes) {
+    await supabase.from('schedule_slots').update({ clinic_number: col }).in('id', ids);
+  }
+}
+
 // ─── الدالة الرئيسية ─────────────────────────────────────────
 
 /** يتحقق أن التاريخ يوم أحد (UTC) */
@@ -1091,27 +1142,8 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
       };
     }
 
-    // لصق صفوف الغياب الكامل بعمود شفت الطبيب الصحيح: غيابٌ سُجّل لأسبوعٍ لم يكن
-    // مبنيًّا حينها لا يعرف شفت الطبيب (لا تنسيب) فيُكتب بعمودٍ مخمَّن. الآن البناء
-    // يعرف الشفت (القروب + خطّة الشفت) فيُصحّح العمود (احتياط الصباح=1، المساء=2).
-    // إصلاحٌ عرضيٌّ آمن (idempotent): يمسّ صفوف SL/VC المنحرفة فقط.
-    const colFixes = new Map<number, string[]>();
-    for (const s of data.existingSlots) {
-      if (s.period !== 0) continue;
-      if (s.status !== 'sick_leave' && s.status !== 'vacation') continue;
-      const doc = data.doctors.find((d) => d.id === s.doctorId);
-      if (!doc) continue;
-      const gk = doc.groupTemplate.key;
-      if (gk !== 'group_a' && gk !== 'group_b') continue; // البورد/AGD لهم منطق شفتٍ خاصّ
-      const aShift = input.aShiftPlan[s.dayOfWeek as WeekDay];
-      if (!aShift) continue;
-      const workShift: Shift = gk === 'group_a' ? aShift : (aShift === 'morning' ? 'evening' : 'morning');
-      const col = workShift === 'morning' ? 1 : 2;
-      if (s.clinicNumber !== col) (colFixes.get(col) ?? colFixes.set(col, []).get(col)!).push(s.id);
-    }
-    for (const [col, ids] of colFixes) {
-      await supabase.from('schedule_slots').update({ clinic_number: col }).in('id', ids);
-    }
+    // لصق صفوف الغياب/الاستئذان بعمود شفت الطبيب الصحيح (مشترك مع مسار الحفظ saveSlots).
+    await applyColFixes(computeAbsenceColFixes(data.existingSlots, data.doctors, input.aShiftPlan, input.boardConfig));
   }
 
   // 6.5 صفّ "إضافي" للمعاينة: المتغيّبون من DB + المتفرّغون (الاستثناءات اليدويّة)
@@ -1199,6 +1231,8 @@ async function saveSlots(
   slots: AssignedSlot[],
   permissions?: PermissionMarker[],
   absences?: AbsenceMarker[],
+  aShiftPlan?: AShiftPlan,
+  boardConfig?: BoardConfig,
 ): Promise<{ success: boolean; error?: string }> {
   const err = await writeSlots(clinicId, weekStart, slots);
   if (err) return { success: false, error: err };
@@ -1243,6 +1277,14 @@ async function saveSlots(
   if (rows.length > 0) {
     const { error: insErr } = await supabase.from('schedule_slots').insert(rows);
     if (insErr) return { success: false, error: `فشل كتابة الاستثناءات: ${insErr.message}` };
+  }
+
+  // لصق عمود الغياب بشفت الطبيب الصحيح — يشمل الغياب المُسجَّل **قبل** البناء (مثلًا
+  // طلبٌ من مساعد الطلبات لأسبوعٍ فارغ، كُتب بعمود الصباح المخمَّن). مسار البناء
+  // المباشر يفعلها أصلًا؛ هنا نغطّي مسار المعاينة→الحفظ الذي لا يمرّ به.
+  if (aShiftPlan) {
+    const { data } = await loadScheduleData(clinicId, weekStart);
+    if (data) await applyColFixes(computeAbsenceColFixes(data.existingSlots, data.doctors, aShiftPlan, boardConfig));
   }
   return { success: true };
 }

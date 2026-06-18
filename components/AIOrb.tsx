@@ -73,13 +73,19 @@ type Palette = { glow: string; light: string; mid: string; deep: string; sheen: 
 // النواة بنفسجيّةٌ بدرجةٍ مختلفة (بَنفسجيّ-نيليّ أعمق) لتتميّز عن بتلاتِ البنفسجيّ
 const PURPLE: Palette = { glow: '#A855F7', light: '#C084FC', mid: '#7C3AED', deep: '#5B21B6', sheen: '#F3E8FF',
   coreLight: '#DDD6FE', coreMid: '#8B5CF6', coreDeep: '#6D28D9' };
-const RED: Palette = { glow: '#FF5A4D', light: '#FF8A7E', mid: '#E5342B', deep: '#B91C1C', sheen: '#FEE2E2',
-  coreLight: '#FECDD3', coreMid: '#FB7185', coreDeep: '#E11D48' };
+// كهرمانيّ — حالة الانتباه (رسالة غير مقروءة أو كرتٌ لم يُحَلّ). حلّ محلّ الأحمر.
+const AMBER: Palette = { glow: '#FBBF24', light: '#FCD34D', mid: '#F59E0B', deep: '#B45309', sheen: '#FEF3C7',
+  coreLight: '#FDE68A', coreMid: '#F59E0B', coreDeep: '#D97706' };
+// أبيض لؤلؤيّ — الحالة العاديّة للأورب الصغير في رأس صفحة الذكاء.
+const WHITE: Palette = { glow: '#E5E7EB', light: '#FFFFFF', mid: '#F1F5F9', deep: '#CBD5E1', sheen: '#FFFFFF',
+  coreLight: '#FFFFFF', coreMid: '#F8FAFC', coreDeep: '#E2E8F0' };
 
 // شكلُ الأوربّ وحده (بلا حركةٍ ولا لمس) — لإعادة استعماله أيقونةً في الترويسة وغيرها.
 // idPrefix يُفرِّد معرّفات التدرّجات كي لا تتعارض نسختان على نفس الشاشة.
-export function OrbGlyph({ size = 40, alert, idPrefix = 'orb' }: { size?: number; alert?: boolean; idPrefix?: string }) {
-  const pal = alert ? RED : PURPLE;
+// tone: لون الحالة العاديّة (بنفسجيّ افتراضًا، أو أبيض لأورب الرأس). alert → كهرمانيّ دائمًا.
+export function OrbGlyph({ size = 40, alert, tone = 'purple', idPrefix = 'orb' }:
+  { size?: number; alert?: boolean; tone?: 'purple' | 'white'; idPrefix?: string }) {
+  const pal = alert ? AMBER : tone === 'white' ? WHITE : PURPLE;
   const gGlow = `${idPrefix}Glow`, gFill = `${idPrefix}Fill`, gSheen = `${idPrefix}Sheen`, gCore = `${idPrefix}Core`;
   return (
     <Svg width={size} height={size} viewBox={`0 0 ${VB} ${VB}`}>

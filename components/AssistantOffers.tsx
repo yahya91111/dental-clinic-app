@@ -16,6 +16,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import type { ChatMessage } from './aiTypes';
 import type { SwapOffer } from '../lib/ai_v2';
+import { Ionicons } from '@expo/vector-icons';
 import { GlassCard, CardBadge, Pill, cardStyles, type CardKind } from './AICard';
 import { scale } from '../lib/scale';
 
@@ -171,6 +172,26 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
     </TouchableOpacity>
   );
 
+  // بعد الحلّ: كرتٌ نحيفٌ شفّاف — أيقونة + عنوان + نتيجة مختصرة (لا يبقى ضخمًا يزعج العين)
+  if (resolved) {
+    const okDone = resolved.done;
+    return (
+      <View style={st.wrap}>
+        <View style={st.slim}>
+          <Ionicons
+            name={okDone ? 'checkmark-circle' : 'close-circle'}
+            size={scale(16)}
+            color={okDone ? '#34D399' : '#F87171'}
+          />
+          <Text style={st.slimTitle} numberOfLines={1}>{title}</Text>
+          <Text style={[st.slimNote, { color: okDone ? '#A7F3D0' : '#FCA5A5' }]} numberOfLines={1}>
+            {resolved.text}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={st.wrap}>
       <GlassCard kind={kind} glow={live}>
@@ -186,10 +207,9 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
           {/* نصّ الذكاء (الوصف) — جزءٌ من الكرت */}
           {!!message.content && <Text style={st.body}>{message.content}</Text>}
 
-          {/* النتيجة (محلولٌ) — تظهر داخل الكرت بشكلٍ أنيق */}
-          {resolved ? <Text style={[st.note, { color: resolved.done ? '#A7F3D0' : '#FCA5A5' }]}>{resolved.text}</Text>
-            : busy ? <ActivityIndicator color="#C4B0FF" style={{ marginTop: scale(8) }} />
-              : (
+          {/* الحلّ يُعرَض في الكرت المختصر المبكّر أعلاه — هنا فقط الحالة الحيّة (أزرار/تحميل) */}
+          {busy ? <ActivityIndicator color="#C4B0FF" style={{ marginTop: scale(8) }} />
+            : (
                 <>
                   {!!errText && <Text style={st.err}>{errText}</Text>}
 
@@ -238,6 +258,15 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
 
 const st = StyleSheet.create({
   wrap: { alignSelf: 'stretch', marginTop: scale(8), marginBottom: scale(2) },
+  // الكرت المختصر بعد الحلّ — نحيفٌ شفّافٌ مريحٌ للعين، محاذٍ لليمين (RTL)
+  slim: {
+    flexDirection: 'row-reverse', alignItems: 'center', gap: scale(7), alignSelf: 'flex-start',
+    maxWidth: '92%', backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.10)', borderRadius: scale(13),
+    paddingVertical: scale(6), paddingHorizontal: scale(11),
+  },
+  slimTitle: { fontSize: scale(12), color: '#E9E4FF', fontWeight: '700' },
+  slimNote: { fontSize: scale(11.5), fontWeight: '600', flexShrink: 1, textAlign: 'right' },
   body: { fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', lineHeight: scale(21), fontWeight: '500', marginBottom: scale(2) },
   hint: { fontSize: scale(11.5), color: 'rgba(214,196,255,0.7)', textAlign: 'right', marginTop: scale(8), marginBottom: scale(2) },
   note: { fontSize: scale(13), color: '#A7F3D0', textAlign: 'right', fontWeight: '700', lineHeight: scale(20), marginTop: scale(8) },

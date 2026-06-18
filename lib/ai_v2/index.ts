@@ -291,6 +291,22 @@ export async function sendMessageV2(
       });
     }
 
+    // سياسة المحادثة السابقة: تؤطّر التاريخ كـ«ماضٍ منفَّذٍ ومنتهٍ» — فيفهم الذكاء السياق
+    // (آخر التبادلات) دون أن يخلط طلبًا قديمًا منفَّذًا بطلبٍ جديد أو يعيد تنفيذه.
+    systemBlocks.push({
+      type: 'text',
+      text:
+        '\nCONVERSATION HISTORY POLICY (critical):\n' +
+        "- Every message BEFORE the user's most recent message is PAST, COMPLETED context. " +
+        'Any request shown there has ALREADY been executed and confirmed — treat it as done.\n' +
+        '- Act ONLY on the user\'s most recent message. Use earlier turns for understanding, NOT as tasks to perform.\n' +
+        '- NEVER re-issue a tool call for a request that appears earlier in the history; it is already done. ' +
+        'Do not duplicate it, do not "remind" the user it exists, do not blend it into the new request.\n' +
+        '- EXCEPTION: if YOUR immediately-previous message asked the user a question (e.g. a clarification), ' +
+        "the user's latest message is its answer — complete that single pending task using the earlier context.\n" +
+        '- If the latest message is a NEW, standalone request, handle it on its own.\n',
+    });
+
     const conversation: Array<Record<string, unknown>> = truncateConversation(
       opts.messages,
     ).map((m) => ({ role: m.role, content: m.content }));

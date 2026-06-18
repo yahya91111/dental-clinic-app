@@ -18,6 +18,27 @@ import { WizardResult } from '../../components/ScheduleWizard';
 import { sendMessageV2, type V2Message, type V2User, type SchedulePreview } from '../../lib/ai_v2';
 import { schedule, type AssignedSlot } from '../../lib/algorithms/schedule';
 import { useAuth } from '../../AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ─── محادثة الذكاء: حفظٌ محليّ + سقف سياق ──────────────────────────────
+const AI_CTX_TOKENS = 1500;   // سقف ما يُرسَل للذكاء (~١٠ تبادلات، يتكيّف مع الطول) — ضبط الكلفة
+const AI_HISTORY_MAX = 50;    // أقصى رسائل تُحفَظ محليّاً للعرض (تتدحرج، تبقى بعد الخروج)
+const aiStoreKey = (uid: string) => `ai_chat_v1_${uid}`;
+// تقدير توكنز تقريبيّ (العربيّة ~٣ أحرف/توكن) — قصٌّ آمن من نهاية المحادثة.
+const estTokens = (s: string) => Math.ceil((s?.length || 0) / 3);
+function trimToTokenBudget(msgs: V2Message[], maxTokens: number): V2Message[] {
+  const out: V2Message[] = [];
+  let total = 0;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const t = estTokens(String(msgs[i].content ?? '')) + 8; // +هامش لكلّ رسالة
+    if (out.length && total + t > maxTokens) break;
+    out.unshift(msgs[i]);
+    total += t;
+  }
+  // واجهة الذكاء تشترط أن يبدأ السياق برسالة مستخدم
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out.length ? out : msgs.slice(-1);
+}
 
 interface ScheduleScreenProps {
   onBack: () => void;
@@ -89,6 +110,35 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiPreview, setAiPreview] = useState<SchedulePreview | null>(null);
   const [aiPreviewSaving, setAiPreviewSaving] = useState(false);
   const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
+  const aiLoadedRef = useRef(false);
+
+  // استرجاع محادثة الذكاء المحفوظة محليّاً عند الدخول — تبقى بعد التنقّل/إعادة التشغيل
+  // (لا تُمسح من نفسها). نُعيد بناء سياق الذكاء من الرسائل المعروضة.
+  useEffect(() => {
+    if (!user?.id) return;
+    let alive = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(aiStoreKey(user.id));
+        if (!alive) return;
+        const saved = raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+        if (Array.isArray(saved) && saved.length) {
+          setAiMessages(saved);
+          // نُعيد بناء سياق الذكاء من المحفوظ (ليفهم آخر ~٢٠ تبادلاً) — آمنٌ الآن لأنّ
+          // «سياسة المحادثة» في sendMessageV2 تؤطّره ماضيًا منفَّذًا، فلا يُعيد تنفيذ أو خلط.
+          aiHistoryRef.current = saved.map((m) => ({ role: m.role, content: m.content }));
+        }
+      } catch { /* لا سجلّ محفوظ */ }
+      finally { if (alive) aiLoadedRef.current = true; }
+    })();
+    return () => { alive = false; };
+  }, [user?.id]);
+
+  // حفظٌ متدحرج لآخر ٥٠ رسالة بعد كلّ تغيير (بعد اكتمال الاسترجاع كي لا نمسح المحفوظ).
+  useEffect(() => {
+    if (!user?.id || !aiLoadedRef.current || aiMessages.length === 0) return;
+    AsyncStorage.setItem(aiStoreKey(user.id), JSON.stringify(aiMessages.slice(-AI_HISTORY_MAX))).catch(() => {});
+  }, [aiMessages, user?.id]);
 
   const handleAISend = async (text: string, opts?: { task?: 'schedule' | 'requests'; contextData?: string; hidden?: boolean; freshConversation?: boolean }) => {
     if (!user) return;
@@ -123,7 +173,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     };
 
     const response = await sendMessageV2({
-      messages: aiHistoryRef.current,
+      // نُرسل آخر المحادثة ضمن سقف توكنز فقط (ضبط الكلفة) — العرض يحتفظ بالكامل.
+      messages: trimToTokenBudget(aiHistoryRef.current, AI_CTX_TOKENS),
       user: v2User,
       clinicId: clinicId || undefined,
       contextData,
@@ -168,6 +219,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     setAiMessages([]);
     aiHistoryRef.current = [];
     if (!user?.id) return;
+    AsyncStorage.removeItem(aiStoreKey(user.id)).catch(() => {}); // امسح المحفوظ محليًّا أيضًا
     try {
       const { getNotifications, deleteNotification } = await import('../../lib/database');
       const { data } = await getNotifications(user.id, 50);
@@ -190,6 +242,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         finalSlots,
         aiPreview.permissions,
         aiPreview.absenceMarkers,
+        aiPreview.buildInput?.aShiftPlan,
+        aiPreview.buildInput?.boardConfig,
       );
       if (res.success) {
         // احفظ وصفة البناء (كي تعمل التغطية لاحقًا) — كالويزرد تمامًا

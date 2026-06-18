@@ -58,25 +58,31 @@ const isPending = (n: { type: string; action_type?: string | null; action_status
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
 
 /** يفصل خيارات [نعم] [لا] من نصّ رسالة الذكاء لعرضها كأزرار قابلة للنقر */
+// يلتقط كتلةً ختاميّةً من رموز [خيار] [خيار] في آخر رسالة الذكاء ويفصلها لعرضها أزرارًا.
+// **مطابقٌ حرفيًّا لنظيره في AISchedulePanel** — صفحةٌ واحدة، السلوك نفسه هنا وهناك.
 function parseChoices(content: string): { text: string; choices: string[] } {
-  const choices: string[] = [];
-  const re = /\[([^\]\n]{1,30})\]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) choices.push(m[1].trim());
-  const text = content.replace(re, '').replace(/[ \t]+\n/g, '\n').trim();
+  const trimmed = content.trimEnd();
+  const tailMatch = trimmed.match(/((?:\[[^\[\]\n]+\][ \t]*\n?[ \t]*)+)\s*$/);
+  if (!tailMatch) return { text: content, choices: [] };
+  const tail = tailMatch[1];
+  const choices = Array.from(tail.matchAll(/\[([^\[\]\n]+)\]/g)).map((m) => m[1].trim());
+  if (choices.length < 2) return { text: content, choices: [] };
+  const text = trimmed.slice(0, trimmed.length - tailMatch[0].length).trimEnd();
   return { text, choices };
 }
 
-/** عدد عناصر محادثة الذكاء غير المقروءة (طلب معلّق أو نتيجة جديدة) — للون الزرّ الأحمر */
+/** عدد عناصر محادثة الذكاء التي تُبقي الأورب كهرمانيّاً: **كرتٌ لم يُحَلّ** (معلّق — يبقى
+ *  محسوبًا ولو قُرئ، فلا يطفئه فتحُ الكرت بل حلُّه done/dismiss) **أو** رسالةٌ غير مقروءة. */
 export async function countUnreadAIChat(userId: string): Promise<number> {
   if (!userId) return 0;
   const { data } = await getNotifications(userId, 50);
   return (data || []).filter((n: ConvoNotif) => {
-    // gap_alert: تغطية v2 (data.v===2) تُحمّر الزرّ ما دامت معلّقةً وغير مقروءة. بمجرّد
-    // فتح القائد للكرت تُعلَّم مقروءةً فيهدأ الأوربّ، ويبقى الكرت للمرجع. القديمة بلا v2 تُستثنى.
-    if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n) && !n.is_read;
-    // coverage_fill: كرت تعويض النقص يُحمّر الزرّ ما دام معلّقًا (لا دفع — لون الزرّ فقط)
+    // gap_alert: تغطية v2 — تبقى كهرمانيّةً ما دامت معلّقةً (لم تُحَلّ)، حتى بعد قراءتها.
+    // تطفأ فقط بـ done/dismiss. القديمة بلا v2 تُستثنى.
+    if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n);
+    // coverage_fill: كرت تعويض النقص — كهرمانيّ ما دام معلّقًا (لم يُنفَّذ/يُلغَ).
     if (n.type === 'coverage_fill') return !n.action_status || n.action_status === 'pending';
+    // بقيّة عناصر المحادثة: كرتٌ معلّق (لم يُحَلّ) أو رسالةٌ غير مقروءة.
     return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
 }
@@ -560,9 +566,16 @@ function CoverageFillCard({ notif, clinicId, onDone, setNote }: {
     try {
       const { updateNotificationAction } = await import('../lib/database');
       await updateNotificationAction(notif.id, s);
+      // done = عملٌ مشترك → «تمّ» عند كلّ القادة لنفس الموقف. dismiss = لهذا القائد وحده.
+      if (s === 'done' && clinicId) {
+        const { notifications } = await import('../lib/algorithms/notifications');
+        await notifications.resolveCoverageFillGroup({
+          clinicId, weekStart: String(d.week_start || ''), day: d.day, shift,
+        });
+      }
       await onDone();
     } catch { /* يُعاد بسحبٍ آخر */ }
-  }, [notif.id, onDone]);
+  }, [notif.id, onDone, clinicId, d.day, d.week_start, shift]);
 
   const onToggle = useCallback(() => {
     if (swBase.current > 0) { closeSwipe(); return; }   // السحب مفتوح؟ النقرة تُغلقه فقط
@@ -599,8 +612,11 @@ function CoverageFillCard({ notif, clinicId, onDone, setNote }: {
       const { schedule } = await import('../lib/algorithms/schedule');
       const res = await schedule.applyShiftRedistribution({ clinicId, weekStart: String(d.week_start || ''), day: d.day, shift, slots: payload as never });
       if (res.success) {
-        const { updateNotificationAction } = await import('../lib/database');
-        await updateNotificationAction(notif.id, 'accepted');   // → أخضر، يبقى ظاهرًا
+        // تنفيذٌ = عملٌ مشترك → «تمّ» عند كلّ القادة لنفس الموقف (لا عند المنفِّذ وحده)
+        const { notifications } = await import('../lib/algorithms/notifications');
+        await notifications.resolveCoverageFillGroup({
+          clinicId, weekStart: String(d.week_start || ''), day: d.day, shift,
+        });
         setNote('تمّ ترتيب التعويض.');
         // موازنةٌ صامتة لبقيّة الأسبوع (والأسابيع المبنيّة بعده) حفاظًا على العدالة:
         // نكتب ما تغيّر فقط، **بلا إشعار** — إشعار مرضيّة الطبيب وحده يكفي للانطباع بأنّ الجدول تغيّر.
@@ -1043,11 +1059,12 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
               {mergedItems.map((it) => {
                 if (it.kind === 'msg') {
                   const m = it.m;
-                  // رسائل الذكاء قد تحمل خيارات [..] → اعرضها كأزرار للنقر السريع
-                  const { text, choices } = m.role === 'assistant'
+                  const isLast = it === mergedItems[mergedItems.length - 1];
+                  // خيارات [..] تُفصَل فقط لآخر رسالة ذكاء (وليس أثناء التحميل) — مطابقٌ
+                  // لـAISchedulePanel: نفس البوّابة ونفس الـparseChoices في الصفحتين.
+                  const { text, choices } = (m.role === 'assistant' && isLast && !isLoading)
                     ? parseChoices(m.content)
                     : { text: m.content, choices: [] as string[] };
-                  const isLast = it === mergedItems[mergedItems.length - 1];
                   // رسالةٌ تحمل عرضًا (إبلاغ/تبديل/تأكيد) → كرتٌ كامل يضمّ نصّها وأزرارها
                   // (لا فقاعة منفصلة)، وتتزامن نتيجته بين المحادثتين عبر onPatchMessage.
                   const hasOffer = m.role === 'assistant' && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
@@ -1063,24 +1080,42 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                       />
                     );
                   }
+                  // سؤالٌ بخيارات (الذكاء كتبها `[..]`) → كرتٌ كامل بلغة Aurora (نوع decision)
+                  // مطابقٌ لكرت الإبلاغ/التبديل: شارة + عنوان + حبّة + نصّ السؤال + أزرار مكدّسة.
+                  // يظهر ما دام آخر رسالة (سؤالٌ حيّ)؛ بعد الإجابة يصير نصًّا عاديًّا.
+                  if (m.role === 'assistant' && choices.length > 0 && isLast) {
+                    return (
+                      <View key={m.id} style={styles.qWrap}>
+                        <GlassCard kind="decision" glow>
+                          <View style={cardStyles.head}>
+                            <CardBadge kind="decision" live />
+                            <View style={cardStyles.headTxt}>
+                              <Text style={cardStyles.cardTitle} numberOfLines={1}>سؤال</Text>
+                              <Pill kind="decision" text="يحتاج قرارك" />
+                            </View>
+                          </View>
+                          <View style={cardStyles.covBody}>
+                            {!!text && <Text style={styles.qBody}>{text}</Text>}
+                            {choices.map((c, i) => (
+                              <TouchableOpacity
+                                key={`${m.id}-${i}`}
+                                onPress={() => sendInput(c)}
+                                disabled={isLoading}
+                                activeOpacity={0.85}
+                                style={styles.qOpt}
+                              >
+                                <Text style={styles.qOptTxt} numberOfLines={2}>{c}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </GlassCard>
+                      </View>
+                    );
+                  }
                   return (
                     <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
                       {!!text && (
                         <Text style={[styles.msgTxt, m.role === 'user' && styles.msgTxtUser]}>{text}</Text>
-                      )}
-                      {choices.length > 0 && isLast && (
-                        <View style={styles.chipRow}>
-                          {choices.map((c, i) => (
-                            <TouchableOpacity
-                              key={`${m.id}-${i}`}
-                              style={styles.chip}
-                              disabled={isLoading}
-                              onPress={() => sendInput(c)}
-                            >
-                              <Text style={styles.chipTxt}>{c}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
                       )}
                     </View>
                   );
@@ -1238,6 +1273,15 @@ const styles = StyleSheet.create({
   msgAI: { alignSelf: 'flex-end', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.14)' },
   msgTxt: { fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', lineHeight: scale(20) },
   msgTxtUser: { color: '#FFFFFF' },
+  // كرت سؤال الذكاء (decision) — نصّ السؤال + أزرار مكدّسة، بنفس لغة كرت الإبلاغ
+  qWrap: { alignSelf: 'stretch', marginTop: scale(8), marginBottom: scale(2) },
+  qBody: { fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', lineHeight: scale(21), fontWeight: '500', marginBottom: scale(2) },
+  qOpt: {
+    alignSelf: 'stretch', marginTop: scale(7), paddingVertical: scale(9), paddingHorizontal: scale(12),
+    borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: scale(1), borderColor: 'rgba(167,139,250,0.30)',
+  },
+  qOptTxt: { fontSize: scale(13.5), color: '#F1EAFF', fontWeight: '800', textAlign: 'center' },
+  // زرّ إعادة طلب التبديل (كرت النقص) — زرٌّ مفرد
   chipRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(8), marginTop: scale(8) },
   chip: {
     paddingVertical: scale(9), paddingHorizontal: scale(13), borderRadius: scale(13),

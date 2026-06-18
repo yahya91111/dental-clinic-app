@@ -8,8 +8,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../lib/scale';
 import { OrbGlyph } from './AIOrb';
-import { AICardsView } from './AIChatModal';
+import { AICardsView, countUnreadAIChat } from './AIChatModal';
+import { subscribeToNotifications } from '../lib/database';
 import AssistantOffers from './AssistantOffers';
+import { GlassCard, CardBadge, Pill, cardStyles } from './AICard';
 import { ChatMessage } from './aiTypes';
 import { WizardContent, WizardResult, PreviewView } from './ScheduleWizard';
 import type { Clarification, ResolvedClarification, UnsupportedRequest } from '../lib/ai_v2/parseExceptions';
@@ -768,6 +770,38 @@ function ChatBody({ messages, isLoading, onSend, style, light, header, user, cli
             />
           );
         }
+        // سؤالٌ بخيارات (`[..]`) → كرتٌ كامل بلغة Aurora (decision) — مطابقٌ للضغطة المطوّلة
+        // تمامًا: ما يجري هنا يجري هناك. الكرت داكنٌ دائمًا (لا فقاعة).
+        if (choices.length > 0) {
+          return (
+            <View key={m.id}>
+              <GlassCard kind="decision" glow>
+                <View style={cardStyles.head}>
+                  <CardBadge kind="decision" live />
+                  <View style={cardStyles.headTxt}>
+                    <Text style={cardStyles.cardTitle} numberOfLines={1}>سؤال</Text>
+                    <Pill kind="decision" text="يحتاج قرارك" />
+                  </View>
+                </View>
+                <View style={cardStyles.covBody}>
+                  {!!text && (
+                    <Text style={{ fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', lineHeight: scale(21), fontWeight: '500', marginBottom: scale(2) }}>{text}</Text>
+                  )}
+                  {choices.map((c, ci) => (
+                    <TouchableOpacity
+                      key={ci}
+                      activeOpacity={0.85}
+                      onPress={() => onSend(c)}
+                      style={{ alignSelf: 'stretch', marginTop: scale(7), paddingVertical: scale(9), paddingHorizontal: scale(12), borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: scale(1), borderColor: 'rgba(167,139,250,0.30)' }}
+                    >
+                      <Text style={{ fontSize: scale(13.5), color: '#F1EAFF', fontWeight: '800', textAlign: 'center' }} numberOfLines={2}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </GlassCard>
+            </View>
+          );
+        }
         return (
           <View key={m.id}>
             <View style={{
@@ -784,20 +818,6 @@ function ChatBody({ messages, isLoading, onSend, style, light, header, user, cli
             }}>
               <Text style={{ color: isUser ? t.userText : t.botText, fontSize: scale(14.5), lineHeight: scale(21) }}>{text}</Text>
             </View>
-            {choices.length > 0 && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: scale(8), marginTop: scale(8), alignSelf: 'flex-start', maxWidth: '92%' }}>
-                {choices.map((c, ci) => (
-                  <TouchableOpacity
-                    key={ci}
-                    activeOpacity={0.8}
-                    onPress={() => onSend(c)}
-                    style={{ backgroundColor: t.chipBg, borderWidth: scale(1), borderColor: t.chipBorder, borderRadius: scale(16), paddingHorizontal: scale(14), paddingVertical: scale(8) }}
-                  >
-                    <Text style={{ color: t.chipText, fontSize: scale(13), fontWeight: '600' }}>{c}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
         );
       })}
@@ -881,6 +901,18 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
   const chatSlide = useRef(new Animated.Value(0)).current;   // 0 = slide-chat off-screen right .. 1 = fully in
   const [chatOpen, setChatOpen] = useState(false);          // the summonable slide-in chat
   const [chatTab, setChatTab] = useState<'chat' | 'cards'>('chat'); // محادثة | كروت الإبلاغ
+  // عدد عناصر الذكاء التي تُبقي الأورب كهرمانيّاً (كرتٌ لم يُحَلّ أو رسالة غير مقروءة) —
+  // يُلوّن أورب رأس الصفحة (أبيض/كهرمانيّ) وبادج الجرس داخل المحادثة. مرآةٌ لزرّ الأورب العائم.
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!user?.id) return;
+    const refresh = () => { countUnreadAIChat(user.id).then(setUnread).catch(() => {}); };
+    refresh();
+    const unsub = subscribeToNotifications(user.id, refresh);
+    const t = setInterval(refresh, 30000);
+    return () => { clearInterval(t); unsub(); };
+    // يُحدَّث أيضًا عند فتح اللوحة وبعد كلّ رسالة (لا عند دخول/خروج المحادثة فقط)
+  }, [user?.id, chatTab, chatOpen, visible, messages.length]);
   // مسارٌ أفقيٌّ متزامنٌ مع السحب: 0 = المحادثة، ‎-W‎ = الكروت
   const pageAnim = useRef(new Animated.Value(0)).current;
   const pageBase = useRef(0);
@@ -1291,21 +1323,16 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
             </View>
           )}
 
-          {/* top-right AI icon — summons the chat from any view (hidden in orbit chat & while chat open) */}
+          {/* top-right AI icon — summons the chat from any view (hidden in orbit chat & while chat open).
+              أورب صغير: أبيض عاديًّا، كهرمانيّ متى وُجد كرتٌ لم يُحَلّ أو رسالة غير مقروءة. */}
           {view !== 'chat' && !chatOpen && (
             <TouchableOpacity
               onPress={openSlideChat}
               activeOpacity={0.85}
-              style={{ position: 'absolute', top: scale(48), right: scale(16), zIndex: 12 }}
+              style={{ position: 'absolute', top: scale(48), right: scale(16), zIndex: 12, width: scale(42), height: scale(42), alignItems: 'center', justifyContent: 'center' }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <LinearGradient
-                colors={['#A78BFA', '#7C3AED']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={{ width: scale(42), height: scale(42), borderRadius: scale(21), alignItems: 'center', justifyContent: 'center', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.3)' }}
-              >
-                <Ionicons name="chatbubbles" size={scale(20)} color="#fff" />
-              </LinearGradient>
+              <OrbGlyph size={scale(42)} tone="white" alert={unread > 0} idPrefix="hdrChat" />
               {/* بادج عدد الأسماء الغامضة + الطلبات غير المدعومة */}
               {clarifications.length + unsupported.length > 0 && (
                 <View style={{ position: 'absolute', top: -scale(4), left: -scale(4), minWidth: scale(20), height: scale(20), borderRadius: scale(10), backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(5), borderWidth: scale(1.5), borderColor: '#fff' }}>
@@ -1392,6 +1419,12 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Ionicons name={chatTab === 'chat' ? 'notifications' : 'chatbubble'} size={scale(24)} color="#6D4FB8" />
+            {/* بادج كهرمانيّ بعدد الكروت غير المقروءة/غير المحلولة — على الجرس داخل المحادثة فقط */}
+            {chatTab === 'chat' && unread > 0 && (
+              <View style={{ position: 'absolute', top: -scale(3), right: -scale(3), minWidth: scale(18), height: scale(18), borderRadius: scale(9), backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(4), borderWidth: scale(1.5), borderColor: '#fff' }}>
+                <Text style={{ color: '#fff', fontSize: scale(10.5), fontWeight: '800' }}>{unread}</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           {/* رأس الصفحة: الأيقونة يسارًا (مستقلّة)، وإلى يمينها عمودٌ: «DCM AI» وتحته الترحيب مباشرةً */}

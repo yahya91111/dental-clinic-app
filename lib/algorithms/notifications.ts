@@ -318,6 +318,27 @@ export async function notifyCoverageFill(args: {
   }
 }
 
+/**
+ * تعويض النقص يصل **كلّ** القادة. حين ينفّذه أحدهم (أو يُعلّمه done) فهو **عملٌ
+ * مشترك**: تُحلّ كروت coverage_fill المعلّقة عند الجميع لنفس (العيادة/الأسبوع/اليوم/
+ * الشفت) فتصير «تمّ» للكلّ. أمّا الـ dismiss (ignored) فلكلّ قائدٍ وحده (ليس مشتركًا).
+ */
+export async function resolveCoverageFillGroup(args: {
+  clinicId: string; weekStart: string; day: WeekDay; shift: 'morning' | 'evening';
+}): Promise<void> {
+  try {
+    await supabase
+      .from('notifications')
+      .update({ action_status: 'done', is_read: true })
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.COVERAGE_FILL)
+      .eq('action_status', 'pending')
+      .filter('data->>week_start', 'eq', args.weekStart)
+      .filter('data->>day', 'eq', args.day)
+      .filter('data->>shift', 'eq', args.shift);
+  } catch { /* مشاركة الحلّ تحسينٌ — لا تُفشِل التنفيذ المنفَّذ */ }
+}
+
 /** إبلاغ جمهورٍ (شفت/مركز) بحدثٍ — للعلم فقط (بعد سؤال «أبلغ المعنيّين؟») */
 export async function broadcast(args: {
   clinicId: string;
@@ -1532,6 +1553,7 @@ export const notifications = {
   notifyTraineeAttached,
   // تغطية
   openCoverageRequests, acceptCoverage, rejectCoverage, sweepCoverageGroup,
+  resolveCoverageFillGroup,
   // طلب تبديل (مجموعة كروت — أوّل موافقٍ يفوز)
   openSwapGroup, acceptSwap, rejectSwap, pruneExpiredSwaps,
   swapGroupsStatus, cancelSwapGroup, notifyLeadersCrossShiftSwap,

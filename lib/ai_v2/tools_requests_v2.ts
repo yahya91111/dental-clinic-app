@@ -435,15 +435,21 @@ const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
     name: 'cancel_schedule_status',
     description:
       'يلغي حالة طبيبٍ ليومٍ (يُزيل المرضية/التفرّغ/الاستئذان/الاحتياط) ويُعيده إلى ' +
-      'مكانه في العيادة. الطبيب لنفسه؛ الليدر لأيّ أحد.',
+      'مكانه في العيادة. الطبيب لنفسه؛ الليدر لأيّ أحد. **اليوم مبهم** (لم يسمِّه ' +
+      'المستخدم)؟ اترك `day` فارغًا ومرّر `statusType` (نوع ما يريد إلغاءه) — النظام ' +
+      'يقرأ حالاته الحقيقيّة ويسأل بالأيّام الصحيحة، أو يُلغي مباشرةً إن كان يومًا واحدًا.',
     input_schema: {
       type: 'object',
       properties: {
         weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
+        day: { type: 'string', enum: [...DAYS], description: 'اليوم — اتركه فارغًا إن لم يسمِّه المستخدم.' },
         doctorIndex: { type: 'integer' },
+        statusType: {
+          type: 'string', enum: ['permission', 'sick_leave', 'vacation'],
+          description: 'نوع الحالة المُلغاة حين يكون اليوم مبهمًا: استئذان/مرضية/تفرّغ.',
+        },
       },
-      required: ['weekStart', 'day', 'doctorIndex'],
+      required: ['weekStart', 'doctorIndex'],
     },
   },
   {
@@ -717,7 +723,7 @@ export async function dispatchRequestToolV2(
                 let note = '';
                 if (perm && (status === 'permission_start' || status === 'permission_end')) {
                   const sw = perm.swap;
-                  if (sw && 'withName' in sw) note = ` — وتمّ تبديله مع ${sw.withName}`;
+                  if (sw && 'withName' in sw) note = ` — وتمّ تبديله مع ${sw.withName}${sw.delegatorGap ? '، وبقيت فترة دليقيتر فارغة' : ''}`;
                   else if (sw && 'none' in sw) {
                     note = sw.reason === 'delegator_left'
                       ? ' — ودوره دليقيتر تلك الفترة بلا بديل'
@@ -797,7 +803,10 @@ export async function dispatchRequestToolV2(
           const sw = perm.swap;
           const self = actor.id === doc.id;
           if (sw && 'withName' in sw) {
-            permSwapAr = self ? ` — وبُدّلت فترتك مع ${sw.withName} تلقائيًّا` : ` — وبُدّلت فترته مع ${sw.withName}`;
+            const gap = sw.delegatorGap ? '، وبقيت فترة دليقيتر فارغة وأُبلغ القائد' : '';
+            permSwapAr = self
+              ? ` — وبُدّلت فترتك مع ${sw.withName} تلقائيًّا${gap}`
+              : ` — وبُدّلت فترته مع ${sw.withName}${gap}`;
           } else if (sw && 'none' in sw) {
             permSwapAr = sw.reason === 'delegator_left'
               ? (self ? ' — ودورك دليقيتر تلك الفترة، تُركت شاغرة وأُبلغ القائد' : ' — ودوره دليقيتر تلك الفترة بلا بديل')
@@ -981,6 +990,28 @@ export async function dispatchRequestToolV2(
       case 'cancel_schedule_status': {
         const doc = resolveDoctor(ctx, r.doctorIndex);
         if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        // يومٌ مبهم → النظام يقرأ حالاته الحقيقيّة من القاعدة ويعرض الأيّام الصحيحة
+        // (بدل تخمين الذكاء). يومٌ واحدٌ من النوع → إلغاءٌ مباشر؛ أكثر → سؤالٌ بالأقواس (كرت).
+        if (!isDay(r.day)) {
+          const { requestsV2 } = await import('../algorithms/requests_v2');
+          const cands = await requestsV2.listDoctorStatuses({
+            clinicId: ctx.clinicId, weekStart: String(r.weekStart), doctorId: doc.id,
+          });
+          const tf = r.statusType;
+          const ofType = (s: string) =>
+            tf === 'permission' ? (s === 'permission_start' || s === 'permission_end')
+              : tf === 'sick_leave' ? s === 'sick_leave'
+                : tf === 'vacation' ? s === 'vacation' : true;
+          const matches = cands.filter((c) => ofType(c.status));
+          const tAr = tf === 'permission' ? 'استئذان' : tf === 'sick_leave' ? 'مرضيّة'
+            : tf === 'vacation' ? 'تفرّغ' : 'حالة';
+          if (matches.length === 0) return final(`لا ${tAr} مسجّلة لـ${doc.name} هذا الأسبوع لإلغائها.`);
+          if (matches.length > 1) {
+            const opts = matches.map((m) => `[${DAY_AR[m.day]}]`).join(' ');
+            return final(`لـ${doc.name} ${tAr} في أكثر من يوم — أيّ يوم تلغي؟ ${opts}`);
+          }
+          r.day = matches[0].day;
+        }
         if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
         // التقِط شفت المكان المحفوظ **قبل** الإلغاء (cancelStatus يمسح prev_placement)
         let returnShift: 'morning' | 'evening' | null = null;

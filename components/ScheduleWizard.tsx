@@ -377,11 +377,12 @@ export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pen
         status: (a.status === 'sick_leave' ? 'sick_leave' : 'vacation') as 'sick_leave' | 'vacation',
         clinicNumber: exCell(a.doctorId, a.day),
       }));
-      const res = await schedule.saveSlots(clinicId, r.weekStart, finalSlots, permissions, absences);
+      const buildInput = resultToBuildInput(r, clinicId, false, merged ?? undefined);
+      const res = await schedule.saveSlots(clinicId, r.weekStart, finalSlots, permissions, absences, buildInput.aShiftPlan, buildInput.boardConfig);
       if (res.success) {
         // احفظ «وصفة البناء» مع الجدول — لتعيد التغطيةُ لاحقًا توزيع شفتٍ بنفس الإعدادات.
         // (غير قاتل: فشلُه لا يمنع حفظ الجدول.)
-        await schedule.saveBuildConfig(resultToBuildInput(r, clinicId, false, merged ?? undefined));
+        await schedule.saveBuildConfig(buildInput);
         onComplete(r);
       } else setBuildError(res.error || 'تعذّر حفظ الجدول.');
     } catch (e) {
