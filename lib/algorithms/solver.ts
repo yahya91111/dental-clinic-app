@@ -182,11 +182,16 @@ export function solveHeavyRecency(
   doctors: LoadedDoctor[], priorLast: Map<string, string>, seats: HeavySeat[],
 ): HeavyReceipt {
   const nameOf = new Map(doctors.map((d) => [d.id, d.name] as const));
+  // كسر التعادل بترتيب الطاقم (rosterIdx)، لا الاسم — كي يطابق احتياطيّ order في
+  // العجلة (الأقدم ختماً أوّلاً، ثمّ ترتيب الطاقم) فيتوافق الحلّال معها على بياناتٍ
+  // حقيقيّةٍ بلا تاريخٍ ثقيلٍ سابق (تعادلٌ شامل → كلاهما يقع على ترتيب الطاقم).
+  const rosterIdx = new Map(doctors.map((d, i) => [d.id, i] as const));
+  const tie = (id: string) => rosterIdx.get(id) ?? 0;
   const last = new Map<string, string>();
   for (const d of doctors) last.set(d.id, priorLast.get(d.id) ?? '');
   // رتبة الأقدميّة (لقياس «أقدم مؤهَّلٍ تُرك»): الأقدم ختماً = رتبةٌ أصغر.
   const ordered = [...new Set([...doctors.map((d) => d.id)])]
-    .sort((a, b) => (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || (nameOf.get(a) ?? '').localeCompare(nameOf.get(b) ?? ''));
+    .sort((a, b) => (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || tie(a) - tie(b));
   const rank = new Map(ordered.map((id, i) => [id, i] as const));
 
   // أكبر «بياتٍ» لمؤهَّلٍ بقي بلا دور خلال النافذة (للمقارنة قبل/بعد).
@@ -210,14 +215,20 @@ export function solveHeavyRecency(
   let owedRespected = true;
   const sorted = [...seats].sort((a, b) => a.stamp.localeCompare(b.stamp));
   const chosenBy = new Map<string, string>();
+  // قيدٌ فيزيائيّ: الطبيب شخصٌ واحد — لا يأخذ أكثر من مقعدٍ ثقيلٍ في الشفت نفسه
+  // (نفس الختم). فنستبعد مَن أخذ مقعداً هذا الشفت من بقيّة مقاعده.
+  const takenInStamp = new Map<string, Set<string>>();
   for (const seat of sorted) {
-    const pick = [...seat.eligible].sort((a, b) =>
-      (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || (nameOf.get(a) ?? '').localeCompare(nameOf.get(b) ?? ''),
+    const taken = takenInStamp.get(seat.stamp) ?? new Set<string>();
+    const cands = seat.eligible.filter((id) => !taken.has(id));
+    const pick = [...cands].sort((a, b) =>
+      (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || tie(a) - tie(b),
     )[0];
-    if (!pick) { owedRespected = false; continue; } // مقعدٌ بلا مؤهَّل (لا يفترض)
+    if (!pick) { owedRespected = false; continue; } // مقعدٌ بلا مؤهَّلٍ متاح (نادر)
     chosenBy.set(seat.id, pick);
-    // تدقيق: لا مؤهَّلٌ أقدم من المختار تُرك (الاختيار argmin → دائماً صحيح).
-    for (const e of seat.eligible) {
+    taken.add(pick); takenInStamp.set(seat.stamp, taken);
+    // تدقيق: لا مؤهَّلٌ متاحٌ أقدم من المختار تُرك (الاختيار argmin → دائماً صحيح).
+    for (const e of cands) {
       if (e !== pick && (last.get(e) ?? '') < (last.get(pick) ?? '')) owedRespected = false;
     }
     if (pick !== seat.current) {
@@ -232,6 +243,57 @@ export function solveHeavyRecency(
   else notes.push(`${assignments.length} إعادة قسمة، أقصى بياتٍ ${staleBefore}→${staleAfter}.`);
 
   return { assignments, maxStaleBefore: staleBefore, maxStaleAfter: staleAfter, owedRespected, notes };
+}
+
+// ─── استخراج المقاعد الثقيلة وأهليّتها من سجلٍّ **حقيقيّ** (لا مُصطنَع) ───
+// يُحوّل خانات جدولٍ مبنيٍّ إلى HeavySeat[] جاهزة للحلّال: مقعد انفرادٍ لكلّ طبيبٍ
+// ملأ فترتَي عيادةٍ واحدة في شفت، ومقعد دليقيترٍ لكلّ دور دليقيتر. الأهليّة =
+// مَن كان **حاضراً عاملاً** ذلك الشفت (له عيادة/دليقيتر نشط) — مرشّحو المبادلة الواقعيّون.
+const heavyStamp = (s: LoadedSlot): string => `${s.weekStart}#${DAY_IDX[s.dayOfWeek] ?? 0}#${s.period <= 2 ? 0 : 1}`;
+
+/** يستخرج المقاعد الثقيلة لشفتٍ واحد من خاناته النشطة. */
+export function extractHeavySeats(shiftSlots: LoadedSlot[]): HeavySeat[] {
+  const active = shiftSlots.filter((s) => s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator'));
+  if (active.length === 0) return [];
+  const stamp = heavyStamp(active[0]!);
+  // الحاضرون العاملون = الأهليّة (مرشّحو المبادلة لأيّ مقعدٍ ثقيلٍ في الشفت).
+  const eligible = [...new Set(active.map((s) => s.doctorId))];
+  const seats: HeavySeat[] = [];
+  // انفراد: (طبيب|عيادة) بفترتين.
+  const clinicCount = new Map<string, { id: string; clinic: number; n: number }>();
+  for (const s of active) {
+    if (s.role !== 'clinic' || s.clinicNumber <= 0) continue;
+    const k = `${s.doctorId}|${s.clinicNumber}`;
+    const e = clinicCount.get(k) ?? { id: s.doctorId, clinic: s.clinicNumber, n: 0 };
+    e.n++; clinicCount.set(k, e);
+  }
+  for (const e of clinicCount.values()) {
+    if (e.n === 2) seats.push({ id: `solo|${stamp}|c${e.clinic}`, stamp, kind: 'solo', eligible, current: e.id });
+  }
+  // دليقيتر: مقعدٌ لكلّ دور دليقيتر (نميّزه بالفترة كي لا يندمج مقعدان).
+  for (const s of active) {
+    if (s.role !== 'delegator') continue;
+    seats.push({ id: `del|${stamp}|p${s.period}|${s.doctorId}`, stamp, kind: 'delegator', eligible, current: s.doctorId });
+  }
+  return seats;
+}
+
+/** آخر ظهورٍ لكلّ طبيبٍ في دورٍ ثقيل (انفراد أو دليقيتر) من سجلٍّ تاريخيّ — priorLast. */
+export function lastHeavyStamps(historySlots: LoadedSlot[]): Map<string, string> {
+  const last = new Map<string, string>();
+  const seatCount = new Map<string, number>();
+  const bump = (id: string, st: string) => { if (st > (last.get(id) ?? '')) last.set(id, st); };
+  for (const s of historySlots) {
+    if (s.status !== 'active') continue;
+    const st = heavyStamp(s);
+    if (s.role === 'delegator') { bump(s.doctorId, st); continue; }
+    if (s.role === 'clinic' && s.clinicNumber > 0) {
+      const k = `${s.doctorId}|${st}|${s.clinicNumber}`;
+      const n = (seatCount.get(k) ?? 0) + 1; seatCount.set(k, n);
+      if (n === 2) bump(s.doctorId, st); // انفراد
+    }
+  }
+  return last;
 }
 
 /** تقسيم سجلٍّ إلى (سياق، شفت مستهدف) بمفتاح أسبوع/يوم/شفت — أداةٌ للحلّال والاختبار. */
