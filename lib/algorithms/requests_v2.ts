@@ -403,6 +403,7 @@ export async function setScheduleStatus(
   },
 ): Promise<StatusResult & {
   permission?: PermissionInfo;
+  effShift?: Shift;             // الشفت الفعليّ المصحَّح من مكان الطبيب — تستعمله إعادة التوازن
   duplicate?: boolean;          // نفس الحالة مسجّلة أصلًا — لا عمل، ذكِّر بالتكرار
   keptPermissionAr?: string;    // احتياطٌ فوق استئذانٍ قائم — نصّ «لن يُستدعى في …»
   returnedShadows?: string[];   // ظلالٌ عادت مع المدرّب عند إرجاعه (تحويل غياب→استئذان)
@@ -697,6 +698,7 @@ export async function setScheduleStatus(
 
     return {
       success: true, gaps, permission, keptPermissionAr,
+      effShift: effShift ?? undefined,
       returnedShadows: returnedShadows.length ? returnedShadows : undefined,
     };
   } catch (e) {

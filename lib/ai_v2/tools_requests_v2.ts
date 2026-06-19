@@ -786,8 +786,10 @@ export async function dispatchRequestToolV2(
           && perm?.swap && 'withName' in perm.swap) {
           try {
             const { schedule } = await import('../algorithms/schedule');
+            // الشفت الفعليّ كما صحّحه المحرّك من مكان الطبيب (وإلّا ما طلبه الذكاء).
+            const fromShift = (res as { effShift?: 'morning' | 'evening' }).effShift ?? shift;
             await schedule.rebalanceForward({
-              clinicId: ctx.clinicId, weekStart: wsEff, fromDay: r.day, fromShift: effShift,
+              clinicId: ctx.clinicId, weekStart: wsEff, fromDay: r.day, fromShift,
               today: todayISOFrom(r),
             });
             // القلب الجديد مدموجٌ داخل rebalanceForward نفسه (قلبٌ واحد) — لا استدعاءَ منفصلٌ هنا.
@@ -1238,7 +1240,7 @@ export async function dispatchRequestToolV2(
         const cands = await requestsV2.listDoctorStatuses({
           clinicId: ctx.clinicId, weekStart: wsEff, doctorId: doc.id,
         });
-        let fromDay: WeekDay | null = isDay(r.fromDay) ? r.fromDay : null;
+        let fromDay: (typeof DAYS)[number] | null = isDay(r.fromDay) ? r.fromDay : null;
         if (!fromDay) {
           const days = Array.from(new Set(cands.map((c) => c.day)));
           if (days.length === 0) return final(`لا حالة مسجّلة لـ${doc.name} هذا الأسبوع لنقلها.`);
