@@ -692,7 +692,8 @@ function buildShiftPool(
     if (partialIds.has(d.id)) continue; // استئذان جزئيّ — يُعالَج منفصلاً
     if (d.workStatus === 'vacation') continue; // إجازة دائمة — خارج الجدول
 
-    // light_duty يخرج من البركة الرئيسية، يُوضع لاحقاً في P2/P4 فقط
+    // تخفيف العمل (light_duty) يخرج من البركة الرئيسية، يُوضع في الفترة الأولى فقط
+    // (P1/P3) مع شريكٍ كاملٍ يغطّي الفترة الثانية (انظر wheel.ts ldClinics: [تخفيف ف1, شريك ف2])
     if (d.workStatus === 'light_duty') {
       lightDuty.push(d);
       continue;

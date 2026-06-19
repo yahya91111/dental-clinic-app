@@ -114,33 +114,58 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
           const shiftView = dayRows.filter((s) =>
             (s.status === 'active' && s.role === 'clinic' && periods.includes(s.period))
             || ((s.role as string) === 'prev_placement' && s.status === 'active' && periods.includes(s.period)));
-          const vacant = extractCoverageSeats(shiftView).filter((v) => sc.mine(v.absentId));
+          let vacant = extractCoverageSeats(shiftView).filter((v) => sc.mine(v.absentId));
           if (vacant.length === 0) continue;
-          const availIds = [...new Set(dayRows
-            .filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)
-            .map((s) => s.doctorId))].filter((id) => sc.pool.has(id));
-          const rec = solveCoverage(doctors, vacant, availIds, sc.prior);
-          const removedEx = new Set<string>();
-          for (const f of rec.fills) {
-            const name = doctors.find((d) => d.id === f.doctorId)?.name ?? f.doctorId;
-            if (!removedEx.has(f.doctorId)) {
-              const exRow = dayRows.find((s) => s.doctorId === f.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
-              if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
-              removedEx.add(f.doctorId);
+
+          // مُطبِّقُ مجموعة فِلٍّ: يحلّ المتبقّي ثمّ يكتب الخانات، ويُزيل صفَّ المصدر —
+          // احتياطٌ (يُحذف صفّ extra) أو دليقيترٌ منفرد (يُنزَل للعيادة: تُحذف خانات دوره).
+          const applyFills = async (avail: string[], src: 'reserve' | 'delegator'): Promise<void> => {
+            if (avail.length === 0 || vacant.length === 0) return;
+            const rec = solveCoverage(doctors, vacant, avail, sc.prior);
+            const removedSrc = new Set<string>();
+            const done = new Set<string>();
+            for (const f of rec.fills) {
+              const name = doctors.find((d) => d.id === f.doctorId)?.name ?? f.doctorId;
+              if (!removedSrc.has(f.doctorId)) {
+                if (src === 'reserve') {
+                  const exRow = dayRows.find((s) => s.doctorId === f.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+                  if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
+                } else {
+                  // الدليقيتر المنفرد يَنزِل للعيادة → تُحذف خانتا دوره دليقيترًا في الشفت.
+                  const delRows = dayRows.filter((s) => s.doctorId === f.doctorId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period));
+                  for (const dr of delRows) await supabase.from('schedule_slots').delete().eq('id', dr.id);
+                }
+                removedSrc.add(f.doctorId);
+              }
+              await supabase.from('schedule_slots').insert({
+                clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+                period: f.period, clinic_number: f.clinicNumber,
+                doctor_id: f.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
+              });
+              filled++; done.add(f.seatId);
+              // eslint-disable-next-line no-console
+              console.log(`[NEW-HEART ${sc.name}${src === 'delegator' ? '·دليقيتر' : ''} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
             }
-            await supabase.from('schedule_slots').insert({
-              clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
-              period: f.period, clinic_number: f.clinicNumber,
-              doctor_id: f.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
-            });
-            filled++;
-            // eslint-disable-next-line no-console
-            console.log(`[NEW-HEART ${sc.name} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
+            vacant = vacant.filter((v) => !done.has(v.id));
+          };
+
+          // مرحلة ١: الاحتياط (المصدر المفضّل — المستريح).
+          const reserves = [...new Set(dayRows.filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))].filter((id) => sc.pool.has(id));
+          await applyFills(reserves, 'reserve');
+
+          // مرحلة ٢: الدليقيتر **المنفرد** (دوره دليقيتر فقط، لا عيادة = الفائض الحقيقيّ) —
+          //   مصدرٌ ثانويٌّ يَنزِل للعيادة عند شحّ الاحتياط (٧ على ٣ → ٦ على ٣). البورد بلا دليقيتر.
+          if (vacant.length && sc.name === 'COVER') {
+            const inClinic = new Set(dayRows.filter((s) => s.status === 'active' && s.role === 'clinic' && periods.includes(s.period)).map((s) => s.doctorId));
+            const soloDelegs = [...new Set(dayRows.filter((s) => s.status === 'active' && s.role === 'delegator' && periods.includes(s.period)).map((s) => s.doctorId))]
+              .filter((id) => sc.pool.has(id) && !inClinic.has(id));
+            await applyFills(soloDelegs, 'delegator');
           }
-          if (!rec.conserved) {
-            shortages += vacant.length - rec.fills.length;
+
+          if (vacant.length) {
+            shortages += vacant.length;
             // eslint-disable-next-line no-console
-            console.log(`[NEW-HEART ${sc.name} · ${args.label}] نقصٌ: ${vacant.length - rec.fills.length} مقعدٌ بلا بديلٍ (${day}/${half === 0 ? 'ص' : 'م'})`);
+            console.log(`[NEW-HEART ${sc.name} · ${args.label}] نقصٌ: ${vacant.length} مقعدٌ بلا بديلٍ (${day}/${half === 0 ? 'ص' : 'م'})`);
           }
         }
       }
