@@ -27,6 +27,10 @@ const mode = () => envMode() ?? newHeartConfig.mode;
 const clinicAllowed = (id: string) => newHeartConfig.clinics === null || newHeartConfig.clinics.includes(id);
 const shadowEnabled = (id: string) => mode() !== 'off' && clinicAllowed(id);
 const applyEnabled = (id: string) => mode() === 'apply' && clinicAllowed(id);
+
+/** هل القلب الجديد هو الكاتب الوحيد لهذه العيادة؟ (وضع apply) — تستعمله rebalanceForward
+ *  لتخطّي حلقتها السببيّة القديمة فلا يتنازع كاتبان. */
+export function isApplyMode(clinicId: string): boolean { return applyEnabled(clinicId); }
 const DAY_IDX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
 const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 

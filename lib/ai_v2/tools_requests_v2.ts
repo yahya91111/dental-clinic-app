@@ -806,6 +806,13 @@ export async function dispatchRequestToolV2(
           try {
             const { schedule } = await import('../algorithms/schedule');
             const { notifications } = await import('../algorithms/notifications');
+            const { isApplyMode, applyCoverage, applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
+            // القلب الجديد (apply): تغطيةٌ تلقائيّةٌ فوريّةٌ (بلا كرت موافقة) + امتصاص
+            // الدليقيتر. القائد وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول.
+            if (isApplyMode(ctx.clinicId)) {
+              await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+              await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+            } else {
             const prop = await schedule.proposeCoverageForAbsence({
               clinicId: ctx.clinicId, weekStart: wsEff, day: r.day, absentDoctorId: doc.id,
             });
@@ -821,6 +828,7 @@ export async function dispatchRequestToolV2(
                   diff: prop.diff, slots: slotsData,
                 });
               }
+            }
             }
           } catch (e) {
             // eslint-disable-next-line no-console

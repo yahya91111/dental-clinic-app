@@ -1642,7 +1642,13 @@ export async function rebalanceForward(args: {
     startOrder = DAY_IDX[args.fromDay] * 2 + (args.fromShift === 'evening' ? 1 : 0) + 1;
   }
 
-  for (let wi = 0; wi < maxWeeks; wi++) {
+  // القلب الجديد كاتبٌ وحيدٌ لهذه العيادة (وضع apply)؟ نتخطّى الحلقة السببيّة القديمة
+  // فلا يتنازع كاتبان (تغطية الجديد + بناء القديم) على الجدول. القديم يبقى للعيادات
+  // خارج apply (ظلّ/مطفأ) — تطويرٌ بلا حذف.
+  let newHeartSole = false;
+  try { const { isApplyMode } = await import('./solver_shadow'); newHeartSole = isApplyMode(args.clinicId); } catch { /* تجاهل */ }
+
+  for (let wi = 0; !newHeartSole && wi < maxWeeks; wi++) {
     const recipe = await loadBuildConfig(args.clinicId, week);
     if (!recipe) break;                       // أسبوع بلا وصفةٍ محفوظة → غير مبنيّ
     const { data } = await loadScheduleData(args.clinicId, week);
@@ -1692,14 +1698,19 @@ export async function rebalanceForward(args: {
     week = addDaysISO(week, 7);
   }
 
-  // ── القلب الموحَّد: بعد التسوية السببيّة، تمريرةُ عدلٍ من الحلّال الجديد (الامتصاص
-  //    قبل الحدث + أقلّ لمس). مدموجةٌ هنا فيصير التفاعل قلبًا واحدًا — لا نظامين. تبقى
-  //    خلف علمٍ وعيادة الاختبار حتى التحقّق في الإنتاج، ولا تُفشِل التسوية أبدًا. ──
+  // ── القلب الموحَّد ──
+  // • apply (newHeartSole): الجديد كاتبٌ وحيد — يغطّي الغياب (عيادة+بورد) ثمّ يمتصّ
+  //   الدليقيتر. الحلقة القديمة أعلاه لم تعمل، فلا تنازع. هذا هو الدمج الكامل.
+  // • shadow/off: القديم وزّع، والجديد يُسجّل قراره فقط (تشخيصٌ بلا كتابة).
   try {
-    const { shadowRebalanceLog, applyNewHeartRebalance } = await import('./solver_shadow');
-    await shadowRebalanceLog({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
-    await applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
-  } catch { /* الحلّال الجديد تشخيصٌ/تحسينٌ اختياريّ — لا يكسر القلب القديم */ }
+    const sh = await import('./solver_shadow');
+    if (newHeartSole) {
+      await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+      await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+    } else {
+      await sh.shadowRebalanceLog({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+    }
+  } catch { /* الحلّال الجديد لا يُفشِل التسوية أبدًا */ }
 
   return { changedWeeks };
 }
