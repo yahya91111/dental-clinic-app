@@ -271,11 +271,11 @@ export function solveLookahead(
   };
 }
 
-/** مقعدٌ ثقيلٌ قابلٌ لإعادة القسمة في شفته (انفراد أو دليقيتر). */
+/** مقعدٌ ثقيلٌ قابلٌ لإعادة القسمة في شفته (انفراد/دليقيتر = عبء، أو احتياط = راحة). */
 export type HeavySeat = {
   id: string;            // معرّفٌ للإيصال (مثلاً «الثلاثاء-ص-ع٣»)
   stamp: string;         // ختم الشفت الزمنيّ (أسبوع#يوم#صباح|مساء) — للترتيب والحداثة
-  kind: 'solo' | 'delegator';
+  kind: 'solo' | 'delegator' | 'reserve';
   eligible: string[];    // المؤهَّلون المتاحون لهذا المقعد في شفته
   current: string;       // الشاغل الحاليّ (id)
 };
@@ -406,6 +406,36 @@ export function extractHeavySeats(shiftSlots: LoadedSlot[], poolIds?: Set<string
     seats.push({ id: `del|${stamp}|${id}`, stamp, kind: 'delegator', eligible: eligibleFor(id), current: id });
   }
   return seats;
+}
+
+// ─── الاحتياط (EX) — محورٌ مختلف: «راحة» تُوزَّع بالحداثة، والغياب يُحسب راحة ───
+// ختم الاحتياط من عمود الشفت (1=صباح، 2=مساء) لأنّ فترته 0.
+const reserveStamp = (s: LoadedSlot): string => `${s.weekStart}#${DAY_IDX[s.dayOfWeek] ?? 0}#${s.clinicNumber === 2 ? 1 : 0}`;
+
+/** يستخرج مقاعد الاحتياط لشفتٍ واحد (status='extra', period=0). الأهليّة = الحاضرون
+ *  في الشفت (عاملون أو محتاطون) ضمن البِركة — أيٌّ منهم يصلح للراحة. */
+export function extractReserveSeats(shiftSlots: LoadedSlot[], poolIds?: Set<string>): HeavySeat[] {
+  const ex = shiftSlots.filter((s) => s.status === 'extra' && s.period === 0);
+  if (ex.length === 0) return [];
+  const stamp = reserveStamp(ex[0]!);
+  // الحاضرون في الشفت = عاملون (clinic/delegator نشط) + محتاطون.
+  const present = shiftSlots.filter((s) => (s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator')) || (s.status === 'extra' && s.period === 0));
+  const working = [...new Set(present.map((s) => s.doctorId))];
+  const base = poolIds ? working.filter((id) => poolIds.has(id)) : working;
+  const eligibleFor = (current: string) => (base.includes(current) ? base : [...base, current]);
+  return ex.map((s) => ({ id: `ex|${stamp}|${s.clinicNumber}|${s.doctorId}`, stamp, kind: 'reserve' as const, eligible: eligibleFor(s.doctorId), current: s.doctorId }));
+}
+
+/** آخر «راحة» لكلّ طبيبٍ من التاريخ: احتياطٌ **أو غياب** (طبية/تفرّغ) — كلاهما راحة.
+ *  هذا جوهر قاعدة الاحتياط: مَن ارتاح (احتياطًا أو غيابًا) يتأخّر دوره في الراحة. */
+export function lastRestStamps(historySlots: LoadedSlot[]): Map<string, string> {
+  const last = new Map<string, string>();
+  const bump = (id: string, st: string) => { if (st > (last.get(id) ?? '')) last.set(id, st); };
+  for (const s of historySlots) {
+    if (s.status === 'extra' && s.period === 0) bump(s.doctorId, reserveStamp(s));                 // احتياط
+    else if (s.status === 'sick_leave' || s.status === 'vacation') bump(s.doctorId, heavyStamp(s)); // غيابٌ = راحة
+  }
+  return last;
 }
 
 // ─── الحلّال المُوجَّه بالحدث — «يلمس ما تأثّر، بقدر الحاجة» ───
