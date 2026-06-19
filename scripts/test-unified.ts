@@ -28,14 +28,15 @@ async function valid(w:string){
 }
 (async()=>{
   await buildAll();
-  delete process.env.NEW_HEART_APPLY; delete process.env.NEW_HEART_SHADOW;
-  // (أ) العلمان مطفأان.
+  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
+  newHeartConfig.mode='off'; newHeartConfig.clinics=null;
+  // (أ) المفتاح مطفأ.
   let threw=false; try{ await schedule.rebalanceForward({clinicId:CID,weekStart:WEEKS[0]!,fromDay:'sunday',fromShift:'morning'}); }catch{ threw=true; }
   check('(أ) مطفأ: rebalanceForward لا ينهار', !threw);
   check('(أ) مطفأ: الجدول صالح', await valid(WEEKS[0]!));
 
-  // (ب) علم التطبيق مُشغَّل → التمريرة الجديدة داخل rebalanceForward.
-  process.env.NEW_HEART_APPLY='1';
+  // (ب) المفتاح apply → التمريرة الجديدة داخل rebalanceForward.
+  newHeartConfig.mode='apply';
   const logs:string[]=[]; const orig=console.log; console.log=(...a:any)=>{logs.push(a.join(' '));};
   let threw2=false; try{ await schedule.rebalanceForward({clinicId:CID,weekStart:WEEKS[0]!,fromDay:'sunday',fromShift:'morning'}); }catch{ threw2=true; }
   console.log=orig;
@@ -44,7 +45,7 @@ async function valid(w:string){
   check('(ب) مُشغَّل: الجدول صالح', await valid(WEEKS[0]!));
   console.log('     سجلّ القلب الجديد:', logs.filter(l=>l.includes('NEW-HEART')).join(' | ')||'(لا شيء)');
 
-  delete process.env.NEW_HEART_APPLY;
+  newHeartConfig.mode='off';
   console.log(`\n${pass} PASS / ${fail} FAIL`); if(fails.length)fails.forEach(f=>console.log('  • '+f));
   process.exit(fail?1:0);
 })().catch(e=>{console.error('ERR',e.message,e.stack);process.exit(1);});

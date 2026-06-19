@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════
 import { loadScheduleData } from './schedule';
 import { supabase } from '../supabase';
+import { newHeartConfig } from './new_heart_config';
 import type { WeekDay, LoadedSlot } from './schedule';
 import {
   extractHeavySeats, extractReserveSeats, lastHeavyStamps, lastRestStamps,
@@ -15,11 +16,16 @@ import {
 } from './solver';
 import type { HeavySeat } from './solver';
 
-// علمان منفصلان (مطفأان افتراضيًّا، يُقرآن لحظيًّا) + قصرٌ على عيادة الاختبار (أمانٌ مزدوج).
-//  • SHADOW: يسجّل القرار فقط (لا كتابة).      • APPLY: يطبّق فعلًا (كتابة) — أخطر، علمٌ مستقلّ.
-const shadowEnabled = () => process.env.NEW_HEART_SHADOW === '1';
-const applyEnabled = () => process.env.NEW_HEART_APPLY === '1';
-const TEST_CLINIC = '10000000-0000-0000-0000-000000000001';
+// المفتاح من new_heart_config (يعمل على Expo Go) — مع تجاوزٍ بيئيٍّ للسكربتات/الخادم.
+//  • shadow/apply: يسجّل القرار.   • apply فقط: يكتب فعلًا.
+const envMode = (): 'off' | 'shadow' | 'apply' | null =>
+  process.env.NEW_HEART_APPLY === '1' ? 'apply'
+    : process.env.NEW_HEART_SHADOW === '1' ? 'shadow'
+      : (process.env.NEW_HEART_APPLY === '0' || process.env.NEW_HEART_SHADOW === '0') ? 'off' : null;
+const mode = () => envMode() ?? newHeartConfig.mode;
+const clinicAllowed = (id: string) => newHeartConfig.clinics === null || newHeartConfig.clinics.includes(id);
+const shadowEnabled = (id: string) => mode() !== 'off' && clinicAllowed(id);
+const applyEnabled = (id: string) => mode() === 'apply' && clinicAllowed(id);
 const DAY_IDX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
 const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 
@@ -29,7 +35,7 @@ const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday
  * rebalanceForward القديم.
  */
 export async function shadowRebalanceLog(args: { clinicId: string; weekStart: string; label: string }): Promise<void> {
-  if (!shadowEnabled() || args.clinicId !== TEST_CLINIC) return;
+  if (!shadowEnabled(args.clinicId)) return;
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return;
@@ -78,7 +84,7 @@ export async function shadowRebalanceLog(args: { clinicId: string; weekStart: st
  * آمن: لا يعمل إلا خلف العلم، لا يرمي أبدًا، ويُرجِع ما طبّقه. القديم يبقى كما هو.
  */
 export async function applyNewHeartRebalance(args: { clinicId: string; weekStart: string; label: string }): Promise<{ applied: number }> {
-  if (!applyEnabled() || args.clinicId !== TEST_CLINIC) return { applied: 0 };
+  if (!applyEnabled(args.clinicId)) return { applied: 0 };
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { applied: 0 };

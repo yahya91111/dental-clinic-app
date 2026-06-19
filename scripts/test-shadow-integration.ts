@@ -13,15 +13,17 @@ const check=(n:string,c:boolean)=>{ if(c){pass++;console.log('  ✓ '+n);}else{f
   await schedule.build({weekStart:W,clinicId:CID,aShiftPlan,boardConfig:{scenario:{kind:'all_morning' as const},includeInExRotation:false},traineeModes:tm,dryRun:false});
   await schedule.saveBuildConfig({weekStart:W,clinicId:CID,aShiftPlan,boardConfig:{scenario:{kind:'all_morning' as const},includeInExRotation:false},traineeModes:tm,dryRun:true} as any);
 
-  // العلم مطفأ → صامت، لا يرمي.
+  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
+  // المفتاح مطفأ → صامت، لا يرمي.
+  newHeartConfig.mode='off'; newHeartConfig.clinics=null;
   let threw=false; const logs:string[]=[]; const orig=console.log; console.log=(...a:any)=>logs.push(a.join(' '));
   try { await shadowRebalanceLog({clinicId:CID,weekStart:W,label:'test'}); } catch { threw=true; }
   console.log=orig;
   check('مطفأ: صامت (لا سجلّ)', logs.length===0);
   check('مطفأ: لا يرمي', !threw);
 
-  // العلم مُشغَّل → يُسجّل، لا يرمي.
-  process.env.NEW_HEART_SHADOW='1';
+  // المفتاح shadow → يُسجّل، لا يرمي.
+  newHeartConfig.mode='shadow';
   const logs2:string[]=[]; console.log=(...a:any)=>logs2.push(a.join(' '));
   let threw2=false; try { await shadowRebalanceLog({clinicId:CID,weekStart:W,label:'استئذان'}); } catch { threw2=true; }
   console.log=orig;
@@ -29,11 +31,12 @@ const check=(n:string,c:boolean)=>{ if(c){pass++;console.log('  ✓ '+n);}else{f
   check('مُشغَّل: لا يرمي', !threw2);
   console.log('  السجلّ:', logs2.join(' | '));
 
-  // عيادة غير الاختبار → صامت حتى مع العلم (أمان).
+  // عيادةٌ خارج القائمة → صامت حتى مع المفتاح (أمان).
+  newHeartConfig.clinics=[CID];
   const logs3:string[]=[]; console.log=(...a:any)=>logs3.push(a.join(' '));
   await shadowRebalanceLog({clinicId:'99999999-0000-0000-0000-000000000099',weekStart:W,label:'x'});
-  console.log=orig;
-  check('عيادةٌ أخرى: صامت (أمان)', logs3.length===0);
+  console.log=orig; newHeartConfig.clinics=null; newHeartConfig.mode='off';
+  check('عيادةٌ خارج القائمة: صامت (أمان)', logs3.length===0);
 
   console.log(`\n${pass} PASS / ${fail} FAIL`);
   process.exit(fail?1:0);
