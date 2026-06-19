@@ -1691,6 +1691,16 @@ export async function rebalanceForward(args: {
     startOrder = 0;                            // الأسابيع التالية مبنيّة بالكامل للمستقبل
     week = addDaysISO(week, 7);
   }
+
+  // ── القلب الموحَّد: بعد التسوية السببيّة، تمريرةُ عدلٍ من الحلّال الجديد (الامتصاص
+  //    قبل الحدث + أقلّ لمس). مدموجةٌ هنا فيصير التفاعل قلبًا واحدًا — لا نظامين. تبقى
+  //    خلف علمٍ وعيادة الاختبار حتى التحقّق في الإنتاج، ولا تُفشِل التسوية أبدًا. ──
+  try {
+    const { shadowRebalanceLog, applyNewHeartRebalance } = await import('./solver_shadow');
+    await shadowRebalanceLog({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+    await applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+  } catch { /* الحلّال الجديد تشخيصٌ/تحسينٌ اختياريّ — لا يكسر القلب القديم */ }
+
   return { changedWeeks };
 }
 

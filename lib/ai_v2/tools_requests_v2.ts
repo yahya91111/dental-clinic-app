@@ -790,10 +790,7 @@ export async function dispatchRequestToolV2(
               clinicId: ctx.clinicId, weekStart: wsEff, fromDay: r.day, fromShift: effShift,
               today: todayISOFrom(r),
             });
-            // القلب الجديد: ظلٌّ (يسجّل) + تطبيقٌ (خلف علمٍ مستقلّ، عيادة الاختبار فقط).
-            const { shadowRebalanceLog, applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
-            await shadowRebalanceLog({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'استئذان' });
-            await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'استئذان' });
+            // القلب الجديد مدموجٌ داخل rebalanceForward نفسه (قلبٌ واحد) — لا استدعاءَ منفصلٌ هنا.
           } catch (e) {
             // eslint-disable-next-line no-console
             console.log('[rebalance-forward perm] failed', e instanceof Error ? e.message : e);
@@ -1109,10 +1106,7 @@ export async function dispatchRequestToolV2(
               clinicId: ctx.clinicId, weekStart: String(r.weekStart), fromDay: r.day, fromShift: returnShift,
               today: todayISOFrom(r),
             });
-            // القلب الجديد: ظلٌّ (يسجّل) + تطبيقٌ (خلف علمٍ مستقلّ، عيادة الاختبار فقط).
-            const { shadowRebalanceLog, applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
-            await shadowRebalanceLog({ clinicId: ctx.clinicId, weekStart: String(r.weekStart), label: 'عودة/إلغاء' });
-            await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: String(r.weekStart), label: 'عودة/إلغاء' });
+            // القلب الجديد مدموجٌ داخل rebalanceForward نفسه (قلبٌ واحد) — لا استدعاءَ منفصلٌ هنا.
           } catch (e) {
             // eslint-disable-next-line no-console
             console.log('[rebalance-forward] failed', e instanceof Error ? e.message : e);
