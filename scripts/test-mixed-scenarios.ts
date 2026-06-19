@@ -179,6 +179,31 @@ async function main() {
     check('⑦ حتميّ تحت الضغط', JSON.stringify(rD.fullAssignment) === JSON.stringify(rD2.fullAssignment), '');
   } else check('⑦ لا انهيار تحت الضغط', false, 'انهار');
 
+  // ════════ سيناريو ⑧: طبيبٌ يقدّم طبيّة **يومين متتاليين** (بياناتٌ حقيقيّة) ════════
+  console.log('\n⑧ طبيّة يومين متتاليين (الأسبوع الأوّل: الاثنين + الثلاثاء):');
+  // نختار طبيبًا يشغل مقعد دليقيترٍ في أحد اليومين على الأقلّ.
+  const monD = seats.find((s) => s.stamp === st(WEEKS[0]!, 1))?.current;
+  const tueD = seats.find((s) => s.stamp === st(WEEKS[0]!, 2))?.current;
+  const twoDayDoc = monD ?? tueD ?? d1;
+  const twoDayEvs: Ev[] = [
+    { type: 'طبية', who: twoDayDoc, w: WEEKS[0]!, di: 1 }, // الاثنين
+    { type: 'طبية', who: twoDayDoc, w: WEEKS[0]!, di: 2 }, // الثلاثاء (متتالٍ)
+  ];
+  const r8 = apply(seats, twoDayEvs);
+  console.log(`   ${nm(twoDayDoc)} طبيّة الاثنين والثلاثاء معًا`); report(r8);
+  // لا يُسنَد له مقعدٌ في أيٍّ من اليومين، وأيّ مقعدٍ كان يشغله فيهما يُغطّى.
+  const monStamp = st(WEEKS[0]!, 1); const tueStamp = st(WEEKS[0]!, 2);
+  const heldEither = seats.filter((s) => s.current === twoDayDoc && (s.stamp === monStamp || s.stamp === tueStamp));
+  const assignedOnAbsentDays = r8.fullAssignment.filter((a: any) => {
+    const seat = seats.find((s) => s.id === a.seatId)!;
+    return (seat.stamp === monStamp || seat.stamp === tueStamp) && a.doctorId === twoDayDoc;
+  });
+  check('⑧ لا يُسنَد للغائب مقعدٌ في أيٍّ من اليومين المتتاليين', assignedOnAbsentDays.length === 0, `${assignedOnAbsentDays.length}`);
+  check('⑧ مقاعده في اليومين تُغطّى (لمسٌ ≥ ما كان يشغله)', r8.assignments.length >= heldEither.length, `حمل=${heldEither.length} لمس=${r8.assignments.length}`);
+  check('⑧ لا حجزٌ مزدوج + أهليّة + حفظ', noDoubleBook(r8, seats) && r8.eligibilityRespected && r8.conserved, '');
+  const r8b = apply(seats, twoDayEvs);
+  check('⑧ حتميّ', JSON.stringify(r8.assignments) === JSON.stringify(r8b.assignments), '');
+
   console.log(`\n════════ النتيجة: ${pass} PASS / ${fail} FAIL ════════`);
   if (fails.length) fails.forEach((f) => console.log('  • ' + f));
   process.exit(fail ? 1 : 0);
