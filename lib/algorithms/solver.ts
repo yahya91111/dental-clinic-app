@@ -464,6 +464,103 @@ export function lastBoardStamps(historySlots: LoadedSlot[], boardIds: Set<string
   return last;
 }
 
+// ─── التغطية على الغياب — ملءُ مقاعد العيادة الشاغرة باللمسة الأصغر ───
+// عند غياب طبيبٍ تُحفَظ خاناتُه صفوفَ prev_placement (فترة + رقم عيادة). التغطية تملأ
+// كلّ مقعد عيادةٍ شاغرٍ ببديلٍ من **الاحتياط** (المستريح) بالعدل: الأطولُ راحةً (الأقدمُ
+// عملًا) ثمّ الأقلّ حِملًا يُسحَب أوّلًا، وبأقلّ لمس: لا نمسّ مقعدًا قائمًا ولا نعيد بناء
+// الشفت. لا بديل؟ نقصٌ صريحٌ (conserved=false) بلا انهيارٍ ولا اختلاقِ طبيب.
+
+/** مقعد عيادةٍ شاغرٌ خلّفه غائبٌ في شفت. */
+export type CoverageSeat = {
+  id: string;            // cov|stamp|c{clinic}|p{period}
+  stamp: string;         // ختم الشفت (أسبوع#يوم#نصف)
+  clinicNumber: number;  // العيادة الشاغرة
+  period: number;        // الفترة الشاغرة (1/2 صباح، 3/4 مساء)
+  absentId: string;      // مَن غاب فشغر مقعده
+};
+
+export type CoverageReceipt = {
+  fills: { seatId: string; clinicNumber: number; period: number; doctorId: string }[]; // مَن يغطّي ماذا
+  conserved: boolean;    // كلّ مقعدٍ شاغرٍ وجد بديلًا (لا نقص)
+  loadAfter: { id: string; name: string; load: number }[];                              // عبء التغطية لكلّ بديل
+  notes: string[];
+};
+
+/** يستخرج المقاعد الشاغرة من صفوف prev_placement لشفتٍ (clinic_number>0 = عيادة).
+ *  المقعد المغطَّى أصلًا (له شاغلٌ نشطٌ في موضعه) ليس شاغرًا — يُستبعَد. */
+export function extractCoverageSeats(shiftSlots: LoadedSlot[]): CoverageSeat[] {
+  const occupied = new Set(
+    shiftSlots.filter((s) => s.status === 'active' && s.role === 'clinic' && s.clinicNumber > 0)
+      .map((s) => `${s.clinicNumber}#${s.period}`),
+  );
+  const prev = shiftSlots.filter(
+    (s) => (s.role as string) === 'prev_placement' && s.status === 'active' && s.clinicNumber > 0 && s.period > 0,
+  );
+  return prev
+    .filter((s) => !occupied.has(`${s.clinicNumber}#${s.period}`))
+    .map((s) => ({
+      id: `cov|${heavyStamp(s)}|c${s.clinicNumber}|p${s.period}`,
+      stamp: heavyStamp(s), clinicNumber: s.clinicNumber, period: s.period, absentId: s.doctorId,
+    }));
+}
+
+/** آخر «عمل» (عيادة/دليقيتر نشط) لكلّ طبيبٍ من التاريخ — الأقدمُ عملًا الأطولُ راحةً،
+ *  فالأحقُّ بالسحب للتغطية (عدلُ توزيع العبء). */
+export function lastClinicStamps(historySlots: LoadedSlot[]): Map<string, string> {
+  const last = new Map<string, string>();
+  for (const s of historySlots) {
+    if (s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator')) {
+      const st = heavyStamp(s); if (st > (last.get(s.doctorId) ?? '')) last.set(s.doctorId, st);
+    }
+  }
+  return last;
+}
+
+/**
+ * يملأ المقاعد الشاغرة ببدلاء **متاحين** (احتياط/مستريح) بأقلّ لمسٍ وأعدلِ توزيع.
+ * كلّ مقعدٍ يُسنَد لمن: (أقلّ عبء تغطيةٍ تراكَم له هنا) ثمّ (الأطول راحةً = الأقدمُ عملًا)
+ * ثمّ الطاقم. الملءُ بالفترة مستقلٌّ، فإن توفّر بديلان لعيادةٍ كاملةٍ الشاغرة أخذ كلٌّ
+ * فترةً (لا إجبارَ انفراد)، وإن لم يتوفّر إلّا واحدٌ غطّاهما (انفرادٌ اضطراريّ). **لا يكتب**.
+ * @param availableIds البدلاء المؤهَّلون المتاحون (محسوبون خارجًا: حاضرون، غير منسَّبين، ضمن البِركة).
+ */
+export function solveCoverage(
+  doctors: LoadedDoctor[], vacant: CoverageSeat[], availableIds: string[], priorLast: Map<string, string>,
+): CoverageReceipt {
+  const rosterIdx = new Map(doctors.map((d, i) => [d.id, i] as const));
+  const tie = (id: string) => rosterIdx.get(id) ?? 0;
+  const last = new Map<string, string>();
+  for (const id of availableIds) last.set(id, priorLast.get(id) ?? '');
+  const load = new Map<string, number>(availableIds.map((id) => [id, 0]));
+  const avail = availableIds;
+  const usedInPeriod = new Map<string, Set<string>>(); // `${stamp}#${period}` → مَن انشغل تلك الفترة
+  const isBusy = (st: string, p: number, id: string) => usedInPeriod.get(`${st}#${p}`)?.has(id) ?? false;
+  const markBusy = (st: string, p: number, id: string) => {
+    const k = `${st}#${p}`; const set = usedInPeriod.get(k) ?? new Set<string>(); set.add(id); usedInPeriod.set(k, set);
+  };
+  let conserved = true;
+  const fills: CoverageReceipt['fills'] = [];
+  const notes: string[] = [];
+
+  for (const seat of [...vacant].sort((a, b) => a.stamp.localeCompare(b.stamp) || a.clinicNumber - b.clinicNumber || a.period - b.period)) {
+    const cands = avail.filter((id) => !isBusy(seat.stamp, seat.period, id));
+    if (cands.length === 0) { conserved = false; notes.push(`عيادة ${seat.clinicNumber} (ف${seat.period}) بلا بديلٍ متاح — نقص`); continue; }
+    const pick = [...cands].sort((a, b) =>
+      (load.get(a) ?? 0) - (load.get(b) ?? 0)
+      || (last.get(a) ?? '').localeCompare(last.get(b) ?? '')
+      || tie(a) - tie(b))[0]!;
+    fills.push({ seatId: seat.id, clinicNumber: seat.clinicNumber, period: seat.period, doctorId: pick });
+    load.set(pick, (load.get(pick) ?? 0) + 1);
+    markBusy(seat.stamp, seat.period, pick);
+    if (seat.stamp > (last.get(pick) ?? '')) last.set(pick, seat.stamp);
+  }
+  if (fills.length) notes.unshift(`${fills.length} تغطية`);
+  return {
+    fills, conserved,
+    loadAfter: doctors.map((d) => ({ id: d.id, name: d.name, load: load.get(d.id) ?? 0 })).filter((x) => x.load > 0),
+    notes,
+  };
+}
+
 // ─── الحلّال المُوجَّه بالحدث — «يلمس ما تأثّر، بقدر الحاجة» ───
 // على حدثٍ في شفت (غياب/عودة)، يعيد قسمة **مقاعد ذلك الشفت فقط** بأقلّ لمسٍ يحقّق
 // العدل: يبقي كلّ شاغلٍ حاليٍّ ما لم يُجبَر (غائب) أو يوجد أحقُّ منه أُتيح بالحدث.
