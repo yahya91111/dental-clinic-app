@@ -91,6 +91,7 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
     if (!data) return { filled: 0, shortages: 0 };
     const doctors = data.doctors;
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+    const boardIds = new Set(doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
     const prior = lastClinicStamps([...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart));
     let filled = 0; let shortages = 0;
 
@@ -103,7 +104,8 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
         const shiftView = dayRows.filter((s) =>
           (s.status === 'active' && s.role === 'clinic' && periods.includes(s.period))
           || ((s.role as string) === 'prev_placement' && s.status === 'active' && periods.includes(s.period)));
-        const vacant = extractCoverageSeats(shiftView);
+        // مقاعد البورد (غيابُ طبيب بورد) ليست من شأن بِركة التغطية — للبورد حلّاله.
+        const vacant = extractCoverageSeats(shiftView).filter((v) => !boardIds.has(v.absentId));
         if (vacant.length === 0) continue;
         const availIds = [...new Set(dayRows
           .filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)
