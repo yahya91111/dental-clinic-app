@@ -15,7 +15,7 @@ import {
   solveLookahead, solveHeavyRecency,
   extractCoverageSeats, solveCoverage, lastClinicStamps, lastBoardStamps,
 } from './solver';
-import type { HeavySeat } from './solver';
+import type { HeavySeat, CoverageSeat } from './solver';
 
 // المفتاح من new_heart_config (يعمل على Expo Go) — مع تجاوزٍ بيئيٍّ للسكربتات/الخادم.
 //  • shadow/apply: يسجّل القرار.   • apply فقط: يكتب فعلًا.
@@ -99,6 +99,7 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
     const boardIds = new Set(doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
     // تخفيف العمل: يقدر على **الفترة الأولى فقط** (ف١/ف٣) — مصدرُ تغطيةٍ لها عند الحاجة.
     const lightDutyIds = new Set(doctors.filter((d) => d.workStatus === 'light_duty').map((d) => d.id));
+    const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
     // بِركتان: العاديّة (حداثة آخر عمل) والبورد (حداثة آخر دخولٍ للعيادة). كلٌّ يُغطّي
     // مقاعدَ غياب بِركته فقط من احتياط بِركته فقط — فلا يملأ عاديٌّ مقعدَ بورد ولا العكس.
     const scopes = [
@@ -116,7 +117,7 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
           const shiftView = dayRows.filter((s) =>
             (s.status === 'active' && s.role === 'clinic' && periods.includes(s.period))
             || ((s.role as string) === 'prev_placement' && s.status === 'active' && periods.includes(s.period)));
-          let vacant = extractCoverageSeats(shiftView).filter((v) => sc.mine(v.absentId));
+          let vacant: CoverageSeat[] = extractCoverageSeats(shiftView).filter((v) => sc.mine(v.absentId));
           if (vacant.length === 0) continue;
 
           const inClinic = new Set(dayRows.filter((s) => s.status === 'active' && s.role === 'clinic' && periods.includes(s.period)).map((s) => s.doctorId));
@@ -128,7 +129,7 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
             for (const dr of delRows) await supabase.from('schedule_slots').delete().eq('id', dr.id);
           };
           // يحلّ مجموعةَ مقاعدٍ ببدلاء، يكتب، ويُرجِع مقاعدَ مُلئت. لا يمسّ غيرها.
-          const fillWith = async (avail: string[], seats: typeof vacant, tag: string): Promise<Set<string>> => {
+          const fillWith = async (avail: string[], seats: CoverageSeat[], tag: string): Promise<Set<string>> => {
             const done = new Set<string>();
             if (avail.length === 0 || seats.length === 0) return done;
             const rec = solveCoverage(doctors, seats, avail, sc.prior);
@@ -170,6 +171,29 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
               done = await fillWith(ldBodies, firstP, '·تخفيف');
               vacant = vacant.filter((v) => !done.has(v.id));
             }
+          }
+
+          // مرحلة ٤ (الملاذ الأخير): شريكُ العيادة الباقي يصير **منفرداً** يغطّي الفترة الشاغرة
+          //   حين لا فائض. يشمل تخفيف العمل (يغطّي فترته الثانية اضطرارًا — بإذن المستخدم).
+          //   لا يُمسّ مقعدُ الشريك (يبقى)، نضيف له خانةً في الفترة الشاغرة فقط. لا شريك (انفرادٌ
+          //   غائبٌ، فترتان شاغرتان)؟ نقصٌ صريح.
+          if (vacant.length) {
+            const stillVacant: CoverageSeat[] = [];
+            for (const seat of vacant) {
+              const partner = dayRows.find((s) => s.status === 'active' && s.role === 'clinic'
+                && s.clinicNumber === seat.clinicNumber && periods.includes(s.period) && s.period !== seat.period
+                && !traineeIds.has(s.doctorId) && sc.mine(s.doctorId));
+              if (!partner) { stillVacant.push(seat); continue; }
+              await supabase.from('schedule_slots').insert({
+                clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+                period: seat.period, clinic_number: seat.clinicNumber,
+                doctor_id: partner.doctorId, doctor_name: partner.doctorName, role: 'clinic', status: 'active', source: 'request',
+              });
+              filled++;
+              // eslint-disable-next-line no-console
+              console.log(`[NEW-HEART ${sc.name}·منفرد · ${args.label}] ${partner.doctorName} → عيادة ${seat.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${seat.period}) منفردًا`);
+            }
+            vacant = stillVacant;
           }
 
           if (vacant.length) {
