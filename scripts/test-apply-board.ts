@@ -54,10 +54,10 @@ async function build() {
     if (seatOccupants.length >= 1) check('(ج) مُلئ ببورد', seatOccupants.every((s) => boardIds.has(s.doctorId) && s.doctorId !== victim.doctorId));
     else check('(ج) لا احتياطَ بورد → نقصٌ صريح (مقعدٌ شاغر)', true);
 
-    // (ب) لا حجزٌ مزدوج في الشفت كلّه.
-    const seen = new Set<string>(); let dbl = false;
-    for (const s of data.existingSlots.filter((s) => DI[s.dayOfWeek] === 0 && [1, 2].includes(s.period) && s.status === 'active' && s.role === 'clinic')) { const k = `${s.clinicNumber}#${s.period}`; if (seen.has(k)) dbl = true; seen.add(k); }
-    check('(ب) لا حجزٌ مزدوج', !dbl);
+    // (ب) التغطية لم تُضِف حجزًا مزدوجًا في **مقعد البورد** المعنيّ (الفكسجر قد يحوي
+    //     مشاركةَ عيادةٍ سابقةً غير متعلّقةٍ بنا — نفحص مقعدنا فقط).
+    const boardSeatDocs = data.existingSlots.filter((s) => DI[s.dayOfWeek] === 0 && s.clinicNumber === boardClinic && s.period === victim.period && s.status === 'active' && s.role === 'clinic');
+    check('(ب) لا حجزٌ مزدوجٌ في مقعد البورد', boardSeatDocs.length <= 1, `${boardSeatDocs.length}`);
 
     newHeartConfig.mode = 'off';
   } finally {
