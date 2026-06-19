@@ -195,28 +195,51 @@ export function solveLookahead(
   for (const d of doctors) last.set(d.id, priorLast.get(d.id) ?? '');
   const load = new Map<string, number>(doctors.map((d) => [d.id, 0]));
   const takenInStamp = new Map<string, Set<string>>();
-
-  // ① **الأكثر تقييدًا أوّلًا** (أقلّ مؤهَّلين)، ثمّ زمنيًّا، ثمّ بالمعرّف (حتميّ).
-  const ordered = [...seats].sort((a, b) =>
-    a.eligible.length - b.eligible.length || a.stamp.localeCompare(b.stamp) || a.id.localeCompare(b.id));
-
+  const seatById = new Map(seats.map((s) => [s.id, s] as const));
+  const holderOf = new Map<string, string>();     // seatId → الطبيب المُسنَد
+  const isAdd = (st: string, id: string) => { const t = takenInStamp.get(st) ?? new Set<string>(); t.add(id); takenInStamp.set(st, t); };
   let eligibilityRespected = true; let conserved = true;
-  const chosenBy = new Map<string, string>();
-  for (const seat of ordered) {
-    const taken = takenInStamp.get(seat.stamp) ?? new Set<string>();
-    const cands = seat.eligible.filter((id) => !taken.has(id));
-    if (cands.length === 0) { conserved = false; chosenBy.set(seat.id, seat.current); continue; }
-    // ② أقلّ حِملًا ③ الأقدم حداثةً ④ الطاقم.
-    const pick = [...cands].sort((a, b) =>
-      (load.get(a) ?? 0) - (load.get(b) ?? 0)
-      || (last.get(a) ?? '').localeCompare(last.get(b) ?? '')
-      || tie(a) - tie(b))[0]!;
-    if (!seat.eligible.includes(pick)) eligibilityRespected = false;
-    chosenBy.set(seat.id, pick);
-    taken.add(pick); takenInStamp.set(seat.stamp, taken);
-    load.set(pick, (load.get(pick) ?? 0) + 1);
+
+  // **بأقلّ لمس** (لا إعادة بناء): نبني على القسمة الحاليّة. مرحلتان:
+  // (أ) نُبقي كلّ شاغلٍ مؤهَّلٍ مكانه، ونجمع المقاعد «المفتوحة» (شاغلها لم يعد مؤهَّلًا
+  //     = غائب/قيد). (ب) نغطّي المفتوحة بالأقلّ حِملًا. (ج) نُريح الإثقال الحقيقيّ فقط
+  //     (فجوة ٢+) بنقلٍ موضعيّ — فيُمتصّ المُجبَر مبكّرًا دون مساسٍ بالمتوازن.
+  const open: HeavySeat[] = [];
+  for (const s of seats) {
+    const elig = s.eligible.includes(s.current) && !(takenInStamp.get(s.stamp)?.has(s.current));
+    if (elig) { holderOf.set(s.id, s.current); load.set(s.current, (load.get(s.current) ?? 0) + 1); isAdd(s.stamp, s.current); if (s.stamp > (last.get(s.current) ?? '')) last.set(s.current, s.stamp); }
+    else open.push(s);
+  }
+  // (ب) تغطية المفتوحة: الأكثر تقييدًا أوّلًا، لكلٍّ الأقلّ حِملًا ثمّ الأقدم ثمّ الطاقم.
+  for (const seat of [...open].sort((a, b) => a.eligible.length - b.eligible.length || a.stamp.localeCompare(b.stamp) || a.id.localeCompare(b.id))) {
+    const cands = seat.eligible.filter((id) => !(takenInStamp.get(seat.stamp)?.has(id)));
+    if (cands.length === 0) { conserved = false; holderOf.set(seat.id, seat.current); continue; }
+    const pick = [...cands].sort((a, b) => (load.get(a) ?? 0) - (load.get(b) ?? 0) || (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || tie(a) - tie(b))[0]!;
+    holderOf.set(seat.id, pick); load.set(pick, (load.get(pick) ?? 0) + 1); isAdd(seat.stamp, pick);
     if (seat.stamp > (last.get(pick) ?? '')) last.set(pick, seat.stamp);
   }
+  // (ج) إراحة الإثقال الحقيقيّ فقط: انقل مقعدًا من مُثقَلٍ إلى مؤهَّلٍ أقلّ حِملًا بفجوة
+  //     ≥ ٢ (تحسّنٌ صارمٌ لمجموع المربّعات → يتوقّف). نُفضّل المقعد الأبكر (امتصاصٌ قبل
+  //     الحدث) والمُستلِم الأقدم حداثةً. المقاعد المُقيَّدة (مؤهَّلٌ واحد) لا تتحرّك.
+  for (let guard = 0; guard < seats.length * seats.length + 4; guard++) {
+    let best: { sid: string; from: string; to: string; gain: number } | null = null;
+    for (const s of [...seats].sort((a, b) => a.stamp.localeCompare(b.stamp))) {
+      const O = holderOf.get(s.id)!; const lo = load.get(O) ?? 0;
+      const ys = s.eligible.filter((y) => y !== O && !(takenInStamp.get(s.stamp)?.has(y)) && (load.get(y) ?? 0) <= lo - 2);
+      if (ys.length === 0) continue;
+      const Y = [...ys].sort((a, b) => (load.get(a) ?? 0) - (load.get(b) ?? 0) || (last.get(a) ?? '').localeCompare(last.get(b) ?? '') || tie(a) - tie(b))[0]!;
+      const gain = lo - (load.get(Y) ?? 0);
+      if (!best || gain > best.gain) best = { sid: s.id, from: O, to: Y, gain };
+    }
+    if (!best) break;
+    const s = seatById.get(best.sid)!;
+    holderOf.set(s.id, best.to);
+    load.set(best.from, (load.get(best.from) ?? 0) - 1);
+    load.set(best.to, (load.get(best.to) ?? 0) + 1);
+    takenInStamp.get(s.stamp)?.delete(best.from); isAdd(s.stamp, best.to);
+  }
+  for (const s of seats) if (!s.eligible.includes(holderOf.get(s.id)!)) eligibilityRespected = false;
+  const chosenBy = holderOf;
 
   // الحِمل قبل (التوزيع الحاليّ) وبعد (قرار الحلّال).
   const loadBeforeMap = new Map<string, number>();
