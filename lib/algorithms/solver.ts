@@ -155,6 +155,99 @@ export function solveShiftPeriods(
 // واحداً** تعويضاً ثمّ يرجع آخر الطابور (لا تكدّس). يطابق منطق order في العجلة.
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// نواة النظر-للأمام — «الامتصاص قبل الحدث» (القلب الحقيقيّ)
+// ═══════════════════════════════════════════════════════════════
+// الحلّال الأماميّ الجشِع يوزّع كلّ مقعدٍ دون رؤية قيود المستقبل، فيُثقِل مَن سيُجبَر
+// على مقعدٍ لاحق (أهليّةٌ ضيّقة). النظر-للأمام يعالج المقاعد **الأكثر تقييدًا أوّلًا**
+// (الأقلّ مؤهَّلين = المُجبَرة)، فيُحجَز المُجبَر على مقعده المستقبليّ، ثمّ تُوزَّع
+// المقاعد الوفيرة المبكّرة على غيره — فيُرتاح المُجبَر في يومٍ **قبل** الحدث.
+//
+// مفتاح الاختيار: ① أقلّ حِملًا (توازن، يمنع الإثقال) ② الأقدم حداثةً (يخدم الأحقّ)
+// ③ ترتيب الطاقم (حتميّ). المفتاح نفسه يحقّق «دورةٌ واحدة للعائد ثمّ يدور» (الحِمل
+// يمنع تكديسه) و«الامتصاص قبل الحدث» (الترتيب بالتقييد يُحرّر الأيّام المبكّرة).
+
+export type LookaheadReceipt = {
+  assignments: { seatId: string; from: string; to: string }[]; // التغييرات فقط
+  fullAssignment: { seatId: string; doctorId: string }[];       // القسمة الكاملة (للتدقيق)
+  maxLoadBefore: number;        // أقصى عددِ مقاعدٍ لطبيبٍ واحد — في التوزيع الحاليّ
+  maxLoadAfter: number;         // وبعد النظر-للأمام (يجب ألّا يزيد؛ غالبًا يقلّ)
+  loadAfter: { id: string; name: string; load: number }[];      // حِمل كلّ طبيبٍ بعدُ
+  eligibilityRespected: boolean;
+  conserved: boolean;           // كلّ مقعدٍ أُسنِد لمؤهَّلٍ واحد
+  daysTouched: number[];
+  notes: string[];
+};
+
+/**
+ * حلّال النظر-للأمام: يوزّع مقاعد نافذةٍ كاملةٍ مع وعيٍ بقيود المستقبل، فيوازن الحِمل
+ * ويمتصّ الظلم **عبر كلّ الأيّام التي لم تقع** — بما فيها ما قبل يوم الحدث. **لا يكتب**.
+ * @param seats مقاعد النافذة، أهليّةُ كلٍّ تعكس مَن يصلح له (شاملةً قيود ذلك الشفت).
+ * @param priorLast الحداثة الداخلة من التاريخ الحقيقيّ قبل النافذة.
+ */
+export function solveLookahead(
+  doctors: LoadedDoctor[], seats: HeavySeat[], priorLast: Map<string, string>,
+): LookaheadReceipt {
+  const nameOf = new Map(doctors.map((d) => [d.id, d.name] as const));
+  const rosterIdx = new Map(doctors.map((d, i) => [d.id, i] as const));
+  const tie = (id: string) => rosterIdx.get(id) ?? 0;
+  const last = new Map<string, string>();
+  for (const d of doctors) last.set(d.id, priorLast.get(d.id) ?? '');
+  const load = new Map<string, number>(doctors.map((d) => [d.id, 0]));
+  const takenInStamp = new Map<string, Set<string>>();
+
+  // ① **الأكثر تقييدًا أوّلًا** (أقلّ مؤهَّلين)، ثمّ زمنيًّا، ثمّ بالمعرّف (حتميّ).
+  const ordered = [...seats].sort((a, b) =>
+    a.eligible.length - b.eligible.length || a.stamp.localeCompare(b.stamp) || a.id.localeCompare(b.id));
+
+  let eligibilityRespected = true; let conserved = true;
+  const chosenBy = new Map<string, string>();
+  for (const seat of ordered) {
+    const taken = takenInStamp.get(seat.stamp) ?? new Set<string>();
+    const cands = seat.eligible.filter((id) => !taken.has(id));
+    if (cands.length === 0) { conserved = false; chosenBy.set(seat.id, seat.current); continue; }
+    // ② أقلّ حِملًا ③ الأقدم حداثةً ④ الطاقم.
+    const pick = [...cands].sort((a, b) =>
+      (load.get(a) ?? 0) - (load.get(b) ?? 0)
+      || (last.get(a) ?? '').localeCompare(last.get(b) ?? '')
+      || tie(a) - tie(b))[0]!;
+    if (!seat.eligible.includes(pick)) eligibilityRespected = false;
+    chosenBy.set(seat.id, pick);
+    taken.add(pick); takenInStamp.set(seat.stamp, taken);
+    load.set(pick, (load.get(pick) ?? 0) + 1);
+    if (seat.stamp > (last.get(pick) ?? '')) last.set(pick, seat.stamp);
+  }
+
+  // الحِمل قبل (التوزيع الحاليّ) وبعد (قرار الحلّال).
+  const loadBeforeMap = new Map<string, number>();
+  for (const s of seats) loadBeforeMap.set(s.current, (loadBeforeMap.get(s.current) ?? 0) + 1);
+  const maxLoadBefore = Math.max(0, ...loadBeforeMap.values());
+  const maxLoadAfter = Math.max(0, ...load.values());
+
+  const assignments: LookaheadReceipt['assignments'] = [];
+  const days = new Set<number>();
+  for (const s of seats) {
+    const to = chosenBy.get(s.id)!;
+    if (to !== s.current) {
+      assignments.push({ seatId: s.id, from: nameOf.get(s.current) ?? s.current, to: nameOf.get(to) ?? to });
+      const di = dayOfSeatId(s.id); if (di >= 0) days.add(di);
+    }
+  }
+  const notes: string[] = [];
+  if (assignments.length === 0) notes.push('متوازنٌ أصلًا — لا إعادة قسمة.');
+  else notes.push(`${assignments.length} إعادة قسمة، أقصى حِملٍ ${maxLoadBefore}→${maxLoadAfter}.`);
+
+  return {
+    assignments,
+    fullAssignment: seats.map((s) => ({ seatId: s.id, doctorId: chosenBy.get(s.id)! })),
+    maxLoadBefore, maxLoadAfter,
+    loadAfter: doctors.map((d) => ({ id: d.id, name: d.name, load: load.get(d.id) ?? 0 })).filter((x) => x.load > 0),
+    eligibilityRespected, conserved,
+    daysTouched: [...days].sort((x, y) => x - y),
+    notes,
+  };
+}
+
 /** مقعدٌ ثقيلٌ قابلٌ لإعادة القسمة في شفته (انفراد أو دليقيتر). */
 export type HeavySeat = {
   id: string;            // معرّفٌ للإيصال (مثلاً «الثلاثاء-ص-ع٣»)
