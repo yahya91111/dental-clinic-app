@@ -13,7 +13,7 @@ import type { WeekDay, LoadedSlot } from './schedule';
 import {
   extractHeavySeats, extractReserveSeats, lastHeavyStamps, lastRestStamps,
   solveLookahead, solveHeavyRecency,
-  extractCoverageSeats, solveCoverage, lastClinicStamps,
+  extractCoverageSeats, solveCoverage, lastClinicStamps, lastBoardStamps,
 } from './solver';
 import type { HeavySeat } from './solver';
 
@@ -79,10 +79,10 @@ export async function shadowRebalanceLog(args: { clinicId: string; weekStart: st
 }
 
 /**
- * يطبّق تغطية الغياب (كتابة): يملأ كلّ مقعد عيادةٍ شاغرٍ (خلّفه غائبٌ) ببديلٍ من
- * احتياط الشفت ضمن البِركة، بالعدل (الأطولُ راحةً أوّلًا) وأقلّ لمس. يَكتب خانة عيادةٍ
- * نشطةً للمغطّي ويُزيل صفّ احتياطه (لم يَعُد مستريحًا). idempotent: المقعد المغطَّى
- * أصلًا لا يُكشف شاغرًا. لا بديل؟ يُترَك شاغرًا (نقصٌ صريح) بلا اختلاق. لا يرمي أبدًا.
+ * يطبّق تغطية الغياب (كتابة) لبِركتين: العاديّة (غير البورد) والبورد. لكلٍّ بِركتُه
+ * واحتياطُه وحداثتُه: مقعد العيادة الشاغر يُملأ من احتياط البِركة العاديّة (الأطولُ راحةً)،
+ * ومقعد البورد الشاغر يُملأ من احتياط البورد (الأقدمُ دخولًا). يَكتب خانةً نشطةً للمغطّي
+ * ويُزيل صفّ احتياطه. idempotent (المغطَّى لا يُكشف شاغرًا)، لا بديل؟ نقصٌ صريح، لا يرمي.
  */
 export async function applyCoverage(args: { clinicId: string; weekStart: string; label: string }): Promise<{ filled: number; shortages: number }> {
   if (!applyEnabled(args.clinicId)) return { filled: 0, shortages: 0 };
@@ -90,49 +90,54 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { filled: 0, shortages: 0 };
     const doctors = data.doctors;
+    const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart);
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
     const boardIds = new Set(doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
-    const prior = lastClinicStamps([...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart));
+    // بِركتان: العاديّة (حداثة آخر عمل) والبورد (حداثة آخر دخولٍ للعيادة). كلٌّ يُغطّي
+    // مقاعدَ غياب بِركته فقط من احتياط بِركته فقط — فلا يملأ عاديٌّ مقعدَ بورد ولا العكس.
+    const scopes = [
+      { name: 'COVER', pool: poolIds, prior: lastClinicStamps(history), mine: (id: string) => !boardIds.has(id) },
+      { name: 'BOARD', pool: boardIds, prior: lastBoardStamps(history, boardIds), mine: (id: string) => boardIds.has(id) },
+    ];
     let filled = 0; let shortages = 0;
 
-    for (const day of DAY_OF) {
-      for (const half of [0, 1] as const) {
-        const periods = half === 0 ? [1, 2] : [3, 4];
-        const exCol = half === 0 ? 1 : 2;
-        const dayRows = data.existingSlots.filter((s) => s.dayOfWeek === day);
-        // منظورُ الشفت: خانات العيادة النشطة + صفوف prev_placement ضمن فترات هذا الشفت.
-        const shiftView = dayRows.filter((s) =>
-          (s.status === 'active' && s.role === 'clinic' && periods.includes(s.period))
-          || ((s.role as string) === 'prev_placement' && s.status === 'active' && periods.includes(s.period)));
-        // مقاعد البورد (غيابُ طبيب بورد) ليست من شأن بِركة التغطية — للبورد حلّاله.
-        const vacant = extractCoverageSeats(shiftView).filter((v) => !boardIds.has(v.absentId));
-        if (vacant.length === 0) continue;
-        const availIds = [...new Set(dayRows
-          .filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)
-          .map((s) => s.doctorId))].filter((id) => poolIds.has(id));
-        const rec = solveCoverage(doctors, vacant, availIds, prior);
-        const removedEx = new Set<string>();
-        for (const f of rec.fills) {
-          const name = doctors.find((d) => d.id === f.doctorId)?.name ?? f.doctorId;
-          // أزِل احتياطَ المغطّي لهذا الشفت مرّةً (لم يَعُد مستريحًا).
-          if (!removedEx.has(f.doctorId)) {
-            const exRow = dayRows.find((s) => s.doctorId === f.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
-            if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
-            removedEx.add(f.doctorId);
+    for (const sc of scopes) {
+      for (const day of DAY_OF) {
+        for (const half of [0, 1] as const) {
+          const periods = half === 0 ? [1, 2] : [3, 4];
+          const exCol = half === 0 ? 1 : 2;
+          const dayRows = data.existingSlots.filter((s) => s.dayOfWeek === day);
+          const shiftView = dayRows.filter((s) =>
+            (s.status === 'active' && s.role === 'clinic' && periods.includes(s.period))
+            || ((s.role as string) === 'prev_placement' && s.status === 'active' && periods.includes(s.period)));
+          const vacant = extractCoverageSeats(shiftView).filter((v) => sc.mine(v.absentId));
+          if (vacant.length === 0) continue;
+          const availIds = [...new Set(dayRows
+            .filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)
+            .map((s) => s.doctorId))].filter((id) => sc.pool.has(id));
+          const rec = solveCoverage(doctors, vacant, availIds, sc.prior);
+          const removedEx = new Set<string>();
+          for (const f of rec.fills) {
+            const name = doctors.find((d) => d.id === f.doctorId)?.name ?? f.doctorId;
+            if (!removedEx.has(f.doctorId)) {
+              const exRow = dayRows.find((s) => s.doctorId === f.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+              if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
+              removedEx.add(f.doctorId);
+            }
+            await supabase.from('schedule_slots').insert({
+              clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+              period: f.period, clinic_number: f.clinicNumber,
+              doctor_id: f.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
+            });
+            filled++;
+            // eslint-disable-next-line no-console
+            console.log(`[NEW-HEART ${sc.name} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
           }
-          await supabase.from('schedule_slots').insert({
-            clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
-            period: f.period, clinic_number: f.clinicNumber,
-            doctor_id: f.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
-          });
-          filled++;
-          // eslint-disable-next-line no-console
-          console.log(`[NEW-HEART COVER · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
-        }
-        if (!rec.conserved) {
-          shortages += vacant.length - rec.fills.length;
-          // eslint-disable-next-line no-console
-          console.log(`[NEW-HEART COVER · ${args.label}] نقصٌ: ${vacant.length - rec.fills.length} مقعدٌ بلا بديلٍ (${day}/${half === 0 ? 'ص' : 'م'})`);
+          if (!rec.conserved) {
+            shortages += vacant.length - rec.fills.length;
+            // eslint-disable-next-line no-console
+            console.log(`[NEW-HEART ${sc.name} · ${args.label}] نقصٌ: ${vacant.length - rec.fills.length} مقعدٌ بلا بديلٍ (${day}/${half === 0 ? 'ص' : 'م'})`);
+          }
         }
       }
     }
