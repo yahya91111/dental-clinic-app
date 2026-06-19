@@ -97,6 +97,8 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
     const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart);
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
     const boardIds = new Set(doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
+    // تخفيف العمل: يقدر على **الفترة الأولى فقط** (ف١/ف٣) — مصدرُ تغطيةٍ لها عند الحاجة.
+    const lightDutyIds = new Set(doctors.filter((d) => d.workStatus === 'light_duty').map((d) => d.id));
     // بِركتان: العاديّة (حداثة آخر عمل) والبورد (حداثة آخر دخولٍ للعيادة). كلٌّ يُغطّي
     // مقاعدَ غياب بِركته فقط من احتياط بِركته فقط — فلا يملأ عاديٌّ مقعدَ بورد ولا العكس.
     const scopes = [
@@ -117,26 +119,23 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
           let vacant = extractCoverageSeats(shiftView).filter((v) => sc.mine(v.absentId));
           if (vacant.length === 0) continue;
 
-          // مُطبِّقُ مجموعة فِلٍّ: يحلّ المتبقّي ثمّ يكتب الخانات، ويُزيل صفَّ المصدر —
-          // احتياطٌ (يُحذف صفّ extra) أو دليقيترٌ منفرد (يُنزَل للعيادة: تُحذف خانات دوره).
-          const applyFills = async (avail: string[], src: 'reserve' | 'delegator'): Promise<void> => {
-            if (avail.length === 0 || vacant.length === 0) return;
-            const rec = solveCoverage(doctors, vacant, avail, sc.prior);
-            const removedSrc = new Set<string>();
+          const inClinic = new Set(dayRows.filter((s) => s.status === 'active' && s.role === 'clinic' && periods.includes(s.period)).map((s) => s.doctorId));
+          // يُزيل صفَّ مصدرِ المغطّي: احتياطٌ (extra) أو دليقيتر — أيّهما وُجد (اكتشافٌ تلقائيّ).
+          const removeSource = async (docId: string): Promise<void> => {
+            const exRow = dayRows.find((s) => s.doctorId === docId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+            if (exRow) { await supabase.from('schedule_slots').delete().eq('id', exRow.id); return; }
+            const delRows = dayRows.filter((s) => s.doctorId === docId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period));
+            for (const dr of delRows) await supabase.from('schedule_slots').delete().eq('id', dr.id);
+          };
+          // يحلّ مجموعةَ مقاعدٍ ببدلاء، يكتب، ويُرجِع مقاعدَ مُلئت. لا يمسّ غيرها.
+          const fillWith = async (avail: string[], seats: typeof vacant, tag: string): Promise<Set<string>> => {
             const done = new Set<string>();
+            if (avail.length === 0 || seats.length === 0) return done;
+            const rec = solveCoverage(doctors, seats, avail, sc.prior);
+            const removed = new Set<string>();
             for (const f of rec.fills) {
               const name = doctors.find((d) => d.id === f.doctorId)?.name ?? f.doctorId;
-              if (!removedSrc.has(f.doctorId)) {
-                if (src === 'reserve') {
-                  const exRow = dayRows.find((s) => s.doctorId === f.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
-                  if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
-                } else {
-                  // الدليقيتر المنفرد يَنزِل للعيادة → تُحذف خانتا دوره دليقيترًا في الشفت.
-                  const delRows = dayRows.filter((s) => s.doctorId === f.doctorId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period));
-                  for (const dr of delRows) await supabase.from('schedule_slots').delete().eq('id', dr.id);
-                }
-                removedSrc.add(f.doctorId);
-              }
+              if (!removed.has(f.doctorId)) { await removeSource(f.doctorId); removed.add(f.doctorId); }
               await supabase.from('schedule_slots').insert({
                 clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
                 period: f.period, clinic_number: f.clinicNumber,
@@ -144,22 +143,33 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
               });
               filled++; done.add(f.seatId);
               // eslint-disable-next-line no-console
-              console.log(`[NEW-HEART ${sc.name}${src === 'delegator' ? '·دليقيتر' : ''} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
+              console.log(`[NEW-HEART ${sc.name}${tag} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
             }
-            vacant = vacant.filter((v) => !done.has(v.id));
+            return done;
           };
 
           // مرحلة ١: الاحتياط (المصدر المفضّل — المستريح).
           const reserves = [...new Set(dayRows.filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))].filter((id) => sc.pool.has(id));
-          await applyFills(reserves, 'reserve');
+          let done = await fillWith(reserves, vacant, '');
+          vacant = vacant.filter((v) => !done.has(v.id));
 
-          // مرحلة ٢: الدليقيتر **المنفرد** (دوره دليقيتر فقط، لا عيادة = الفائض الحقيقيّ) —
-          //   مصدرٌ ثانويٌّ يَنزِل للعيادة عند شحّ الاحتياط (٧ على ٣ → ٦ على ٣). البورد بلا دليقيتر.
           if (vacant.length && sc.name === 'COVER') {
-            const inClinic = new Set(dayRows.filter((s) => s.status === 'active' && s.role === 'clinic' && periods.includes(s.period)).map((s) => s.doctorId));
+            // مرحلة ٢: الدليقيتر **المنفرد** من البِركة (الفائض الحقيقيّ) يَنزِل للعيادة (٧→٦ على ٣).
             const soloDelegs = [...new Set(dayRows.filter((s) => s.status === 'active' && s.role === 'delegator' && periods.includes(s.period)).map((s) => s.doctorId))]
               .filter((id) => sc.pool.has(id) && !inClinic.has(id));
-            await applyFills(soloDelegs, 'delegator');
+            done = await fillWith(soloDelegs, vacant, '·دليقيتر');
+            vacant = vacant.filter((v) => !done.has(v.id));
+
+            // مرحلة ٣: تخفيف العمل — يغطّي **الفترة الأولى فقط (ف١/ف٣)** من فائضه (دليقيتر/احتياط).
+            const firstP = vacant.filter((v) => v.period === 1 || v.period === 3);
+            if (firstP.length) {
+              const ldBodies = [...new Set(dayRows.filter((s) =>
+                ((s.status === 'active' && s.role === 'delegator' && periods.includes(s.period))
+                  || (s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)))
+                .map((s) => s.doctorId))].filter((id) => lightDutyIds.has(id) && !inClinic.has(id));
+              done = await fillWith(ldBodies, firstP, '·تخفيف');
+              vacant = vacant.filter((v) => !done.has(v.id));
+            }
           }
 
           if (vacant.length) {
