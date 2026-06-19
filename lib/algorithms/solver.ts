@@ -275,7 +275,7 @@ export function solveLookahead(
 export type HeavySeat = {
   id: string;            // معرّفٌ للإيصال (مثلاً «الثلاثاء-ص-ع٣»)
   stamp: string;         // ختم الشفت الزمنيّ (أسبوع#يوم#صباح|مساء) — للترتيب والحداثة
-  kind: 'solo' | 'delegator' | 'reserve';
+  kind: 'solo' | 'delegator' | 'reserve' | 'board';
   eligible: string[];    // المؤهَّلون المتاحون لهذا المقعد في شفته
   current: string;       // الشاغل الحاليّ (id)
 };
@@ -434,6 +434,32 @@ export function lastRestStamps(historySlots: LoadedSlot[]): Map<string, string> 
   for (const s of historySlots) {
     if (s.status === 'extra' && s.period === 0) bump(s.doctorId, reserveStamp(s));                 // احتياط
     else if (s.status === 'sick_leave' || s.status === 'vacation') bump(s.doctorId, heavyStamp(s)); // غيابٌ = راحة
+  }
+  return last;
+}
+
+// ─── البورد — تناوبٌ على عيادةٍ مشتركة (اثنان داخلها، الباقي احتياط) ───
+// القاعدة: الأقدمُ دخولًا للعيادة يدخلها التالي (الذي استراح خارجها أطولَ يعمل).
+// يلزمه ٣+ أطبّاء بورد ليظهر التناوب (مع اثنين فقط لا تناوب — كلاهما داخلها دومًا).
+
+/** يستخرج مقعدَي عيادة البورد المشتركة لشفت (خانتا العيادة النشطتان لأطبّاء البورد). */
+export function extractBoardSeats(shiftSlots: LoadedSlot[], boardIds: Set<string>): HeavySeat[] {
+  const inClinic = shiftSlots.filter((s) => s.status === 'active' && s.role === 'clinic' && boardIds.has(s.doctorId));
+  if (inClinic.length === 0) return [];
+  const stamp = heavyStamp(inClinic[0]!);
+  // الحاضرون من البورد = داخل العيادة + احتياط البورد ذلك الشفت.
+  const present = shiftSlots.filter((s) => boardIds.has(s.doctorId) && ((s.status === 'active' && s.role === 'clinic') || (s.status === 'extra' && s.period === 0)));
+  const eligible = [...new Set(present.map((s) => s.doctorId))];
+  return inClinic.map((s) => ({ id: `board|${stamp}|p${s.period}`, stamp, kind: 'board' as const, eligible, current: s.doctorId }));
+}
+
+/** آخر دخولٍ لعيادة البورد لكلّ طبيب بورد (active clinic) — للتناوب بالحداثة. */
+export function lastBoardStamps(historySlots: LoadedSlot[], boardIds: Set<string>): Map<string, string> {
+  const last = new Map<string, string>();
+  for (const s of historySlots) {
+    if (s.status === 'active' && s.role === 'clinic' && boardIds.has(s.doctorId)) {
+      const st = heavyStamp(s); if (st > (last.get(s.doctorId) ?? '')) last.set(s.doctorId, st);
+    }
   }
   return last;
 }
