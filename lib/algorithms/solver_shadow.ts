@@ -118,9 +118,31 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       const zName = doctors.find((d) => d.id === Z)?.name ?? Z;
       for (const r of zRows) await supabase.from('schedule_slots').update({ doctor_id: Y, doctor_name: yName }).eq('id', r.id);
       for (const r of yRows) await supabase.from('schedule_slots').update({ doctor_id: Z, doctor_name: zName }).eq('id', r.id);
+
+      // الظلّ يتبع مشرفه: المتدرّب المبتدئ يلازم موضع مدرّبه (نفس عيادته/فترته/دوره).
+      // بعد المبادلة صار Z في موضع yRows وY في موضع zRows → ننقل ظلّ كلٍّ معه، وإلّا
+      // بقي الظلّ في مكانٍ صار لطبيبٍ آخر (هو ما حدث: ظلّ يحيى تخلّف يوم الأحد).
+      const moveShadow = async (supId: string, fromRows: LoadedSlot[], toRows: LoadedSlot[]): Promise<number> => {
+        const fromKeys = new Set(fromRows.map((r) => `${r.clinicNumber}#${r.period}#${r.role}`));
+        const shadows = data.existingSlots.filter((s) => {
+          const dd = doctors.find((d) => d.id === s.doctorId);
+          return dd?.workStatus === 'trainee' && dd.supervisorDoctorId === supId
+            && s.dayOfWeek === day && periods.includes(s.period) && s.status === 'active'
+            && fromKeys.has(`${s.clinicNumber}#${s.period}#${s.role}`);
+        });
+        for (const sh of shadows) {
+          const tgt = toRows.find((t) => t.period === sh.period) ?? toRows[0];
+          if (!tgt) continue;
+          await supabase.from('schedule_slots').update({ clinic_number: tgt.clinicNumber, role: tgt.role }).eq('id', sh.id);
+        }
+        return shadows.length;
+      };
+      const movedShadows = (await moveShadow(Z, zRows, yRows)) + (await moveShadow(Y, yRows, zRows));
+
       applied++;
       // eslint-disable-next-line no-console
-      console.log(`[NEW-HEART APPLY · ${args.label}] بادل ${zName} ⇄ ${yName} (${day}/${half === 0 ? 'ص' : 'م'})`);
+      console.log(`[NEW-HEART APPLY · ${args.label}] بادل ${zName} ⇄ ${yName} (${day}/${half === 0 ? 'ص' : 'م'})`
+        + (movedShadows ? ` · تبعه ${movedShadows} ظلّ` : ''));
     }
     if (applied === 0) console.log(`[NEW-HEART APPLY · ${args.label}] لا تحسينات — يوافق القديم.`);
     return { applied };
