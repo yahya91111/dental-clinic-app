@@ -1187,10 +1187,11 @@ export async function cancelStatus(
     const reclaimUpdates: { id: string; doctor_id: string; doctor_name: string }[] = [];
     const reserveInserts: Record<string, unknown>[] = [];
     if (restoreToPrevPlace && prev.length > 0) {
-      // في وضع apply التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها: مقعدُه الفارغ يُستعاد، ومقعدُ
-      // الاستضافة الذي شغله **مُغطٍّ خالص** (دليقيترٌ بلا عيادةٍ في الشفت = مسحوبٌ من الاحتياط
-      // لتغطية الاستضافة، كحالة الدليقيتر المُقسَّم) يسترّده الطبيبُ ويعود المُغطّي احتياطًا.
-      // أمّا المشغولُ بتنسيبٍ يدويٍّ/طبيبِ عيادةٍ فيقرّر القائد (covered) — لا ندوس عليه.
+      // في وضع apply التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها: مقعدُه الفارغ يُستعاد، ومقعدُه
+      // (عيادةً كان أو استضافة) الذي شغله **مُغطٍّ خالص** — أي لا خانةَ أخرى له في هذا الشفت
+      // سوى المقعد المُسترَدّ، فهو مسحوبٌ من الاحتياط للتغطية — يسترّده الطبيبُ ويعود المُغطّي
+      // احتياطًا (يطابق ما قبل الغياب حرفيًّا، فلا إعادةَ اشتقاق). أمّا المشغولُ بطبيبٍ له خانتُه
+      // الخاصّة هذا الشفت (انفرادُ شريك/تنسيبٌ يدويّ) فيقرّر القائد (covered) — لا ندوس عليه.
       let applyMode = false;
       try { applyMode = (await import('./solver_shadow')).isApplyMode(clinicId); } catch { /* تجاهل */ }
       const reservedBack = new Set<string>();
@@ -1208,20 +1209,25 @@ export async function cancelStatus(
           continue;
         }
         const shiftPs = p.period <= 2 ? [1, 2] : [3, 4];
-        const occHasClinic = rows.some((r) => r.doctor_id === occ.doctor_id && r.status === 'active'
-          && r.role === 'clinic' && shiftPs.includes(r.period));
-        if (applyMode && p.clinic_number === 0 && occ.role === 'delegator' && !occHasClinic) {
+        // هل للمُغطّي خانةٌ أخرى (عيادة/استضافة) في هذا الشفت غيرَ المقعد المُسترَدّ؟
+        //  • لا (مُغطٍّ خالص = مسحوبٌ من الاحتياط) → يعود احتياطًا.
+        //  • نعم (انفرادُ شريك: له مقعدُه ويُغطّي فترةً زائدة) → يبقى بمقعده، نزيل التغطية فقط.
+        const occOther = rows.some((r) => r.doctor_id === occ.doctor_id && r.id !== occ.id && r.status === 'active'
+          && shiftPs.includes(r.period) && (r.role === 'clinic' || r.role === 'delegator'));
+        if (applyMode && (occ.role === 'delegator' || occ.role === 'clinic')) {
           reclaimUpdates.push({ id: occ.id, doctor_id: p.doctor_id, doctor_name: p.doctor_name });
-          const exCol = p.period <= 2 ? 1 : 2;
-          const key = `${occ.doctor_id}|${exCol}`;
-          if (!reservedBack.has(key)) {
-            reservedBack.add(key);
-            reserveInserts.push({
-              clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-              period: 0, clinic_number: exCol,
-              doctor_id: occ.doctor_id, doctor_name: occ.doctor_name,
-              role: 'clinic', status: 'extra', source: 'request',
-            });
+          if (!occOther) {
+            const exCol = p.period <= 2 ? 1 : 2;
+            const key = `${occ.doctor_id}|${exCol}`;
+            if (!reservedBack.has(key)) {
+              reservedBack.add(key);
+              reserveInserts.push({
+                clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+                period: 0, clinic_number: exCol,
+                doctor_id: occ.doctor_id, doctor_name: occ.doctor_name,
+                role: 'clinic', status: 'extra', source: 'request',
+              });
+            }
           }
           restoredCount++;
         } else {
