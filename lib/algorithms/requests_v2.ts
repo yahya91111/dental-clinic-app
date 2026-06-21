@@ -430,6 +430,55 @@ async function returnShadowsWithSupervisor(args: {
   return names;
 }
 
+// ─── لجنةُ التحكيم: تختار أعدلَ مرشَّحٍ حين يوجد أكثرُ من حلٍّ صحيح ───
+const DAY_ORDER: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+
+/** سياقُ العدل لِلجنة التحكيم: حِملُ الاستضافة هذا الأسبوع + آخرُ دورِ استضافةٍ لكلّ
+ *  طبيب (حاضرٌ وماضٍ). نقيس على محور الاستضافة (delegator) لأنّه العبءُ غيرُ المتساوي. */
+async function loadFairnessContext(clinicId: string, weekStart: string): Promise<{ hostLoad: Map<string, number>; lastHost: Map<string, string> }> {
+  const hostLoad = new Map<string, number>(); const lastHost = new Map<string, string>();
+  const { data } = await supabase
+    .from('schedule_slots')
+    .select('doctor_id, week_start, day_of_week, role, status')
+    .eq('clinic_id', clinicId).eq('role', 'delegator').eq('status', 'active').lte('week_start', weekStart);
+  for (const r of (data || []) as { doctor_id: string; week_start: string; day_of_week: string }[]) {
+    const stamp = `${r.week_start}#${DAY_ORDER[r.day_of_week] ?? 0}`;
+    const prev = lastHost.get(r.doctor_id);
+    if (!prev || stamp > prev) lastHost.set(r.doctor_id, stamp);
+    if (r.week_start === weekStart) hostLoad.set(r.doctor_id, (hostLoad.get(r.doctor_id) ?? 0) + 1);
+  }
+  return { hostLoad, lastHost };
+}
+
+/** لجنةُ تحكيمٍ تُشرف على كلّ اختيارٍ فيه أكثرُ من مرشَّح. ثلاثةُ حكّام (مُسجَّلون):
+ *  • الحِملُ (٠٫٤٥): الأقلُّ استضافةً هذا الأسبوع أَولى — لا نُثقِل مُثقَلًا.
+ *  • عدالةُ الدور (٠٫٣٥): الأقدمُ عهدًا بالاستضافة (أو لم يستضِف قطُّ) أَولى — يدور العبء.
+ *  • أقلُّ إخلال (٠٫٢٠): المرشّحُ في العيادة المفضّلة (أقلُّ تغييرًا) أَولى.
+ *  تُطبَّع درجاتُ كلّ حكَمٍ في [٠،١] ثمّ تُوزَن. تعادُلٌ → ترتيبٌ ثابت (رقم العيادة، المعرّف). */
+function judgePanel(
+  cands: Row[],
+  ctx: { hostLoad: Map<string, number>; lastHost: Map<string, string> },
+  preferClinic: number | null,
+): { winner: Row; log: string } {
+  const sorted = [...cands].sort((a, b) => a.clinic_number - b.clinic_number || a.doctor_id.localeCompare(b.doctor_id));
+  if (sorted.length <= 1) return { winner: sorted[0]!, log: '' };
+  const loads = sorted.map((r) => ctx.hostLoad.get(r.doctor_id) ?? 0);
+  const minL = Math.min(...loads); const maxL = Math.max(...loads);
+  const recSorted = [...new Set(sorted.map((r) => ctx.lastHost.get(r.doctor_id) ?? ''))].sort(); // تصاعديًّا: الأقدم أوّلًا
+  const loadNorm = (v: number) => (maxL === minL ? 1 : (maxL - v) / (maxL - minL));
+  const recNorm = (v: string) => (recSorted.length <= 1 ? 1 : 1 - recSorted.indexOf(v) / (recSorted.length - 1));
+  let winner = sorted[0]!; let bestScore = -Infinity; const parts: string[] = [];
+  for (const r of sorted) {
+    const L = ctx.hostLoad.get(r.doctor_id) ?? 0;
+    const sL = loadNorm(L); const sR = recNorm(ctx.lastHost.get(r.doctor_id) ?? '');
+    const sD = preferClinic != null && r.clinic_number === preferClinic ? 1 : 0;
+    const score = 0.45 * sL + 0.35 * sR + 0.20 * sD;
+    parts.push(`${r.doctor_name.split(' ')[0]}=${score.toFixed(2)}[ح${L}]`);
+    if (score > bestScore + 1e-9) { bestScore = score; winner = r; }
+  }
+  return { winner, log: parts.join(' ') };
+}
+
 /**
  * تبديلٌ تلقائيٌّ صامت عند تعارض الاستئذان: المُستأذِن يستلم خانةً في فترةٍ يحجبها
  * استئذانه → يُبادَل مقعده مع طبيبٍ في الفترة الحاضرة كي يعمل وقت حضوره ويُغطَّى المحجوب.
@@ -489,10 +538,14 @@ async function autoResolvePermissionConflict(args: {
     const hasClinic = rows.some((r) => r.doctor_id === doctorId && r.status === 'active' && r.role === 'clinic' && r.period > 0);
     const dedicatedFull = !hasClinic && !!myDelegOpen; // يستضيف الفترتين بلا عيادة (شكل ٧/٣ فما فوق)
     // مرشّحٌ يعمل Pother وحرٌّ تمامًا في المحجوبة (لا عيادة ولا استضافة) — يصلح أن يستضيفها.
-    const promo = rows
-      .filter((r) => canTakeBlocked(r) && !worksPeriod(r.doctor_id, Pblocked))
-      .sort((a, b) => a.clinic_number - b.clinic_number || a.doctor_id.localeCompare(b.doctor_id))[0];
-    if (!promo) return { none: true, reason: 'delegator_left' };
+    // لجنةُ التحكيم تختار الأعدلَ بينهم (لا الأدنى رقمًا): المرشّح يصير مُضيفًا، فالعبءُ
+    // يذهب لِمن هو أقلُّ استضافةً/أقدمُ عهدًا بها.
+    const promoCands = rows.filter((r) => canTakeBlocked(r) && !worksPeriod(r.doctor_id, Pblocked));
+    if (promoCands.length === 0) return { none: true, reason: 'delegator_left' };
+    const fair = await loadFairnessContext(clinicId, weekStart);
+    const judged = judgePanel(promoCands, fair, null);
+    const promo = judged.winner;
+    if (judged.log) console.log(`[لجنة-التحكيم · استضافة ${DAY_AR[day]}] ${judged.log} → ${promo.doctor_name.split(' ')[0]}`);
 
     // (أ) مُضيفٌ متفرّغ → تبديلٌ كامل يحفظ شكلَ المضيف الواحد: promo يصير المضيفَ المتفرّغ
     //     (يستلم استضافة الفترتين)، والمستأذِن ينزل إلى مقعد promo العياديّ في Pother.
@@ -555,12 +608,17 @@ async function autoResolvePermissionConflict(args: {
   };
 
   // المُضيف: عيادةٌ أخرى أوّلًا ثمّ زميل نفس العيادة (الحالة قد تقع على أربع عيادات).
-  // غيره: زميل نفس العيادة أوّلًا، ثمّ عيادة أخرى — الأقلّ إخلالًا بالميزان (مبدئيًّا الأدنى رقمًا).
-  const otherClinic = () => rows.filter((r) => r.clinic_number !== C && eligible(r))
-    .sort((a, b) => a.clinic_number - b.clinic_number)[0];
-  const sameClinic = () => rows.find((r) => r.clinic_number === C && eligible(r));
-  const partner = hostDelegator ? (otherClinic() ?? sameClinic()) : (sameClinic() ?? otherClinic());
-  if (!partner) return { none: true, reason: 'no_candidate' };
+  // غيره: زميل نفس العيادة أوّلًا، ثمّ عيادة أخرى — الأقلّ إخلالًا بالميزان.
+  // نُبقي التفضيلَ البنيويّ (نفس/أخرى) صلبًا، وداخلَ المجموعة المفضّلة تختار لجنةُ
+  // التحكيم الأعدلَ (الأقلّ حِملًا/الأقدم دورًا) بدل أوّل مرشّحٍ رقمًا.
+  const sameC = rows.filter((r) => r.clinic_number === C && eligible(r));
+  const otherC = rows.filter((r) => r.clinic_number !== C && eligible(r));
+  const pool = hostDelegator ? (otherC.length ? otherC : sameC) : (sameC.length ? sameC : otherC);
+  if (pool.length === 0) return { none: true, reason: 'no_candidate' };
+  const fairP = await loadFairnessContext(clinicId, weekStart);
+  const judgedP = judgePanel(pool, fairP, hostDelegator ? null : C);
+  const partner = judgedP.winner;
+  if (judgedP.log) console.log(`[لجنة-التحكيم · تبديل ${DAY_AR[day]}] ${judgedP.log} → ${partner.doctor_name.split(' ')[0]}`);
 
   // مرشّحٌ مُضيفٌ هو الآخر: له دليقيترٌ في الفترة المحجوبة (عكس دليقيتر المُستأذِن).
   // عندها يشغل الآن عيادةً في المحجوبة فلا يسعه دليقيترها → يُحذَف وتبقى فجوة دليقيتر.
