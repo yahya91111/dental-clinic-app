@@ -58,7 +58,7 @@ export type StatusResult = RequestResult & { gaps?: GapLocation[] };
 export type PermissionInfo = {
   conflict: boolean;
   blocked: number[];
-  swap?: { withId: string; withName: string; delegatorGap?: boolean } | { none: true; reason: 'no_candidate' | 'delegator_left' };
+  swap?: { withId: string; withName: string; withClinic: number; withPeriod: number; delegatorGap?: boolean } | { none: true; reason: 'no_candidate' | 'delegator_left' };
   covered?: boolean;
   convertedFromAr?: string;
   wasReserve?: boolean;
@@ -293,18 +293,86 @@ async function autoResolvePermissionConflict(args: {
   clinicId: string; weekStart: string; day: WeekDay;
   doctorId: string; doctorName: string;
   conflictSlots: { period: number; clinic_number: number }[];
-}): Promise<{ withId: string; withName: string; delegatorGap?: boolean } | { none: true; reason: 'no_candidate' | 'delegator_left' }> {
+}): Promise<{ withId: string; withName: string; withClinic: number; withPeriod: number; delegatorGap?: boolean } | { none: true; reason: 'no_candidate' | 'delegator_left' }> {
   const { clinicId, weekStart, day, doctorId, doctorName, conflictSlots } = args;
   const comp = (p: number) => (p === 1 ? 2 : p === 2 ? 1 : p === 3 ? 4 : 3);
 
-  // الدليقيتر بلا زميل عيادة — يُترك شاغرًا
+  // الفترة المحجوبة قد تكون دورَ عيادةٍ (clinicConflict، رقم عيادة>0) أو دورَ استضافة
+  // (دليقيتر، رقم عيادة=0): المُضيف المتفرّغ يستضيف الفترتين بلا عيادة، والمُضيف الزوجيّ
+  // محجوبٌ على فترة استضافته. كلاهما كان القلبُ القديم يتركه شاغرًا (delegator_left).
   const clinicConflict = conflictSlots.find((c) => c.clinic_number > 0);
-  if (!clinicConflict) return { none: true, reason: 'delegator_left' };
-  const Pblocked = clinicConflict.period;
+  const delegConflict = conflictSlots.find((c) => c.clinic_number === 0);
+  const Pblocked = (clinicConflict ?? delegConflict)?.period;
+  if (Pblocked == null) return { none: true, reason: 'delegator_left' };
   const Pother = comp(Pblocked);
-  const C = clinicConflict.clinic_number;
+  const C = clinicConflict?.clinic_number ?? 0;
 
   const rows = await loadDay(clinicId, weekStart, day);
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const lightDuty = new Set(((members || []) as { doctor_id: string; work_status?: string }[])
+    .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id));
+  const worksPeriod = (id: string, p: number) => rows.some(
+    (r) => r.doctor_id === id && r.status === 'active' && r.period === p && (r.role === 'clinic' || r.role === 'delegator'),
+  );
+  // مرشّحٌ يعمل العيادة في الفترة الحاضرة (Pother) ويصلح لاستلام دورٍ في المحجوبة: ليس
+  // المُستأذِن ولا ظلًّا ولا تخفيفًا، وليس غائبًا/محجوبًا عن المحجوبة (فهو سيعمل فيها).
+  const canTakeBlocked = (r: Row): boolean => {
+    if (r.doctor_id === doctorId || r.role !== 'clinic' || r.status !== 'active' || r.period !== Pother || r.clinic_number <= 0) return false;
+    if (r.source === 'shadow' || lightDuty.has(r.doctor_id)) return false;
+    const abs = covererAbsence(rows, r.doctor_id);
+    return !abs.hardAr && !abs.blocked.has(Pblocked);
+  };
+
+  // ═══ الفترة المحجوبة دورُها استضافة (دليقيتر، لا عيادة) ═══
+  // نحلّها بنيويًّا ثمّ يمتصّ القلبُ الجديد (rebalanceForward) دَينَ الدليقيتر عبر الأيّام.
+  if (!clinicConflict) {
+    const myDelegBlocked = rows.find((r) => r.doctor_id === doctorId && r.status === 'active' && r.period === Pblocked && r.role === 'delegator');
+    if (!myDelegBlocked) return { none: true, reason: 'delegator_left' }; // حُلّ أصلًا
+    const myDelegOpen = rows.find((r) => r.doctor_id === doctorId && r.status === 'active' && r.period === Pother && r.role === 'delegator');
+    const hasClinic = rows.some((r) => r.doctor_id === doctorId && r.status === 'active' && r.role === 'clinic' && r.period > 0);
+    const dedicatedFull = !hasClinic && !!myDelegOpen; // يستضيف الفترتين بلا عيادة (شكل ٧/٣ فما فوق)
+    // مرشّحٌ يعمل Pother وحرٌّ تمامًا في المحجوبة (لا عيادة ولا استضافة) — يصلح أن يستضيفها.
+    const promo = rows
+      .filter((r) => canTakeBlocked(r) && !worksPeriod(r.doctor_id, Pblocked))
+      .sort((a, b) => a.clinic_number - b.clinic_number || a.doctor_id.localeCompare(b.doctor_id))[0];
+    if (!promo) return { none: true, reason: 'delegator_left' };
+
+    // (أ) مُضيفٌ متفرّغ → تبديلٌ كامل يحفظ شكلَ المضيف الواحد: promo يصير المضيفَ المتفرّغ
+    //     (يستلم استضافة الفترتين)، والمستأذِن ينزل إلى مقعد promo العياديّ في Pother.
+    if (dedicatedFull) {
+      const snap = [myDelegBlocked, myDelegOpen!].map((s) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: s.period, clinic_number: s.clinic_number,
+        doctor_id: doctorId, doctor_name: doctorName, role: PREV_ROLE, status: 'active', source: 'request',
+      }));
+      await applySlotChanges({
+        updates: [
+          { id: myDelegBlocked.id, doctor_id: promo.doctor_id, doctor_name: promo.doctor_name },
+          { id: myDelegOpen!.id, doctor_id: promo.doctor_id, doctor_name: promo.doctor_name },
+          { id: promo.id, doctor_id: doctorId, doctor_name: doctorName },
+        ],
+        inserts: snap,
+      });
+      await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, promo.doctor_id], preRows: rows });
+      return { withId: promo.doctor_id, withName: promo.doctor_name, withClinic: 0, withPeriod: Pblocked };
+    }
+
+    // (ب) استدعاء (مُضيفٌ زوجيّ محجوبٌ على فترة استضافته): انقل استضافة المحجوبة إلى promo،
+    //     ويبقى المستأذِن في عيادته بالفترة الحاضرة. خانةٌ واحدةٌ تنتقل، والباقي يمتصّه القلب.
+    const snap = [{
+      clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+      period: myDelegBlocked.period, clinic_number: myDelegBlocked.clinic_number,
+      doctor_id: doctorId, doctor_name: doctorName, role: PREV_ROLE, status: 'active', source: 'request',
+    }];
+    await applySlotChanges({
+      updates: [{ id: myDelegBlocked.id, doctor_id: promo.doctor_id, doctor_name: promo.doctor_name }],
+      inserts: snap,
+    });
+    await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, promo.doctor_id], preRows: rows });
+    return { withId: promo.doctor_id, withName: promo.doctor_name, withClinic: 0, withPeriod: Pblocked };
+  }
+
+  // ═══ الفترة المحجوبة دورُها عيادة (المسار الأصليّ) ═══
   // حضور المُستأذِن في الفترة الحاضرة:
   //  • عيادة فيها → يعمل العيادة في الفترتين، لا مقعد يُبادَل إليه → لا بديل.
   //  • دليقيتر فيها (مُضيف) → نبادل مقعد العيادة المحجوب ونُذيب الدليقيتر (يبقى فارغًا).
@@ -319,10 +387,6 @@ async function autoResolvePermissionConflict(args: {
       && r.clinic_number === C && r.role === 'clinic',
   );
   if (!holderSeat) return { none: true, reason: 'no_candidate' };
-
-  const { data: members } = await getAllGroupMembers(clinicId);
-  const lightDuty = new Set(((members || []) as { doctor_id: string; work_status?: string }[])
-    .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id));
 
   // مرشّحٌ صالح: خانة عيادة نشطة في الفترة الحاضرة، ليس المُستأذِن ولا ظلًّا ولا تخفيفًا،
   // وليس غائبًا/مستأذنًا عن الفترة المحجوبة (فهو سيستلمها).
@@ -376,8 +440,8 @@ async function autoResolvePermissionConflict(args: {
   });
   await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, partner.doctor_id], preRows: rows });
   return partnerDelegatorPblocked
-    ? { withId: partner.doctor_id, withName: partner.doctor_name, delegatorGap: true }
-    : { withId: partner.doctor_id, withName: partner.doctor_name };
+    ? { withId: partner.doctor_id, withName: partner.doctor_name, withClinic: C, withPeriod: Pblocked, delegatorGap: true }
+    : { withId: partner.doctor_id, withName: partner.doctor_name, withClinic: C, withPeriod: Pblocked };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -848,7 +912,36 @@ export async function cancelStatus(
             permSwapRecompute = true; // العالم تغيّر — لا عكسٌ آمن
           }
         } else {
-          permSwapRecompute = true; // مُضيفٌ — يُعيد المحرّك الحساب
+          // مُضيفٌ (لقطةٌ من خانة أو خانتين، استضافة و/أو عيادة): التبديلُ عمليّةٌ معروفةٌ
+          // وقابلةٌ للعكس حرفيًّا — لا داعي لإعادة الحساب (التي قد تشتقّ جدولًا مختلفًا).
+          //  • خاناتُ المُستأذِن الأصليّة (اللقطة) يشغلها الآن البديلُ الواحد → نعيدها له.
+          //  • إن نزل المُستأذِن لمقعد البديل (تبديلٌ كامل / مُضيفٌ زوجيّ) نعيد البديلَ إليه؛
+          //    أمّا الاستدعاء (لقطةُ استضافةٍ واحدة، والمُستأذِن باقٍ في عيادته) فلا مقعدَ يُعاد.
+          const origNow = prev.map((p) => rows.find((r) => r.status === 'active' && r.period === p.period
+            && r.doctor_id !== doctorId
+            && (p.clinic_number === 0 ? r.role === 'delegator' : (r.role === 'clinic' && r.clinic_number === p.clinic_number))));
+          const replId = origNow[0]?.doctor_id;
+          const okOrig = !!replId && origNow.every((o) => o && o.doctor_id === replId);
+          // نزل المُستأذِن لمقعد البديل في التبديل الكامل/الزوجيّ (لقطتان أو فيها عيادة)، لا في الاستدعاء.
+          const descended = prev.length >= 2 || prev.some((p) => p.clinic_number > 0);
+          const myExtra = descended
+            ? rows.find((r) => r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator')
+                && r.doctor_id === doctorId && r.period > 0
+                && !prev.some((p) => p.period === r.period && p.clinic_number === r.clinic_number))
+            : undefined;
+          if (okOrig) {
+            const replName = origNow[0]!.doctor_name;
+            await applySlotChanges({
+              updates: [
+                ...origNow.map((o) => ({ id: o!.id, doctor_id: doctorId, doctor_name: myName })),
+                ...(myExtra ? [{ id: myExtra.id, doctor_id: replId!, doctor_name: replName }] : []),
+              ],
+            });
+            await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, replId!], preRows: rows });
+            permSwapReverted = true;
+          } else {
+            permSwapRecompute = true; // العالم تغيّر فعلًا — لا عكسٌ آمن
+          }
         }
       }
       await deleteRows(prev.map((r) => r.id));

@@ -386,6 +386,59 @@ export async function notifyTraineeAttached(args: {
   }
 }
 
+/**
+ * إبلاغ طبيبٍ تغيّر مقعدُه (تعويضُ غيابٍ أو تبديلُ استئذان) — للعلم، يصل صفحة الذكاء
+ * (الجرس) بتفاصيل صريحة: العيادة والفترة واليوم. لكلّ طبيبٍ إشعارٌ واحدٌ ليومه (نحذف
+ * السابق غير المقروء لنفس اليوم فلا يتكرّر). لا يُرسَل للغائب نفسه (هو يعلم).
+ */
+export async function notifyDoctorSeatChange(args: {
+  clinicId: string;
+  recipientId: string;
+  weekStart: string;
+  day: WeekDay;
+  seats: { clinicNumber: number; period: number; solo?: boolean; delegator?: boolean }[];
+  reason?: 'coverage' | 'swap';
+  senderId?: string;
+  senderName?: string;
+}): Promise<NotifResult> {
+  try {
+    if (!args.seats.length) return ok();
+    // أزِل إشعار تغيّرٍ سابقًا غير مقروءٍ لنفس (المتلقّي، الأسبوع، اليوم) — تحديثٌ لا تكرار.
+    const { data: prev } = await supabase
+      .from('notifications')
+      .select('id, data, is_read')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.recipientId)
+      .eq('type', NotifType.REQUEST_RESULT);
+    for (const r of (prev || []) as { id: string; data: any; is_read: boolean }[]) {
+      if (!r.is_read && r.data?.seat_change && r.data?.week_start === args.weekStart && r.data?.day === args.day) {
+        await supabase.from('notifications').delete().eq('id', r.id);
+      }
+    }
+    const parts = args.seats.map((s) => s.delegator
+      ? `دليقيتر الفترة ${s.period}`
+      : `عيادة ${s.clinicNumber} الفترة ${s.period}${s.solo ? ' (منفردًا)' : ''}`);
+    const lead = args.reason === 'swap' ? 'بُدّلت فترتك' : 'تغيّر جدولك';
+    const body = `${lead} يوم ${dayWithDate(args.weekStart, args.day)} — أصبحتَ في ${parts.join('، ')}.`;
+    return await sendInfo({
+      clinicId: args.clinicId, recipientId: args.recipientId,
+      senderId: args.senderId, senderName: args.senderName,
+      type: NotifType.REQUEST_RESULT, title: 'تغيّر جدولك',
+      body,
+      data: {
+        week_start: args.weekStart, day: args.day,
+        seat_change: {
+          reason: args.reason ?? 'coverage',
+          seats: args.seats.map((s) => ({ clinic_number: s.clinicNumber, period: s.period, solo: !!s.solo })),
+        },
+        batch_at: Date.now(),
+      },
+    });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // طلب قرار — التغطية (24 ساعة، أوّل موافقة تُطبّق وتُلغي الباقي)
 // ═══════════════════════════════════════════════════════════════
@@ -716,80 +769,9 @@ async function notifyGroupExhausted(group: string, d: SwapDataV2): Promise<void>
     body: `لم يقبل أحدٌ طلب التبديل يوم ${DAY_AR[d.day]}.`,
     data: { swap_v2: true, swap_group: group },
   });
-  // تبديل استئذان: رُفض هذا الجانب كاملًا → أعِد العرض للجانب الآخر، أو صعّد للقائد.
-  if (d.perm) await escalatePermSwap(d);
-}
-
-/**
- * تصعيد تبديل الاستئذان بعد رفض جانبٍ كاملًا: إن بقي الجانب الآخر (الشفت/الفترة)
- * غير مُجرَّبٍ وفيه مرشّحون → كرتُ ذكاءٍ للطالب يعيد العرض (يضغط بنفسه، أورب أحمر).
- * رُفض الجانبان (أو لا مرشّحين) → كرت «استئذان يحتاج ترتيبًا» للقادة (المشكلة الحقيقيّة).
- */
-async function escalatePermSwap(d: SwapDataV2): Promise<void> {
-  try {
-    if (!d.perm) return;
-    const otherSide: 'same' | 'other' = d.perm.side === 'other' ? 'same' : 'other';
-    // هل جُرّب الجانب الآخر أصلًا لنفس (الطالب، الأسبوع، اليوم)؟
-    const { data: groups } = await supabase
-      .from('notifications')
-      .select('data')
-      .eq('type', NotifType.SWAP_REQUEST)
-      .filter('data->>requester_id', 'eq', d.requester_id)
-      .filter('data->>week_start', 'eq', d.week_start)
-      .filter('data->>day', 'eq', d.day);
-    const triedSides = new Set(
-      ((groups || []) as { data: SwapDataV2 }[]).map((g) => g.data?.perm?.side).filter(Boolean),
-    );
-    if (!triedSides.has(otherSide)) {
-      const { requestsV2 } = await import('./requests_v2');
-      const mode = otherSide === 'other'
-        ? { kind: 'other_shift' as const }
-        : { kind: 'period' as const, period: d.perm.targetPeriod ?? 0 };
-      const listed = await requestsV2.listSwapTargets({
-        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
-        requesterId: d.requester_id, mode, excludePeriods: d.perm.blocked,
-      });
-      if (listed.success && (listed.targets?.length || 0) > 0) {
-        await offerPermRetry(d, otherSide); // كرت ذكاءٍ للطالب — يضغط الجانب الآخر بنفسه
-        return;
-      }
-    }
-    // رُفض الجانبان (أو لا مرشّحين متبقّين) → كرت القائد عند كلّ القادة
-    for (const leaderId of d.perm.leaderIds) {
-      await alertLeaderPermissionConflict({
-        clinicId: d.clinic_id, leaderId,
-        weekStart: d.week_start, day: d.day,
-        doctorId: d.requester_id, doctorName: d.requester_name,
-        statusAr: d.perm.statusAr,
-        senderId: d.requester_id, senderName: d.requester_name,
-      });
-    }
-  } catch { /* التصعيد تحسينٌ — لا يُفشل الرفض */ }
-}
-
-/** كرتُ ذكاءٍ للطالب (أورب أحمر) يعرض زرّ طلب التبديل من الجانب الآخر بعد رفض جانبٍ. */
-async function offerPermRetry(d: SwapDataV2, side: 'same' | 'other'): Promise<void> {
-  if (!d.perm) return;
-  await sendAction({
-    clinicId: d.clinic_id, recipientId: d.requester_id,
-    senderId: d.requester_id, senderName: d.requester_name,
-    type: NotifType.GAP_ALERT, title: 'لم يقبل أحد — جرّب الجانب الآخر',
-    body: side === 'other'
-      ? `لم يقبل أحدٌ التبديل في فترتك يوم ${DAY_AR[d.day]}. تطلب من الشفت الآخر؟`
-      : `لم يقبل أحدٌ من الشفت الآخر يوم ${DAY_AR[d.day]}. تطلب من فترتك؟`,
-    data: {
-      v: 2, clinic_id: d.clinic_id, week_start: d.week_start,
-      perm_retry: {
-        day: d.day, side,
-        blocked: d.perm.blocked,
-        target_period: d.perm.targetPeriod,
-        status_ar: d.perm.statusAr,
-        leader_ids: d.perm.leaderIds,
-        requester_name: d.requester_name,
-      },
-      batch_at: Date.now(),
-    },
-  });
+  // ملاحظة: تصعيدُ تبديل الاستئذان (كرت إعادة العرض للطالب + كرت «استئذان يحتاج ترتيبًا»
+  // للقائد) أُزيل — صار حلُّ تعارض الاستئذان تلقائيًّا بالكامل في محرّك الطلبات/القلب الجديد
+  // (تبديلُ فترةٍ أو نقلُ استضافةٍ ثمّ امتصاصٌ عبر الأيّام)، فلا حاجةَ لجولة قبولٍ يدويّة.
 }
 
 /** إن ماتت المجموعة كلّها (لا معلّق ولا مقبول) → أبلغ الطالب مرّة. */
@@ -1332,24 +1314,24 @@ export async function resolvePlacementV2(args: {
 }
 
 /**
- * v2 — كرت «استئذان يحتاج ترتيبًا»: طبيبٌ استأذن وهو يستلم خانةً في فترةٍ يحجبها
- * استئذانه — كرتُ فعلٍ للقائد (أحمر حتّى يُحلّ): يفتح خيطًا يعرض فيه الذكاء الحال
- * وينفّذ ما يأمر به القائد (تبديل/نقل). يُغلَق تلقائيًّا متى زال التعارض (تبديلٌ
- * نجح أو أُلغي الاستئذان) عبر resolvePermissionAlertV2. لا يُكرَّر لنفس
- * (القائد، الأسبوع، اليوم، الطبيب).
+ * v2 — كرت «تغطية نقص — تحتاج قرارك»: نقصٌ لم يُسدّ بالاحتياطيّ العاديّ، والمتاح
+ * احتياطيًّا **خاصّ** (بورد/متدرّب) لا يُوضع تلقائيًّا. كرتُ فعلٍ للقائد يفتح خيطًا
+ * يعرض فيه الذكاء المرشّحين ويسأله: مَن يُستدعى؟ أو لا أحد. ينفّذ أمره بأداة
+ * cover_gap_with_reserve. لا يُكرَّر لنفس (القائد، الأسبوع، اليوم). يُغلَق متى حُسم.
  */
-export async function alertLeaderPermissionConflict(args: {
+export async function notifyLeaderReserveChoice(args: {
   clinicId: string;
   leaderId: string;
   weekStart: string;
   day: WeekDay;
-  doctorId: string;
-  doctorName: string;
-  statusAr: string;   // «استئذان بداية الدوام» — للجسم والبذرة
+  seats: { clinicNumber: number; period: number }[];
+  candidates: { doctorId: string; doctorName: string; kind: 'board' | 'trainee' }[];
+  absentNames: string[];
   senderId?: string;
   senderName?: string;
 }): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
+    if (!args.seats.length || !args.candidates.length) return { success: false, error: 'لا مقاعد/مرشّحين.' };
     const { data: rows } = await supabase
       .from('notifications')
       .select('id, data, action_status')
@@ -1359,23 +1341,27 @@ export async function alertLeaderPermissionConflict(args: {
     const dup = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find((r) => {
       const d = r.data || {};
       const pending = !r.action_status || r.action_status === 'pending';
-      return pending && d.v === 2 && d.perm_conflict
-        && d.week_start === args.weekStart
-        && d.perm_conflict.day === args.day
-        && d.perm_conflict.doctor_id === args.doctorId;
+      return pending && d.v === 2 && d.reserve_choice
+        && d.week_start === args.weekStart && d.reserve_choice.day === args.day;
     });
     if (dup) return { success: true, id: dup.id };
 
+    const kindAr = (k: 'board' | 'trainee') => (k === 'board' ? 'بورد' : 'متدرّب');
+    const candList = args.candidates.map((c) => `${dr(c.doctorName)} (${kindAr(c.kind)})`).join('، ');
+    const who = args.absentNames.length ? args.absentNames.map(dr).join(' و') : 'النقص';
     const { id, error } = await sendAction({
       clinicId: args.clinicId, recipientId: args.leaderId,
       senderId: args.senderId, senderName: args.senderName,
-      type: NotifType.GAP_ALERT, title: 'استئذان يحتاج ترتيبًا',
-      body: `${dr(args.doctorName)} ${args.statusAr} يوم ${DAY_AR[args.day]} وهو يستلم وقت استئذانه — يلزم تبديل فترة عمله.`,
+      type: NotifType.GAP_ALERT, title: 'تغطية نقص — قرارك',
+      body: `بقي مقعدٌ بلا بديلٍ عاديّ بعد غياب ${who} يوم ${dayWithDate(args.weekStart, args.day)}. ` +
+        `المتاح احتياطيًّا: ${candList}. افتح لتختار مَن يُغطّي أو ألّا تستدعي أحدًا.`,
       data: {
         v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
-        perm_conflict: {
-          day: args.day, doctor_id: args.doctorId,
-          doctor_name: args.doctorName, status_ar: args.statusAr,
+        reserve_choice: {
+          day: args.day,
+          seats: args.seats.map((s) => ({ clinic_number: s.clinicNumber, period: s.period })),
+          candidates: args.candidates.map((c) => ({ doctor_id: c.doctorId, doctor_name: c.doctorName, kind: c.kind })),
+          absent_names: args.absentNames,
         },
         batch_at: Date.now(),
       },
@@ -1387,7 +1373,31 @@ export async function alertLeaderPermissionConflict(args: {
 }
 
 /**
- * v2 — يُغلق كروت «استئذان يحتاج ترتيبًا» عند **كلّ** القادة متى زال التعارض فعلًا.
+ * v2 — بعد حسم كرت «تغطية نقص — تحتاج قرارك» (استدعاء احتياطيّ أو رفض) تُغلَق الكروت
+ * المطابقة عند **كلّ** القادة لنفس (الأسبوع، اليوم). فشله لا يُفشل العمليّة المنفَّذة.
+ */
+export async function resolveReserveChoiceV2(args: {
+  clinicId: string; weekStart: string; day: WeekDay;
+}): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.GAP_ALERT);
+    for (const r of (data || []) as { id: string; data: any; action_status: string | null }[]) {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      if (!pending || d.v !== 2 || !d.reserve_choice) continue;
+      if (d.week_start !== args.weekStart || d.reserve_choice.day !== args.day) continue;
+      await supabase.from('notifications').update({ action_status: 'accepted', is_read: true }).eq('id', r.id);
+    }
+  } catch { /* إغلاق الكروت تحسينٌ — لا يُفشل العمليّة المنفَّذة */ }
+}
+
+/**
+ * v2 — يُغلق كروت «استئذان يحتاج ترتيبًا» القديمة (إن بقي منها شيءٌ من قبل التحويل إلى
+ * الحلّ التلقائيّ) عند **كلّ** القادة متى زال التعارض فعلًا.
  * يُعاد حساب التعارض من الجدول الحيّ (لا ثقة بالحدث المستدعي): الطبيب ما زال
  * مستأذنًا ويستلم خانةً في فترةٍ محجوبة → الكرت يبقى؛ غير ذلك → يُغلَق (تمّ).
  * يُستدعى بعد كلّ تبديلٍ ناجح وبعد إلغاء الحالة. فشله لا يُفشل العمليّة.
@@ -1561,7 +1571,11 @@ export const notifications = {
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
   resolveGapAlert, resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
-  alertLeaderPermissionConflict, resolvePermissionAlertV2,
+  resolvePermissionAlertV2,
+  // كرت سؤال القائد عن استدعاء احتياطيّ خاصّ (بورد/متدرّب)
+  notifyLeaderReserveChoice, resolveReserveChoiceV2,
+  // إبلاغ طبيبٍ تغيّر مقعدُه (تعويض/تبديل)
+  notifyDoctorSeatChange,
   // تعويض النقص (إعادة ترتيب الشفت) — كرت [نفّذ] للقائد
   notifyCoverageFill,
 };

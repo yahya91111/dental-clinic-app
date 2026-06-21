@@ -214,6 +214,37 @@ function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
       `الطبيب العائد: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
     ].join('\n');
   }
+  // كرت «تغطية نقص — قرارك»: بقي مقعدٌ بلا بديلٍ معتاد، والمتاح فئةٌ لا تُستدعى
+  // تلقائيًّا (بورد/متدرّب). الذكاء يعرض الأسماء على القائد ويسأله: مَن يُستدعى أو لا أحد.
+  if (d.reserve_choice) {
+    const rc = d.reserve_choice as {
+      day?: string;
+      seats?: { clinic_number?: number; period?: number }[];
+      candidates?: { doctor_name?: string; kind?: string }[];
+      absent_names?: string[];
+    };
+    const dayAr = DAY_AR_SEED[rc.day || ''] || rc.day || '';
+    const kindAr = (k?: string) => (k === 'board' ? 'بورد' : 'متدرّب');
+    const seatsAr = (rc.seats || []).map((s) => `عيادة ${s.clinic_number} الفترة ${s.period}`).join('، ');
+    const candsAr = (rc.candidates || []).map((c) => `${dr(c.doctor_name)} (${kindAr(c.kind)})`).join('، ');
+    const whoAr = (rc.absent_names || []).map(dr).join(' و');
+    return [
+      'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): غاب طبيبٌ وبقي مقعدُ عيادةٍ بلا بديلٍ معتاد،',
+      'والمتاح لتغطيته الآن من فئةٍ لا تُستدعى تلقائيًّا (بورد/متدرّب). ابدأ أنت الحديث مع',
+      'القائد كأنّك لاحظتَ ذلك بنفسك: أخبره بالمقعد الشاغر، واعرض عليه الأسماء المتاحة',
+      'وخيار **«لا أحد»** صريحًا (ومعناه أنّك تترك التغطية لي أتكفّل بها من المتاح).',
+      'واسأله **سطرًا واحدًا**: هل يستدعي أحدهم (ومن)؟ أم «لا أحد»؟ — بلا ضغطٍ ولا ترجيح.',
+      'إن اختار اسمًا → نفّذ cover_gap_with_reserve (doctorIndex لذلك الاسم، مع العيادة',
+      'والفترة أدناه). إن قال «لا أحد» → نفّذها بـ decline=true (أتكفّل أنا بالتغطية بالمتاح).',
+      'أكّد بسطرٍ بعد التنفيذ.',
+      '',
+      `الأسبوع: ${d.week_start || ''}`,
+      `اليوم: ${rc.day || ''} (${dayAr})`,
+      `الغائب: ${whoAr}`,
+      `المقعد الشاغر: ${seatsAr}`,
+      `المتاح لتغطيته: ${candsAr}`,
+    ].join('\n');
+  }
   // التغطية انتقلت إلى بناء الجدول (كرت coverage_fill) — هذا الكرت لم يعد يُنشأ للنقص.
   return '';
 }
@@ -230,6 +261,12 @@ function coverageTitle(n: ConvoNotif): string {
     const p = d.placement as { day?: string; doctor_name?: string };
     const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
     return `عودة تحتاج مكانًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
+  }
+  if (d.reserve_choice) {
+    const rc = d.reserve_choice as { day?: string; absent_names?: string[] };
+    const dayAr = DAY_AR_SEED[rc.day || ''] || rc.day || '';
+    const who = (rc.absent_names || []).map(dr).join(' و');
+    return `تغطية نقص — قرارك${who ? `: ${who}` : ''}${dayAr ? ` (${dayAr})` : ''}`;
   }
   return 'نقص';
 }
@@ -841,7 +878,7 @@ export function AICardsView({ user, clinicId }: {
               </GlassCard>
             );
           }
-          if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict) return null;
+          if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict && !n.data?.reserve_choice) return null;
           return (
             <CoverageCard key={n.id} notif={n} user={user} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />
           );
@@ -1151,7 +1188,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                       </View>
                     );
                   }
-                  if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict) return null;
+                  if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict && !n.data?.reserve_choice) return null;
                   return (
                     <CoverageCard
                       key={n.id}

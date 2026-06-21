@@ -80,8 +80,8 @@ async function makeSick(doc: Doc, day: WeekDay, weekStart: string) {
     ?? { day, absentId: doc.id, absentName: doc.name, gaps: [], reserves: [] };
   const dayHasGap = (mine.gaps?.length ?? 0) > 0;
 
-  // ٤) لكلّ قائد: إشعار العلم (لغير الفاعل، ولا يُكرَّر إن كانت الحالة مسجّلةً سابقًا)
-  //    + كرت التغطية (للجميع، يُجمَع أيّام الطبيب نفسه؛ upsert يُحدّث الكرت القائم).
+  // ٤) لكلّ قائد: إشعار العلم (لغير الفاعل، ولا يُكرَّر إن كانت الحالة مسجّلةً سابقًا).
+  //    التغطية لم تعد تُجمَع في كرت gap_alert — انتقلت إلى بناء الجدول (coverage_fill).
   for (const leaderId of leaders) {
     if (!duplicate && leaderId !== actor.id) {
       await notifications.notifyLeaderOfRequest({
@@ -90,11 +90,6 @@ async function makeSick(doc: Doc, day: WeekDay, weekStart: string) {
         summary: `مرضية يوم ${DAY_AR[day]}`, weekStart, day,
       });
     }
-    await notifications.upsertLeaderCoverage({
-      clinicId: doc.clinic_id, leaderId, weekStart, day,
-      absentDoctorId: doc.id, absentDoctorName: doc.name,
-      dayBrief: mine, dayHasGap, senderId: doc.id, senderName: doc.name,
-    });
   }
   const tag = duplicate ? '(مسجّلة مسبقًا — أُنعشت الكروت)' : '';
   console.log(`✓ ${doc.name} ${DAY_AR[day]}: مرضية — نقص تغطية: ${dayHasGap ? 'نعم' : 'لا (يُذكَر مغطًّى)'} — قادة: ${leaders.length} ${tag}`);

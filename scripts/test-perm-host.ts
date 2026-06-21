@@ -48,7 +48,7 @@ async function main() {
   check('المُضيف عاد إلى العيادة', !!activeClinic(rows, host.id), 'غير منسَّب');
   check('اللقطة أُزيلت', prevRows(rows, host.id).length === 0, `prev=${prevRows(rows, host.id).length}`);
   check('لا علامة استئذان باقية', !rows.some((r) => r.doctor_id === host.id && r.period === 0 && (r.status === 'permission_start' || r.status === 'permission_end')), '');
-  check('الردّ يذكر إعادة ترتيب الشفت', /أُعيد ترتيب الشفت/.test(raw), raw.slice(0, 90));
+  check('الردّ يذكر العودة للمقعد (عكسٌ حرفيّ)', /عاد إلى مقعده/.test(raw), raw.slice(0, 90));
   const hostSeats = rows.filter((r) => r.doctor_id === host.id && r.status === 'active' && r.period > 0);
   const backClinic = hostSeats.some((r) => r.role === 'clinic');
   const backDelegator = hostSeats.some((r) => r.role === 'delegator');

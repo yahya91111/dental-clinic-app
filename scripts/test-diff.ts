@@ -78,7 +78,7 @@ function snap(slots: LoadedSlot[], day: WeekDay, half: 0 | 1, trainees: Set<stri
         // ② القلب الجديد.
         newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null; await build(cc, deleg);
         await requestsV2.setScheduleStatus({ id: base.doctors[0]!.id, role: 'super_admin' }, { clinicId: CID, weekStart: W, day: v.day, doctorId: v.id, doctorName: v.name, status: 'sick_leave', shift });
-        await applyCoverage({ clinicId: CID, weekStart: W, label: 'diff' });
+        await applyCoverage({ clinicId: CID, weekStart: W, label: 'diff' }, { specialReserves: 'use' });
         await applyNewHeartRebalance({ clinicId: CID, weekStart: W, label: 'diff' });
         const sNew = snap((await loadScheduleData(CID, W)).data!.existingSlots, v.day, v.half, trainees);
 

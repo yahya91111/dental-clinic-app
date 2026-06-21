@@ -1145,6 +1145,16 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
 
     // لصق صفوف الغياب/الاستئذان بعمود شفت الطبيب الصحيح (مشترك مع مسار الحفظ saveSlots).
     await applyColFixes(computeAbsenceColFixes(data.existingSlots, data.doctors, input.aShiftPlan, input.boardConfig));
+
+    // 6.1 امتصاصٌ بعد البناء (وضع apply فقط): يمرّ القلب الجديد على الأسبوع المبنيّ
+    //     فيوازن الحِمل/الراحة فورًا — نفس ما يفعله عند البناء التالي، لكن هنا على الناتج
+    //     نفسه فلا ننتظر أسبوعًا. آمن: خلف العلم، لا يرمي، صفر هزّ (مبادلة دورين نظيفة).
+    try {
+      const sh = await import('./solver_shadow');
+      if (sh.isApplyMode(input.clinicId)) {
+        await sh.applyNewHeartRebalance({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
+      }
+    } catch { /* الامتصاص تحسينٌ اختياريّ — لا يُفشل البناء أبدًا */ }
   }
 
   // 6.5 صفّ "إضافي" للمعاينة: المتغيّبون من DB + المتفرّغون (الاستثناءات اليدويّة)

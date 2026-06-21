@@ -508,6 +508,26 @@ const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
     },
   },
   {
+    name: 'cover_gap_with_reserve',
+    description:
+      'يحسم كرت «تغطية نقص — قرارك»: بقي مقعدٌ شاغرٌ والمتاح احتياطيًّا **خاصّ** (بورد/' +
+      'متدرّب) لا يُوضع تلقائيًّا. إمّا تختار احتياطيًّا (doctorIndex + العيادة/الفترة من ' +
+      'الكرت) فيُوضع، أو decline=true فيُكمل المحرّك التغطية بلا استدعاء أحدٍ منهم. الليدر ' +
+      'فأعلى. **انسخ اليوم والعيادة والفترة من الكرت حرفيًّا — لا تخمّن.**',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS] },
+        decline: { type: 'boolean', description: 'true = لا تستدعِ أحدًا (يكمل المحرّك بلا الاحتياطيّ الخاصّ).' },
+        doctorIndex: { type: 'integer', description: 'رقم الاحتياطيّ المختار — مطلوبٌ إن لم يكن decline.' },
+        clinicNumber: { type: 'integer', description: 'رقم العيادة الشاغرة (من الكرت).' },
+        period: { type: 'integer', enum: [1, 2, 3, 4], description: 'الفترة الشاغرة (من الكرت).' },
+      },
+      required: ['weekStart', 'day'],
+    },
+  },
+  {
     name: 'set_delegator',
     description:
       'يجعل طبيبًا دليقيترًا في يومٍ ما **بدل الدليقيتر الحاليّ** (المحرّك يُزيحه ويبقي ' +
@@ -804,14 +824,58 @@ export async function dispatchRequestToolV2(
         // الفرق محسوبٌ في الكود (لا يُكشَف «إعادة التوزيع» — سرّيّة الآليّة).
         if (status === 'sick_leave' || status === 'vacation') {
           try {
-            const { schedule } = await import('../algorithms/schedule');
+            const { schedule, loadScheduleData } = await import('../algorithms/schedule');
             const { notifications } = await import('../algorithms/notifications');
             const { isApplyMode, applyCoverage, applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
             // القلب الجديد (apply): تغطيةٌ تلقائيّةٌ فوريّةٌ (بلا كرت موافقة) + امتصاص
             // الدليقيتر. القائد وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول.
+            // استثناء: الاحتياطيّ **الخاصّ** (بورد/متدرّب) لا يُوضع تلقائيًّا — يُرجِعه
+            // التغطية pending، فنرسل كرت سؤالٍ للقائد يختار مَن يُستدعى أو يرفض.
             if (isApplyMode(ctx.clinicId)) {
-              await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+              const cov = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
               await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+              if (cov.pending.length) {
+                const sd = (await loadScheduleData(ctx.clinicId, wsEff)).data;
+                const docById = new Map((sd?.doctors ?? []).map((d) => [d.id, d]));
+                const kindOf = (id: string): 'board' | 'trainee' =>
+                  docById.get(id)?.groupTemplate.key === 'board' ? 'board' : 'trainee';
+                const byDay = new Map<string, typeof cov.pending>();
+                for (const p of cov.pending) {
+                  const arr = byDay.get(p.day) ?? []; arr.push(p); byDay.set(p.day, arr);
+                }
+                const leaderIds = await getTeamLeaderIds(ctx.clinicId);
+                for (const [pday, entries] of byDay) {
+                  const seats = entries.map((e) => ({ clinicNumber: e.clinicNumber, period: e.period }));
+                  const candIds = [...new Set(entries.flatMap((e) => e.candidateIds))];
+                  const candidates = candIds.map((id) => ({ doctorId: id, doctorName: docById.get(id)?.name ?? id, kind: kindOf(id) }));
+                  const absentNames = [...new Set(entries.map((e) => e.absentName))];
+                  for (const leaderId of leaderIds) {
+                    await notifications.notifyLeaderReserveChoice({
+                      clinicId: ctx.clinicId, leaderId, weekStart: wsEff,
+                      day: pday as typeof r.day, seats, candidates, absentNames,
+                    });
+                  }
+                }
+              }
+              // إبلاغ كلّ طبيبٍ تحرّك مقعدُه نتيجة التعويض (للعلم، صفحة الذكاء): نجمع
+              // تحرّكاته ليومه ونرسل إشعارًا واحدًا بالعيادة/الفترة الصريحة.
+              const byDoc = new Map<string, { day: typeof r.day; seats: { clinicNumber: number; period: number; solo?: boolean; delegator?: boolean }[] }>();
+              for (const m of cov.moves) {
+                if (m.doctorId === doc.id) continue; // الغائب يعلم
+                const key = `${m.doctorId}|${m.day}`;
+                const e = byDoc.get(key) ?? { day: m.day as typeof r.day, seats: [] };
+                e.seats.push({ clinicNumber: m.clinicNumber, period: m.period, solo: m.kind === 'partner_solo', delegator: m.clinicNumber === 0 });
+                byDoc.set(key, e);
+              }
+              const sender = senderOf(ctx);
+              for (const [key, e] of byDoc) {
+                const docId = key.split('|')[0]!;
+                await notifications.notifyDoctorSeatChange({
+                  clinicId: ctx.clinicId, recipientId: docId, weekStart: wsEff,
+                  day: e.day, seats: e.seats, reason: 'coverage',
+                  senderId: sender.id, senderName: sender.name,
+                });
+              }
             } else {
             const prop = await schedule.proposeCoverageForAbsence({
               clinicId: ctx.clinicId, weekStart: wsEff, day: r.day, absentDoctorId: doc.id,
@@ -868,6 +932,16 @@ export async function dispatchRequestToolV2(
             permSwapAr = self
               ? ` — وبُدّلت فترتك مع ${sw.withName} تلقائيًّا${gap}`
               : ` — وبُدّلت فترته مع ${sw.withName}${gap}`;
+            // أبلِغ الشريك الذي بُدّلت فترته بمقعده الجديد (للعلم، صفحة الذكاء).
+            try {
+              const { notifications } = await import('../algorithms/notifications');
+              const sndr = senderOf(ctx);
+              await notifications.notifyDoctorSeatChange({
+                clinicId: ctx.clinicId, recipientId: sw.withId, weekStart: wsEff,
+                day: r.day, seats: [{ clinicNumber: sw.withClinic, period: sw.withPeriod }], reason: 'swap',
+                senderId: sndr.id, senderName: sndr.name,
+              });
+            } catch { /* الإبلاغ تحسينٌ — لا يُفشل التبديل */ }
           } else if (sw && 'none' in sw) {
             permSwapAr = sw.reason === 'delegator_left'
               ? (self ? ' — ودورك دليقيتر تلك الفترة، تُركت شاغرة وأُبلغ القائد' : ' — ودوره دليقيتر تلك الفترة بلا بديل')
@@ -1334,6 +1408,38 @@ export async function dispatchRequestToolV2(
         const permNote = (res as { permissionNoteAr?: string }).permissionNoteAr;
         return final(`تمّ وضع ${doc.name} في عيادة ${r.clinicNumber} (الفترات ${periods.join('، ')}) ` +
           `يوم ${DAY_AR[r.day]}${permNote ? ` — ${permNote}` : ''}.${moved ? ` و${moved}.` : ''}`);
+      }
+
+      case 'cover_gap_with_reserve': {
+        // قرارٌ للقائد فأعلى — كرت السؤال لا يصل غيرهم، ولا يُحسَم استدعاء احتياطيٍّ خاصّ بطبيب.
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: حسمُ تغطية النقص باستدعاء احتياطيٍّ للقائد فأعلى.';
+        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
+        const ws = String(r.weekStart);
+        const { isApplyMode, applyCoverage, placeReserveInSeat } = await import('../algorithms/solver_shadow');
+        const { notifications } = await import('../algorithms/notifications');
+        if (!isApplyMode(ctx.clinicId)) return 'Tool error: التغطية التلقائيّة غير مفعّلة لهذه العيادة.';
+        if (r.decline) {
+          // «لا أحد»: لا يُستدعى الاحتياطيّ الخاصّ — والذكاء يتكفّل بالتغطية بنفسه من
+          // المتاح (كأنّ ذلك الاحتياطيّ غير موجود: شريك منفرد… إلخ).
+          await applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
+          await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
+          return final(`تمّ — لن نستدعي أحدًا، وسأتكفّل أنا بترتيب التغطية يوم ${DAY_AR[r.day]}.`);
+        }
+        const pick = resolveDoctor(ctx, r.doctorIndex);
+        if (!pick) return 'Tool error: رقم الطبيب غير صالح.';
+        const cNum = Number(r.clinicNumber); const per = Number(r.period);
+        if (!Number.isInteger(cNum) || cNum < 1 || ![1, 2, 3, 4].includes(per)) return 'Tool error: حدّد العيادة والفترة من الكرت.';
+        const pr = await placeReserveInSeat({ clinicId: ctx.clinicId, weekStart: ws, day: r.day, clinicNumber: cNum, period: per, doctorId: pick.id });
+        if (!pr.success) return `Tool error: تعذّر وضع الاحتياطيّ (${pr.reason ?? ''}).`;
+        await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
+        // أبلِغ الاحتياطيّ المختار أنّه أصبح في عيادةٍ ذلك اليوم (للعلم، صفحة الذكاء).
+        const sndr = senderOf(ctx);
+        await notifications.notifyDoctorSeatChange({
+          clinicId: ctx.clinicId, recipientId: pick.id, weekStart: ws,
+          day: r.day, seats: [{ clinicNumber: cNum, period: per }], reason: 'coverage',
+          senderId: sndr.id, senderName: sndr.name,
+        });
+        return final(`تمّ: ${pick.name} يغطّي عيادة ${cNum} الفترة ${per} يوم ${DAY_AR[r.day]}.`);
       }
 
       case 'set_delegator': {

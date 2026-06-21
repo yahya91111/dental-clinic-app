@@ -31,6 +31,21 @@ const applyEnabled = (id: string) => mode() === 'apply' && clinicAllowed(id);
 /** هل القلب الجديد هو الكاتب الوحيد لهذه العيادة؟ (وضع apply) — تستعمله rebalanceForward
  *  لتخطّي حلقتها السببيّة القديمة فلا يتنازع كاتبان. */
 export function isApplyMode(clinicId: string): boolean { return applyEnabled(clinicId); }
+
+/** مقعدٌ شاغرٌ مصدرُه الوحيد احتياطيٌّ **خاصّ** (بورد/متدرّب) — لا يُوضع تلقائيًّا، بل
+ *  يُسأل القائد ويختار. ينتظر النقصُ ردَّه (لا مراحل تغطيةٍ لاحقة قبل القرار). */
+export type PendingReserveChoice = {
+  day: WeekDay; half: 0 | 1; clinicNumber: number; period: number;
+  seatId: string; absentId: string; absentName: string;
+  scope: 'COVER' | 'BOARD'; candidateIds: string[];
+};
+
+/** طبيبٌ تحرّك مقعدُه نتيجة التغطية — لإبلاغه. kind: نزل من الاحتياط/الدليقيتر/التخفيف
+ *  أو شريكٌ صار ينفرد على فترةٍ إضافيّة. */
+export type CoverageMove = {
+  doctorId: string; day: WeekDay; clinicNumber: number; period: number;
+  kind: 'reserve' | 'delegator' | 'light_duty' | 'partner_solo';
+};
 const DAY_IDX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
 const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 
@@ -88,11 +103,19 @@ export async function shadowRebalanceLog(args: { clinicId: string; weekStart: st
  * ومقعد البورد الشاغر يُملأ من احتياط البورد (الأقدمُ دخولًا). يَكتب خانةً نشطةً للمغطّي
  * ويُزيل صفّ احتياطه. idempotent (المغطَّى لا يُكشف شاغرًا)، لا بديل؟ نقصٌ صريح، لا يرمي.
  */
-export async function applyCoverage(args: { clinicId: string; weekStart: string; label: string }): Promise<{ filled: number; shortages: number }> {
-  if (!applyEnabled(args.clinicId)) return { filled: 0, shortages: 0 };
+export async function applyCoverage(
+  args: { clinicId: string; weekStart: string; label: string },
+  opts?: { specialReserves?: 'ask' | 'use' | 'exclude' },
+): Promise<{ filled: number; shortages: number; pending: PendingReserveChoice[]; moves: CoverageMove[] }> {
+  // كيف نتعامل مع الاحتياطيّ **الخاصّ** (بورد/متدرّب) — ثلاث حالات:
+  //  • ask (الافتراضيّ، المسار الحيّ): لا يُوضع تلقائيًّا، يُسجَّل pending ليُسأل القائد.
+  //  • use (محكّ المقارنة، أو «استدعِه»): يُوضع تلقائيًّا كالعاديّ.
+  //  • exclude («لا أحد»/الرفض): لا يُوضع ولا يُسأل — نُكمل بالمصادر الأخرى كأنّه غير موجود.
+  const special = opts?.specialReserves ?? 'ask';
+  if (!applyEnabled(args.clinicId)) return { filled: 0, shortages: 0, pending: [], moves: [] };
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
-    if (!data) return { filled: 0, shortages: 0 };
+    if (!data) return { filled: 0, shortages: 0, pending: [], moves: [] };
     const doctors = data.doctors;
     const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart);
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
@@ -107,6 +130,9 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
       { name: 'BOARD', pool: boardIds, prior: lastBoardStamps(history, boardIds), mine: (id: string) => boardIds.has(id) },
     ];
     let filled = 0; let shortages = 0;
+    const pending: PendingReserveChoice[] = [];
+    const moves: CoverageMove[] = [];
+    const tagKind: Record<string, CoverageMove['kind']> = { '': 'reserve', '·دليقيتر': 'delegator', '·تخفيف': 'light_duty' };
 
     for (const sc of scopes) {
       for (const day of DAY_OF) {
@@ -143,6 +169,7 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
                 doctor_id: f.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
               });
               filled++; done.add(f.seatId);
+              moves.push({ doctorId: f.doctorId, day, clinicNumber: f.clinicNumber, period: f.period, kind: tagKind[tag] ?? 'reserve' });
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART ${sc.name}${tag} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
             }
@@ -150,9 +177,28 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
           };
 
           // مرحلة ١: الاحتياط (المصدر المفضّل — المستريح).
-          const reserves = [...new Set(dayRows.filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))].filter((id) => sc.pool.has(id));
-          let done = await fillWith(reserves, vacant, '');
+          const exIds = [...new Set(dayRows.filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))];
+          const isSpecial = (id: string) => boardIds.has(id) || traineeIds.has(id);
+          // يُملأ تلقائيًّا: احتياطيّ بِركة النطاق. الخاصّ (بورد/متدرّب) يدخل الملء التلقائيّ
+          // فقط في حالة use؛ في ask/exclude لا يُملأ هنا.
+          const autoReserves = exIds.filter((id) => sc.pool.has(id) && (special === 'use' || !isSpecial(id)));
+          let done = await fillWith(autoReserves, vacant, '');
           vacant = vacant.filter((v) => !done.has(v.id));
+
+          // الاحتياطيّ **الخاصّ** (بورد لنطاق البورد، متدرّب لنطاق التغطية) في حالة ask →
+          // لا يُوضع تلقائيًّا: يُسجّل للسؤال، والنقص ينتظر ردّ القائد فنتخطّى مراحل ٢‑٤.
+          if (vacant.length && special === 'ask') {
+            const specialCands = exIds.filter((id) => sc.name === 'BOARD' ? boardIds.has(id) : traineeIds.has(id));
+            if (specialCands.length) {
+              for (const seat of vacant) pending.push({
+                day, half, clinicNumber: seat.clinicNumber, period: seat.period,
+                seatId: seat.id, absentId: seat.absentId,
+                absentName: doctors.find((d) => d.id === seat.absentId)?.name ?? seat.absentId,
+                scope: sc.name as 'COVER' | 'BOARD', candidateIds: specialCands,
+              });
+              continue; // النقص ينتظر القائد — لا مراحل ٢‑٤ قبل قراره
+            }
+          }
 
           if (vacant.length && sc.name === 'COVER') {
             // مرحلة ٢: الدليقيتر **المنفرد** من البِركة (الفائض الحقيقيّ) يَنزِل للعيادة (٧→٦ على ٣).
@@ -190,6 +236,7 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
                 doctor_id: partner.doctorId, doctor_name: partner.doctorName, role: 'clinic', status: 'active', source: 'request',
               });
               filled++;
+              moves.push({ doctorId: partner.doctorId, day, clinicNumber: seat.clinicNumber, period: seat.period, kind: 'partner_solo' });
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART ${sc.name}·منفرد · ${args.label}] ${partner.doctorName} → عيادة ${seat.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${seat.period}) منفردًا`);
             }
@@ -204,11 +251,103 @@ export async function applyCoverage(args: { clinicId: string; weekStart: string;
         }
       }
     }
-    return { filled, shortages };
+
+    // ── المرحلة الثانية: تغطية **الدليقيتر** الغائب (مقعده رقمُ عيادةٍ = 0 فتتخطّاه
+    // تغطيةُ العيادة). نعيد التحميل لحالةٍ دقيقة (الاحتياط المستهلَك في تغطية العيادة
+    // اختفى)، ونملأ مقعد الدليقيتر الشاغر من احتياطٍ متاحٍ (دورٌ مساعد: لا احتياط؟ نتركه).
+    try {
+      const { data: d2 } = await loadScheduleData(args.clinicId, args.weekStart);
+      if (d2) {
+        const delRecency = lastHeavyStamps(history); // حداثة الدليقيتر (آخر دور) لاختيار البديل عدلًا
+        for (const day of DAY_OF) {
+          for (const half of [0, 1] as const) {
+            const periods = half === 0 ? [1, 2] : [3, 4];
+            const exCol = half === 0 ? 1 : 2;
+            const rows = d2.existingSlots.filter((s) => s.dayOfWeek === day);
+            // مقاعد دليقيتر شاغرة: حفظُ غيابٍ (prev_placement) برقم عيادةٍ صفر لطبيب بِركة.
+            const vac = rows.filter((s) => (s.role as string) === 'prev_placement' && s.status === 'active'
+              && s.clinicNumber === 0 && periods.includes(s.period) && poolIds.has(s.doctorId));
+            if (!vac.length) continue;
+            // الفترات التي فيها دليقيترٌ نشطٌ أصلًا (مُغطّاة) — نتخطّاها.
+            const hasDeleg = new Set(rows.filter((s) => s.status === 'active' && s.role === 'delegator' && periods.includes(s.period)).map((s) => s.period));
+            const need = vac.filter((v) => !hasDeleg.has(v.period));
+            if (!need.length) continue;
+            const inClinic = new Set(rows.filter((s) => s.status === 'active' && s.role === 'clinic' && periods.includes(s.period)).map((s) => s.doctorId));
+            const freeRes = [...new Set(rows.filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))]
+              .filter((id) => poolIds.has(id) && !inClinic.has(id))
+              // نفس قاعدة التوزيع: الدليقيتر يُسحب بحداثة الدليقيتر (الأقدمُ دورًا أوّلًا).
+              .sort((a, b) => (delRecency.get(a) ?? '').localeCompare(delRecency.get(b) ?? ''));
+            for (const v of need) {
+              const pick = freeRes.shift();
+              if (!pick) break; // لا احتياط متاح → نترك الدليقيتر (دورٌ مساعد، لا نقصٌ حرج)
+              const name = d2.doctors.find((d) => d.id === pick)?.name ?? pick;
+              const ex = rows.find((s) => s.doctorId === pick && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+              if (ex) await supabase.from('schedule_slots').delete().eq('id', ex.id);
+              await supabase.from('schedule_slots').insert({
+                clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+                period: v.period, clinic_number: 0,
+                doctor_id: pick, doctor_name: name, role: 'delegator', status: 'active', source: 'request',
+              });
+              filled++;
+              moves.push({ doctorId: pick, day, clinicNumber: 0, period: v.period, kind: 'delegator' });
+              // eslint-disable-next-line no-console
+              console.log(`[NEW-HEART COVER·دليقيتر · ${args.label}] ${name} → دليقيتر (${day}/${half === 0 ? 'ص' : 'م'} ف${v.period})`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log('[NEW-HEART COVER·دليقيتر] تعذّر:', e instanceof Error ? e.message : e);
+    }
+
+    return { filled, shortages, pending, moves };
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log('[NEW-HEART COVER] تعذّر:', e instanceof Error ? e.message : e);
-    return { filled: 0, shortages: 0 };
+    return { filled: 0, shortages: 0, pending: [], moves: [] };
+  }
+}
+
+/**
+ * يضع احتياطيًّا خاصًّا (بورد/متدرّب) اختاره القائد في مقعدٍ شاغرٍ محدّد — مسار «القبول»
+ * لكرت السؤال. يكتب خانة عيادةٍ نشطةً ويُزيل صفّ احتياطه ذلك اليوم. آمن: لا يضع إن
+ * كان المقعد مأهولًا أصلًا، ولا يعمل إلا في وضع apply. يُرجِع ما إن وُضع.
+ */
+export async function placeReserveInSeat(args: {
+  clinicId: string; weekStart: string; day: WeekDay;
+  clinicNumber: number; period: number; doctorId: string;
+}): Promise<{ success: boolean; reason?: string }> {
+  if (!applyEnabled(args.clinicId)) return { success: false, reason: 'not_apply' };
+  try {
+    const { data } = await loadScheduleData(args.clinicId, args.weekStart);
+    if (!data) return { success: false, reason: 'no_data' };
+    const dayRows = data.existingSlots.filter((s) => s.dayOfWeek === args.day);
+    // المقعد مأهولٌ أصلًا؟ لا نُكرّر (idempotent).
+    const taken = dayRows.some((s) => s.status === 'active' && s.role === 'clinic'
+      && s.clinicNumber === args.clinicNumber && s.period === args.period);
+    if (taken) return { success: false, reason: 'seat_taken' };
+    const name = data.doctors.find((d) => d.id === args.doctorId)?.name ?? args.doctorId;
+    const exCol = args.period <= 2 ? 1 : 2;
+    const periods = exCol === 1 ? [1, 2] : [3, 4];
+    // أزِل صفّ احتياطه (extra) أو دوره دليقيترًا في هذا الشفت — أيّهما وُجد.
+    const exRow = dayRows.find((s) => s.doctorId === args.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+    if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
+    else for (const dr of dayRows.filter((s) => s.doctorId === args.doctorId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period))) {
+      await supabase.from('schedule_slots').delete().eq('id', dr.id);
+    }
+    await supabase.from('schedule_slots').insert({
+      clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: args.day,
+      period: args.period, clinic_number: args.clinicNumber,
+      doctor_id: args.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[NEW-HEART RESERVE-PICK] ${name} → عيادة ${args.clinicNumber} (${args.day} ف${args.period}) بأمر القائد`);
+    return { success: true };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[NEW-HEART RESERVE-PICK] تعذّر:', e instanceof Error ? e.message : e);
+    return { success: false, reason: 'error' };
   }
 }
 
@@ -229,14 +368,26 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
 
     const delSeats: HeavySeat[] = [];
     for (const day of DAY_OF) {
-      const ss = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day] && [1, 2].includes(s.period));
-      delSeats.push(...extractHeavySeats(ss, poolIds));
+      const dayRows = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day]);
+      // محجوبون باستئذانٍ صباحيّ (عمود ١): المضيفُ يعمل الفترتين، فمن حُجبت إحدى فترتيه
+      // لا يصلح مضيفًا — نستبعده من أهليّة مقعد الاستضافة كي لا تُعيد الموازنةُ الدورَ إليه
+      // فتنقُض حلَّ الاستئذان. (نُبقي الشاغل الحاليّ احترازًا من أهليّةٍ فارغة.)
+      const permBlocked = new Set(dayRows
+        .filter((s) => s.period === 0 && s.clinicNumber === 1 && (s.status === 'permission_start' || s.status === 'permission_end'))
+        .map((s) => s.doctorId));
+      const ss = dayRows.filter((s) => [1, 2].includes(s.period));
+      for (const seat of extractHeavySeats(ss, poolIds)) {
+        if (permBlocked.size) seat.eligible = seat.eligible.filter((id) => id === seat.current || !permBlocked.has(id));
+        delSeats.push(seat);
+      }
     }
     delSeats.sort((a, b) => a.stamp.localeCompare(b.stamp));
     if (delSeats.length === 0) return { applied: 0 };
     const rec = solveLookahead(doctors, delSeats, lastHeavyStamps(all.filter((s) => s.weekStart < args.weekStart)));
 
     let applied = 0;
+    // المدرّبون الذين مسّتهم مبادلةٌ (يوم|مُعرّف) — نُعيد محاذاة ظلالهم لموضعهم النهائيّ بعد الكلّ.
+    const touched = new Set<string>();
     for (const fa of rec.fullAssignment) {
       const seat = delSeats.find((s) => s.id === fa.seatId)!;
       const Z = seat.current; const Y = fa.doctorId;
@@ -253,31 +404,44 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       const zName = doctors.find((d) => d.id === Z)?.name ?? Z;
       for (const r of zRows) await supabase.from('schedule_slots').update({ doctor_id: Y, doctor_name: yName }).eq('id', r.id);
       for (const r of yRows) await supabase.from('schedule_slots').update({ doctor_id: Z, doctor_name: zName }).eq('id', r.id);
-
-      // الظلّ يتبع مشرفه: المتدرّب المبتدئ يلازم موضع مدرّبه (نفس عيادته/فترته/دوره).
-      // بعد المبادلة صار Z في موضع yRows وY في موضع zRows → ننقل ظلّ كلٍّ معه، وإلّا
-      // بقي الظلّ في مكانٍ صار لطبيبٍ آخر (هو ما حدث: ظلّ يحيى تخلّف يوم الأحد).
-      const moveShadow = async (supId: string, fromRows: LoadedSlot[], toRows: LoadedSlot[]): Promise<number> => {
-        const fromKeys = new Set(fromRows.map((r) => `${r.clinicNumber}#${r.period}#${r.role}`));
-        const shadows = data.existingSlots.filter((s) => {
-          const dd = doctors.find((d) => d.id === s.doctorId);
-          return dd?.workStatus === 'trainee' && dd.supervisorDoctorId === supId
-            && s.dayOfWeek === day && periods.includes(s.period) && s.status === 'active'
-            && fromKeys.has(`${s.clinicNumber}#${s.period}#${s.role}`);
-        });
-        for (const sh of shadows) {
-          const tgt = toRows.find((t) => t.period === sh.period) ?? toRows[0];
-          if (!tgt) continue;
-          await supabase.from('schedule_slots').update({ clinic_number: tgt.clinicNumber, role: tgt.role }).eq('id', sh.id);
-        }
-        return shadows.length;
-      };
-      const movedShadows = (await moveShadow(Z, zRows, yRows)) + (await moveShadow(Y, yRows, zRows));
+      touched.add(`${day}|${Z}`); touched.add(`${day}|${Y}`);
 
       applied++;
       // eslint-disable-next-line no-console
-      console.log(`[NEW-HEART APPLY · ${args.label}] بادل ${zName} ⇄ ${yName} (${day}/${half === 0 ? 'ص' : 'م'})`
-        + (movedShadows ? ` · تبعه ${movedShadows} ظلّ` : ''));
+      console.log(`[NEW-HEART APPLY · ${args.label}] بادل ${zName} ⇄ ${yName} (${day}/${half === 0 ? 'ص' : 'م'})`);
+    }
+
+    // الظلّ يتبع مشرفه: بعد **كلّ** المبادلات نُعيد محاذاة ظلّ كلّ مدرّبٍ مسّته مبادلةٌ
+    // إلى موضع مدرّبه **النهائيّ** (عيادة/فترة/دور). المحاذاة للحالة النهائيّة أمتنُ من
+    // تتبّعٍ جزئيٍّ لكلّ مبادلة (الذي تخلّف عنه الظلّ حين تعدّدت المبادلات أو اختلف الدور).
+    if (touched.size) {
+      const inScope = (s: LoadedSlot) => s.period > 0 && s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator');
+      const keysIn = (rows: LoadedSlot[], id: string, dy: string) =>
+        rows.filter((r) => r.doctorId === id && r.dayOfWeek === dy && inScope(r)).map((r) => `${r.period}|${r.clinicNumber}|${r.role}`);
+      const { data: after } = await loadScheduleData(args.clinicId, args.weekStart);
+      if (after) {
+        for (const key of touched) {
+          const [dy, supId] = key.split('|');
+          if (!dy || !supId) continue;
+          // الظلّ: متدرّبٌ خاناتُه **قبل** المبادلات طابقت خانات مدرّبه تمامًا (data قبل الكتابة).
+          const shadows = doctors.filter((d) => {
+            if (d.workStatus !== 'trainee' || d.supervisorDoctorId !== supId) return false;
+            const tk = keysIn(data.existingSlots, d.id, dy);
+            const sk = new Set(keysIn(data.existingSlots, supId, dy));
+            return tk.length > 0 && tk.length === sk.size && tk.every((k) => sk.has(k));
+          });
+          for (const t of shadows) {
+            const supNow = after.existingSlots.filter((r) => r.doctorId === supId && r.dayOfWeek === dy && inScope(r));
+            const tOld = after.existingSlots.filter((r) => r.doctorId === t.id && r.dayOfWeek === dy && inScope(r));
+            for (const o of tOld) await supabase.from('schedule_slots').delete().eq('id', o.id);
+            for (const r of supNow) await supabase.from('schedule_slots').insert({
+              clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: dy,
+              period: r.period, clinic_number: r.clinicNumber,
+              doctor_id: t.id, doctor_name: t.name, role: r.role, status: 'active', source: 'request',
+            });
+          }
+        }
+      }
     }
     if (applied === 0) console.log(`[NEW-HEART APPLY · ${args.label}] لا تحسينات — يوافق القديم.`);
     return { applied };

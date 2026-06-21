@@ -23,22 +23,30 @@
     {
       "id": "d6",
       "name": "علي"
+    },
+    {
+      "id": "d7",
+      "name": "عمر"
+    },
+    {
+      "id": "d8",
+      "name": "زيد"
     }
   ],
   "weeks": [
-    "2026-08-13",
-    "2026-08-20"
+    "2026-09-03",
+    "2026-09-10"
   ],
   "baseline": {
-    "2026-08-13": {
+    "2026-09-03": {
       "sunday": [
         {
           "day": "sunday",
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -47,7 +55,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -56,66 +64,6 @@
           "day": "sunday",
           "period": 2,
           "clinicNumber": 1,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "sunday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
-          "period": 1,
-          "clinicNumber": 2,
           "doctor": {
             "id": "d3",
             "name": "خالد",
@@ -134,7 +82,7 @@
         },
         {
           "day": "sunday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 2,
           "doctor": {
             "id": "d4",
@@ -154,8 +102,8 @@
         },
         {
           "day": "sunday",
-          "period": 1,
-          "clinicNumber": 3,
+          "period": 2,
+          "clinicNumber": 2,
           "doctor": {
             "id": "d5",
             "name": "فهد",
@@ -174,7 +122,7 @@
         },
         {
           "day": "sunday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 3,
           "doctor": {
             "id": "d6",
@@ -191,6 +139,86 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "monday": [
@@ -199,8 +227,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -209,7 +237,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -219,26 +247,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
             "id": "d4",
             "name": "سعد",
             "groupTemplate": {
@@ -252,35 +260,15 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "delegator"
-        },
-        {
-          "day": "monday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
+          "role": "clinic"
         },
         {
           "day": "monday",
           "period": 1,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d2",
-            "name": "أحمد",
+            "id": "d3",
+            "name": "خالد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -299,8 +287,8 @@
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d5",
+            "name": "فهد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -317,6 +305,26 @@
         {
           "day": "monday",
           "period": 1,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 2,
           "clinicNumber": 3,
           "doctor": {
             "id": "d6",
@@ -336,11 +344,11 @@
         },
         {
           "day": "monday",
-          "period": 2,
-          "clinicNumber": 3,
+          "period": 1,
+          "clinicNumber": 0,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d1",
+            "name": "محمد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -352,7 +360,47 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "tuesday": [
@@ -361,8 +409,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -371,7 +419,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -380,86 +428,6 @@
           "day": "tuesday",
           "period": 2,
           "clinicNumber": 1,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d5",
-            "name": "فهد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 2,
-          "clinicNumber": 2,
           "doctor": {
             "id": "d2",
             "name": "أحمد",
@@ -479,10 +447,50 @@
         {
           "day": "tuesday",
           "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d6",
+            "name": "علي",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -501,6 +509,26 @@
           "period": 2,
           "clinicNumber": 3,
           "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
             "id": "d4",
             "name": "سعد",
             "groupTemplate": {
@@ -514,7 +542,47 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "wednesday": [
@@ -523,8 +591,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d2",
-            "name": "أحمد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -533,7 +601,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -542,106 +610,6 @@
           "day": "wednesday",
           "period": 2,
           "clinicNumber": 1,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 3,
           "doctor": {
             "id": "d6",
             "name": "علي",
@@ -660,7 +628,47 @@
         },
         {
           "day": "wednesday",
+          "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
           "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 1,
           "clinicNumber": 3,
           "doctor": {
             "id": "d5",
@@ -677,6 +685,86 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "wednesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "thursday": [
@@ -685,8 +773,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -695,7 +783,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -704,66 +792,6 @@
           "day": "thursday",
           "period": 2,
           "clinicNumber": 1,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "thursday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "thursday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "thursday",
-          "period": 1,
-          "clinicNumber": 2,
           "doctor": {
             "id": "d1",
             "name": "محمد",
@@ -782,7 +810,7 @@
         },
         {
           "day": "thursday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 2,
           "doctor": {
             "id": "d2",
@@ -802,11 +830,31 @@
         },
         {
           "day": "thursday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "thursday",
           "period": 1,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -825,6 +873,26 @@
           "period": 2,
           "clinicNumber": 3,
           "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "thursday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
             "id": "d6",
             "name": "علي",
             "groupTemplate": {
@@ -838,19 +906,59 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ]
     },
-    "2026-08-20": {
+    "2026-09-10": {
       "sunday": [
         {
           "day": "sunday",
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d6",
-            "name": "علي",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -859,7 +967,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -869,8 +977,8 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -886,67 +994,7 @@
         },
         {
           "day": "sunday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
           "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d5",
-            "name": "فهد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "sunday",
-          "period": 2,
           "clinicNumber": 2,
           "doctor": {
             "id": "d1",
@@ -966,7 +1014,47 @@
         },
         {
           "day": "sunday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
           "period": 1,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
           "clinicNumber": 3,
           "doctor": {
             "id": "d4",
@@ -986,11 +1074,11 @@
         },
         {
           "day": "sunday",
-          "period": 2,
-          "clinicNumber": 3,
+          "period": 1,
+          "clinicNumber": 0,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d5",
+            "name": "فهد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1002,7 +1090,47 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "monday": [
@@ -1011,8 +1139,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d2",
+            "name": "أحمد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1031,26 +1159,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
             "id": "d1",
             "name": "محمد",
             "groupTemplate": {
@@ -1064,35 +1172,15 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "delegator"
-        },
-        {
-          "day": "monday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
+          "role": "clinic"
         },
         {
           "day": "monday",
           "period": 1,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d4",
+            "name": "سعد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1111,8 +1199,8 @@
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d3",
+            "name": "خالد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1165,6 +1253,66 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "tuesday": [
@@ -1173,8 +1321,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d1",
+            "name": "محمد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1193,66 +1341,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
             "id": "d2",
             "name": "أحمد",
             "groupTemplate": {
@@ -1270,11 +1358,31 @@
         },
         {
           "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d4",
+            "name": "سعد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1327,6 +1435,66 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "wednesday": [
@@ -1335,8 +1503,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1345,7 +1513,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -1355,26 +1523,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
             "id": "d5",
             "name": "فهد",
             "groupTemplate": {
@@ -1388,35 +1536,15 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "delegator"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
+          "role": "clinic"
         },
         {
           "day": "wednesday",
           "period": 1,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d4",
+            "name": "سعد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1434,26 +1562,6 @@
           "day": "wednesday",
           "period": 2,
           "clinicNumber": 2,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 3,
           "doctor": {
             "id": "d3",
             "name": "خالد",
@@ -1472,11 +1580,11 @@
         },
         {
           "day": "wednesday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1489,6 +1597,86 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "wednesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "thursday": [
@@ -1497,8 +1685,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d2",
-            "name": "أحمد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1507,7 +1695,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -1517,8 +1705,8 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d3",
+            "name": "خالد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1531,46 +1719,6 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
-        },
-        {
-          "day": "thursday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "thursday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
         },
         {
           "day": "thursday",
@@ -1597,8 +1745,8 @@
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d5",
+            "name": "فهد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1637,8 +1785,8 @@
           "period": 2,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1651,20 +1799,80 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "thursday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ]
     }
   },
   "current": {
-    "2026-08-13": {
+    "2026-09-03": {
       "sunday": [
         {
           "day": "sunday",
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1673,7 +1881,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -1682,66 +1890,6 @@
           "day": "sunday",
           "period": 2,
           "clinicNumber": 1,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "sunday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
-          "period": 1,
-          "clinicNumber": 2,
           "doctor": {
             "id": "d3",
             "name": "خالد",
@@ -1760,7 +1908,7 @@
         },
         {
           "day": "sunday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 2,
           "doctor": {
             "id": "d4",
@@ -1780,6 +1928,572 @@
         },
         {
           "day": "sunday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 1,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
+        }
+      ],
+      "monday": [
+        {
+          "day": "monday",
+          "period": 1,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 1,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
+        }
+      ],
+      "tuesday": [
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
+        }
+      ],
+      "wednesday": [
+        {
+          "day": "wednesday",
+          "period": 1,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
           "period": 1,
           "clinicNumber": 3,
           "doctor": {
@@ -1799,12 +2513,12 @@
           "role": "clinic"
         },
         {
-          "day": "sunday",
+          "day": "wednesday",
           "period": 2,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d6",
-            "name": "علي",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -1817,12 +2531,10 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
-        }
-      ],
-      "monday": [
+        },
         {
-          "day": "monday",
-          "period": 1,
+          "day": "wednesday",
+          "period": 0,
           "clinicNumber": 1,
           "doctor": {
             "id": "d4",
@@ -1838,419 +2550,25 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "ex"
         },
         {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 1,
-          "doctor": {
-            "id": "d5",
-            "name": "فهد"
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "monday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d5",
-            "name": "فهد"
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "monday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 1,
-          "clinicNumber": 3,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 3,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد"
-          },
-          "role": "clinic"
-        }
-      ],
-      "tuesday": [
-        {
-          "day": "tuesday",
-          "period": 2,
-          "clinicNumber": 1,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 3,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
+          "role": "delegator",
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 2,
-          "clinicNumber": 3,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
+            "id": "d6",
+            "name": "علي"
+          }
         },
         {
           "role": "delegator",
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد"
-          }
-        },
-        {
-          "role": "clinic",
-          "period": 2,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد"
-          }
-        }
-      ],
-      "wednesday": [
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 1,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 1,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 3,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 3,
-          "doctor": {
             "id": "d5",
-            "name": "فهد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
+            "name": "فهد"
+          }
         }
       ],
       "thursday": [
@@ -2259,8 +2577,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2269,7 +2587,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -2278,66 +2596,6 @@
           "day": "thursday",
           "period": 2,
           "clinicNumber": 1,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "thursday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "thursday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "thursday",
-          "period": 1,
-          "clinicNumber": 2,
           "doctor": {
             "id": "d1",
             "name": "محمد",
@@ -2356,7 +2614,7 @@
         },
         {
           "day": "thursday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 2,
           "doctor": {
             "id": "d2",
@@ -2376,11 +2634,31 @@
         },
         {
           "day": "thursday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "thursday",
           "period": 1,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2399,6 +2677,26 @@
           "period": 2,
           "clinicNumber": 3,
           "doctor": {
+            "id": "d4",
+            "name": "سعد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "thursday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
             "id": "d6",
             "name": "علي",
             "groupTemplate": {
@@ -2412,19 +2710,59 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ]
     },
-    "2026-08-20": {
+    "2026-09-10": {
       "sunday": [
         {
           "day": "sunday",
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d6",
-            "name": "علي",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2433,7 +2771,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -2443,8 +2781,8 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2460,67 +2798,7 @@
         },
         {
           "day": "sunday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
           "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d5",
-            "name": "فهد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "sunday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "sunday",
-          "period": 2,
           "clinicNumber": 2,
           "doctor": {
             "id": "d1",
@@ -2540,7 +2818,47 @@
         },
         {
           "day": "sunday",
+          "period": 2,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
           "period": 1,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
           "clinicNumber": 3,
           "doctor": {
             "id": "d4",
@@ -2560,11 +2878,11 @@
         },
         {
           "day": "sunday",
-          "period": 2,
-          "clinicNumber": 3,
+          "period": 1,
+          "clinicNumber": 0,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d5",
+            "name": "فهد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2576,7 +2894,47 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "clinic"
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d5",
+            "name": "فهد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "sunday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "monday": [
@@ -2585,8 +2943,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d2",
+            "name": "أحمد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2605,26 +2963,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "monday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
             "id": "d1",
             "name": "محمد",
             "groupTemplate": {
@@ -2638,35 +2976,15 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "delegator"
-        },
-        {
-          "day": "monday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
+          "role": "clinic"
         },
         {
           "day": "monday",
           "period": 1,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d4",
+            "name": "سعد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2685,8 +3003,8 @@
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d3",
+            "name": "خالد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2739,6 +3057,66 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "monday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "monday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "tuesday": [
@@ -2747,8 +3125,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d1",
+            "name": "محمد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2767,66 +3145,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "tuesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d4",
-            "name": "سعد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d3",
-            "name": "خالد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "tuesday",
-          "period": 1,
-          "clinicNumber": 2,
-          "doctor": {
             "id": "d2",
             "name": "أحمد",
             "groupTemplate": {
@@ -2844,11 +3162,31 @@
         },
         {
           "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 2,
+          "doctor": {
+            "id": "d3",
+            "name": "خالد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "tuesday",
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d4",
+            "name": "سعد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2901,6 +3239,66 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "tuesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d7",
+            "name": "عمر",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "tuesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d8",
+            "name": "زيد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "light_duty",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "wednesday": [
@@ -2909,8 +3307,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -2919,7 +3317,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -2929,26 +3327,6 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
             "id": "d5",
             "name": "فهد",
             "groupTemplate": {
@@ -2962,35 +3340,15 @@
             "workStatus": "active",
             "supervisorDoctorId": null
           },
-          "role": "delegator"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d6",
-            "name": "علي",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
+          "role": "clinic"
         },
         {
           "day": "wednesday",
           "period": 1,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d4",
+            "name": "سعد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -3008,26 +3366,6 @@
           "day": "wednesday",
           "period": 2,
           "clinicNumber": 2,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "clinic"
-        },
-        {
-          "day": "wednesday",
-          "period": 1,
-          "clinicNumber": 3,
           "doctor": {
             "id": "d3",
             "name": "خالد",
@@ -3046,11 +3384,11 @@
         },
         {
           "day": "wednesday",
-          "period": 2,
+          "period": 1,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d4",
-            "name": "سعد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -3063,6 +3401,86 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 3,
+          "doctor": {
+            "id": "d6",
+            "name": "علي",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "clinic"
+        },
+        {
+          "day": "wednesday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "wednesday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "wednesday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ],
       "thursday": [
@@ -3071,8 +3489,8 @@
           "period": 1,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d2",
-            "name": "أحمد",
+            "id": "d8",
+            "name": "زيد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -3081,7 +3499,7 @@
               "sortOrder": 1
             },
             "groupId": "g",
-            "workStatus": "active",
+            "workStatus": "light_duty",
             "supervisorDoctorId": null
           },
           "role": "clinic"
@@ -3091,8 +3509,8 @@
           "period": 2,
           "clinicNumber": 1,
           "doctor": {
-            "id": "d1",
-            "name": "محمد",
+            "id": "d3",
+            "name": "خالد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -3105,46 +3523,6 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
-        },
-        {
-          "day": "thursday",
-          "period": 2,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d2",
-            "name": "أحمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
-        },
-        {
-          "day": "thursday",
-          "period": 1,
-          "clinicNumber": 0,
-          "doctor": {
-            "id": "d1",
-            "name": "محمد",
-            "groupTemplate": {
-              "key": "group_a",
-              "name": "Group A",
-              "colorIndex": 0,
-              "color": "#3B82F6",
-              "sortOrder": 1
-            },
-            "groupId": "g",
-            "workStatus": "active",
-            "supervisorDoctorId": null
-          },
-          "role": "delegator"
         },
         {
           "day": "thursday",
@@ -3171,8 +3549,8 @@
           "period": 2,
           "clinicNumber": 2,
           "doctor": {
-            "id": "d3",
-            "name": "خالد",
+            "id": "d5",
+            "name": "فهد",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -3211,8 +3589,8 @@
           "period": 2,
           "clinicNumber": 3,
           "doctor": {
-            "id": "d5",
-            "name": "فهد",
+            "id": "d7",
+            "name": "عمر",
             "groupTemplate": {
               "key": "group_a",
               "name": "Group A",
@@ -3225,26 +3603,76 @@
             "supervisorDoctorId": null
           },
           "role": "clinic"
+        },
+        {
+          "day": "thursday",
+          "period": 1,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 2,
+          "clinicNumber": 0,
+          "doctor": {
+            "id": "d1",
+            "name": "محمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "delegator"
+        },
+        {
+          "day": "thursday",
+          "period": 0,
+          "clinicNumber": 1,
+          "doctor": {
+            "id": "d2",
+            "name": "أحمد",
+            "groupTemplate": {
+              "key": "group_a",
+              "name": "Group A",
+              "colorIndex": 0,
+              "color": "#3B82F6",
+              "sortOrder": 1
+            },
+            "groupId": "g",
+            "workStatus": "active",
+            "supervisorDoctorId": null
+          },
+          "role": "ex"
         }
       ]
     }
   },
   "scenarios": [
     {
-      "kind": "absence",
-      "week": "2026-08-13",
-      "day": "tuesday",
-      "doc": "d5"
-    },
-    {
-      "kind": "permission",
-      "week": "2026-08-13",
-      "day": "tuesday",
-      "doc": "d4",
-      "blocked": 1
+      "kind": "day",
+      "week": "2026-09-03",
+      "day": "wednesday",
+      "events": "abs:d3"
     }
-  ],
-  "lastSwaps": [
-    "الإثنين 2026-08-13 [قَبْليّ]: فهد ↔ خالد"
   ]
 }
