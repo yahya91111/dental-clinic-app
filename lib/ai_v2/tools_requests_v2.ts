@@ -806,12 +806,16 @@ export async function dispatchRequestToolV2(
           && perm?.swap && 'withName' in perm.swap) {
           try {
             const { schedule } = await import('../algorithms/schedule');
+            const { withXdayJournal } = await import('../algorithms/requests_v2');
             // الشفت الفعليّ كما صحّحه المحرّك من مكان الطبيب (وإلّا ما طلبه الذكاء).
             const fromShift = (res as { effShift?: 'morning' | 'evening' }).effShift ?? shift;
-            await schedule.rebalanceForward({
-              clinicId: ctx.clinicId, weekStart: wsEff, fromDay: r.day, fromShift,
-              today: todayISOFrom(r),
-            });
+            const rDay = String(r.day) as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+            // نلفّ الموازنة بيوميّاتٍ تلتقط امتصاصها في الأيّام البعيدة، فيعكسها الكنسل بدقّة.
+            await withXdayJournal(ctx.clinicId, wsEff, { day: rDay, doctorId: doc.id }, () =>
+              schedule.rebalanceForward({
+                clinicId: ctx.clinicId, weekStart: wsEff, fromDay: rDay, fromShift,
+                today: todayISOFrom(r),
+              }));
             // القلب الجديد مدموجٌ داخل rebalanceForward نفسه (قلبٌ واحد) — لا استدعاءَ منفصلٌ هنا.
           } catch (e) {
             // eslint-disable-next-line no-console

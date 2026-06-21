@@ -93,6 +93,18 @@ const REMOVES_FROM_CLINIC = new Set<ScheduleStatus>(['sick_leave', 'vacation', '
 // يُستعاد عند «العودة لنفس المكان».
 const PREV_ROLE = 'prev_placement';
 
+// ── يوميّات الأثر البعيد (cross-day journal) ──
+// الامتصاص عبر الأيّام (rebalanceForward/القلب الجديد) يبدّل خاناتٍ في أيّامٍ غيرِ يوم
+// الحدث (امتصاصٌ قَبليّ أو أماميّ). كي يعكسها الكنسل **بدقّة** نحفظ لقطةً مخفيّةً لتلك
+// الأيّام (نفس آليّة prev_placement): صفّ XDAY_PRE لكلّ خانةٍ بشاغلها **قبل** الامتصاص،
+// وصفّ XDAY_GUARD واحدٌ لليوم يحمل بصمةَ الحالة **بعده** لكشف التشابك (هل لمس حدثٌ لاحقٌ
+// ذلك اليوم؟). الصفوف status='active' لكنّ role مميّز، والقُرّاء جميعًا يُرشّحون
+// role∈{clinic,delegator}، فتُتجاهَل هذه الصفوف تمامًا كما prev_placement.
+// ملاحظة: السلسلتان أدناه يجب أن تطابقا نظيرتيهما في حال نسخهما لملفٍّ آخر.
+const XDAY_PRE = 'xday_pre';
+const XDAY_GUARD = 'xday_guard';
+const XDAY_GUARD_CLINIC = 9; // رقم عيادةٍ سنتينل لصفّ الحارس (لا يصطدم بـEX ١/٢)
+
 const DAY_AR: Record<string, string> = {
   sunday: 'الأحد', monday: 'الإثنين', tuesday: 'الثلاثاء',
   wednesday: 'الأربعاء', thursday: 'الخميس',
@@ -213,6 +225,146 @@ async function applySlotChanges(changes: SlotChanges): Promise<void> {
     p_inserts: inserts,
   });
   if (error) throw new Error(error.message);
+}
+
+// ─── يوميّات الأثر البعيد: التقاط/يَوْمَنة/استرجاع ──────────────────
+/** خانةٌ منسَّبةٌ مبسّطة (للقطة الأسبوع ولبصمة اليوم). */
+type PlaceRow = { day: string; period: number; clinic: number; doctorId: string; doctorName: string; role: string };
+
+/** بصمةٌ حتميّةٌ لتنسيب يومٍ (خانات عيادة/دليقيتر النشطة فقط) — لكشف «هل تغيّر اليوم؟». */
+function dayHash(rows: PlaceRow[]): string {
+  return rows.map((r) => `${r.period}.${r.clinic}.${r.role}.${r.doctorId}`).sort().join(';');
+}
+
+/** كلّ خانات العيادة/الدليقيتر النشطة في الأسبوع (لا الوسوم ولا EX). */
+async function loadWeekPlacement(clinicId: string, weekStart: string): Promise<PlaceRow[]> {
+  const { data } = await supabase
+    .from('schedule_slots')
+    .select('day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
+    .eq('clinic_id', clinicId)
+    .eq('week_start', weekStart)
+    .eq('status', 'active')
+    .gt('period', 0);
+  return ((data || []) as Record<string, unknown>[])
+    .filter((r) => r.role === 'clinic' || r.role === 'delegator')
+    .map((r) => ({
+      day: String(r.day_of_week), period: Number(r.period), clinic: Number(r.clinic_number),
+      doctorId: String(r.doctor_id), doctorName: String(r.doctor_name), role: String(r.role),
+    }));
+}
+
+/** يلفّ امتصاصًا عبر الأيّام (rebalanceForward) بلقطةٍ قبليّةٍ ويَوْمَنةٍ بعديّة: يكتب
+ *  لقطةَ الأيّام البعيدة التي بدّلها الامتصاص كي يعكسها الكنسل لاحقًا بدقّة. آمن: لا
+ *  يُفشل العمليّة أبدًا (اليَوْمَنة تحسينٌ للكنسل، لا شرطٌ لصحّة الجدول). */
+export async function withXdayJournal<T>(
+  clinicId: string, weekStart: string,
+  cause: { day: string; doctorId: string },
+  run: () => Promise<T>,
+): Promise<T> {
+  let before: PlaceRow[] = [];
+  try { before = await loadWeekPlacement(clinicId, weekStart); } catch { /* تجاهل */ }
+  const out = await run();
+  try {
+    const after = await loadWeekPlacement(clinicId, weekStart);
+    const byDayBefore = new Map<string, PlaceRow[]>();
+    const byDayAfter = new Map<string, PlaceRow[]>();
+    for (const r of before) { const a = byDayBefore.get(r.day) ?? []; a.push(r); byDayBefore.set(r.day, a); }
+    for (const r of after) { const a = byDayAfter.get(r.day) ?? []; a.push(r); byDayAfter.set(r.day, a); }
+    const days = new Set([...byDayBefore.keys(), ...byDayAfter.keys()]);
+    const inserts: Record<string, unknown>[] = [];
+    for (const d of days) {
+      if (d === cause.day) continue;                       // يوم الحدث يملكه إرجاع prev_placement
+      const bD = byDayBefore.get(d) ?? [];
+      const aD = byDayAfter.get(d) ?? [];
+      if (dayHash(bD) === dayHash(aD)) continue;            // لم يتغيّر → لا يَوْمَنة
+      // امسح وسومًا سابقةً لنفس السبب في هذا اليوم (تجنّب التراكم)
+      await deleteXdayMarkers(clinicId, weekStart, d, cause);
+      inserts.push({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: d,
+        period: 0, clinic_number: XDAY_GUARD_CLINIC,
+        doctor_id: cause.doctorId, doctor_name: '·xday·',
+        role: XDAY_GUARD, status: 'active', source: `xg|${cause.day}|${cause.doctorId}|${dayHash(aD)}`,
+      });
+      for (const r of bD) inserts.push({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: d,
+        period: r.period, clinic_number: r.clinic,
+        doctor_id: r.doctorId, doctor_name: r.doctorName,
+        role: XDAY_PRE, status: 'active', source: `xd|${cause.day}|${cause.doctorId}|${r.role}`,
+      });
+    }
+    if (inserts.length) await insertRows(inserts);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[xday-journal] skipped', e instanceof Error ? e.message : e);
+  }
+  return out;
+}
+
+/** يحذف وسوم يومٍ بعيدٍ لسببٍ معيّن (للإمحاء قبل الكتابة أو بعد الاسترجاع). */
+async function deleteXdayMarkers(
+  clinicId: string, weekStart: string, day: string,
+  cause: { day: string; doctorId: string },
+): Promise<void> {
+  const { data } = await supabase
+    .from('schedule_slots')
+    .select('id, role, source')
+    .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', day)
+    .in('role', [XDAY_PRE, XDAY_GUARD]);
+  const tag = `|${cause.day}|${cause.doctorId}|`;
+  const ids = ((data || []) as { id: string; source?: string }[])
+    .filter((r) => (r.source || '').includes(tag))
+    .map((r) => r.id);
+  await deleteRows(ids);
+}
+
+/** يعكس الأثر البعيد لحدثٍ مُلغًى: لكلّ يومٍ بعيدٍ موسومٍ بهذا السبب، إن كان ما يزال
+ *  سليمًا (لم يلمسه حدثٌ لاحق — بصمته تطابق حارسه) نُرجِعه حرفيًّا إلى لقطته القبليّة؛
+ *  وإلّا (تشابك) نتركه ونُسجّل (يُصحّحه البناءُ التالي). يُرجع الأيّام المُعادة والمتشابكة. */
+export async function restoreXdayFootprint(
+  clinicId: string, weekStart: string, causeDay: string, causeDoctorId: string,
+): Promise<{ restored: string[]; entangled: string[] }> {
+  const restored: string[] = []; const entangled: string[] = [];
+  const { data } = await supabase
+    .from('schedule_slots')
+    .select('id, day_of_week, period, clinic_number, doctor_id, doctor_name, role, source')
+    .eq('clinic_id', clinicId).eq('week_start', weekStart)
+    .in('role', [XDAY_PRE, XDAY_GUARD]);
+  const tag = `|${causeDay}|${causeDoctorId}|`;
+  const mine = ((data || []) as Record<string, unknown>[])
+    .filter((r) => String(r.source || '').includes(tag));
+  if (mine.length === 0) return { restored, entangled };
+  const byDay = new Map<string, Record<string, unknown>[]>();
+  for (const m of mine) { const d = String(m.day_of_week); const a = byDay.get(d) ?? []; a.push(m); byDay.set(d, a); }
+
+  for (const [d, markers] of byDay) {
+    const cause = { day: causeDay, doctorId: causeDoctorId };
+    const guard = markers.find((m) => m.role === XDAY_GUARD);
+    const pre = markers.filter((m) => m.role === XDAY_PRE);
+    if (!guard || pre.length === 0) { await deleteXdayMarkers(clinicId, weekStart, d, cause); continue; }
+    const wantHash = String(guard.source || '').split('|').slice(3).join('|'); // كلّ ما بعد الوسم = البصمة
+    // الحالة الحاليّة لخانات العيادة/الدليقيتر النشطة لهذا اليوم.
+    const dayRows = await loadDay(clinicId, weekStart, d as WeekDay);
+    const curReal = dayRows.filter((r) => r.status === 'active' && r.period > 0
+      && (r.role === 'clinic' || r.role === 'delegator'));
+    const curHash = dayHash(curReal.map((r) => ({
+      day: d, period: r.period, clinic: r.clinic_number, doctorId: r.doctor_id, doctorName: r.doctor_name, role: r.role,
+    })));
+    if (curHash === wantHash) {
+      // سليم → استبدل خانات اليوم الحاليّة بلقطته القبليّة (معاملةً واحدة).
+      const inserts = pre.map((m) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: d,
+        period: Number(m.period), clinic_number: Number(m.clinic_number),
+        doctor_id: String(m.doctor_id), doctor_name: String(m.doctor_name),
+        role: String(m.source || '').split('|')[3] || 'clinic', status: 'active', source: 'request',
+      }));
+      await applySlotChanges({ deleteIds: curReal.map((r) => r.id), inserts });
+      restored.push(d);
+    } else {
+      entangled.push(d);
+    }
+    await deleteRows(markers.map((m) => String(m.id)));
+  }
+  return { restored, entangled };
 }
 
 /** هل خانة الحفظ (فترة/عيادة أو دليقيتر) يشغلها الآن طبيبٌ آخر؟
@@ -877,6 +1029,16 @@ export async function cancelStatus(
     const permRows = statusRows.filter(isPermRow);
     if (permRows.length > 0) {
       await deleteRows(permRows.map((r) => r.id));
+      // عكسُ الأثر البعيد: إن حرّك هذا الاستئذان امتصاصًا في أيّامٍ أخرى عند تسجيله،
+      // نُعيدها الآن (إن بقيت سليمة). يومُ الحدث نفسه يعالجه الإرجاع الحرفيّ أدناه.
+      try {
+        const xr = await restoreXdayFootprint(clinicId, weekStart, day, doctorId);
+        if (xr.restored.length || xr.entangled.length) {
+          // eslint-disable-next-line no-console
+          console.log(`[xday-cancel] أُعيد: ${xr.restored.map((d) => DAY_AR[d] || d).join('،') || '—'}`
+            + ` | متشابك (تُرك): ${xr.entangled.map((d) => DAY_AR[d] || d).join('،') || '—'}`);
+        }
+      } catch (e) { /* الاسترجاع البعيد تحسينٌ — لا يُفشل الكنسل */ void e; }
       const extraStays = statusRows.some((r) => r.status === 'extra');
       if (extraStays) {
         // كان احتياطًا واستأذن — تُزال العلامة ويبقى احتياطًا، وحفظُه القديم

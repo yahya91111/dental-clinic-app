@@ -3,7 +3,7 @@
  * مضيفٍ + نمرّ بإعادة التوازن الحيّة (rebalanceForward)، ثمّ نكنسل، ونقارن بصمةَ كلّ يوم.
  *   set -a; . ./.env; set +a; npx tsx scripts/test-perm-cancel-crossday.ts */
 import { supabase } from '../lib/supabase';
-import { requestsV2 } from '../lib/algorithms/requests_v2';
+import { requestsV2, withXdayJournal } from '../lib/algorithms/requests_v2';
 import { schedule, loadScheduleData } from '../lib/algorithms/schedule';
 import type { WeekDay, Shift, TraineeMode } from '../lib/algorithms/schedule';
 import { dispatchRequestToolV2, FINAL_MARK } from '../lib/ai_v2/tools_requests_v2';
@@ -55,7 +55,9 @@ async function main() {
   await requestsV2.setScheduleStatus({ id: host.id, role: 'team_leader' }, { clinicId: CID, weekStart: WEEK, day: hostDay as any, doctorId: host.id, doctorName: host.name, status: 'permission_start', shift: 'morning' } as any);
   const blockedNow = async () => (await allRows()).some((r) => r.day_of_week === hostDay && r.doctor_id === host.id && r.status === 'active' && r.period === 1 && (r.role === 'clinic' || r.role === 'delegator'));
   const conflictAfterSet = await blockedNow();
-  await schedule.rebalanceForward({ clinicId: CID, weekStart: WEEK, fromDay: hostDay as any, fromShift: 'morning', today: WEEK } as any).catch(() => {});
+  // كما المسار الحيّ بالضبط: نلفّ الموازنة بيوميّات الأثر البعيد كي يعكسها الكنسل.
+  await withXdayJournal(CID, WEEK, { day: hostDay, doctorId: host.id }, () =>
+    schedule.rebalanceForward({ clinicId: CID, weekStart: WEEK, fromDay: hostDay as any, fromShift: 'morning', today: WEEK } as any)).catch(() => {});
   const conflictAfterRebalance = await blockedNow();
   console.log(`  بعد التسجيل: المستأذِن في ف١ المحجوبة؟ ${conflictAfterSet ? '🚨 نعم' : '✅ لا'} | بعد إعادة التوازن؟ ${conflictAfterRebalance ? '🚨 نعم (أُعيد التعارض)' : '✅ لا'}`);
   const mid = sigByDay(await allRows());
@@ -67,13 +69,10 @@ async function main() {
   const ctx: any = { clinicId: CID, user: { id: host.id, name: host.name, role: 'team_leader' }, roster };
   const raw = await dispatchRequestToolV2('cancel_schedule_status', { weekStart: WEEK, day: hostDay, doctorIndex: idx }, ctx);
   console.log('  → ' + raw.replace(FINAL_MARK, '').slice(0, 100));
-  const afterCancelOnly = sigByDay(await allRows());
-  const driftBefore = DAYS.filter((d) => d !== hostDay && afterCancelOnly[d] !== before[d]);
-  // جرّب التنظيف: إعادةُ توازنٍ بعد العكس الحرفيّ — هل تُلغي تعويضَ اليوم البعيد؟
-  await schedule.rebalanceForward({ clinicId: CID, weekStart: WEEK, fromDay: hostDay as any, fromShift: 'morning', today: WEEK } as any).catch(() => {});
+  // الكنسلُ وحده هو المسار الحيّ (لا إعادةَ توازنٍ بعده) — هو ما نحكم عليه.
   const after = sigByDay(await allRows());
-  const driftAfter = DAYS.filter((d) => d !== hostDay && after[d] !== before[d]);
-  console.log(`  انحرافٌ بعيدٌ بعد الكنسل وحده: ${driftBefore.map((d) => AR[d]).join('،') || 'لا شيء'} | بعد إعادة توازنٍ تنظيفيّة: ${driftAfter.map((d) => AR[d]).join('،') || 'لا شيء'}`);
+  const driftBefore = DAYS.filter((d) => d !== hostDay && after[d] !== before[d]);
+  console.log(`  انحرافٌ بعيدٌ بعد الكنسل وحده: ${driftBefore.map((d) => AR[d]).join('،') || 'لا شيء (✅)'}`);
 
   // قارن كلّ يوم: هل عاد كما كان؟
   console.log('\n  مقارنةُ كلّ يومٍ (قبل ↔ بعد الكنسل):');
