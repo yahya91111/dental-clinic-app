@@ -1183,24 +1183,58 @@ export async function cancelStatus(
     // ── غيابٌ كامل (مرضية/تفرّغ) أو احتياط ──
     let restoredCount = 0;
     let blockedCount = 0;
-    let restoreIns: Record<string, unknown>[] = [];
+    const restoreIns: Record<string, unknown>[] = [];
+    const reclaimUpdates: { id: string; doctor_id: string; doctor_name: string }[] = [];
+    const reserveInserts: Record<string, unknown>[] = [];
     if (restoreToPrevPlace && prev.length > 0) {
-      // لا إرجاع فوق ساكن: الفارغ يُستعاد، والمشغول يقرّر القائد مكانه (covered)
-      const free = prev.filter((r) => !slotOccupied(rows, r, doctorId));
-      blockedCount = prev.length - free.length;
-      restoreIns = free.map((r) => ({
-        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-        period: r.period, clinic_number: r.clinic_number,
-        doctor_id: r.doctor_id, doctor_name: r.doctor_name,
-        role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
-      }));
-      restoredCount = free.length;
+      // في وضع apply التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها: مقعدُه الفارغ يُستعاد، ومقعدُ
+      // الاستضافة الذي شغله **مُغطٍّ خالص** (دليقيترٌ بلا عيادةٍ في الشفت = مسحوبٌ من الاحتياط
+      // لتغطية الاستضافة، كحالة الدليقيتر المُقسَّم) يسترّده الطبيبُ ويعود المُغطّي احتياطًا.
+      // أمّا المشغولُ بتنسيبٍ يدويٍّ/طبيبِ عيادةٍ فيقرّر القائد (covered) — لا ندوس عليه.
+      let applyMode = false;
+      try { applyMode = (await import('./solver_shadow')).isApplyMode(clinicId); } catch { /* تجاهل */ }
+      const reservedBack = new Set<string>();
+      for (const p of prev) {
+        const occ = rows.find((r) => r.doctor_id !== doctorId && r.status === 'active' && r.period === p.period
+          && (p.clinic_number === 0 ? r.role === 'delegator' : (r.role === 'clinic' && r.clinic_number === p.clinic_number)));
+        if (!occ) {
+          restoreIns.push({
+            clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+            period: p.period, clinic_number: p.clinic_number,
+            doctor_id: p.doctor_id, doctor_name: p.doctor_name,
+            role: p.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
+          });
+          restoredCount++;
+          continue;
+        }
+        const shiftPs = p.period <= 2 ? [1, 2] : [3, 4];
+        const occHasClinic = rows.some((r) => r.doctor_id === occ.doctor_id && r.status === 'active'
+          && r.role === 'clinic' && shiftPs.includes(r.period));
+        if (applyMode && p.clinic_number === 0 && occ.role === 'delegator' && !occHasClinic) {
+          reclaimUpdates.push({ id: occ.id, doctor_id: p.doctor_id, doctor_name: p.doctor_name });
+          const exCol = p.period <= 2 ? 1 : 2;
+          const key = `${occ.doctor_id}|${exCol}`;
+          if (!reservedBack.has(key)) {
+            reservedBack.add(key);
+            reserveInserts.push({
+              clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+              period: 0, clinic_number: exCol,
+              doctor_id: occ.doctor_id, doctor_name: occ.doctor_name,
+              role: 'clinic', status: 'extra', source: 'request',
+            });
+          }
+          restoredCount++;
+        } else {
+          blockedCount++;
+        }
+      }
     }
-    // أزِل صفّ الحالة + صفوف الحفظ، وأعِد المكان الفارغ — معاملةً واحدةً قبل
-    // returnShadowsWithSupervisor (الذي يقرأ DB فيرى الإرجاع).
+    // أزِل صفّ الحالة + صفوف الحفظ، أعِد المكان الفارغ، واسترّد مقاعد الاستضافة المُقسَّمة —
+    // معاملةً واحدةً قبل returnShadowsWithSupervisor (الذي يقرأ DB فيرى الإرجاع).
     await applySlotChanges({
+      updates: reclaimUpdates,
       deleteIds: [...statusRows, ...prev].map((r) => r.id),
-      inserts: restoreIns,
+      inserts: [...restoreIns, ...reserveInserts],
     });
     // مكانه (كلّه أو بعضه) لم يُستعَد: غُطّي وقت الغياب (الحفظ مُزِّق) أو شغله غيرُه
     const covered = REMOVES_FROM_CLINIC.has(statusRow.status as ScheduleStatus)
