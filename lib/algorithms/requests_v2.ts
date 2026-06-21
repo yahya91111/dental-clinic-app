@@ -228,28 +228,30 @@ async function applySlotChanges(changes: SlotChanges): Promise<void> {
 }
 
 // ─── يوميّات الأثر البعيد: التقاط/يَوْمَنة/استرجاع ──────────────────
-/** خانةٌ منسَّبةٌ مبسّطة (للقطة الأسبوع ولبصمة اليوم). */
-type PlaceRow = { day: string; period: number; clinic: number; doctorId: string; doctorName: string; role: string };
+/** خانةٌ منسَّبةٌ مبسّطة (للقطة الأسبوع ولبصمة اليوم). تشمل العيادة/الدليقيتر النشطة
+ *  **والاحتياط** (extra, p0) — لأنّ سداد الاحتياط داخل الأسبوع يبدّل صفوف الاحتياط أيضًا. */
+type PlaceRow = { day: string; period: number; clinic: number; doctorId: string; doctorName: string; role: string; status: string };
 
-/** بصمةٌ حتميّةٌ لتنسيب يومٍ (خانات عيادة/دليقيتر النشطة فقط) — لكشف «هل تغيّر اليوم؟». */
+/** بصمةٌ حتميّةٌ لتنسيب يومٍ — لكشف «هل تغيّر اليوم؟». تشمل الحالة (active/extra) كي
+ *  تُميّز بين عملٍ وراحةٍ على نفس المحور. */
 function dayHash(rows: PlaceRow[]): string {
-  return rows.map((r) => `${r.period}.${r.clinic}.${r.role}.${r.doctorId}`).sort().join(';');
+  return rows.map((r) => `${r.status}.${r.period}.${r.clinic}.${r.role}.${r.doctorId}`).sort().join(';');
 }
 
-/** كلّ خانات العيادة/الدليقيتر النشطة في الأسبوع (لا الوسوم ولا EX). */
+/** تنسيبُ الأسبوع الذي قد يمسّه الامتصاص عبر الأيّام: العيادة/الدليقيتر النشطة (p>0)
+ *  **والاحتياط** (extra, p0) — لا الوسوم ولا صفوف الغياب. */
 async function loadWeekPlacement(clinicId: string, weekStart: string): Promise<PlaceRow[]> {
   const { data } = await supabase
     .from('schedule_slots')
     .select('day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
     .eq('clinic_id', clinicId)
-    .eq('week_start', weekStart)
-    .eq('status', 'active')
-    .gt('period', 0);
+    .eq('week_start', weekStart);
   return ((data || []) as Record<string, unknown>[])
-    .filter((r) => r.role === 'clinic' || r.role === 'delegator')
+    .filter((r) => (r.status === 'active' && Number(r.period) > 0 && (r.role === 'clinic' || r.role === 'delegator'))
+      || (r.status === 'extra' && Number(r.period) === 0))
     .map((r) => ({
       day: String(r.day_of_week), period: Number(r.period), clinic: Number(r.clinic_number),
-      doctorId: String(r.doctor_id), doctorName: String(r.doctor_name), role: String(r.role),
+      doctorId: String(r.doctor_id), doctorName: String(r.doctor_name), role: String(r.role), status: String(r.status),
     }));
 }
 
@@ -289,7 +291,7 @@ export async function withXdayJournal<T>(
         clinic_id: clinicId, week_start: weekStart, day_of_week: d,
         period: r.period, clinic_number: r.clinic,
         doctor_id: r.doctorId, doctor_name: r.doctorName,
-        role: XDAY_PRE, status: 'active', source: `xd|${cause.day}|${cause.doctorId}|${r.role}`,
+        role: XDAY_PRE, status: 'active', source: `xd|${cause.day}|${cause.doctorId}|${r.role}|${r.status}`,
       });
     }
     if (inserts.length) await insertRows(inserts);
@@ -342,21 +344,24 @@ export async function restoreXdayFootprint(
     const pre = markers.filter((m) => m.role === XDAY_PRE);
     if (!guard || pre.length === 0) { await deleteXdayMarkers(clinicId, weekStart, d, cause); continue; }
     const wantHash = String(guard.source || '').split('|').slice(3).join('|'); // كلّ ما بعد الوسم = البصمة
-    // الحالة الحاليّة لخانات العيادة/الدليقيتر النشطة لهذا اليوم.
+    // الحالة الحاليّة لخانات هذا اليوم على نفس النطاق (عيادة/دليقيتر نشطة + احتياط).
     const dayRows = await loadDay(clinicId, weekStart, d as WeekDay);
-    const curReal = dayRows.filter((r) => r.status === 'active' && r.period > 0
-      && (r.role === 'clinic' || r.role === 'delegator'));
+    const curReal = dayRows.filter((r) => (r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'))
+      || (r.status === 'extra' && r.period === 0));
     const curHash = dayHash(curReal.map((r) => ({
-      day: d, period: r.period, clinic: r.clinic_number, doctorId: r.doctor_id, doctorName: r.doctor_name, role: r.role,
+      day: d, period: r.period, clinic: r.clinic_number, doctorId: r.doctor_id, doctorName: r.doctor_name, role: r.role, status: r.status,
     })));
     if (curHash === wantHash) {
-      // سليم → استبدل خانات اليوم الحاليّة بلقطته القبليّة (معاملةً واحدة).
-      const inserts = pre.map((m) => ({
-        clinic_id: clinicId, week_start: weekStart, day_of_week: d,
-        period: Number(m.period), clinic_number: Number(m.clinic_number),
-        doctor_id: String(m.doctor_id), doctor_name: String(m.doctor_name),
-        role: String(m.source || '').split('|')[3] || 'clinic', status: 'active', source: 'request',
-      }));
+      // سليم → استبدل خانات اليوم الحاليّة بلقطته القبليّة (معاملةً واحدة، بالحالة الأصليّة).
+      const inserts = pre.map((m) => {
+        const parts = String(m.source || '').split('|');
+        return {
+          clinic_id: clinicId, week_start: weekStart, day_of_week: d,
+          period: Number(m.period), clinic_number: Number(m.clinic_number),
+          doctor_id: String(m.doctor_id), doctor_name: String(m.doctor_name),
+          role: parts[3] || 'clinic', status: parts[4] || 'active', source: 'request',
+        };
+      });
       await applySlotChanges({ deleteIds: curReal.map((r) => r.id), inserts });
       restored.push(d);
     } else {

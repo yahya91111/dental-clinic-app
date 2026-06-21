@@ -830,7 +830,7 @@ export async function dispatchRequestToolV2(
           try {
             const { schedule, loadScheduleData } = await import('../algorithms/schedule');
             const { notifications } = await import('../algorithms/notifications');
-            const { isApplyMode, applyCoverage, applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
+            const { isApplyMode, applyCoverage, applyNewHeartRebalance, applyReserveRepay, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
             const { withXdayJournal } = await import('../algorithms/requests_v2');
             // القلب الجديد (apply): تغطيةٌ تلقائيّةٌ فوريّةٌ (بلا كرت موافقة) + امتصاص
             // الدليقيتر. القائد وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول.
@@ -841,6 +841,8 @@ export async function dispatchRequestToolV2(
               // (يومُ الغياب نفسه يملكه إرجاع المكان المحفوظ؛ اليوميّات للأيّام البعيدة).
               const cov = await withXdayJournal(ctx.clinicId, wsEff, { day: String(r.day), doctorId: doc.id }, async () => {
                 const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                // سدادُ الاحتياط داخل الأسبوع (محور الاحتياط) قبل امتصاص الدليقيتر.
+                await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' }, reservePairsFromMoves(c.moves));
                 await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
                 return c;
               });

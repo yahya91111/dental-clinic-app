@@ -45,6 +45,7 @@ export type PendingReserveChoice = {
 export type CoverageMove = {
   doctorId: string; day: WeekDay; clinicNumber: number; period: number;
   kind: 'reserve' | 'delegator' | 'light_duty' | 'partner_solo';
+  absentId?: string; // الغائب صاحبُ المقعد المُغطَّى — لمحور سداد الاحتياط داخل الأسبوع
 };
 const DAY_IDX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
 const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
@@ -158,6 +159,7 @@ export async function applyCoverage(
           const fillWith = async (avail: string[], seats: CoverageSeat[], tag: string): Promise<Set<string>> => {
             const done = new Set<string>();
             if (avail.length === 0 || seats.length === 0) return done;
+            const absentBySeat = new Map(seats.map((s) => [s.id, s.absentId]));
             const rec = solveCoverage(doctors, seats, avail, sc.prior);
             const removed = new Set<string>();
             for (const f of rec.fills) {
@@ -169,7 +171,7 @@ export async function applyCoverage(
                 doctor_id: f.doctorId, doctor_name: name, role: 'clinic', status: 'active', source: 'request',
               });
               filled++; done.add(f.seatId);
-              moves.push({ doctorId: f.doctorId, day, clinicNumber: f.clinicNumber, period: f.period, kind: tagKind[tag] ?? 'reserve' });
+              moves.push({ doctorId: f.doctorId, day, clinicNumber: f.clinicNumber, period: f.period, kind: tagKind[tag] ?? 'reserve', absentId: absentBySeat.get(f.seatId) });
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART ${sc.name}${tag} · ${args.label}] ${name} → عيادة ${f.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${f.period})`);
             }
@@ -236,7 +238,7 @@ export async function applyCoverage(
                 doctor_id: partner.doctorId, doctor_name: partner.doctorName, role: 'clinic', status: 'active', source: 'request',
               });
               filled++;
-              moves.push({ doctorId: partner.doctorId, day, clinicNumber: seat.clinicNumber, period: seat.period, kind: 'partner_solo' });
+              moves.push({ doctorId: partner.doctorId, day, clinicNumber: seat.clinicNumber, period: seat.period, kind: 'partner_solo', absentId: seat.absentId });
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART ${sc.name}·منفرد · ${args.label}] ${partner.doctorName} → عيادة ${seat.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${seat.period}) منفردًا`);
             }
@@ -289,7 +291,7 @@ export async function applyCoverage(
                 doctor_id: pick, doctor_name: name, role: 'delegator', status: 'active', source: 'request',
               });
               filled++;
-              moves.push({ doctorId: pick, day, clinicNumber: 0, period: v.period, kind: 'delegator' });
+              moves.push({ doctorId: pick, day, clinicNumber: 0, period: v.period, kind: 'delegator', absentId: v.doctorId });
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART COVER·دليقيتر · ${args.label}] ${name} → دليقيتر (${day}/${half === 0 ? 'ص' : 'م'} ف${v.period})`);
             }
@@ -450,4 +452,84 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
     console.log('[NEW-HEART APPLY] تعذّر التطبيق:', e instanceof Error ? e.message : e);
     return { applied: 0 };
   }
+}
+
+type RepayRow = { id: string; doctor_id: string; doctor_name: string; period: number; clinic_number: number; role: string; status: string; day_of_week: string };
+async function loadRepayWeek(clinicId: string, weekStart: string): Promise<RepayRow[]> {
+  const { data } = await supabase.from('schedule_slots')
+    .select('id, doctor_id, doctor_name, period, clinic_number, role, status, day_of_week')
+    .eq('clinic_id', clinicId).eq('week_start', weekStart);
+  return (data || []) as RepayRow[];
+}
+
+/**
+ * سدادُ الاحتياط داخل الأسبوع (محور الاحتياط — توأمُ امتصاص الدليقيتر). حين يُغطّي
+ * احتياطيٌّ R غيابَ A فيخسر راحته، نبحث في الأسبوع **قَبْليًّا أوّلًا ثمّ أماميًّا** (نسبةً
+ * ليوم الغياب) عن يومٍ فيه: A له دورُ احتياطٍ (راحة) في الشفت، و R يعمل عيادةً في نفس
+ * الشفت → نبادل بالمعرّف: A يعمل خانةَ R (يدفع)، و R يأخذ دورَ الاحتياط (يستردّ راحته).
+ * تعذّر (نفد احتياطُ A أو خارج النافذة)؟ **خيار ج**: خسارةٌ مقبولةٌ تُسجَّل بلا تدوير.
+ * آمن: خلف العلم فقط، لا يرمي، مبادلةٌ نظيفة. يُرجِع مَن سُدِّد لهم كي لا يُدفَعوا لمؤخّرة
+ * عجلة الاحتياط أيضًا (خيار أ — تفادي العقوبة المزدوجة).
+ */
+export async function applyReserveRepay(
+  args: { clinicId: string; weekStart: string; label: string },
+  pairs: { coverer: string; owner: string; exCol: number; coverDay: string }[],
+): Promise<{ repaid: number; accepted: number; repaidAbsent: string[] }> {
+  const repaidAbsent: string[] = [];
+  if (!applyEnabled(args.clinicId) || pairs.length === 0) return { repaid: 0, accepted: 0, repaidAbsent };
+  // أزواجٌ فريدة (مُغطٍّ+غائب+شفت) — لا نسدّد المُغطّيَ نفسه مرّتين لنفس الغياب.
+  const seen = new Set<string>();
+  const uniq = pairs.filter((p) => {
+    if (!p.owner || p.owner === p.coverer) return false;
+    const k = `${p.coverer}|${p.owner}|${p.exCol}`; if (seen.has(k)) return false; seen.add(k); return true;
+  });
+  let repaid = 0; let accepted = 0;
+  try {
+    for (const { coverer, owner, exCol, coverDay } of uniq) {
+      const periods = exCol === 1 ? [1, 2] : [3, 4];
+      // ترتيب الأيّام: قَبْليّ (اليوم-١ → بداية الأسبوع) ثمّ أماميّ (اليوم+١ → نهايته).
+      const di = DAY_IDX[coverDay] ?? 0;
+      const order: string[] = [];
+      for (let i = di - 1; i >= 0; i--) order.push(DAY_OF[i]!);
+      for (let i = di + 1; i < DAY_OF.length; i++) order.push(DAY_OF[i]!);
+
+      const week = await loadRepayWeek(args.clinicId, args.weekStart);
+      let did = false;
+      for (const d2 of order) {
+        const rowsD = week.filter((r) => r.day_of_week === d2);
+        const ownerEx = rowsD.find((r) => r.doctor_id === owner && r.status === 'extra' && r.period === 0 && r.clinic_number === exCol);
+        if (!ownerEx) continue;                                   // A لا يرتاح هذا اليوم/الشفت
+        const ownerBusy = rowsD.some((r) => r.doctor_id === owner && r.status === 'active' && periods.includes(r.period) && (r.role === 'clinic' || r.role === 'delegator'));
+        if (ownerBusy) continue;                                  // A يعمل أصلًا هذا الشفت → لا يأخذ مقعدًا
+        const covererClinic = rowsD.filter((r) => r.doctor_id === coverer && r.status === 'active' && r.role === 'clinic' && periods.includes(r.period));
+        if (covererClinic.length === 0) continue;                 // R لا يعمل عيادةً هذا الشفت → لا مقعد يُعطى
+        const ownerName = ownerEx.doctor_name; const covererName = covererClinic[0]!.doctor_name;
+        // المبادلة: مقعدُ R → A، ودورُ احتياط A → R.
+        for (const r of covererClinic) await supabase.from('schedule_slots').update({ doctor_id: owner, doctor_name: ownerName }).eq('id', r.id);
+        await supabase.from('schedule_slots').update({ doctor_id: coverer, doctor_name: covererName }).eq('id', ownerEx.id);
+        repaid++; did = true; repaidAbsent.push(owner);
+        const pre = di > DAY_IDX[d2]! ? 'قَبْليّ' : 'أماميّ';
+        // eslint-disable-next-line no-console
+        console.log(`[RESERVE-REPAY · ${args.label}] ${covererName} يرتاح ${d2} [${pre}] بدل ${ownerName} (شفت ${exCol === 1 ? 'ص' : 'م'}).`);
+        break;
+      }
+      if (!did) {
+        accepted++;
+        // eslint-disable-next-line no-console
+        console.log(`[RESERVE-REPAY · ${args.label}] [ج] خسارةُ راحةٍ مقبولةٌ — لا نافذةَ سدادٍ للمُغطّي (الغائبُ بلا احتياطٍ في الأسبوع).`);
+      }
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[RESERVE-REPAY] تعذّر السداد:', e instanceof Error ? e.message : e);
+  }
+  return { repaid, accepted, repaidAbsent };
+}
+
+/** يشتقّ أزواجَ السداد من حركات التغطية: المُغطّي كان احتياطيًّا (reserve/delegator) فخسر
+ *  راحتَه، والغائب (absentId) مَدينٌ له. الشفت من الفترة (≤٢ صباح=١، وإلّا مساء=٢). */
+export function reservePairsFromMoves(moves: CoverageMove[]): { coverer: string; owner: string; exCol: number; coverDay: string }[] {
+  return moves
+    .filter((m) => (m.kind === 'reserve' || m.kind === 'delegator') && !!m.absentId)
+    .map((m) => ({ coverer: m.doctorId, owner: m.absentId as string, exCol: m.period <= 2 ? 1 : 2, coverDay: m.day }));
 }

@@ -1716,7 +1716,9 @@ export async function rebalanceForward(args: {
   try {
     const sh = await import('./solver_shadow');
     if (newHeartSole) {
-      await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+      const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+      // سدادُ الاحتياط داخل الأسبوع (محور الاحتياط) قبل امتصاص الدليقيتر — كترتيب المختبر.
+      await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' }, sh.reservePairsFromMoves(cov.moves));
       await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
     } else {
       await sh.shadowRebalanceLog({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
