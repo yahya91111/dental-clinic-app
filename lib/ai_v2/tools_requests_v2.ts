@@ -831,13 +831,19 @@ export async function dispatchRequestToolV2(
             const { schedule, loadScheduleData } = await import('../algorithms/schedule');
             const { notifications } = await import('../algorithms/notifications');
             const { isApplyMode, applyCoverage, applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
+            const { withXdayJournal } = await import('../algorithms/requests_v2');
             // القلب الجديد (apply): تغطيةٌ تلقائيّةٌ فوريّةٌ (بلا كرت موافقة) + امتصاص
             // الدليقيتر. القائد وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول.
             // استثناء: الاحتياطيّ **الخاصّ** (بورد/متدرّب) لا يُوضع تلقائيًّا — يُرجِعه
             // التغطية pending، فنرسل كرت سؤالٍ للقائد يختار مَن يُستدعى أو يرفض.
             if (isApplyMode(ctx.clinicId)) {
-              const cov = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
-              await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+              // نلفّ التغطية+الامتصاص بيوميّات الأثر البعيد كي يعكسها كنسلُ الغياب بدقّة
+              // (يومُ الغياب نفسه يملكه إرجاع المكان المحفوظ؛ اليوميّات للأيّام البعيدة).
+              const cov = await withXdayJournal(ctx.clinicId, wsEff, { day: String(r.day), doctorId: doc.id }, async () => {
+                const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                return c;
+              });
               if (cov.pending.length) {
                 const sd = (await loadScheduleData(ctx.clinicId, wsEff)).data;
                 const docById = new Map((sd?.doctors ?? []).map((d) => [d.id, d]));

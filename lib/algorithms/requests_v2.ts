@@ -985,6 +985,18 @@ export async function cancelStatus(
     const isPermRow = (r: Row) => r.status === 'permission_start' || r.status === 'permission_end';
     const prev = mine.filter((r) => r.role === PREV_ROLE);
 
+    // عكسُ الأثر البعيد (لكلّ الأنواع: استئذان/مرضية/تفرّغ): إن حرّك هذا الحدث امتصاصًا
+    // في أيّامٍ أخرى عند تسجيله (يوميّاتٌ مخفيّة)، نُعيدها الآن إن بقيت سليمة. يومُ الحدث
+    // نفسه يعالجه الإرجاع الحرفيّ/إرجاع المكان أدناه. بلا يوميّاتٍ → لا عمل (استعلامٌ واحد).
+    try {
+      const xr = await restoreXdayFootprint(clinicId, weekStart, day, doctorId);
+      if (xr.restored.length || xr.entangled.length) {
+        // eslint-disable-next-line no-console
+        console.log(`[xday-cancel] أُعيد: ${xr.restored.map((d) => DAY_AR[d] || d).join('،') || '—'}`
+          + ` | متشابك (تُرك): ${xr.entangled.map((d) => DAY_AR[d] || d).join('،') || '—'}`);
+      }
+    } catch (e) { /* الاسترجاع البعيد تحسينٌ — لا يُفشل الكنسل */ void e; }
+
     // ── ظلٌّ موسوم (source='shadow')؟ عودته مرآةُ خانات مدرّبه **الحاليّة** ──
     // (لا حفظَ له — الظلّ يلاصق مدرّبه أينما كان). مدرّبه غائب؟ يبقى احتياطًا.
     const shadowMark = statusRows.find((r) => r.source === 'shadow');
@@ -1029,16 +1041,6 @@ export async function cancelStatus(
     const permRows = statusRows.filter(isPermRow);
     if (permRows.length > 0) {
       await deleteRows(permRows.map((r) => r.id));
-      // عكسُ الأثر البعيد: إن حرّك هذا الاستئذان امتصاصًا في أيّامٍ أخرى عند تسجيله،
-      // نُعيدها الآن (إن بقيت سليمة). يومُ الحدث نفسه يعالجه الإرجاع الحرفيّ أدناه.
-      try {
-        const xr = await restoreXdayFootprint(clinicId, weekStart, day, doctorId);
-        if (xr.restored.length || xr.entangled.length) {
-          // eslint-disable-next-line no-console
-          console.log(`[xday-cancel] أُعيد: ${xr.restored.map((d) => DAY_AR[d] || d).join('،') || '—'}`
-            + ` | متشابك (تُرك): ${xr.entangled.map((d) => DAY_AR[d] || d).join('،') || '—'}`);
-        }
-      } catch (e) { /* الاسترجاع البعيد تحسينٌ — لا يُفشل الكنسل */ void e; }
       const extraStays = statusRows.some((r) => r.status === 'extra');
       if (extraStays) {
         // كان احتياطًا واستأذن — تُزال العلامة ويبقى احتياطًا، وحفظُه القديم
