@@ -124,6 +124,26 @@ export async function applyCoverage(
     // تخفيف العمل: يقدر على **الفترة الأولى فقط** (ف١/ف٣) — مصدرُ تغطيةٍ لها عند الحاجة.
     const lightDutyIds = new Set(doctors.filter((d) => d.workStatus === 'light_duty').map((d) => d.id));
     const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
+    // ظلال المتدرّبين (beginner): مَن خاناتُه (عيادة/استضافة) **تطابق مشرفه تمامًا** في كلّ
+    // شفتٍ يعمله = ظلٌّ حقيقيّ (لا مستقلّ — المستقلّ خاناتُه تخالف مشرفه فيُستثنى). نستثني
+    // الظلَّ من «هل الفترة بها دليقيتر» (ظلٌّ ليس تغطيةً حقيقيّة)، ونُعيد محاذاته لمشرفه بعد
+    // التغطية (يتبعه للعيادة لو صار منفردًا، فلا يبقى دليقيترًا وحده).
+    const inScopeRC = (s: LoadedSlot) => s.period > 0 && s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator');
+    const keysRC = (rows: LoadedSlot[], id: string, dy: string, ps: number[]) =>
+      rows.filter((r) => r.doctorId === id && r.dayOfWeek === dy && ps.includes(r.period) && inScopeRC(r)).map((r) => `${r.period}|${r.clinicNumber}|${r.role}`);
+    const shadowTraineeIds = new Set<string>();
+    for (const t of doctors.filter((d) => d.workStatus === 'trainee' && d.supervisorDoctorId)) {
+      const supId = t.supervisorDoctorId!;
+      let mirrors = false; let mismatched = false;
+      for (const day of DAY_OF) for (const half of [0, 1] as const) {
+        const periods = half === 0 ? [1, 2] : [3, 4];
+        const tk = keysRC(data.existingSlots, t.id, day, periods);
+        if (!tk.length) continue;
+        const sk = new Set(keysRC(data.existingSlots, supId, day, periods));
+        if (tk.length === sk.size && tk.every((k) => sk.has(k))) mirrors = true; else mismatched = true;
+      }
+      if (mirrors && !mismatched) shadowTraineeIds.add(t.id);
+    }
     // بِركتان: العاديّة (حداثة آخر عمل) والبورد (حداثة آخر دخولٍ للعيادة). كلٌّ يُغطّي
     // مقاعدَ غياب بِركته فقط من احتياط بِركته فقط — فلا يملأ عاديٌّ مقعدَ بورد ولا العكس.
     const scopes = [
@@ -279,8 +299,9 @@ export async function applyCoverage(
             const periods = half === 0 ? [1, 2] : [3, 4];
             const exCol = half === 0 ? 1 : 2;
             const rows = d2.existingSlots.filter((s) => s.dayOfWeek === day);
-            // الفتراتُ التي بها دليقيترٌ نشطٌ أصلًا (مُغطّاة) — نتخطّاها.
-            const hasDeleg = new Set(rows.filter((s) => s.status === 'active' && s.role === 'delegator' && periods.includes(s.period)).map((s) => s.period));
+            // الفتراتُ التي بها دليقيترٌ **حقيقيّ** نشطٌ أصلًا (مُغطّاة) — نتخطّاها. نستثني
+            // ظلَّ المتدرّب: وجودُه وحدَه لا يعني أنّ الاستضافةَ مُغطّاة (لا يُحسَب تغطيةً).
+            const hasDeleg = new Set(rows.filter((s) => s.status === 'active' && s.role === 'delegator' && periods.includes(s.period) && !shadowTraineeIds.has(s.doctorId)).map((s) => s.period));
             // طلبُ الاستضافة الشاغر: (أ) استضافةُ الغائب (prev_placement, رقم عيادة صفر،
             // طبيب بِركة)، (ب) استضافةٌ أُسقِطت لمّا سُحب شاغلُها «منفردًا» للعيادة. الفترة →
             // معرّفُ الغائب صاحبِ الحدث (لمحور السداد).
@@ -333,6 +354,45 @@ export async function applyCoverage(
     } catch (e) {
       // eslint-disable-next-line no-console
       console.log('[NEW-HEART COVER·دليقيتر] تعذّر:', e instanceof Error ? e.message : e);
+    }
+
+    // ── محاذاةُ ظلال المتدرّبين (beginner) بعد التغطية: الظلُّ يتبع مشرفه إلى خاناته
+    // **النهائيّة**. مشرفٌ صار منفردًا (عيادةَ الفترتين) → ظلُّه ينزل للعيادة بدل أن يبقى
+    // دليقيترًا وحده (لا يجوز). مشرفٌ بلا خانةٍ في الشفت → يُزال ظلُّه فيه. آمنٌ: المستقلّون
+    // مُستثنَون (ليسوا في shadowTraineeIds)، وإن طابق الظلُّ مشرفه أصلًا فلا تغيير.
+    try {
+      const { data: fin } = await loadScheduleData(args.clinicId, args.weekStart);
+      if (fin) {
+        for (const tId of shadowTraineeIds) {
+          const t = doctors.find((d) => d.id === tId)!;
+          const supId = t.supervisorDoctorId!;
+          for (const day of DAY_OF) {
+            for (const half of [0, 1] as const) {
+              const periods = half === 0 ? [1, 2] : [3, 4];
+              // ظلٌّ حقيقيّ لهذا الشفت قبل التغطية؟ (خاناتُه طابقت مشرفه) — وإلّا نتركه.
+              const tk0 = keysRC(data.existingSlots, tId, day, periods);
+              const sk0 = new Set(keysRC(data.existingSlots, supId, day, periods));
+              if (!tk0.length || tk0.length !== sk0.size || !tk0.every((k) => sk0.has(k))) continue;
+              const supNow = fin.existingSlots.filter((r) => r.doctorId === supId && r.dayOfWeek === day && periods.includes(r.period) && inScopeRC(r));
+              const tNow = fin.existingSlots.filter((r) => r.doctorId === tId && r.dayOfWeek === day && periods.includes(r.period) && inScopeRC(r));
+              const want = supNow.map((r) => `${r.period}|${r.clinicNumber}|${r.role}`).sort();
+              const have = tNow.map((r) => `${r.period}|${r.clinicNumber}|${r.role}`).sort();
+              if (want.length === have.length && want.every((k, i) => k === have[i])) continue; // مطابقٌ — لا شيء
+              for (const r of tNow) await supabase.from('schedule_slots').delete().eq('id', r.id);
+              for (const r of supNow) await supabase.from('schedule_slots').insert({
+                clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+                period: r.period, clinic_number: r.clinicNumber,
+                doctor_id: tId, doctor_name: t.name, role: r.role, status: 'active', source: 'request',
+              });
+              // eslint-disable-next-line no-console
+              console.log(`[NEW-HEART COVER·ظلّ-يحاذي · ${args.label}] ${t.name} يتبع ${doctors.find((d) => d.id === supId)?.name ?? supId} (${day}/${half === 0 ? 'ص' : 'م'})`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log('[NEW-HEART COVER·ظلّ] تعذّر:', e instanceof Error ? e.message : e);
     }
 
     return { filled, shortages, pending, moves };
