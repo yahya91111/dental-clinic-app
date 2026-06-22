@@ -70,6 +70,19 @@ export function exOf(cfg: Cfg, st: St): Map<string, number> {
   for (const { week, day } of seqOf(cfg)) { const seen = new Set<string>(); for (const s of st[week]![day]!) if (s.role === 'ex' && !seen.has(s.doctor.id)) { seen.add(s.doctor.id); m.set(s.doctor.id, (m.get(s.doctor.id) || 0) + 1); } }
   return m;
 }
+// عدّادُ المنفرِد: طبيبٌ يَمنُج عيادةً واحدةً في الفترتين معًا (عبءٌ ثقيل) — مرّةً لكلّ (طبيب، يوم).
+export function soloOf(cfg: Cfg, st: St): Map<string, number> {
+  const m = new Map<string, number>(); cfg.names.forEach((_, i) => m.set(idOf(i), 0));
+  for (const { week, day } of seqOf(cfg)) {
+    const byDocClinic = new Map<string, Set<number>>();
+    for (const s of st[week]![day]!) if (s.role === 'clinic' && s.clinicNumber > 0) {
+      const k = `${s.doctor.id}|${s.clinicNumber}`; (byDocClinic.get(k) ?? byDocClinic.set(k, new Set()).get(k)!).add(s.period);
+    }
+    const seen = new Set<string>();
+    for (const [k, ps] of byDocClinic) if (ps.size === 2) { const id = k.split('|')[0]!; if (!seen.has(id)) { seen.add(id); m.set(id, (m.get(id) || 0) + 1); } }
+  }
+  return m;
+}
 
 const docObj = (cfg: Cfg, id: string) => ({ id, name: nmOf(cfg)(id) });
 
@@ -138,6 +151,7 @@ function resolveDayCore(cfg: Cfg, st: St, week: string, day: WeekDay, events: Ev
   const seqIdx = (w: string, d: WeekDay) => SEQ.findIndex((s) => s.week === w && s.day === d);
   const isBoard = (id: string) => cfg.boardIds.has(id);
   const baseDel = delOf(cfg, JSON.parse(JSON.stringify(st)) as St); // الأساس = قبل التعديل
+  const baseSolo = soloOf(cfg, JSON.parse(JSON.stringify(st)) as St); // أساس المنفرِد (للحِمل الثقيل الموحَّد)
   const baseEx = exOf(cfg, JSON.parse(JSON.stringify(st)) as St);    // أساس الاحتياط (للسداد النهائيّ)
   const absI = seqIdx(week, day);
   const orderFrom = (w: string, d: WeekDay): number[] => {
@@ -304,50 +318,66 @@ function resolveDayCore(cfg: Cfg, st: St, week: string, day: WeekDay, events: Ev
     }
     return null;
   };
-  // سلسلةُ خطوتين عبر وسيطٍ M (حين لا يوجد تبديلٌ مباشر): S→M يومًا، ثمّ M→Dd يومًا آخر (صافي: S−١، Dd+١، M=٠).
-  const twoHopMove = (S: string, Dd: string): string[] | null => {
-    for (const M of ids) {
-      if (isBoard(M) || absent.has(M) || M === S || M === Dd) continue;
-      let legB: { i: number; slot: AssignedSlot } | null = null; // M يستضيف يومًا يأخذه Dd
-      for (const i of order) {
-        if (i === absI) continue;
-        const sl = st[SEQ[i]!.week]![SEQ[i]!.day]!;
-        const mDel = sl.filter((s) => s.role === 'delegator' && s.doctor.id === M);
-        if (!mDel.length) continue;
-        const ddP = new Set(sl.filter((s) => s.role === 'clinic' && s.doctor.id === Dd).map((s) => s.period));
-        if (!ddP.size) continue;
-        const slot = mDel.find((s) => !ddP.has(s.period) && !sl.some((x) => x.role === 'delegator' && x.doctor.id === Dd && x.period === s.period));
-        if (slot) { legB = { i, slot }; break; }
+  // سلسلةُ نقلٍ مُعمَّمةٌ **بأيّ طول** (≥٢) عبر وسطاء، قَبْليّ أوّلًا: S→…→Dd. كلُّ تسليمٍ في
+  // يومٍ مميّزٍ (المُعطي يستضيف ف p، والمستلِم عيادةٌ حاضرةٌ حرّةٌ في p). صافٍ: S−١، Dd+١، الوسطاء ٠
+  // (كلٌّ يأخذ يومًا ويُعطي آخر). تعميقٌ تدريجيّ (أقصرُ سلسلةٍ أوّلًا = أقلّ لمسٍ، **بلا سقفٍ على العدل**).
+  const chainMaxHops = ids.filter((id) => !isBoard(id) && !absent.has(id)).length; // أطول سلسلةٍ ممكنة = عدد الحاضرين
+  // حوافُّ التسليم من C في يومٍ غير مستعمَل: C يستضيف ف p، وN عيادةٌ حاضرةٌ حرّةٌ في p (لا يستضيف p، غير محجوب).
+  const handsFrom = (C: string, used: Set<number>): { i: number; slot: AssignedSlot; to: string }[] => {
+    const out: { i: number; slot: AssignedSlot; to: string }[] = [];
+    for (const i of order) {
+      if (i === absI || used.has(i)) continue;
+      const sl = st[SEQ[i]!.week]![SEQ[i]!.day]!;
+      for (const slot of sl.filter((s) => s.role === 'delegator' && s.doctor.id === C)) {
+        const p = slot.period;
+        for (const N of [...new Set(sl.filter((s) => s.role === 'clinic' && s.doctor.id !== C && !isBoard(s.doctor.id) && !absent.has(s.doctor.id)).map((s) => s.doctor.id))]) {
+          const nP = new Set(sl.filter((s) => s.role === 'clinic' && s.doctor.id === N).map((s) => s.period));
+          if (!nP.size || nP.has(p)) continue;                                                       // حاضرٌ بالعيادة وحرٌّ في p
+          if (sl.some((x) => x.role === 'delegator' && x.doctor.id === N && x.period === p)) continue; // لا يستضيف p أصلًا
+          if (blocked.get(N)?.has(p)) continue;                                                       // غير محجوبٍ بالاستئذان
+          out.push({ i, slot, to: N });
+        }
       }
-      if (!legB) continue;
-      let legA: { i: number; slot: AssignedSlot } | null = null; // S يستضيف يومًا (≠ يوم ب) يأخذه M
-      for (const i of order) {
-        if (i === absI || i === legB.i) continue;
-        const sl = st[SEQ[i]!.week]![SEQ[i]!.day]!;
-        const sDel = sl.filter((s) => s.role === 'delegator' && s.doctor.id === S);
-        if (!sDel.length) continue;
-        const mP = new Set(sl.filter((s) => s.role === 'clinic' && s.doctor.id === M).map((s) => s.period));
-        if (!mP.size) continue;
-        const slot = sDel.find((s) => !mP.has(s.period) && !sl.some((x) => x.role === 'delegator' && x.doctor.id === M && x.period === s.period));
-        if (slot) { legA = { i, slot }; break; }
+    }
+    return out;
+  };
+  const chainMove = (S: string, Dd: string): string[] | null => {
+    for (let depth = 2; depth <= chainMaxHops; depth++) {
+      const path: { i: number; slot: AssignedSlot; to: string }[] = [];
+      const dfs = (C: string, used: Set<number>, seen: Set<string>, left: number): boolean => {
+        for (const e of handsFrom(C, used)) {
+          if (left === 1) { if (e.to !== Dd) continue; }      // الخطوة الأخيرة تصل Dd
+          else if (e.to === Dd || seen.has(e.to)) continue;   // لا نصل مبكّرًا ولا نُكرّر طبيبًا
+          path.push(e); used.add(e.i); seen.add(e.to);
+          if (left === 1 || dfs(e.to, used, seen, left - 1)) return true;
+          path.pop(); used.delete(e.i); seen.delete(e.to);
+        }
+        return false;
+      };
+      if (dfs(S, new Set(), new Set([S]), depth)) {
+        const desc: string[] = [];
+        for (const e of path) { const from = e.slot.doctor.id; e.slot.doctor = docObj(cfg, e.to); const dd = SEQ[e.i]!; desc.push(`${AR[dd.day]} ${dd.week} [سلسلة-${path.length}]: ف${e.slot.period} ${nm(from)}→${nm(e.to)}`); }
+        return desc;
       }
-      if (!legA) continue;
-      legA.slot.doctor = docObj(cfg, M); legB.slot.doctor = docObj(cfg, Dd);
-      const dA = SEQ[legA.i]!, dB = SEQ[legB.i]!;
-      return [`${AR[dA.day]} ${dA.week} [سلسلة]: ف${legA.slot.period} ${nm(S)}→${nm(M)}`, `${AR[dB.day]} ${dB.week} [سلسلة]: ف${legB.slot.period} ${nm(M)}→${nm(Dd)}`];
     }
     return null;
   };
-  for (let iter = 0; iter < 16; iter++) {
-    const dc = delOf(cfg, st);
-    const deficit = ids.filter((id) => !absent.has(id) && !isBoard(id) && dc.get(id)! < baseDel.get(id)!);
-    const surplus = ids.filter((id) => !absent.has(id) && !isBoard(id) && dc.get(id)! > baseDel.get(id)!);
+  // الحِملُ الثقيل **الموحَّد** = دليقيتر + منفرِد (كما في القلب الحيّ extractHeavySeats). فمن يحمل
+  // منفرِدًا (عبءٌ مُجبَرٌ لا يُنقَل) يصير فائضًا فتُسحَب دليقيتراتُه عبر السلسلة لمن هو أخفّ → **تعويضٌ**.
+  for (let iter = 0; iter < 64; iter++) {
+    const dc = delOf(cfg, st); const sc = soloOf(cfg, st);
+    const heavy = (id: string) => (dc.get(id) || 0) + (sc.get(id) || 0);
+    const target = (id: string) => (baseDel.get(id) || 0) + (baseSolo.get(id) || 0);
+    const deficit = ids.filter((id) => !absent.has(id) && !isBoard(id) && heavy(id) < target(id));
+    const surplus = ids.filter((id) => !absent.has(id) && !isBoard(id) && heavy(id) > target(id));
     if (!deficit.length || !surplus.length) break;
     let applied = false;
+    // (١) نقلٌ مباشر (سلسلة-١)، ثمّ (٢) سلسلةٌ مُعمَّمةٌ بأيّ طول. أقصرُ أوّلًا = أقلّ لمس.
     for (const S of surplus) { for (const Dd of deficit) { const m = directMove(S, Dd); if (m) { delSwaps.push(m); applied = true; break; } } if (applied) break; }
-    if (!applied) { for (const S of surplus) { for (const Dd of deficit) { const ms = twoHopMove(S, Dd); if (ms) { delSwaps.push(...ms); applied = true; break; } } if (applied) break; } }
+    if (!applied) { for (const S of surplus) { for (const Dd of deficit) { const ms = chainMove(S, Dd); if (ms) { delSwaps.push(...ms); applied = true; break; } } if (applied) break; } }
     if (!applied) break;
   }
+  for (const s of delSwaps) logs.push(`⇄ موازنة دل: ${s}`);
 
   // ─── (٥) سدادُ احتياطٍ نهائيّ: مُغطٍّ حاضرٌ فقَد راحته يُعوَّض من مَدينٍ (غائبٍ أو مستأذِن) له احتياطٌ غير مستهلَك ───
   const debtors = [...new Set([...absent, ...perms.filter((p) => !absent.has(p.id)).map((p) => p.id)])].filter((id) => !isBoard(id));

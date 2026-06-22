@@ -1432,8 +1432,18 @@ export async function dispatchRequestToolV2(
         if (!isApplyMode(ctx.clinicId)) return 'Tool error: التغطية التلقائيّة غير مفعّلة لهذه العيادة.';
         if (r.decline) {
           // «لا أحد»: لا يُستدعى الاحتياطيّ الخاصّ — والذكاء يتكفّل بالتغطية بنفسه من
-          // المتاح (كأنّ ذلك الاحتياطيّ غير موجود: شريك منفرد… إلخ).
-          await applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
+          // المتاح (كأنّ ذلك الاحتياطيّ غير موجود: شريك منفرد… إلخ). نلفّها بيوميّات الأثر
+          // كي يعكسها كنسلُ الغياب (تشمل يومَ الغياب: إسقاطَ استضافةٍ وترقيةَ جيران). السببُ
+          // = مالكُ مقعدِ الغياب (prev_placement) لذلك اليوم — إن كان واحدًا (الحالة الشائعة).
+          const { withXdayJournal } = await import('../algorithms/requests_v2');
+          const { supabase } = await import('../supabase');
+          const { data: pp } = await supabase.from('schedule_slots')
+            .select('doctor_id').eq('clinic_id', ctx.clinicId).eq('week_start', ws)
+            .eq('day_of_week', r.day).eq('role', 'prev_placement');
+          const owners = [...new Set(((pp || []) as { doctor_id: string }[]).map((x) => x.doctor_id))];
+          const runCov = () => applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
+          if (owners.length === 1) await withXdayJournal(ctx.clinicId, ws, { day: String(r.day), doctorId: owners[0]! }, runCov);
+          else await runCov(); // غيابٌ متعدّدٌ أو غامض → بلا يَوْمَنةٍ لهذا التمرير (نادر)
           await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
           return final(`تمّ — لن نستدعي أحدًا، وسأتكفّل أنا بترتيب التغطية يوم ${DAY_AR[r.day]}.`);
         }

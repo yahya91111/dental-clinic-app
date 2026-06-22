@@ -133,6 +133,9 @@ export async function applyCoverage(
     let filled = 0; let shortages = 0;
     const pending: PendingReserveChoice[] = [];
     const moves: CoverageMove[] = [];
+    // استضافاتٌ أُسقِطت لأنّ شاغلها سُحب «منفردًا» للعيادة — تحاول المرحلةُ الثانية إعادة
+    // إسنادها لجسدٍ حرٍّ (نماذج مرنة + لجنة) قبل تركها فارغة.
+    const droppedHosts: { day: WeekDay; period: number; absentId?: string }[] = [];
     const tagKind: Record<string, CoverageMove['kind']> = { '': 'reserve', '·دليقيتر': 'delegator', '·تخفيف': 'light_duty' };
 
     for (const sc of scopes) {
@@ -241,6 +244,16 @@ export async function applyCoverage(
               moves.push({ doctorId: partner.doctorId, day, clinicNumber: seat.clinicNumber, period: seat.period, kind: 'partner_solo', absentId: seat.absentId });
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART ${sc.name}·منفرد · ${args.label}] ${partner.doctorName} → عيادة ${seat.clinicNumber} (${day}/${half === 0 ? 'ص' : 'م'} ف${seat.period}) منفردًا`);
+              // الشريك صار يغطّي العيادة في فترتَي الشفت → لا يصلح مُستضيفًا فيه. أسقِط أيّ
+              // دورِ استضافةٍ له في هذا الشفت كي لا يصير عيادةً ودليقيترًا في الفترة ذاتها
+              // (الازدواج المكتشَف في غياب عضو زوج الاستضافة). المقعد المُفرَّغ تتولّاه
+              // المرحلةُ الثانية (تغطية الدليقيتر) — تملؤه إن توفّر جسدٌ، وإلّا يسقط (ثانويّ).
+              for (const dh of dayRows.filter((s) => s.doctorId === partner.doctorId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period))) {
+                await supabase.from('schedule_slots').delete().eq('id', dh.id);
+                droppedHosts.push({ day, period: dh.period, absentId: seat.absentId });
+                // eslint-disable-next-line no-console
+                console.log(`[NEW-HEART ${sc.name}·منفرد·أسقط-استضافة · ${args.label}] ${partner.doctorName} ترك استضافة ف${dh.period} (يغطّي العيادة منفردًا)`);
+              }
             }
             vacant = stillVacant;
           }
@@ -266,34 +279,53 @@ export async function applyCoverage(
             const periods = half === 0 ? [1, 2] : [3, 4];
             const exCol = half === 0 ? 1 : 2;
             const rows = d2.existingSlots.filter((s) => s.dayOfWeek === day);
-            // مقاعد دليقيتر شاغرة: حفظُ غيابٍ (prev_placement) برقم عيادةٍ صفر لطبيب بِركة.
-            const vac = rows.filter((s) => (s.role as string) === 'prev_placement' && s.status === 'active'
-              && s.clinicNumber === 0 && periods.includes(s.period) && poolIds.has(s.doctorId));
-            if (!vac.length) continue;
-            // الفترات التي فيها دليقيترٌ نشطٌ أصلًا (مُغطّاة) — نتخطّاها.
+            // الفتراتُ التي بها دليقيترٌ نشطٌ أصلًا (مُغطّاة) — نتخطّاها.
             const hasDeleg = new Set(rows.filter((s) => s.status === 'active' && s.role === 'delegator' && periods.includes(s.period)).map((s) => s.period));
-            const need = vac.filter((v) => !hasDeleg.has(v.period));
-            if (!need.length) continue;
-            const inClinic = new Set(rows.filter((s) => s.status === 'active' && s.role === 'clinic' && periods.includes(s.period)).map((s) => s.doctorId));
-            const freeRes = [...new Set(rows.filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))]
-              .filter((id) => poolIds.has(id) && !inClinic.has(id))
-              // نفس قاعدة التوزيع: الدليقيتر يُسحب بحداثة الدليقيتر (الأقدمُ دورًا أوّلًا).
-              .sort((a, b) => (delRecency.get(a) ?? '').localeCompare(delRecency.get(b) ?? ''));
-            for (const v of need) {
-              const pick = freeRes.shift();
-              if (!pick) break; // لا احتياط متاح → نترك الدليقيتر (دورٌ مساعد، لا نقصٌ حرج)
+            // طلبُ الاستضافة الشاغر: (أ) استضافةُ الغائب (prev_placement, رقم عيادة صفر،
+            // طبيب بِركة)، (ب) استضافةٌ أُسقِطت لمّا سُحب شاغلُها «منفردًا» للعيادة. الفترة →
+            // معرّفُ الغائب صاحبِ الحدث (لمحور السداد).
+            const demand = new Map<number, string | undefined>();
+            for (const s of rows.filter((s) => (s.role as string) === 'prev_placement' && s.status === 'active'
+              && s.clinicNumber === 0 && periods.includes(s.period) && poolIds.has(s.doctorId))) {
+              if (!hasDeleg.has(s.period)) demand.set(s.period, s.doctorId);
+            }
+            for (const d of droppedHosts) {
+              if (d.day === day && periods.includes(d.period) && !hasDeleg.has(d.period) && !demand.has(d.period)) demand.set(d.period, d.absentId);
+            }
+            if (demand.size === 0) continue;
+            // المرشّحون (نماذجٌ مرنة، اللجنةُ = حداثةُ الدور تختار الأعدل): كلُّ طبيبِ بِركةٍ
+            // **حاضرٍ في الشفت وحرٍّ في الفترة** — إمّا محتاطٌ مستريح، أو طبيبُ عيادةِ فترةٍ
+            // واحدةٍ يستضيف فترته الحرّة (= «يستضيف زميلٌ مجاورٌ فترته»). لا يُكسَر مقعدُ عيادة.
+            const presentShift = new Set<string>(
+              rows.filter((s) => poolIds.has(s.doctorId)
+                && ((s.status === 'active' && s.role === 'clinic' && periods.includes(s.period))
+                  || (s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)))
+                .map((s) => s.doctorId));
+            const sickVac = new Set(rows.filter((s) => s.period === 0 && (s.status === 'sick_leave' || s.status === 'vacation')).map((s) => s.doctorId));
+            const permBlock = (id: string, P: number): boolean => rows.some((s) => s.doctorId === id && s.period === 0
+              && ((s.status === 'permission_start' && P === (half === 0 ? 1 : 3)) || (s.status === 'permission_end' && P === (half === 0 ? 2 : 4)))
+              && (s.clinicNumber === exCol || s.clinicNumber === 0));
+            const used = new Set<string>();
+            for (const P of [...demand.keys()].sort((a, b) => a - b)) {
+              // حرٌّ في P: لا خانةَ نشطةً (عيادة/استضافة) له فيها، وليس غائبًا/محجوبًا، ولم يُستعمَل.
+              const occAtP = new Set(rows.filter((s) => s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator') && s.period === P).map((s) => s.doctorId));
+              const cands = [...presentShift].filter((id) => !occAtP.has(id) && !used.has(id) && !sickVac.has(id) && !permBlock(id, P))
+                .sort((a, b) => (delRecency.get(a) ?? '').localeCompare(delRecency.get(b) ?? ''));
+              const pick = cands[0];
+              if (!pick) continue; // لا جسدَ حرّ → تبقى فارغةً (الاستضافةُ دورٌ مساعد، لا نقصٌ حرج)
+              used.add(pick);
               const name = d2.doctors.find((d) => d.id === pick)?.name ?? pick;
               const ex = rows.find((s) => s.doctorId === pick && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
               if (ex) await supabase.from('schedule_slots').delete().eq('id', ex.id);
               await supabase.from('schedule_slots').insert({
                 clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
-                period: v.period, clinic_number: 0,
+                period: P, clinic_number: 0,
                 doctor_id: pick, doctor_name: name, role: 'delegator', status: 'active', source: 'request',
               });
               filled++;
-              moves.push({ doctorId: pick, day, clinicNumber: 0, period: v.period, kind: 'delegator', absentId: v.doctorId });
+              moves.push({ doctorId: pick, day, clinicNumber: 0, period: P, kind: 'delegator', absentId: demand.get(P) });
               // eslint-disable-next-line no-console
-              console.log(`[NEW-HEART COVER·دليقيتر · ${args.label}] ${name} → دليقيتر (${day}/${half === 0 ? 'ص' : 'م'} ف${v.period})`);
+              console.log(`[NEW-HEART COVER·دليقيتر${ex ? '' : '·مجاور'} · ${args.label}] ${name} → دليقيتر (${day}/${half === 0 ? 'ص' : 'م'} ف${P})${ex ? '' : ' (فترته الحرّة)'}`);
             }
           }
         }
@@ -366,21 +398,33 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
     if (!data) return { applied: 0 };
     const doctors = data.doctors;
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+    // المتدرّبون (ظلال): قد يرثون صفَّ استضافةٍ من مدرّبٍ مُرقًّى. لا يُعَدُّ مقعدَ استضافةٍ
+    // حقيقيًّا يُعاد إسنادُه — وإلّا رآه الحلّالُ «مفتوحًا» (المتدرّب خارج البِركة) فبادله
+    // بطبيبٍ نشطٍ وأفسد الجدول. نُسقِط أيّ مقعدٍ شاغلُه متدرّبٌ من إعادة التوازن.
+    const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
     const all: LoadedSlot[] = [...data.pastSlots, ...data.existingSlots];
 
     const delSeats: HeavySeat[] = [];
     for (const day of DAY_OF) {
       const dayRows = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day]);
-      // محجوبون باستئذانٍ صباحيّ (عمود ١): المضيفُ يعمل الفترتين، فمن حُجبت إحدى فترتيه
-      // لا يصلح مضيفًا — نستبعده من أهليّة مقعد الاستضافة كي لا تُعيد الموازنةُ الدورَ إليه
-      // فتنقُض حلَّ الاستئذان. (نُبقي الشاغل الحاليّ احترازًا من أهليّةٍ فارغة.)
-      const permBlocked = new Set(dayRows
-        .filter((s) => s.period === 0 && s.clinicNumber === 1 && (s.status === 'permission_start' || s.status === 'permission_end'))
-        .map((s) => s.doctorId));
-      const ss = dayRows.filter((s) => [1, 2].includes(s.period));
-      for (const seat of extractHeavySeats(ss, poolIds)) {
-        if (permBlocked.size) seat.eligible = seat.eligible.filter((id) => id === seat.current || !permBlocked.has(id));
-        delSeats.push(seat);
+      // **النصفان معًا** (صباح ف١،٢ ومساء ف٣،٤) — المساءُ كالصباح تمامًا. كلُّ نصفٍ بختمٍ مستقلّ.
+      for (const half of [0, 1] as const) {
+        const periods = half === 0 ? [1, 2] : [3, 4];
+        const exCol = half === 0 ? 1 : 2;
+        // محجوبون باستئذانٍ في هذا النصف (عمود ١ صباحًا / ٢ مساءً): المضيفُ يعمل فترتَي نصفه،
+        // فمن حُجبت إحدى فترتيه لا يصلح مضيفًا — نستبعده من أهليّة المقعد كي لا تنقُض الموازنةُ حلَّ
+        // الاستئذان. (نُبقي الشاغل الحاليّ احترازًا من أهليّةٍ فارغة.)
+        const permBlocked = new Set(dayRows
+          .filter((s) => s.period === 0 && s.clinicNumber === exCol && (s.status === 'permission_start' || s.status === 'permission_end'))
+          .map((s) => s.doctorId));
+        const ss = dayRows.filter((s) => periods.includes(s.period));
+        for (const seat of extractHeavySeats(ss, poolIds)) {
+          if (traineeIds.has(seat.current)) continue; // مقعدُ ظلٍّ متدرّب — لا يُعاد إسنادُه
+          if (permBlocked.size) seat.eligible = seat.eligible.filter((id) => id === seat.current || !permBlocked.has(id));
+          // لا تُسنَد الاستضافةُ لمتدرّبٍ (ظلٍّ) — نُقصيهم من أهليّة المقعد.
+          seat.eligible = seat.eligible.filter((id) => id === seat.current || !traineeIds.has(id));
+          delSeats.push(seat);
+        }
       }
     }
     delSeats.sort((a, b) => a.stamp.localeCompare(b.stamp));
@@ -526,10 +570,11 @@ export async function applyReserveRepay(
   return { repaid, accepted, repaidAbsent };
 }
 
-/** يشتقّ أزواجَ السداد من حركات التغطية: المُغطّي كان احتياطيًّا (reserve/delegator) فخسر
- *  راحتَه، والغائب (absentId) مَدينٌ له. الشفت من الفترة (≤٢ صباح=١، وإلّا مساء=٢). */
+/** يشتقّ أزواجَ السداد من حركات التغطية: المُغطّي خسر راحتَه/تحمّل عبئًا إضافيًّا، والغائب
+ *  (absentId) مَدينٌ له. يشمل: احتياطيًّا/دليقيترًا نزل للعيادة، **والمنفرِدَ** (شريكٌ سُحب
+ *  ليُغطّي العيادةَ منفردًا — عبءٌ إضافيٌّ يستحقّ تعويضًا على محور الاحتياط). الشفت من الفترة. */
 export function reservePairsFromMoves(moves: CoverageMove[]): { coverer: string; owner: string; exCol: number; coverDay: string }[] {
   return moves
-    .filter((m) => (m.kind === 'reserve' || m.kind === 'delegator') && !!m.absentId)
+    .filter((m) => (m.kind === 'reserve' || m.kind === 'delegator' || m.kind === 'partner_solo') && !!m.absentId)
     .map((m) => ({ coverer: m.doctorId, owner: m.absentId as string, exCol: m.period <= 2 ? 1 : 2, coverDay: m.day }));
 }

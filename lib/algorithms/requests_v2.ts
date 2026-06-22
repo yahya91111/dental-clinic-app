@@ -273,21 +273,38 @@ export async function withXdayJournal<T>(
     for (const r of before) { const a = byDayBefore.get(r.day) ?? []; a.push(r); byDayBefore.set(r.day, a); }
     for (const r of after) { const a = byDayAfter.get(r.day) ?? []; a.push(r); byDayAfter.set(r.day, a); }
     const days = new Set([...byDayBefore.keys(), ...byDayAfter.keys()]);
+    // المتدرّبون (ظلال) — يُستثنَون من يَوْمَنة يوم الحدث؛ تعيدهم آليّةُ الظلّ
+    // (returnShadowsWithSupervisor) فلا نُكرّرهم.
+    let traineeIds = new Set<string>();
+    try {
+      const { data: mem } = await getAllGroupMembers(clinicId);
+      traineeIds = new Set(((mem || []) as { doctor_id: string; work_status?: string }[])
+        .filter((m) => m.work_status === 'trainee').map((m) => m.doctor_id));
+    } catch { /* تجاهل */ }
     const inserts: Record<string, unknown>[] = [];
     for (const d of days) {
-      if (d === cause.day) continue;                       // يوم الحدث يملكه إرجاع prev_placement
-      const bD = byDayBefore.get(d) ?? [];
-      const aD = byDayAfter.get(d) ?? [];
+      // يومُ الحدث: نُيَوْمِن **بُعدَ الاستضافة فقط** (delegator، غير متدرّب) — لأنّ التغطية
+      // قد تُسقِط استضافةَ شريكٍ وتُرقّي جيرانًا عليه، وهو ما لا يعكسه إرجاعُ المكان (prev) ولا
+      // الاسترداد. العيادةُ/الاحتياطُ/الظلّ على يوم الحدث يعالجها الاستردادُ الحرفيّ كما كان.
+      // الأيّامُ البعيدة تُيَوْمَن كاملةً (عيادة+استضافة+احتياط) كالسابق.
+      const isCause = d === cause.day;
+      const slice = (arr: PlaceRow[]) => isCause ? arr.filter((r) => r.role === 'delegator' && !traineeIds.has(r.doctorId)) : arr;
+      const bD = slice(byDayBefore.get(d) ?? []);
+      const aD = slice(byDayAfter.get(d) ?? []);
       if (dayHash(bD) === dayHash(aD)) continue;            // لم يتغيّر → لا يَوْمَنة
-      // امسح وسومًا سابقةً لنفس السبب في هذا اليوم (تجنّب التراكم)
-      await deleteXdayMarkers(clinicId, weekStart, d, cause);
+      // تمريراتُ تغطيةٍ متعدّدةٌ لنفس الحدث (ask ثمّ exclude): نُبقي **أوّلَ** لقطةٍ قبليّة
+      // (الأساسَ قبل أيّ تغطية) ونُحدّث الحارسَ فقط ليطابق آخرَ حالة بعد كلّ تمرير.
+      const existing = await loadXdayMarkers(clinicId, weekStart, d, cause);
+      const hasPre = existing.some((m) => m.role === XDAY_PRE);
+      const oldGuards = existing.filter((m) => m.role === XDAY_GUARD).map((m) => m.id);
+      if (oldGuards.length) await deleteRows(oldGuards);
       inserts.push({
         clinic_id: clinicId, week_start: weekStart, day_of_week: d,
         period: 0, clinic_number: XDAY_GUARD_CLINIC,
         doctor_id: cause.doctorId, doctor_name: '·xday·',
         role: XDAY_GUARD, status: 'active', source: `xg|${cause.day}|${cause.doctorId}|${dayHash(aD)}`,
       });
-      for (const r of bD) inserts.push({
+      if (!hasPre) for (const r of bD) inserts.push({
         clinic_id: clinicId, week_start: weekStart, day_of_week: d,
         period: r.period, clinic_number: r.clinic,
         doctor_id: r.doctorId, doctor_name: r.doctorName,
@@ -307,16 +324,24 @@ async function deleteXdayMarkers(
   clinicId: string, weekStart: string, day: string,
   cause: { day: string; doctorId: string },
 ): Promise<void> {
+  const ids = (await loadXdayMarkers(clinicId, weekStart, day, cause)).map((r) => r.id);
+  await deleteRows(ids);
+}
+
+/** يقرأ وسوم يومٍ لسببٍ معيّن (PRE/GUARD) — لمعرفة أيّها موجودٌ قبل إعادة الكتابة. */
+async function loadXdayMarkers(
+  clinicId: string, weekStart: string, day: string,
+  cause: { day: string; doctorId: string },
+): Promise<{ id: string; role: string; source: string }[]> {
   const { data } = await supabase
     .from('schedule_slots')
     .select('id, role, source')
     .eq('clinic_id', clinicId).eq('week_start', weekStart).eq('day_of_week', day)
     .in('role', [XDAY_PRE, XDAY_GUARD]);
   const tag = `|${cause.day}|${cause.doctorId}|`;
-  const ids = ((data || []) as { id: string; source?: string }[])
+  return ((data || []) as { id: string; role: string; source?: string }[])
     .filter((r) => (r.source || '').includes(tag))
-    .map((r) => r.id);
-  await deleteRows(ids);
+    .map((r) => ({ id: r.id, role: r.role, source: r.source || '' }));
 }
 
 /** يعكس الأثر البعيد لحدثٍ مُلغًى: لكلّ يومٍ بعيدٍ موسومٍ بهذا السبب، إن كان ما يزال
@@ -335,19 +360,30 @@ export async function restoreXdayFootprint(
   const mine = ((data || []) as Record<string, unknown>[])
     .filter((r) => String(r.source || '').includes(tag));
   if (mine.length === 0) return { restored, entangled };
+  // المتدرّبون — يوم الحدث يُستردّ على بُعد الاستضافة لغير المتدرّبين فقط (مطابق اليَوْمَنة).
+  let traineeIds = new Set<string>();
+  try {
+    const { data: mem } = await getAllGroupMembers(clinicId);
+    traineeIds = new Set(((mem || []) as { doctor_id: string; work_status?: string }[])
+      .filter((m) => m.work_status === 'trainee').map((m) => m.doctor_id));
+  } catch { /* تجاهل */ }
   const byDay = new Map<string, Record<string, unknown>[]>();
   for (const m of mine) { const d = String(m.day_of_week); const a = byDay.get(d) ?? []; a.push(m); byDay.set(d, a); }
 
   for (const [d, markers] of byDay) {
     const cause = { day: causeDay, doctorId: causeDoctorId };
+    const isCause = d === causeDay;
     const guard = markers.find((m) => m.role === XDAY_GUARD);
     const pre = markers.filter((m) => m.role === XDAY_PRE);
     if (!guard || pre.length === 0) { await deleteXdayMarkers(clinicId, weekStart, d, cause); continue; }
     const wantHash = String(guard.source || '').split('|').slice(3).join('|'); // كلّ ما بعد الوسم = البصمة
-    // الحالة الحاليّة لخانات هذا اليوم على نفس النطاق (عيادة/دليقيتر نشطة + احتياط).
+    // الحالة الحاليّة على نفس النطاق المُيَوْمَن: يومُ الحدث = استضافةٌ نشطةٌ غير-متدرّب فقط؛
+    // الأيّامُ البعيدة = عيادة/دليقيتر نشطة + احتياط (كاملًا).
     const dayRows = await loadDay(clinicId, weekStart, d as WeekDay);
-    const curReal = dayRows.filter((r) => (r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'))
-      || (r.status === 'extra' && r.period === 0));
+    const curReal = isCause
+      ? dayRows.filter((r) => r.status === 'active' && r.role === 'delegator' && r.period > 0 && !traineeIds.has(r.doctor_id))
+      : dayRows.filter((r) => (r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'))
+        || (r.status === 'extra' && r.period === 0));
     const curHash = dayHash(curReal.map((r) => ({
       day: d, period: r.period, clinic: r.clinic_number, doctorId: r.doctor_id, doctorName: r.doctor_name, role: r.role, status: r.status,
     })));
@@ -1018,7 +1054,7 @@ export async function cancelStatus(
   const { clinicId, weekStart, day, doctorId, restoreToPrevPlace } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة إلغاء حالة هذا الطبيب.');
   try {
-    const rows = await loadDay(clinicId, weekStart, day);
+    let rows = await loadDay(clinicId, weekStart, day);
     const mine = rows.filter((r) => r.doctor_id === doctorId);
 
     // أزِل صفّ الحالة (period=0 وحالته ليست active)
@@ -1058,6 +1094,10 @@ export async function cancelStatus(
         console.log(`[xday-cancel] أُعيد: ${xr.restored.map((d) => DAY_AR[d] || d).join('،') || '—'}`
           + ` | متشابك (تُرك): ${xr.entangled.map((d) => DAY_AR[d] || d).join('،') || '—'}`);
       }
+      // أُعيد يومُ الحدث نفسه إلى لقطته القبليّة (التغطيةُ عُكِست: عاد المُسقِطُ لاستضافته
+      // وزالت ترقياتُ الجيران، ومقعدُ الغائب صار فارغًا) → نعيد تحميل rows كي تَملأَ كتلةُ
+      // الاستردادِ أدناه الغائبَ في مكانه الفارغ بدل أن تعمل على حالةٍ قديمةٍ مشغولة.
+      if (xr.restored.includes(day)) rows = await loadDay(clinicId, weekStart, day);
     } catch (e) { /* الاسترجاع البعيد تحسينٌ — لا يُفشل الكنسل */ void e; }
 
     // ── ظلٌّ موسوم (source='shadow')؟ عودته مرآةُ خانات مدرّبه **الحاليّة** ──

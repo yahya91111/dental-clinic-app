@@ -1,7 +1,7 @@
 // مصفوفةُ اختبارٍ حتميّة: أعدادٌ مختلفة × سيناريوهاتٌ مختلفة → فحصُ الثوابت + اتّزان العدّادين.
 //   npx tsx scripts/labMatrix.ts            (كلّ المصفوفة)
 //   npx tsx scripts/labMatrix.ts -v <cfg>   (تفصيلٌ لإعدادٍ واحد)
-import { buildBaseline, resolveDay, delOf, exOf, seqOf, idOf, nmOf, DAYS, AR } from './lib-resolver';
+import { buildBaseline, resolveDay, delOf, exOf, soloOf, seqOf, idOf, nmOf, DAYS, AR } from './lib-resolver';
 import type { Cfg, St, Event, DaySlots } from './lib-resolver';
 import type { WeekDay } from '../lib/algorithms/schedule';
 
@@ -48,17 +48,24 @@ function evalScenario(cfg: Cfg, base: St, week: string, day: WeekDay, events: Ev
   const ids = cfg.names.map((_, i) => idOf(i));
   const absent = new Set(events.filter((e) => e.kind === 'abs').map((e) => (e as any).id));
   const isBoard = (id: string) => cfg.boardIds.has(id);
-  // اتّزان الدليقيتر
+  // اتّزان **الحِمل الموحَّد** (دليقيتر + منفرِد) — هو ما يوازنه المحرّك الآن. تحت الأساس = مسلوب
+  // (ظلمٌ قابلٌ للإصلاح)؛ فوقه = امتصاصٌ حتميٌّ (دورُ الغائب) أو منفرِدٌ مُجبَر.
   const db = delOf(cfg, before), da = delOf(cfg, st);
-  const delPresentOff = ids.filter((id) => !isBoard(id) && !absent.has(id) && da.get(id)! !== db.get(id)!);
-  const delAbsentOff = ids.filter((id) => !isBoard(id) && absent.has(id) && da.get(id)! !== db.get(id)!);
+  const sb = soloOf(cfg, before), sa = soloOf(cfg, st);
+  const hb = (id: string) => db.get(id)! + sb.get(id)!;
+  const ha = (id: string) => da.get(id)! + sa.get(id)!;
+  const delPresentBelow = ids.filter((id) => !isBoard(id) && !absent.has(id) && ha(id) < hb(id));
+  const delPresentAbove = ids.filter((id) => !isBoard(id) && !absent.has(id) && ha(id) > hb(id));
+  const delPresentOff = [...delPresentBelow, ...delPresentAbove];
+  const delAbsentOff = ids.filter((id) => !isBoard(id) && absent.has(id) && ha(id) !== hb(id));
   // اتّزان الاحتياط: غيرُ الغائبين يجب ألّا ينقص احتياطهم (إلا ج)
   const eb = exOf(cfg, before), ea = exOf(cfg, st);
   const exPresentLost = ids.filter((id) => !isBoard(id) && !absent.has(id) && ea.get(id)! < eb.get(id)!);
+  const soloFixable = false; // المنفرِد صار ضمن الحِمل الموحَّد أعلاه
   // البورد: دل=٠ دائمًا
   const boardHosted = ids.filter((id) => isBoard(id) && da.get(id)! > 0);
   const hardFail = [...res.problems, ...boardHosted.map((id) => `بورد ${nmOf(cfg)(id)} استضاف!`)];
-  return { res, hardFail, delPresentOff, delAbsentOff, exPresentLost, st, before };
+  return { res, hardFail, delPresentOff, delPresentBelow, delPresentAbove, delAbsentOff, exPresentLost, soloFixable, st, before };
 }
 
 function scenariosFor(cfg: Cfg, base: St): { name: string; week: string; day: WeekDay; events: Event[] }[] {
@@ -95,7 +102,7 @@ function scenariosFor(cfg: Cfg, base: St): { name: string; week: string; day: We
 
 const verbose = process.argv[2] === '-v';
 const onlyTag = verbose ? process.argv[3] : null;
-let totFail = 0, totIOU = 0, totExLost = 0, totRun = 0;
+let totFail = 0, totIOU = 0, totBelow = 0, totExLost = 0, totSoloFix = 0, totRun = 0;
 for (const { tag, cfg } of CONFIGS) {
   if (onlyTag && tag !== onlyTag) continue;
   let base: St;
@@ -106,13 +113,18 @@ for (const { tag, cfg } of CONFIGS) {
     totRun++;
     const r = evalScenario(cfg, base, sc.week, sc.day, sc.events);
     const hard = r.hardFail.length > 0;
-    const iou = !hard && (r.delPresentOff.length > 0);
+    const hasBelow = !hard && r.delPresentBelow.length > 0;
+    const hasAbove = !hard && r.delPresentAbove.length > 0;
+    const fixable = hasBelow && hasAbove;                      // فائضٌ + مسلوبٌ معًا → السلسلةُ تَنقل (ظلمٌ حقيقيّ)
+    const thinDrop = hasBelow && !hasAbove;                    // مسلوبٌ بلا فائض → الدورُ تساقط (نحيفٌ مقبول)
+    const absorbOnly = hasAbove && !hasBelow;                  // فائضٌ فقط → امتصاصٌ حتميٌّ لدور الغائب
+    const iou = hasBelow || hasAbove;
     const exLost = !hard && r.exPresentLost.length > 0;
-    if (hard) totFail++; if (iou) totIOU++; if (exLost) totExLost++;
-    const mark = hard ? '❌ كسر' : iou ? '🟡 دَين' : exLost ? '🟠 احتياط' : '✅';
+    if (hard) totFail++; if (iou) totIOU++; if (fixable) totBelow++; if (exLost) totExLost++; if (r.soloFixable) totSoloFix++;
+    const mark = hard ? '❌ كسر' : fixable ? '🔴 قابلٌ للإصلاح' : thinDrop ? '⚪ تساقطٌ نحيف' : absorbOnly ? '🟡 امتصاص' : exLost ? '🟠 احتياط' : '✅';
     rows.push(`   ${mark}  ${sc.name}`);
     if (hard) rows.push(`        🚨 ${r.hardFail.join(' · ')}`);
-    if (iou) rows.push(`        دل غير متوازن لحاضرين: ${r.delPresentOff.map(nmOf(cfg)).join('،')}`);
+    if (hasBelow) rows.push(`        تحت الأساس (حِمل دل+منفرد): ${r.delPresentBelow.map(nmOf(cfg)).join('،')}${hasAbove ? ` · فوق: ${r.delPresentAbove.map(nmOf(cfg)).join('،')}` : ' (تساقطٌ نحيف — لا فائض)'}`);
     if (exLost) rows.push(`        احتياطٌ فُقِد لحاضر: ${r.exPresentLost.map(nmOf(cfg)).join('،')}`);
     if (verbose && (hard || iou || exLost || true)) for (const l of r.res.logs) rows.push(`           · ${l}`);
   }
@@ -121,5 +133,5 @@ for (const { tag, cfg } of CONFIGS) {
   console.log(rows.join('\n'));
 }
 console.log(`\n${'─'.repeat(50)}`);
-console.log(`الإجمال: ${totRun} سيناريو · ❌ كسر: ${totFail} · 🟡 دَين دليقيتر: ${totIOU} · 🟠 احتياط مفقود: ${totExLost}`);
-console.log(totFail === 0 ? '✅ لا كسرَ في الثوابت عبر كلّ الأعداد.' : `🚨 ${totFail} كسرٌ يحتاج إصلاحًا.`);
+console.log(`الإجمال: ${totRun} سيناريو · ❌ كسر: ${totFail} · 🔴 دل قابلٌ للإصلاح: ${totBelow} · 🟣 منفرِدٌ قابلٌ للموازنة: ${totSoloFix} · 🟠 احتياط مفقود: ${totExLost}`);
+console.log(totFail === 0 && totBelow === 0 ? '✅ لا كسرَ ولا ظلمَ قابلٍ للإصلاح — كلُّ تفاوتٍ إمّا امتصاصٌ حتميٌّ أو تساقطٌ نحيفٌ مقبول.' : totFail ? `🚨 ${totFail} كسرٌ يحتاج إصلاحًا.` : `🔴 ${totBelow} حالةٌ فيها فائضٌ ومسلوبٌ معًا — السلسلةُ يجب أن تَنقل.`);
