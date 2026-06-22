@@ -418,11 +418,17 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
           .filter((s) => s.period === 0 && s.clinicNumber === exCol && (s.status === 'permission_start' || s.status === 'permission_end'))
           .map((s) => s.doctorId));
         const ss = dayRows.filter((s) => periods.includes(s.period));
-        for (const seat of extractHeavySeats(ss, poolIds)) {
+        const seats = extractHeavySeats(ss, poolIds);
+        // **المحاورُ مستقلّة** (قرارُ المستخدم): نوازن الدليقيترَ **وحده** هنا، فلا نُدخِل مقاعدَ
+        // المنفرِد في الحِمل (له حسبتُه المستقلّة، يتركّز مُجبَرًا عند الشحّ). والمنفرِدُ في هذا النصف
+        // يعمل العيادةَ في الفترتين فلا يصلح مضيفًا — نُقصيه من أهليّة الاستضافة كي لا يزدوج الدور.
+        const soloDocs = new Set(seats.filter((s) => s.kind === 'solo').map((s) => s.current));
+        for (const seat of seats) {
+          if (seat.kind !== 'delegator') continue; // المنفرِد محورٌ مستقلّ — لا يُوازَن مع الدليقيتر
           if (traineeIds.has(seat.current)) continue; // مقعدُ ظلٍّ متدرّب — لا يُعاد إسنادُه
           if (permBlocked.size) seat.eligible = seat.eligible.filter((id) => id === seat.current || !permBlocked.has(id));
-          // لا تُسنَد الاستضافةُ لمتدرّبٍ (ظلٍّ) — نُقصيهم من أهليّة المقعد.
-          seat.eligible = seat.eligible.filter((id) => id === seat.current || !traineeIds.has(id));
+          // أقصِ المتدرّبين (ظلال) والمنفردين (مشغولون الفترتين) من أهليّة الاستضافة.
+          seat.eligible = seat.eligible.filter((id) => id === seat.current || (!traineeIds.has(id) && !soloDocs.has(id)));
           delSeats.push(seat);
         }
       }

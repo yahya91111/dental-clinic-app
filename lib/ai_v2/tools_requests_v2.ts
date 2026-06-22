@@ -1427,7 +1427,7 @@ export async function dispatchRequestToolV2(
         if (!isLeaderPlusRole(actor.role)) return 'Tool error: حسمُ تغطية النقص باستدعاء احتياطيٍّ للقائد فأعلى.';
         if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
         const ws = String(r.weekStart);
-        const { isApplyMode, applyCoverage, placeReserveInSeat } = await import('../algorithms/solver_shadow');
+        const { isApplyMode, applyCoverage, placeReserveInSeat, applyReserveRepay, applyNewHeartRebalance, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
         const { notifications } = await import('../algorithms/notifications');
         if (!isApplyMode(ctx.clinicId)) return 'Tool error: التغطية التلقائيّة غير مفعّلة لهذه العيادة.';
         if (r.decline) {
@@ -1441,7 +1441,14 @@ export async function dispatchRequestToolV2(
             .select('doctor_id').eq('clinic_id', ctx.clinicId).eq('week_start', ws)
             .eq('day_of_week', r.day).eq('role', 'prev_placement');
           const owners = [...new Set(((pp || []) as { doctor_id: string }[]).map((x) => x.doctor_id))];
-          const runCov = () => applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
+          // **الخطوات الثلاث** كالمرّة الأولى (مرضية) والمحكّ: تغطية → سداد احتياط → إعادة توازن.
+          // كان ينقص السدادُ والتوازن، فيبقى الدليقيتر/الاحتياط غيرَ متوازنٍ بعد «لا أحد» (الخللُ المُبلَّغ).
+          const runCov = async () => {
+            const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
+            await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, reservePairsFromMoves(c.moves));
+            await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' });
+            return c;
+          };
           if (owners.length === 1) await withXdayJournal(ctx.clinicId, ws, { day: String(r.day), doctorId: owners[0]! }, runCov);
           else await runCov(); // غيابٌ متعدّدٌ أو غامض → بلا يَوْمَنةٍ لهذا التمرير (نادر)
           await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });

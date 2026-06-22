@@ -61,13 +61,15 @@ function testMultiDayAbsence(cfg: Cfg, tag: string) {
   const J: Journal = days.map((d) => ({ id: `abs-${d}`, week: w1, day: d, events: [{ kind: 'abs', id: victim }] as Event[] }));
   const r = replayChecked(cfg, base, J);
   ok(`[${tag}] غيابٌ متعدّدُ الأيّام: لا كسرَ ثوابت`, r.problems.length === 0, r.problems.slice(0, 3).join(' · '));
-  // الحِملُ الموحَّد (دل+منفرد) يجب أن يبقى متوازنًا — فوق+تحت معًا = ظلمٌ قابلٌ للإصلاح
+  // **محاورُ مستقلّة**: الدليقيتر وحده، والمنفرِد وحده — فوق+تحت معًا في محورٍ = ظلمٌ قابلٌ للإصلاح فيه.
   const delB = delOf(cfg, base), delA = delOf(cfg, r.st); const solB = soloOf(cfg, base), solA = soloOf(cfg, r.st);
   const ids = cfg.names.map((_, i) => idOf(i));
-  const hB = (id: string) => delB.get(id)! + solB.get(id)!; const hA = (id: string) => delA.get(id)! + solA.get(id)!;
-  const hvUp = ids.filter((id) => id !== victim && hA(id) > hB(id));
-  const hvDn = ids.filter((id) => id !== victim && hA(id) < hB(id));
-  ok(`[${tag}] غيابٌ متعدّدُ الأيّام: لا ظلمَ حِملٍ (دل+منفرد) قابلٌ للموازنة`, !(hvUp.length && hvDn.length), `فوق=${hvUp.map(nmOf(cfg)).join('،')} تحت=${hvDn.map(nmOf(cfg)).join('،')}`);
+  const delUp = ids.filter((id) => id !== victim && delA.get(id)! > delB.get(id)!);
+  const delDn = ids.filter((id) => id !== victim && delA.get(id)! < delB.get(id)!);
+  ok(`[${tag}] غيابٌ متعدّدُ الأيّام: لا ظلمَ دليقيترَ قابلٌ للموازنة`, !(delUp.length && delDn.length), `فوق=${delUp.map(nmOf(cfg)).join('،')} تحت=${delDn.map(nmOf(cfg)).join('،')}`);
+  const solUp = ids.filter((id) => id !== victim && solA.get(id)! > solB.get(id)!);
+  const solDn = ids.filter((id) => id !== victim && solA.get(id)! < solB.get(id)!);
+  ok(`[${tag}] غيابٌ متعدّدُ الأيّام: لا ظلمَ منفرِدَ قابلٌ للموازنة`, !(solUp.length && solDn.length), `فوق=${solUp.map(nmOf(cfg)).join('،')} تحت=${solDn.map(nmOf(cfg)).join('،')}`);
   // ▸ تشخيصُ التركّز: المنفرِد وخسارةُ الراحة — كم تتركّز على شخصٍ واحد؟ (الكمالُ = موزَّع، لا مكدَّس)
   const sa = soloOf(cfg, r.st);
   const soloLoads = ids.filter((id) => id !== victim).map((id) => sa.get(id)!).filter((n) => n > 0);

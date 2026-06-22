@@ -48,24 +48,26 @@ function evalScenario(cfg: Cfg, base: St, week: string, day: WeekDay, events: Ev
   const ids = cfg.names.map((_, i) => idOf(i));
   const absent = new Set(events.filter((e) => e.kind === 'abs').map((e) => (e as any).id));
   const isBoard = (id: string) => cfg.boardIds.has(id);
-  // اتّزان **الحِمل الموحَّد** (دليقيتر + منفرِد) — هو ما يوازنه المحرّك الآن. تحت الأساس = مسلوب
-  // (ظلمٌ قابلٌ للإصلاح)؛ فوقه = امتصاصٌ حتميٌّ (دورُ الغائب) أو منفرِدٌ مُجبَر.
+  // ثلاثةُ محاورَ **مستقلّة** (قرارُ المستخدم): الدليقيتر، المنفرِد، الاحتياط — كلٌّ يُقاس وحده.
+  // قابلٌ للإصلاح في محور = (حاضرٌ تحت أساسه = مسلوب) **مع** (حاضرٌ فوقه = فائض) في المحور ذاته.
   const db = delOf(cfg, before), da = delOf(cfg, st);
   const sb = soloOf(cfg, before), sa = soloOf(cfg, st);
-  const hb = (id: string) => db.get(id)! + sb.get(id)!;
-  const ha = (id: string) => da.get(id)! + sa.get(id)!;
-  const delPresentBelow = ids.filter((id) => !isBoard(id) && !absent.has(id) && ha(id) < hb(id));
-  const delPresentAbove = ids.filter((id) => !isBoard(id) && !absent.has(id) && ha(id) > hb(id));
+  // محورُ الدليقيتر (مستقلّ)
+  const delPresentBelow = ids.filter((id) => !isBoard(id) && !absent.has(id) && da.get(id)! < db.get(id)!);
+  const delPresentAbove = ids.filter((id) => !isBoard(id) && !absent.has(id) && da.get(id)! > db.get(id)!);
   const delPresentOff = [...delPresentBelow, ...delPresentAbove];
-  const delAbsentOff = ids.filter((id) => !isBoard(id) && absent.has(id) && ha(id) !== hb(id));
-  // اتّزان الاحتياط: غيرُ الغائبين يجب ألّا ينقص احتياطهم (إلا ج)
+  const delAbsentOff = ids.filter((id) => !isBoard(id) && absent.has(id) && da.get(id)! !== db.get(id)!);
+  // اتّزان الاحتياط (مستقلّ): غيرُ الغائبين يجب ألّا ينقص احتياطهم (إلا ج)
   const eb = exOf(cfg, before), ea = exOf(cfg, st);
   const exPresentLost = ids.filter((id) => !isBoard(id) && !absent.has(id) && ea.get(id)! < eb.get(id)!);
-  const soloFixable = false; // المنفرِد صار ضمن الحِمل الموحَّد أعلاه
+  // محورُ المنفرِد (مستقلّ): فائضٌ + مسلوبٌ معًا = قابلٌ للموازنة
+  const soloBelow = ids.filter((id) => !isBoard(id) && !absent.has(id) && sa.get(id)! < sb.get(id)!);
+  const soloAbove = ids.filter((id) => !isBoard(id) && !absent.has(id) && sa.get(id)! > sb.get(id)!);
+  const soloFixable = soloBelow.length > 0 && soloAbove.length > 0;
   // البورد: دل=٠ دائمًا
   const boardHosted = ids.filter((id) => isBoard(id) && da.get(id)! > 0);
   const hardFail = [...res.problems, ...boardHosted.map((id) => `بورد ${nmOf(cfg)(id)} استضاف!`)];
-  return { res, hardFail, delPresentOff, delPresentBelow, delPresentAbove, delAbsentOff, exPresentLost, soloFixable, st, before };
+  return { res, hardFail, delPresentOff, delPresentBelow, delPresentAbove, delAbsentOff, exPresentLost, soloFixable, soloBelow, soloAbove, st, before };
 }
 
 function scenariosFor(cfg: Cfg, base: St): { name: string; week: string; day: WeekDay; events: Event[] }[] {
@@ -115,16 +117,17 @@ for (const { tag, cfg } of CONFIGS) {
     const hard = r.hardFail.length > 0;
     const hasBelow = !hard && r.delPresentBelow.length > 0;
     const hasAbove = !hard && r.delPresentAbove.length > 0;
-    const fixable = hasBelow && hasAbove;                      // فائضٌ + مسلوبٌ معًا → السلسلةُ تَنقل (ظلمٌ حقيقيّ)
-    const thinDrop = hasBelow && !hasAbove;                    // مسلوبٌ بلا فائض → الدورُ تساقط (نحيفٌ مقبول)
-    const absorbOnly = hasAbove && !hasBelow;                  // فائضٌ فقط → امتصاصٌ حتميٌّ لدور الغائب
+    const fixable = hasBelow && hasAbove;                      // دل: فائضٌ + مسلوبٌ معًا → السلسلةُ تَنقل
+    const thinDrop = hasBelow && !hasAbove;                    // دل: مسلوبٌ بلا فائض → تساقطٌ نحيفٌ مقبول
+    const absorbOnly = hasAbove && !hasBelow;                  // دل: فائضٌ فقط → امتصاصٌ حتميّ
     const iou = hasBelow || hasAbove;
     const exLost = !hard && r.exPresentLost.length > 0;
     if (hard) totFail++; if (iou) totIOU++; if (fixable) totBelow++; if (exLost) totExLost++; if (r.soloFixable) totSoloFix++;
-    const mark = hard ? '❌ كسر' : fixable ? '🔴 قابلٌ للإصلاح' : thinDrop ? '⚪ تساقطٌ نحيف' : absorbOnly ? '🟡 امتصاص' : exLost ? '🟠 احتياط' : '✅';
+    const mark = hard ? '❌ كسر' : fixable ? '🔴 دل قابل' : r.soloFixable ? '🟣 منفرد قابل' : thinDrop ? '⚪ تساقط' : absorbOnly ? '🟡 امتصاص' : exLost ? '🟠 احتياط' : '✅';
     rows.push(`   ${mark}  ${sc.name}`);
     if (hard) rows.push(`        🚨 ${r.hardFail.join(' · ')}`);
-    if (hasBelow) rows.push(`        تحت الأساس (حِمل دل+منفرد): ${r.delPresentBelow.map(nmOf(cfg)).join('،')}${hasAbove ? ` · فوق: ${r.delPresentAbove.map(nmOf(cfg)).join('،')}` : ' (تساقطٌ نحيف — لا فائض)'}`);
+    if (hasBelow) rows.push(`        دل تحت الأساس: ${r.delPresentBelow.map(nmOf(cfg)).join('،')}${hasAbove ? ` · فوق: ${r.delPresentAbove.map(nmOf(cfg)).join('،')}` : ' (تساقطٌ نحيف — لا فائض)'}`);
+    if (r.soloFixable) rows.push(`        🟣 منفرد قابلٌ للموازنة: فوق ${r.soloAbove.map(nmOf(cfg)).join('،')} · تحت ${r.soloBelow.map(nmOf(cfg)).join('،')}`);
     if (exLost) rows.push(`        احتياطٌ فُقِد لحاضر: ${r.exPresentLost.map(nmOf(cfg)).join('،')}`);
     if (verbose && (hard || iou || exLost || true)) for (const l of r.res.logs) rows.push(`           · ${l}`);
   }
@@ -133,5 +136,5 @@ for (const { tag, cfg } of CONFIGS) {
   console.log(rows.join('\n'));
 }
 console.log(`\n${'─'.repeat(50)}`);
-console.log(`الإجمال: ${totRun} سيناريو · ❌ كسر: ${totFail} · 🔴 دل قابلٌ للإصلاح: ${totBelow} · 🟣 منفرِدٌ قابلٌ للموازنة: ${totSoloFix} · 🟠 احتياط مفقود: ${totExLost}`);
-console.log(totFail === 0 && totBelow === 0 ? '✅ لا كسرَ ولا ظلمَ قابلٍ للإصلاح — كلُّ تفاوتٍ إمّا امتصاصٌ حتميٌّ أو تساقطٌ نحيفٌ مقبول.' : totFail ? `🚨 ${totFail} كسرٌ يحتاج إصلاحًا.` : `🔴 ${totBelow} حالةٌ فيها فائضٌ ومسلوبٌ معًا — السلسلةُ يجب أن تَنقل.`);
+console.log(`الإجمال: ${totRun} سيناريو · ❌ كسر: ${totFail} · 🔴 دل قابل: ${totBelow} · 🟣 منفرد قابل: ${totSoloFix} · 🟠 احتياط مفقود: ${totExLost}`);
+console.log(totFail === 0 && totBelow === 0 && totSoloFix === 0 ? '✅ لا كسرَ ولا ظلمَ قابلٍ للإصلاح في أيّ محور (دل/منفرد/احتياط مستقلّة).' : totFail ? `🚨 ${totFail} كسرٌ يحتاج إصلاحًا.` : `🔴 دل:${totBelow} · 🟣 منفرد:${totSoloFix} حالةٌ قابلةٌ للموازنة.`);

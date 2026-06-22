@@ -362,14 +362,12 @@ function resolveDayCore(cfg: Cfg, st: St, week: string, day: WeekDay, events: Ev
     }
     return null;
   };
-  // الحِملُ الثقيل **الموحَّد** = دليقيتر + منفرِد (كما في القلب الحيّ extractHeavySeats). فمن يحمل
-  // منفرِدًا (عبءٌ مُجبَرٌ لا يُنقَل) يصير فائضًا فتُسحَب دليقيتراتُه عبر السلسلة لمن هو أخفّ → **تعويضٌ**.
+  // محورُ الدليقيتر **مستقلٌّ** عن المنفرِد (قرارُ المستخدم: لكلٍّ حسبتُه كالآخر تمامًا). نُعيد كلَّ
+  // حاضرٍ إلى أساسِ دليقيترِه عبر النقل المباشر ثمّ السلسلة (قَبْليّ أوّلًا). المنفرِد يُوازَن وحده لاحقًا.
   for (let iter = 0; iter < 64; iter++) {
-    const dc = delOf(cfg, st); const sc = soloOf(cfg, st);
-    const heavy = (id: string) => (dc.get(id) || 0) + (sc.get(id) || 0);
-    const target = (id: string) => (baseDel.get(id) || 0) + (baseSolo.get(id) || 0);
-    const deficit = ids.filter((id) => !absent.has(id) && !isBoard(id) && heavy(id) < target(id));
-    const surplus = ids.filter((id) => !absent.has(id) && !isBoard(id) && heavy(id) > target(id));
+    const dc = delOf(cfg, st);
+    const deficit = ids.filter((id) => !absent.has(id) && !isBoard(id) && dc.get(id)! < baseDel.get(id)!);
+    const surplus = ids.filter((id) => !absent.has(id) && !isBoard(id) && dc.get(id)! > baseDel.get(id)!);
     if (!deficit.length || !surplus.length) break;
     let applied = false;
     // (١) نقلٌ مباشر (سلسلة-١)، ثمّ (٢) سلسلةٌ مُعمَّمةٌ بأيّ طول. أقصرُ أوّلًا = أقلّ لمس.
