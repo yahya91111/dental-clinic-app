@@ -2148,16 +2148,28 @@ async function mirrorShadows(args: {
     const clinic = mine.filter((r) => r.role === 'clinic');
     return clinic.length > 0 ? clinic : mine; // عيادةٌ إن وُجدت، وإلّا الدليقيتر (مضيفٌ مكرّس)
   };
-  const keyOf = (r: Row) => `${r.period}|${r.clinic_number}|${r.role}`;
+  const seatKeys = (rows: Row[], id: string, role: 'clinic' | 'delegator') =>
+    rows.filter((r) => r.doctor_id === id && inScope(r) && r.role === role).map((r) => `${r.period}|${r.clinic_number}`);
 
   const shadows = ((members || []) as {
     doctor_id: string; doctor_name: string; work_status?: string; supervisor_doctor_id?: string | null;
   }[]).filter((m) => {
     if (m.work_status !== 'trainee' || !m.supervisor_doctor_id || !sups.includes(m.supervisor_doctor_id)) return false;
-    // ظلٌّ مبتدئ: خاناتُه (قبل العمليّة) = خاناتُه المتوقّعة من مدرّبه. (المستقلّ يخالف فلا.)
-    const exp = new Set(expectedSeats(preRows, m.supervisor_doctor_id).map(keyOf));
-    const tk = preRows.filter((r) => r.doctor_id === m.doctor_id && inScope(r));
-    return tk.length > 0 && tk.length === exp.size && tk.every((r) => exp.has(keyOf(r)));
+    if (!preRows.some((r) => r.doctor_id === m.doctor_id && inScope(r))) return false;
+    // كشفُ الظلّ المبتدئ بمطابقة **العيادة**: عياداتُه (قبل العمليّة) = عياداتُ مدرّبه تمامًا.
+    // يلتقط الظلَّ سواءٌ طابق مدرّبه عيادةً فقط أو طابقه **كاملًا** (مضيفٌ زوجيّ: عيادة + دليقيتر
+    // — يكفي تطابقُ العيادة). المستقلّ عياداتُه تخالف فلا يُلتقط.
+    const sc = seatKeys(preRows, m.supervisor_doctor_id, 'clinic');
+    const tc = seatKeys(preRows, m.doctor_id, 'clinic');
+    if (sc.length > 0) {
+      const scSet = new Set(sc);
+      return tc.length === sc.length && tc.every((k) => scSet.has(k));
+    }
+    // مدرّبٌ مضيفٌ مكرّس (دليقيتر بحت، لا عيادة) → الظلّ يطابق دليقيترَه ولا عيادةَ له.
+    const sd = seatKeys(preRows, m.supervisor_doctor_id, 'delegator');
+    const td = seatKeys(preRows, m.doctor_id, 'delegator');
+    const sdSet = new Set(sd);
+    return tc.length === 0 && sd.length > 0 && td.length === sd.length && td.every((k) => sdSet.has(k));
   });
   if (shadows.length === 0) return;
 
