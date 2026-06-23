@@ -1209,6 +1209,25 @@ export async function cancelStatus(
       //  • مُضيفٌ (لقطتان) أو العالم تغيّر → يُعيد المحرّك حساب الشفت (الطبقة الأعلى).
       let permSwapReverted = false;
       let permSwapRecompute = false;
+      let surgicalReturn = false;
+      // طيُّ الاتّجاه العكسيّ: حين يتعذّر العكسُ الحرفيّ (العالم تغيّر) والقلبُ الجديد كاتبٌ
+      // وحيد (apply)، نُجري **تغطيةً عكسيّةً جراحيّة** (applyReturn) بدل العجلة القديمة:
+      // العائدُ يستردّ مقاعده (prevSeats، قبل حذفها) ويُمتَصُّ المُزاحون بأقلّ لمس، وتتبعه
+      // ظلالُه. غير apply → نُبقي permSwapRecompute (العجلة القديمة سقوطًا).
+      const tryApplyReturn = async (): Promise<boolean> => {
+        let apply = false;
+        try { apply = (await import('./solver_shadow')).isApplyMode(clinicId); } catch { /* */ }
+        if (!apply) return false;
+        try {
+          const sh = await import('./solver_shadow');
+          const r = await sh.applyReturn({
+            clinicId, weekStart, day, label: 'إلغاء-عودة', returnerId: doctorId,
+            prevSeats: prev.map((p) => ({ period: p.period, clinicNumber: p.clinic_number })),
+          });
+          await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, ...r.touched], preRows: rows });
+          return true;
+        } catch (e) { void e; return false; }
+      };
       if (prev.length > 0) {
         const myName = prev[0]!.doctor_name;
         if (prev.length === 1 && prev[0]!.clinic_number > 0) {
@@ -1239,8 +1258,10 @@ export async function cancelStatus(
             }] });
             await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId], preRows: rows });
             permSwapReverted = true;
+          } else if (await tryApplyReturn()) {
+            permSwapReverted = true; surgicalReturn = true; // عكسٌ جراحيٌّ بالقلب الجديد (apply)
           } else {
-            permSwapRecompute = true; // العالم تغيّر — لا عكسٌ آمن
+            permSwapRecompute = true; // العالم تغيّر — لا عكسٌ آمن (غير apply → عجلة)
           }
         } else {
           // مُضيفٌ (لقطةٌ من خانة أو خانتين، استضافة و/أو عيادة): التبديلُ عمليّةٌ معروفةٌ
@@ -1281,8 +1302,10 @@ export async function cancelStatus(
             });
             await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, replId!], preRows: rows });
             permSwapReverted = true;
+          } else if (await tryApplyReturn()) {
+            permSwapReverted = true; surgicalReturn = true; // عكسٌ جراحيٌّ بالقلب الجديد (apply)
           } else {
-            permSwapRecompute = true; // العالم تغيّر فعلًا — لا عكسٌ آمن
+            permSwapRecompute = true; // العالم تغيّر فعلًا — لا عكسٌ آمن (غير apply → عجلة)
           }
         }
       }
@@ -1291,6 +1314,7 @@ export async function cancelStatus(
         success: true, permissionCanceled: true,
         permSwapReverted: permSwapReverted || undefined,
         permSwapRecompute: permSwapRecompute || undefined,
+        restored: surgicalReturn || undefined, // عكسٌ جراحيٌّ تمّ → تعمل الموازنةُ الأماميّة، لا العجلة
         canceledStatus: permRows[0]!.status,
       };
     }

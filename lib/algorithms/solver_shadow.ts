@@ -718,3 +718,121 @@ export function reservePairsFromMoves(moves: CoverageMove[]): { coverer: string;
     .filter((m) => (m.kind === 'reserve' || m.kind === 'delegator' || m.kind === 'partner_solo') && !!m.absentId)
     .map((m) => ({ coverer: m.doctorId, owner: m.absentId as string, exCol: m.period <= 2 ? 1 : 2, coverDay: m.day }));
 }
+
+/**
+ * التغطيةُ العكسيّةُ الجراحيّة — طيُّ الاتّجاه العكسيّ في القلب الجديد (بديلُ العجلة القديمة
+ * `redistributeOnReturn` في وضع apply). حين يعود طبيبٌ (أُلغيت حالتُه) وتعذّر العكسُ الحرفيّ
+ * لأنّ **العالم تغيّر** (مقاعدُه شغلها مَن لم يُتوقَّع)، نعيده **بأقلّ لمسٍ** بدل إعادة بناء
+ * الشفت من الوصفة (التي تجلب الطاقمَ كلَّه وقد تُسقِط العائدَ نفسه):
+ *   ① العائدُ يستردّ مقاعده (prevSeats) بالقوّة (يُزيح شاغلَها).
+ *   ② مقاعدُ العائد الأخرى في الشفت (نزولٌ سابق) تُخلى → شاغرة.
+ *   ③ المُزاحون بلا مقعدٍ آخر = أجسادٌ حرّة.
+ *   ④ تُملأ المقاعدُ المُخلاة بالأجساد الحرّة (حداثةً) ثمّ احتياطِ الشفت — لا اختراعَ طبيب.
+ *   ⑤ الأجسادُ الحرّةُ المتبقّية (مُغطٍّ خالصٌ تحرّر) → احتياط (لا تُترك معلّقة).
+ * شفتٌ واحد (تُستنتَج فتراتُه من prevSeats). آمن: apply فقط، لا يرمي، idempotent (إن كان
+ * العائدُ في مقاعده أصلًا فلا تغيير). ظلال المتدرّبين تُعالَج في طبقة الاستدعاء (mirrorShadows).
+ */
+export async function applyReturn(args: {
+  clinicId: string; weekStart: string; day: WeekDay; label: string;
+  returnerId: string;
+  prevSeats: { period: number; clinicNumber: number }[];
+}): Promise<{ reclaimed: number; refilled: number; reserved: number; shortages: number; touched: string[] }> {
+  const touchedSet = new Set<string>();
+  const z = { reclaimed: 0, refilled: 0, reserved: 0, shortages: 0, touched: [] as string[] };
+  if (!applyEnabled(args.clinicId) || !args.prevSeats.length) return z;
+  try {
+    const { clinicId, weekStart, day, returnerId, prevSeats } = args;
+    const periods = prevSeats.some((s) => [1, 2].includes(s.period)) ? [1, 2] : [3, 4];
+    const exCol = periods[0] === 1 ? 1 : 2;
+    const reload = async () => (await loadScheduleData(clinicId, weekStart)).data;
+    let data = await reload(); if (!data) return z;
+    const doctors = data.doctors;
+    const nameOf = (id: string) => doctors.find((d) => d.id === id)?.name ?? id;
+    const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+    const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < weekStart);
+    const delRecency = lastHeavyStamps(history);
+    const clinicRecency = lastClinicStamps(history);
+    const rowsNow = () => data!.existingSlots.filter((s) => s.dayOfWeek === day);
+    const hasSeatInShift = (id: string) => rowsNow().some((s) => s.doctorId === id && s.status === 'active'
+      && (s.role === 'clinic' || s.role === 'delegator') && periods.includes(s.period));
+    // محجوبٌ في الفترة P؟ (غائبٌ مرضيًّا/تفرّغًا، أو استئذانٌ يحجبها) — لا يصلح بديلًا.
+    const blockedAtP = (id: string, P: number) => rowsNow().some((s) => s.doctorId === id && s.period === 0
+      && ((s.status === 'sick_leave' || s.status === 'vacation')
+        || (s.status === 'permission_start' && P === periods[0]) || (s.status === 'permission_end' && P === periods[1])));
+
+    // ① الاستردادُ بالقوّة: العائدُ يأخذ كلَّ مقعدٍ من prevSeats.
+    const displaced = new Set<string>();
+    for (const ps of prevSeats) {
+      const role = ps.clinicNumber === 0 ? 'delegator' : 'clinic';
+      const occ = rowsNow().find((s) => s.status === 'active' && s.role === role && s.period === ps.period && s.clinicNumber === ps.clinicNumber);
+      if (occ && occ.doctorId === returnerId) continue; // عاد أصلًا → لا لمس
+      touchedSet.add(returnerId);
+      if (occ) {
+        displaced.add(occ.doctorId); touchedSet.add(occ.doctorId);
+        await supabase.from('schedule_slots').update({ doctor_id: returnerId, doctor_name: nameOf(returnerId) }).eq('id', occ.id);
+      } else {
+        await supabase.from('schedule_slots').insert({
+          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+          period: ps.period, clinic_number: ps.clinicNumber,
+          doctor_id: returnerId, doctor_name: nameOf(returnerId), role, status: 'active', source: 'request',
+        });
+      }
+      z.reclaimed++;
+    }
+    data = await reload(); if (!data) return z;
+
+    // ② إخلاءُ مقاعد العائد الأخرى في الشفت (نزولٌ سابق) → شاغرة.
+    const vacated: { period: number; clinicNumber: number; role: string }[] = [];
+    for (const r of rowsNow().filter((s) => s.doctorId === returnerId && s.status === 'active'
+      && (s.role === 'clinic' || s.role === 'delegator') && periods.includes(s.period)
+      && !prevSeats.some((ps) => ps.period === s.period && ps.clinicNumber === s.clinicNumber))) {
+      vacated.push({ period: r.period, clinicNumber: r.clinicNumber, role: r.role });
+      await supabase.from('schedule_slots').delete().eq('id', r.id);
+    }
+    data = await reload(); if (!data) return z;
+
+    // ③ الأجسادُ الحرّة = المُزاحون بلا مقعدٍ نشطٍ آخر في الشفت.
+    const free = [...displaced].filter((id) => !hasSeatInShift(id));
+
+    // ④ املأِ المقاعدَ المُخلاة: أجسادٌ حرّة (مُزاحون) ثمّ احتياطُ الشفت، بحداثةٍ عادلة، غير المحجوبين.
+    for (const v of vacated) {
+      const recency = v.clinicNumber === 0 ? delRecency : clinicRecency;
+      const exIds = [...new Set(rowsNow().filter((s) => s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol).map((s) => s.doctorId))];
+      const cands = [...new Set([...free, ...exIds])]
+        .filter((id) => poolIds.has(id) && !blockedAtP(id, v.period)
+          && !rowsNow().some((s) => s.doctorId === id && s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator') && s.period === v.period))
+        .sort((a, b) => (recency.get(a) ?? '').localeCompare(recency.get(b) ?? ''));
+      const pick = cands[0];
+      if (!pick) { z.shortages++; continue; } // لا جسدَ → يبقى شاغرًا (نقص صريح، لا اختراع)
+      const ex = rowsNow().find((s) => s.doctorId === pick && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+      if (ex) await supabase.from('schedule_slots').delete().eq('id', ex.id);
+      await supabase.from('schedule_slots').insert({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: v.period, clinic_number: v.clinicNumber,
+        doctor_id: pick, doctor_name: nameOf(pick), role: v.role, status: 'active', source: 'request',
+      });
+      z.refilled++; touchedSet.add(pick);
+      const fi = free.indexOf(pick); if (fi >= 0) free.splice(fi, 1);
+      data = await reload(); if (!data) return z;
+    }
+
+    // ⑤ الأجسادُ الحرّةُ المتبقّية → احتياط (لا تُترك معلّقة).
+    for (const id of free) {
+      if (hasSeatInShift(id) || rowsNow().some((s) => s.doctorId === id && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)) continue;
+      await supabase.from('schedule_slots').insert({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: 0, clinic_number: exCol,
+        doctor_id: id, doctor_name: nameOf(id), role: 'clinic', status: 'extra', source: 'request',
+      });
+      z.reserved++; touchedSet.add(id);
+    }
+    z.touched = [...touchedSet];
+    // eslint-disable-next-line no-console
+    console.log(`[NEW-HEART RETURN · ${args.label}] ${nameOf(returnerId)} استردّ ${z.reclaimed} · مُلئ ${z.refilled} · احتياط ${z.reserved}${z.shortages ? ' · نقص ' + z.shortages : ''}`);
+    return z;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[NEW-HEART RETURN] تعذّر:', e instanceof Error ? e.message : e);
+    return z;
+  }
+}
