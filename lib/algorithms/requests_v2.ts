@@ -531,6 +531,31 @@ function judgePanel(
  *  ⑤ المُستأذِن يعمل عيادةً في الفترتين أو لا مرشّح → لا تبديل.
  * يُطبّق التبديل (مبادلة ملكيّة خانتين) ويتبعه الظلّ، ويُرجِع نتيجةً للعرض/الإشعار.
  */
+type TraineeMember = { doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null };
+/**
+ * ظلال المتدرّبين لهذا اليوم: متدرّبٌ خاناتُه (عيادة/دليقيتر) **تطابق مدرّبه تمامًا** في كلّ
+ * نصفِ شفتٍ يعمله = ظلٌّ مبتدئ (المستقلّ يخالف مدرّبه فلا يُحتسب). نكشفه بنيويًّا لا بالـsource
+ * — صفُّ الظلّ قد يُكتب source=ai فيفلت من فحص source. نستثني الظلَّ من بِرَك تبديل الاستئذان:
+ * الظلّ يتبع مدرّبه ولا يُبادَل استقلالًا ولا يصير دليقيترًا.
+ */
+function dayShadowTraineeIds(rows: Row[], members: TraineeMember[]): Set<string> {
+  const ids = new Set<string>();
+  const inScope = (r: Row) => r.period > 0 && r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator');
+  const keys = (id: string, ps: number[]) => rows.filter((r) => r.doctor_id === id && ps.includes(r.period) && inScope(r)).map((r) => `${r.period}|${r.clinic_number}|${r.role}`);
+  for (const t of members.filter((m) => m.work_status === 'trainee' && m.supervisor_doctor_id)) {
+    const supId = t.supervisor_doctor_id!;
+    let mirrors = false; let mismatched = false;
+    for (const ps of [[1, 2], [3, 4]]) {
+      const tk = keys(t.doctor_id, ps);
+      if (!tk.length) continue;
+      const sk = new Set(keys(supId, ps));
+      if (tk.length === sk.size && tk.every((k) => sk.has(k))) mirrors = true; else mismatched = true;
+    }
+    if (mirrors && !mismatched) ids.add(t.doctor_id);
+  }
+  return ids;
+}
+
 async function autoResolvePermissionConflict(args: {
   clinicId: string; weekStart: string; day: WeekDay;
   doctorId: string; doctorName: string;
@@ -553,6 +578,7 @@ async function autoResolvePermissionConflict(args: {
   const { data: members } = await getAllGroupMembers(clinicId);
   const lightDuty = new Set(((members || []) as { doctor_id: string; work_status?: string }[])
     .filter((m) => m.work_status === 'light_duty').map((m) => m.doctor_id));
+  const shadowIds = dayShadowTraineeIds(rows, (members || []) as TraineeMember[]);
   const worksPeriod = (id: string, p: number) => rows.some(
     (r) => r.doctor_id === id && r.status === 'active' && r.period === p && (r.role === 'clinic' || r.role === 'delegator'),
   );
@@ -560,7 +586,7 @@ async function autoResolvePermissionConflict(args: {
   // المُستأذِن ولا ظلًّا ولا تخفيفًا، وليس غائبًا/محجوبًا عن المحجوبة (فهو سيعمل فيها).
   const canTakeBlocked = (r: Row): boolean => {
     if (r.doctor_id === doctorId || r.role !== 'clinic' || r.status !== 'active' || r.period !== Pother || r.clinic_number <= 0) return false;
-    if (r.source === 'shadow' || lightDuty.has(r.doctor_id)) return false;
+    if (r.source === 'shadow' || shadowIds.has(r.doctor_id) || lightDuty.has(r.doctor_id)) return false;
     const abs = covererAbsence(rows, r.doctor_id);
     return !abs.hardAr && !abs.blocked.has(Pblocked);
   };
@@ -638,7 +664,10 @@ async function autoResolvePermissionConflict(args: {
   // وليس غائبًا/مستأذنًا عن الفترة المحجوبة (فهو سيستلمها).
   const eligible = (r: Row): boolean => {
     if (r.doctor_id === doctorId || r.role !== 'clinic' || r.status !== 'active' || r.period !== Pother) return false;
-    if (r.source === 'shadow' || lightDuty.has(r.doctor_id)) return false;
+    if (r.source === 'shadow' || shadowIds.has(r.doctor_id) || lightDuty.has(r.doctor_id)) return false;
+    // يعمل عيادةً في المحجوبة أصلًا (منفردٌ يعمل الفترتين) → استلامُ عيادةٍ ثانيةٍ فيها حجزٌ
+    // مزدوج. (دليقيترُه في المحجوبة مقبول: يُحذَف فتبقى فجوةُ دليقيتر — يعالجها أدناه.)
+    if (rows.some((x) => x.doctor_id === r.doctor_id && x.status === 'active' && x.period === Pblocked && x.role === 'clinic' && x.clinic_number > 0)) return false;
     const abs = covererAbsence(rows, r.doctor_id);
     return !abs.hardAr && !abs.blocked.has(Pblocked);
   };
@@ -2110,27 +2139,35 @@ async function mirrorShadows(args: {
   const { data: members } = await getAllGroupMembers(clinicId);
   const inScope = (r: Row) =>
     r.period > 0 && r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator');
-  const keysIn = (rows: Row[], id: string) =>
-    rows.filter((r) => r.doctor_id === id && inScope(r)).map((r) => `${r.period}|${r.clinic_number}|${r.role}`);
+  // القاعدةُ الموحّدة: الظلّ يحاكي مقاعدَ مدرّبه **العياديّة** إن كان للمدرّب عيادةٌ في الشفت
+  // (فلا يصير دليقيترًا حين يكون مدرّبه مُضيفًا زوجيًّا: عيادة + دليقيتر — يتبع العيادة فقط)؛
+  // فإن كان المدرّبُ مُضيفًا مكرّسًا (دليقيتر بحت، لا عيادة) حاكاه دليقيترًا (يتعلّم الاستضافة
+  // معه). دالّةُ «مقاعدِ الظلّ المتوقّعة» تُوحّد الكشفَ (preRows) والمحاكاة (cur).
+  const expectedSeats = (rows: Row[], supId: string): Row[] => {
+    const mine = rows.filter((r) => r.doctor_id === supId && inScope(r));
+    const clinic = mine.filter((r) => r.role === 'clinic');
+    return clinic.length > 0 ? clinic : mine; // عيادةٌ إن وُجدت، وإلّا الدليقيتر (مضيفٌ مكرّس)
+  };
+  const keyOf = (r: Row) => `${r.period}|${r.clinic_number}|${r.role}`;
 
-  // الظلال: متدرّب خاناته قبل العمليّة تطابق خانات مدرّبه تمامًا
   const shadows = ((members || []) as {
     doctor_id: string; doctor_name: string; work_status?: string; supervisor_doctor_id?: string | null;
   }[]).filter((m) => {
     if (m.work_status !== 'trainee' || !m.supervisor_doctor_id || !sups.includes(m.supervisor_doctor_id)) return false;
-    const tk = keysIn(preRows, m.doctor_id);
-    const sk = new Set(keysIn(preRows, m.supervisor_doctor_id));
-    return tk.length > 0 && tk.length === sk.size && tk.every((k) => sk.has(k));
+    // ظلٌّ مبتدئ: خاناتُه (قبل العمليّة) = خاناتُه المتوقّعة من مدرّبه. (المستقلّ يخالف فلا.)
+    const exp = new Set(expectedSeats(preRows, m.supervisor_doctor_id).map(keyOf));
+    const tk = preRows.filter((r) => r.doctor_id === m.doctor_id && inScope(r));
+    return tk.length > 0 && tk.length === exp.size && tk.every((r) => exp.has(keyOf(r)));
   });
   if (shadows.length === 0) return;
 
   const cur = await loadDay(clinicId, weekStart, day); // الحالة بعد العمليّة
   for (const t of shadows) {
-    const supSlots = cur.filter((r) => r.doctor_id === t.supervisor_doctor_id && inScope(r));
+    const want = expectedSeats(cur, t.supervisor_doctor_id!);
     const tOld = cur.filter((r) => r.doctor_id === t.doctor_id && inScope(r));
     await applySlotChanges({
       deleteIds: tOld.map((r) => r.id),
-      inserts: supSlots.map((r) => ({
+      inserts: want.map((r) => ({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: r.period, clinic_number: r.clinic_number,
         doctor_id: t.doctor_id, doctor_name: t.doctor_name,
