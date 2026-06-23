@@ -997,6 +997,30 @@ export async function setScheduleStatus(
           clinicId, weekStart, day, doctorId, doctorName, conflictSlots,
         });
       }
+      // قاعدةُ الحالة الرفيعة (D=M+1): إن لم يجد التبديلُ بديلًا (كلُّ الزملاء منفردون
+      // مشغولون في الفترتين)، يبقى المستأذِنُ شاغلًا فترتَه المحجوبة — وهذا تناقضٌ (مستأذنٌ
+      // وعاملٌ معًا). أَخْلِ مقعدَه المحجوب: يبقى فارغًا في الجدول (لا أحدَ فائضٌ يغطّيه)،
+      // واحفظه prev_placement كي يعيده الإلغاءُ حرفيًّا كالتبديل. (لا يُطبَّق على المُحتاط:
+      // لا خانةَ عيادةٍ له يحجبها الاستئذان.) آمنٌ بعد تبديلٍ ناجح: لا خانةَ محجوبةً تبقى.
+      if (!permWasReserve) {
+        const dayNow = await loadDay(clinicId, weekStart, day);
+        const stuck = dayNow.filter((r) => r.doctor_id === doctorId && r.status === 'active'
+          && blocked.includes(r.period) && (r.role === 'clinic' || r.role === 'delegator'));
+        if (stuck.length) {
+          await applySlotChanges({
+            deleteIds: stuck.map((r) => r.id),
+            inserts: stuck.map((r) => ({
+              clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+              period: r.period, clinic_number: r.clinic_number,
+              doctor_id: doctorId, doctor_name: doctorName,
+              role: PREV_ROLE, status: 'active', source: 'request',
+            })),
+          });
+          if (!swap) swap = { none: true, reason: 'no_candidate' };
+          // eslint-disable-next-line no-console
+          console.log(`[استئذان رفيع · ${DAY_AR[day]}] أُخليت خانةُ ${doctorName.split(' ')[0]} (ف${[...new Set(stuck.map((r) => r.period))].join('،')}) — لا بديل، تبقى فارغة`);
+        }
+      }
       // احتياطيٌّ استأذن — العلامة أُضيفت والاحتياط باقٍ: نصّ «لن يُستدعى» بفترته
       let wasReserveNoteAr: string | undefined;
       if (permWasReserve) {
@@ -1166,7 +1190,9 @@ export async function cancelStatus(
             && r.doctor_id === doctorId && r.period > 0);
           const alreadyHome = rows.some((r) => r.status === 'active' && r.role === 'clinic'
             && r.period === t.period && r.clinic_number === t.clinic_number && r.doctor_id === doctorId);
-          if (!alreadyHome && occ && acur) {
+          if (alreadyHome) {
+            permSwapReverted = true; // عاد أصلًا
+          } else if (occ && acur) {
             await applySlotChanges({
               updates: [
                 { id: occ.id, doctor_id: doctorId, doctor_name: myName },
@@ -1174,6 +1200,15 @@ export async function cancelStatus(
               ],
             });
             await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId, occ.doctor_id], preRows: rows });
+            permSwapReverted = true;
+          } else if (!occ) {
+            // مقعدٌ مُخلًى (استئذانٌ رفيع، أُفرِغ بلا تبديل) → أعِد الطبيبَ إليه مباشرةً (عكسُ الإخلاء)
+            await applySlotChanges({ inserts: [{
+              clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+              period: t.period, clinic_number: t.clinic_number,
+              doctor_id: doctorId, doctor_name: myName, role: 'clinic', status: 'active', source: 'request',
+            }] });
+            await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId], preRows: rows });
             permSwapReverted = true;
           } else {
             permSwapRecompute = true; // العالم تغيّر — لا عكسٌ آمن
@@ -1196,7 +1231,18 @@ export async function cancelStatus(
                 && r.doctor_id === doctorId && r.period > 0
                 && !prev.some((p) => p.period === r.period && p.clinic_number === r.clinic_number))
             : undefined;
-          if (okOrig) {
+          const allEmpty = origNow.every((o) => !o);
+          if (allEmpty) {
+            // مقاعدُ المُستأذِن (استضافة/عيادة) أُخليت بلا تبديل (استئذانٌ رفيع) → أعِدها له مباشرةً
+            await applySlotChanges({ inserts: prev.map((p) => ({
+              clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+              period: p.period, clinic_number: p.clinic_number,
+              doctor_id: doctorId, doctor_name: myName,
+              role: p.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
+            })) });
+            await mirrorShadows({ clinicId, weekStart, day, supervisorIds: [doctorId], preRows: rows });
+            permSwapReverted = true;
+          } else if (okOrig) {
             const replName = origNow[0]!.doctor_name;
             await applySlotChanges({
               updates: [
