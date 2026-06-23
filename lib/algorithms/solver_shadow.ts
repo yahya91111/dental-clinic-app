@@ -564,6 +564,80 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
   }
 }
 
+/**
+ * إعادةُ تشكيلٍ للشكل الرفيع (D=M+1): حين يهبط عددُ الحاضرين في شفتٍ إلى M+1 لـM عيادة
+ * (بمرضيّة/تفرّغٍ وسطَ الأسبوع تُنزل العدد من فوق)، نُعيد اشتقاقَ الشفت إلى الشكل القانونيّ
+ * — **M منفرد-عيادة + ١ منفرد-دليقيتر** (الكلُّ يعمل الفترتين) — بدل ترك زوجِ استضافةٍ أو
+ * نصفِ زوجٍ أو عيادةٍ فارغة. يحفظ الاستمراريّة (كلٌّ يبقى في عيادته ما أمكن)، ويختار المضيفَ
+ * بعدلِ حداثة الاستضافة (الأقدمُ عهدًا بها أحقُّ). تخفيفُ العمل يُعامَل عاديًّا هنا (الفترتان،
+ * كقاعدة الحالة الرفيعة). آمنٌ: apply فقط، لا يرمي، يعمل فقط حين present == M+1 والشكلُ غيرُ مثاليّ.
+ */
+export async function applyThinReshape(args: { clinicId: string; weekStart: string; label: string }): Promise<{ reshaped: number }> {
+  if (!applyEnabled(args.clinicId)) return { reshaped: 0 };
+  try {
+    const { data } = await loadScheduleData(args.clinicId, args.weekStart);
+    if (!data) return { reshaped: 0 };
+    const M = data.clinicCount;
+    if (!M || M < 1) return { reshaped: 0 };
+    const doctors = data.doctors;
+    const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart);
+    const delRecency = lastHeavyStamps(history); // حداثة آخر استضافة (الأقدم = الأحقّ)
+    const boardIds = new Set(doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
+    const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
+    const isReg = (id: string) => !boardIds.has(id) && !traineeIds.has(id);
+    const nameOf = (id: string) => doctors.find((d) => d.id === id)?.name ?? id;
+    let reshaped = 0;
+    for (const day of DAY_OF) {
+      for (const half of [0, 1] as const) {
+        const periods = half === 0 ? [1, 2] : [3, 4];
+        const rows = data.existingSlots.filter((s) => s.dayOfWeek === day && s.status === 'active'
+          && periods.includes(s.period) && (s.role === 'clinic' || s.role === 'delegator') && isReg(s.doctorId));
+        const present = [...new Set(rows.map((s) => s.doctorId))];
+        if (present.length !== M + 1) continue; // الحالةُ الرفيعةُ فقط (طبيبٌ زائدٌ واحد)
+        const clinicSeatsOf = (id: string) => rows.filter((s) => s.doctorId === id && s.role === 'clinic' && s.clinicNumber > 0);
+        const delSeatsOf = (id: string) => rows.filter((s) => s.doctorId === id && s.role === 'delegator');
+        const isSolo = (id: string) => { const c = clinicSeatsOf(id); return c.length === 2 && c[0]!.clinicNumber === c[1]!.clinicNumber && delSeatsOf(id).length === 0; };
+        const isHost = (id: string) => delSeatsOf(id).length === 2 && clinicSeatsOf(id).length === 0;
+        if (present.filter(isSolo).length === M && present.filter(isHost).length === 1) continue; // مثاليٌّ أصلًا
+        // المضيف = الأحقُّ (أقدمُ حداثةَ استضافة). أيُّ طبيبٍ يصلح؛ الباقون M يغطّون M عيادةً دائمًا.
+        const host = [...present].sort((a, b) => (delRecency.get(a) ?? '').localeCompare(delRecency.get(b) ?? '') || a.localeCompare(b))[0]!;
+        const rest = present.filter((id) => id !== host);
+        const clinics = Array.from({ length: M }, (_, i) => i + 1);
+        const soloOfClinic = new Map<number, string>(); const used = new Set<string>();
+        for (const c of clinics) { // ① استمراريّة: شاغلٌ حاليٌّ للعيادة يبقى فيها
+          const cand = rest.find((id) => !used.has(id) && clinicSeatsOf(id).some((s) => s.clinicNumber === c));
+          if (cand) { soloOfClinic.set(c, cand); used.add(cand); }
+        }
+        for (const c of clinics) { // ② عياداتٌ بلا شاغلٍ مُسنَد → أيُّ متبقٍّ (يملأ الفراغ)
+          if (soloOfClinic.has(c)) continue;
+          const cand = rest.find((id) => !used.has(id));
+          if (cand) { soloOfClinic.set(c, cand); used.add(cand); }
+        }
+        if (soloOfClinic.size !== M || used.size !== M) continue; // أمان: إسنادٌ غيرُ مكتمل
+        const inserts: Record<string, unknown>[] = [];
+        for (const [c, id] of soloOfClinic) for (const p of periods) inserts.push({
+          clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+          period: p, clinic_number: c, doctor_id: id, doctor_name: nameOf(id), role: 'clinic', status: 'active', source: 'request',
+        });
+        for (const p of periods) inserts.push({
+          clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
+          period: p, clinic_number: 0, doctor_id: host, doctor_name: nameOf(host), role: 'delegator', status: 'active', source: 'request',
+        });
+        for (const s of rows) await supabase.from('schedule_slots').delete().eq('id', s.id);
+        await supabase.from('schedule_slots').insert(inserts);
+        reshaped++;
+        // eslint-disable-next-line no-console
+        console.log(`[NEW-HEART THIN-RESHAPE · ${args.label}] ${day}/${half === 0 ? 'ص' : 'م'}: ${[...soloOfClinic].map(([c, id]) => `ع${c}:${nameOf(id).split(' ')[0]}`).join('، ')} · دليقيتر:${nameOf(host).split(' ')[0]}`);
+      }
+    }
+    return { reshaped };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[NEW-HEART THIN-RESHAPE] تعذّر:', e instanceof Error ? e.message : e);
+    return { reshaped: 0 };
+  }
+}
+
 type RepayRow = { id: string; doctor_id: string; doctor_name: string; period: number; clinic_number: number; role: string; status: string; day_of_week: string };
 async function loadRepayWeek(clinicId: string, weekStart: string): Promise<RepayRow[]> {
   const { data } = await supabase.from('schedule_slots')

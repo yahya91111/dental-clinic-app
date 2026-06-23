@@ -830,7 +830,7 @@ export async function dispatchRequestToolV2(
           try {
             const { schedule, loadScheduleData } = await import('../algorithms/schedule');
             const { notifications } = await import('../algorithms/notifications');
-            const { isApplyMode, applyCoverage, applyNewHeartRebalance, applyReserveRepay, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
+            const { isApplyMode, applyCoverage, applyNewHeartRebalance, applyReserveRepay, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
             const { withXdayJournal } = await import('../algorithms/requests_v2');
             // القلب الجديد (apply): تغطيةٌ تلقائيّةٌ فوريّةٌ (بلا كرت موافقة) + امتصاص
             // الدليقيتر. القائد وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول.
@@ -844,6 +844,8 @@ export async function dispatchRequestToolV2(
                 // سدادُ الاحتياط داخل الأسبوع (محور الاحتياط) قبل امتصاص الدليقيتر.
                 await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' }, reservePairsFromMoves(c.moves));
                 await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                // الحالة الرفيعة (D=M+1): أعِد تشكيلَ الشفت إلى منفردين + مضيفٍ مكرّس (لا زوجَ استضافة).
+                await applyThinReshape({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
                 return c;
               });
               if (cov.pending.length) {
@@ -1427,7 +1429,7 @@ export async function dispatchRequestToolV2(
         if (!isLeaderPlusRole(actor.role)) return 'Tool error: حسمُ تغطية النقص باستدعاء احتياطيٍّ للقائد فأعلى.';
         if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
         const ws = String(r.weekStart);
-        const { isApplyMode, applyCoverage, placeReserveInSeat, applyReserveRepay, applyNewHeartRebalance, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
+        const { isApplyMode, applyCoverage, placeReserveInSeat, applyReserveRepay, applyNewHeartRebalance, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
         const { notifications } = await import('../algorithms/notifications');
         if (!isApplyMode(ctx.clinicId)) return 'Tool error: التغطية التلقائيّة غير مفعّلة لهذه العيادة.';
         if (r.decline) {
@@ -1447,6 +1449,8 @@ export async function dispatchRequestToolV2(
             const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
             await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, reservePairsFromMoves(c.moves));
             await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' });
+            // الحالة الرفيعة (D=M+1): أعِد تشكيلَ الشفت إلى منفردين + مضيفٍ مكرّس.
+            await applyThinReshape({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' });
             return c;
           };
           if (owners.length === 1) await withXdayJournal(ctx.clinicId, ws, { day: String(r.day), doctorId: owners[0]! }, runCov);

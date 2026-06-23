@@ -283,12 +283,12 @@ export async function withXdayJournal<T>(
     } catch { /* تجاهل */ }
     const inserts: Record<string, unknown>[] = [];
     for (const d of days) {
-      // يومُ الحدث: نُيَوْمِن **بُعدَ الاستضافة فقط** (delegator، غير متدرّب) — لأنّ التغطية
-      // قد تُسقِط استضافةَ شريكٍ وتُرقّي جيرانًا عليه، وهو ما لا يعكسه إرجاعُ المكان (prev) ولا
-      // الاسترداد. العيادةُ/الاحتياطُ/الظلّ على يوم الحدث يعالجها الاستردادُ الحرفيّ كما كان.
-      // الأيّامُ البعيدة تُيَوْمَن كاملةً (عيادة+استضافة+احتياط) كالسابق.
+      // يومُ الحدث: نُيَوْمِن بُعدَي **العيادة والاستضافة** (غير متدرّب) — لأنّ التغطية قد تُسقِط
+      // استضافةَ شريكٍ وتُرقّي جيرانًا، أو (في الحالة الرفيعة) تُعيد تشكيلَ الشفت كلَّه (منفردون
+      // + مضيف) فتتغيّر مقاعدُ العيادة لغير الغائب أيضًا — وهذا ما لا يعكسه إرجاعُ المكان (prev)
+      // وحده. الاحتياطُ/الظلّ على يوم الحدث يعالجهما الاستردادُ الحرفيّ. الأيّامُ البعيدة كاملةً.
       const isCause = d === cause.day;
-      const slice = (arr: PlaceRow[]) => isCause ? arr.filter((r) => r.role === 'delegator' && !traineeIds.has(r.doctorId)) : arr;
+      const slice = (arr: PlaceRow[]) => isCause ? arr.filter((r) => (r.role === 'clinic' || r.role === 'delegator') && !traineeIds.has(r.doctorId)) : arr;
       const bD = slice(byDayBefore.get(d) ?? []);
       const aD = slice(byDayAfter.get(d) ?? []);
       if (dayHash(bD) === dayHash(aD)) continue;            // لم يتغيّر → لا يَوْمَنة
@@ -377,11 +377,11 @@ export async function restoreXdayFootprint(
     const pre = markers.filter((m) => m.role === XDAY_PRE);
     if (!guard || pre.length === 0) { await deleteXdayMarkers(clinicId, weekStart, d, cause); continue; }
     const wantHash = String(guard.source || '').split('|').slice(3).join('|'); // كلّ ما بعد الوسم = البصمة
-    // الحالة الحاليّة على نفس النطاق المُيَوْمَن: يومُ الحدث = استضافةٌ نشطةٌ غير-متدرّب فقط؛
+    // الحالة الحاليّة على نفس النطاق المُيَوْمَن: يومُ الحدث = عيادة/دليقيتر نشطة غير-متدرّب؛
     // الأيّامُ البعيدة = عيادة/دليقيتر نشطة + احتياط (كاملًا).
     const dayRows = await loadDay(clinicId, weekStart, d as WeekDay);
     const curReal = isCause
-      ? dayRows.filter((r) => r.status === 'active' && r.role === 'delegator' && r.period > 0 && !traineeIds.has(r.doctor_id))
+      ? dayRows.filter((r) => r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator') && r.period > 0 && !traineeIds.has(r.doctor_id))
       : dayRows.filter((r) => (r.status === 'active' && r.period > 0 && (r.role === 'clinic' || r.role === 'delegator'))
         || (r.status === 'extra' && r.period === 0));
     const curHash = dayHash(curReal.map((r) => ({
