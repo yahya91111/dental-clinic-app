@@ -62,6 +62,11 @@ function computeShape(D: number, M: number, delegator: boolean): Shape {
     if (D <= 2 * M) return { ...z, plainPairs: D - M, solos: 2 * M - D };
     return { ...z, plainPairs: M, ex: D - 2 * M };
   }
+  // D = M+1 (طبيبٌ زائدٌ واحدٌ فقط): كلُّ عيادةٍ بمنفردٍ ثابتٍ طوال اليوم + مستضيفٌ مكرّس،
+  // بدل تقسيم عيادةٍ واحدةٍ بين طبيبين يتناوبان الاستضافة. الحِملُ متساوٍ في الحالتين
+  // (الكلّ يعمل الفترتين) لكنّ هذا يحفظ استمراريّةَ الطبيب في عيادته. القاعدة: M منفرد + ١
+  // منفرد-دليقيتر (تعمّمُ لكلّ M: ٣/٢، ٤/٣، ٥/٤، ٦/٥…).
+  if (D === M + 1) return { ...z, soloDelegator: 1, solos: M };
   if (D <= 2 * M) {
     const k = D - M;
     return { ...z, hostClinics: 1, plainPairs: k - 1, solos: M - k };

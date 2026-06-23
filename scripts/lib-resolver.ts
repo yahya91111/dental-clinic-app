@@ -205,7 +205,9 @@ function resolveDayCore(cfg: Cfg, st: St, week: string, day: WeekDay, events: Ev
     const dedicatedFull = !!myHostBlk && hostSlots.length === 2 && !mine.some((s) => s.role === 'clinic');
     const fullSwapR = dedicatedFull
       ? [...new Set(slots.filter((s) => s.role === 'clinic' && s.period === openP).map((s) => s.doctor.id))]
-          .filter((x) => !absent.has(x) && !isBoard(x) && !(blocked.get(x)?.has(blk)) && !(blocked.get(x)?.has(openP)) && !slots.some((y) => y.role === 'delegator' && y.doctor.id === x))
+          // البديلُ يجب أن يعمل openP **وحدها** (زوجٌ مفردُ الفترة) — لا منفردًا يعمل الفترتين،
+          // وإلّا بقي مقعدُه في blk فصار عيادةً+استضافةً في blk (الازدواج في الشكل النحيف).
+          .filter((x) => !absent.has(x) && !isBoard(x) && !(blocked.get(x)?.has(blk)) && !(blocked.get(x)?.has(openP)) && !slots.some((y) => y.doctor.id === x && (y.role === 'delegator' || y.period === blk)))
           .sort((a, b) => (baseDel.get(a)! - baseDel.get(b)!) || a.localeCompare(b))[0]
       : undefined;
     if (dedicatedFull && fullSwapR && strategy === 'full-swap') {
@@ -214,6 +216,12 @@ function resolveDayCore(cfg: Cfg, st: St, week: string, day: WeekDay, events: Ev
       rSeat.doctor = docObj(cfg, id);
       for (const ds of hostSlots) ds.doctor = docObj(cfg, fullSwapR);
       logs.push(`استئذان مضيفٍ متفرّغ: ${nm(fullSwapR)} صار المضيفَ المتفرّغ (الفترتين)، و${nm(id)} نزل لمقعد ${nm(fullSwapR)} ف${openP}.`);
+    } else if (dedicatedFull) {
+      // مضيفٌ متفرّغٌ بلا بديلٍ نظيفٍ يعمل openP وحدها (شكلٌ نحيفٌ كلُّ عياداته منفردة): استضافةُ
+      // الفترة المحجوبة تسقط (دورٌ مساعد)، ويبقى يستضيف الفترة الأخرى. لا تبديلَ يكسر منفردًا.
+      slots = slots.filter((s) => !(s.role === 'delegator' && s.doctor.id === id && s.period === blk));
+      st[week]![day] = slots;
+      logs.push(`استئذان مضيفٍ متفرّغ بلا بديل: تسقط استضافةُ ${nm(id)} ف${blk}، يبقى يستضيف ف${openP} (الشكل النحيف).`);
     } else if (myHostBlk) {
       // ثنائيُّ استضافة (أو متفرّغٌ بلا بديل كامل) → انقل استضافة الفترة المحجوبة لطبيبٍ يعمل openP
       const promo = [...new Set(slots.filter((s) => s.role === 'clinic' && s.period === openP && s.doctor.id !== id).map((s) => s.doctor.id))]
