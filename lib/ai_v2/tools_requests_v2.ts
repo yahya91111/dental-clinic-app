@@ -1183,7 +1183,11 @@ export async function dispatchRequestToolV2(
         // غيابٌ مُغطًّى عاد، **أو** استئذانٌ بدّل مقعداً أُلغي → نُعيد حساب الشفت من
         // الواقع: يعود لمقعده الصحيح (إن ثبت العالم) أو يُشتقّ الصواب (إن تغيّر). قاعدةٌ
         // واحدةٌ للغياب والاستئذان.
-        if ((res.covered || (res as { permSwapRecompute?: boolean }).permSwapRecompute) && returnShift) {
+        // العجلةُ القديمة (redistributeOnReturn) لمسارِ العودة **خارج apply فقط** — طيُّ
+        // الاتّجاه العكسيّ: في apply يتولّى القلبُ الجديد (الاستردادُ الجراحيّ داخل
+        // cancelStatus + applyReturn للعالم-المتغيّر)، فلا تشتعل العجلةُ هنا أبدًا.
+        const { isApplyMode: isApplyModeRet } = await import('../algorithms/solver_shadow');
+        if ((res.covered || (res as { permSwapRecompute?: boolean }).permSwapRecompute) && returnShift && !isApplyModeRet(ctx.clinicId)) {
           try {
             const { schedule } = await import('../algorithms/schedule');
             autoReturned = await schedule.redistributeOnReturn({
