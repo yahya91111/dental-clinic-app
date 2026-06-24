@@ -850,6 +850,25 @@ export async function setScheduleStatus(
       }
     }
 
+    // هل الطبيب من البورد **وفي عيادة بوردٍ مشتركة**؟ عندها يُعالَج غيابُه/استئذانُه بإعادة
+    // توزيع عيادة البورد حصرًا (لا يدخل المبادلةَ العامّة فلا يُبعثَر). الشرطُ دقيق: بوردٌ +
+    // ٢ بورد على الأقلّ + له مقعدُ عيادةٍ (أو حفظٌ) في عيادةٍ يشاركه فيها بورديٌّ آخر — حتى
+    // لا نعترض حالةً نادرةً يكون فيها البورديُّ منفردًا/مضيفًا (يُعامَل عاديًّا حينئذ).
+    let doctorIsBoard = false;
+    if (REMOVES_FROM_CLINIC.has(status) || toPermission) {
+      try {
+        const { loadScheduleData } = await import('./schedule');
+        const boardSet = new Set((((await loadScheduleData(clinicId, weekStart)).data?.doctors) ?? [])
+          .filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
+        if (boardSet.has(doctorId) && boardSet.size >= 2) {
+          const mySeat = rows.find((r) => r.doctor_id === doctorId && r.status === 'active' && r.role === 'clinic' && r.clinic_number > 0)
+            ?? rows.find((r) => r.doctor_id === doctorId && r.role === PREV_ROLE && r.clinic_number > 0);
+          doctorIsBoard = !!mySeat && rows.some((r) => r.doctor_id !== doctorId && boardSet.has(r.doctor_id)
+            && (r.role === 'clinic' || r.role === PREV_ROLE) && r.clinic_number === mySeat!.clinic_number);
+        }
+      } catch { /* */ }
+    }
+
     // ── تحويل حالةٍ تُخرج من العيادة (مرضية/تفرّغ/احتياط) إلى استئذان ──
     // الاستئذان حالةُ مَن هو **داخل** العيادة (يتأخّر أو يخرج مبكّرًا). كان خارجها
     // بحالةٍ سابقة؟ أعِده أوّلًا إلى مكانه المحفوظ ثمّ ضَع علامة الاستئذان — كما لو
@@ -1042,7 +1061,9 @@ export async function setScheduleStatus(
       const placed = permPlacedRows ?? [];
       const conflictSlots = placed.filter((p) => blocked.includes(p.period));
       let swap: PermissionInfo['swap'];
-      if (conflictSlots.length > 0 && !permWasReserve) {
+      // البورد لا يدخل المبادلةَ العامّة ولا الإخلاءَ الرفيع — تُعالَج عيادتُه بـreconcileBoardClinic
+      // في نهاية الدالّة (لا يخرج من عيادته، ولا يُقحَم عاديٌّ فيها قبل أوانه).
+      if (conflictSlots.length > 0 && !permWasReserve && !doctorIsBoard) {
         swap = await autoResolvePermissionConflict({
           clinicId, weekStart, day, doctorId, doctorName, conflictSlots,
         });
@@ -1052,7 +1073,7 @@ export async function setScheduleStatus(
       // وعاملٌ معًا). أَخْلِ مقعدَه المحجوب: يبقى فارغًا في الجدول (لا أحدَ فائضٌ يغطّيه)،
       // واحفظه prev_placement كي يعيده الإلغاءُ حرفيًّا كالتبديل. (لا يُطبَّق على المُحتاط:
       // لا خانةَ عيادةٍ له يحجبها الاستئذان.) آمنٌ بعد تبديلٍ ناجح: لا خانةَ محجوبةً تبقى.
-      if (!permWasReserve) {
+      if (!permWasReserve && !doctorIsBoard) {
         const dayNow = await loadDay(clinicId, weekStart, day);
         const stuck = dayNow.filter((r) => r.doctor_id === doctorId && r.status === 'active'
           && blocked.includes(r.period) && (r.role === 'clinic' || r.role === 'delegator'));
@@ -1093,6 +1114,12 @@ export async function setScheduleStatus(
       // eslint-disable-next-line no-console
       if (pruned) console.log(`[ظلّ-يتيم · ${DAY_AR[day]}] أُزيل ${pruned} مقعدَ ظلٍّ غاب مشرفُه — تبقى فارغة`);
     } catch (e) { void e; }
+
+    // البورد: غيابُ/استئذانُ طبيب بوردٍ يُعيد توزيعَ عيادتهم (يجتمعان في المتاحة، والفراغُ
+    // يُغطّى: احتياط بورد أوّلًا ثمّ عاديّ). يعمل لكلّ الحالات (مرضية/تفرّغ/استئذان).
+    if (doctorIsBoard) {
+      try { await reconcileBoardClinic({ clinicId, weekStart, day }); } catch (e) { void e; }
+    }
 
     return {
       success: true, gaps, permission, keptPermissionAr,
@@ -1227,6 +1254,16 @@ export async function cancelStatus(
     const permRows = statusRows.filter(isPermRow);
     if (permRows.length > 0) {
       await deleteRows(permRows.map((r) => r.id));
+      // بوردٌ استأذن وأُلغي → أعِد توزيعَ عيادتهم: يعودان للانقسام الأصليّ (من الحفظ)، والمُغطّي
+      // العاديّ يعود احتياطًا. reconcileBoardClinic حتميٌّ يعكس بدقّة (الإلغاءُ التامّ يحذف الحفظ).
+      try {
+        const { loadScheduleData } = await import('./schedule');
+        const bset = new Set((((await loadScheduleData(clinicId, weekStart)).data?.doctors) ?? [])
+          .filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
+        if (bset.has(doctorId) && bset.size >= 2 && await reconcileBoardClinic({ clinicId, weekStart, day })) {
+          return { success: true, permissionCanceled: true, restored: true, canceledStatus: permRows[0]!.status };
+        }
+      } catch (e) { void e; }
       const extraStays = statusRows.some((r) => r.status === 'extra');
       if (extraStays) {
         // كان احتياطًا واستأذن — تُزال العلامة ويبقى احتياطًا، وحفظُه القديم
@@ -2277,6 +2314,114 @@ async function pruneOrphanedShadows(args: { clinicId: string; weekStart: string;
   }
   if (orphan.length) await applySlotChanges({ deleteIds: orphan });
   return orphan.length;
+}
+
+/** عيادةُ البورد (طبيبا بورد يتقاسمانها: فترةٌ أولى/ثانية). عند غياب/استئذان أحدهما أو
+ *  كليهما يُعاد توزيعُها: كلُّ طبيب بورد **حاضرٍ** يعمل فترتَه المتاحة (بداية تحجب الأولى،
+ *  نهاية تحجب الثانية، مرضية/تفرّغ = غائبٌ كاملًا)، مع إبقاء الفترتين مأهولتين بالبورد ما
+ *  أمكن. وأيّ فترةٍ لا يتوفّر لها طبيبُ بوردٍ حاضر تُغطّى: **احتياط البورد أوّلًا** (إن كانوا
+ *  ٣+)، وإلّا **الآليّة الطبيعيّة** (أيّ احتياطيٍّ متاح). الحالات:
+ *   • كلاهما بداية → كلاهما الفترة الثانية معًا، والأولى تُغطّى.
+ *   • كلاهما نهاية → كلاهما الأولى معًا، والثانية تُغطّى.
+ *   • واحدٌ يستأذن فقط → الاثنان يغطّيان الفترتين بأنفسهما (الحرّ يأخذ فترةَ المُستأذِن).
+ *   • واحدٌ مرضيّة (غائبٌ كاملًا) → الآخر يبقى مكانه، وفترةُ الغائب تُغطّى بالآليّة الطبيعيّة.
+ *  حتميٌّ (يُعاد حسابُه من الحالات الراهنة)، فيصحّ أيًّا كان ترتيبُ التقديم/الإلغاء.
+ *  يُرجِع true إن لمس عيادةَ بورد. لا يُمسّ البورد بحلِّ تعارض الاستئذان العامّ (مستثنًى). */
+async function reconcileBoardClinic(args: { clinicId: string; weekStart: string; day: WeekDay }): Promise<boolean> {
+  const { clinicId, weekStart, day } = args;
+  const { loadScheduleData } = await import('./schedule');
+  const sd = (await loadScheduleData(clinicId, weekStart)).data;
+  if (!sd) return false;
+  const boardIds = new Set(sd.doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
+  if (boardIds.size < 2) return false;
+  const traineeIds = new Set(sd.doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
+  const lightIds = new Set(sd.doctors.filter((d) => d.workStatus === 'light_duty').map((d) => d.id));
+  const nameOf = (id: string) => sd.doctors.find((d) => d.id === id)?.name ?? id;
+  const rows = await loadDay(clinicId, weekStart, day);
+  const boardRows = rows.filter((r) => boardIds.has(r.doctor_id));
+  const isStatus = (r: Row) => r.period === 0 && (r.status === 'sick_leave' || r.status === 'vacation' || r.status === 'permission_start' || r.status === 'permission_end');
+  // مرساةُ عيادة البورد + الشفت: من أيّ مقعد عيادة/إحلالٍ للبورد هذا اليوم.
+  const anchor = boardRows.find((r) => (r.role === 'clinic' || r.role === PREV_ROLE) && r.clinic_number > 0 && r.period > 0);
+  if (!anchor) return false;
+  const cn = anchor.clinic_number;
+  const morning = anchor.period <= 2;
+  const firstP = morning ? 1 : 3; const secondP = morning ? 2 : 4; const exCol = morning ? 1 : 2;
+  // زوجُ البورد: مَن له مقعدٌ (عيادة/إحلال) في عيادتهم هذا الشفت أو علامةُ حالةٍ هذا الشفت.
+  const pairIds = [...new Set(boardRows.filter((r) =>
+    ((r.role === 'clinic' || r.role === PREV_ROLE) && r.clinic_number === cn && (r.period === firstP || r.period === secondP)) || isStatus(r),
+  ).map((r) => r.doctor_id))];
+  if (pairIds.length === 0) return false;
+  // حالةُ كلّ طبيب بورد + مقعدُه الحاليّ في عيادتهم + حفظُه (prev) إن وُجد.
+  const statusOf = (id: string) => boardRows.find((r) => r.doctor_id === id && isStatus(r))?.status;
+  const curSeat = (id: string) => boardRows.find((r) => r.doctor_id === id && r.status === 'active' && r.role === 'clinic' && r.clinic_number === cn && (r.period === firstP || r.period === secondP))?.period;
+  const prevSeat = (id: string) => boardRows.find((r) => r.doctor_id === id && r.role === PREV_ROLE && r.clinic_number === cn && (r.period === firstP || r.period === secondP))?.period;
+  const anyStatus = pairIds.some((id) => !!statusOf(id));
+  const existingPrev = boardRows.filter((r) => r.role === PREV_ROLE && r.clinic_number === cn && (r.period === firstP || r.period === secondP));
+  // سجّل الانقسامَ الأصليّ مرّةً واحدةً عند أوّل اضطراب (prev_placement) كي يعكسه الإلغاء حرفيًّا.
+  const prevInserts: Record<string, unknown>[] = [];
+  if (anyStatus && existingPrev.length === 0) {
+    for (const id of pairIds) {
+      const cs = curSeat(id);
+      if (cs) prevInserts.push({ clinic_id: clinicId, week_start: weekStart, day_of_week: day, period: cs, clinic_number: cn, doctor_id: id, doctor_name: nameOf(id), role: PREV_ROLE, status: 'active', source: 'request' });
+    }
+  }
+  const origOf = (id: string): number => prevSeat(id) ?? (prevInserts.find((p) => p.doctor_id === id)?.period as number | undefined) ?? curSeat(id) ?? firstP;
+  // توزيعُ البورد الحاضرين: المحجوبُ لفترته المتاحة، والحرُّ لفترته الأصليّة (أو يملأ الفارغة).
+  const firstPdocs: string[] = []; const secondPdocs: string[] = []; const flexible: { id: string; orig: number }[] = [];
+  for (const id of pairIds) {
+    const st = statusOf(id);
+    if (st === 'sick_leave' || st === 'vacation') continue;        // غائبٌ كاملًا — لا يُوضع
+    else if (st === 'permission_start') secondPdocs.push(id);      // بداية تحجب الأولى → الثانية
+    else if (st === 'permission_end') firstPdocs.push(id);         // نهاية تحجب الثانية → الأولى
+    else flexible.push({ id, orig: origOf(id) });
+  }
+  for (const f of flexible) {
+    if (f.orig === firstP && firstPdocs.length === 0) firstPdocs.push(f.id);
+    else if (f.orig === secondP && secondPdocs.length === 0) secondPdocs.push(f.id);
+    else if (firstPdocs.length === 0) firstPdocs.push(f.id);
+    else if (secondPdocs.length === 0) secondPdocs.push(f.id);
+    else firstPdocs.push(f.id);
+  }
+  // شاغلو عيادة البورد حاليًّا (سنُعيد كتابتها): غيرُ البورد مُغطٍّ **مُحرَّر** — يعود احتياطًا إن
+  // لم يُعَد اختيارُه. التغطيةُ لأيّ فترةٍ بلا بورد: احتياط البورد ← المُغطّي المُحرَّر ← أيّ عاديّ.
+  const clear = rows.filter((r) => r.status === 'active' && r.role === 'clinic' && r.clinic_number === cn && (r.period === firstP || r.period === secondP));
+  const freedCovers = [...new Set(clear.filter((r) => !boardIds.has(r.doctor_id)).map((r) => r.doctor_id))];
+  const placed = new Set([...firstPdocs, ...secondPdocs]);
+  const reservesAll = [...new Set(rows.filter((r) => r.status === 'extra' && r.period === 0 && r.clinic_number === exCol).map((r) => r.doctor_id))];
+  const boardReserve = reservesAll.filter((id) => boardIds.has(id) && !placed.has(id));
+  const regReserve = reservesAll.filter((id) => !boardIds.has(id) && !traineeIds.has(id) && !lightIds.has(id));
+  const usedCover = new Set<string>();
+  const pickCover = (): string | null => {
+    const b = boardReserve.find((id) => !usedCover.has(id)); if (b) { usedCover.add(b); return b; }
+    const f = freedCovers.find((id) => !usedCover.has(id)); if (f) { usedCover.add(f); return f; }
+    const r = regReserve.find((id) => !usedCover.has(id)); if (r) { usedCover.add(r); return r; }
+    return null;
+  };
+  const finalFirst = [...firstPdocs]; const finalSecond = [...secondPdocs];
+  if (finalFirst.length === 0) { const c = pickCover(); if (c) finalFirst.push(c); }
+  if (finalSecond.length === 0) { const c = pickCover(); if (c) finalSecond.push(c); }
+  // إلغاءٌ تامّ (لا حالةَ بورد متبقّية) → احذف حفظَ الانقسام (استُهلِك). المُغطّون المُحرَّرون
+  // غيرُ المُعاد اختيارُهم يعودون احتياطًا؛ واحتياطُ مَن نزل للتغطية يُزال.
+  const deletePrev = anyStatus ? [] : existingPrev;
+  const coversToReserve = freedCovers.filter((id) => !usedCover.has(id));
+  const exRemove = rows.filter((r) => r.status === 'extra' && r.period === 0 && r.clinic_number === exCol && usedCover.has(r.doctor_id));
+  const mk = (id: string, period: number) => ({
+    clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+    period, clinic_number: cn, doctor_id: id, doctor_name: nameOf(id),
+    role: 'clinic', status: 'active', source: 'request',
+  });
+  const mkEx = (id: string) => ({
+    clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+    period: 0, clinic_number: exCol, doctor_id: id, doctor_name: nameOf(id),
+    role: 'clinic', status: 'extra', source: 'request',
+  });
+  await applySlotChanges({
+    deleteIds: [...clear, ...exRemove, ...deletePrev].map((r) => r.id),
+    inserts: [...prevInserts, ...finalFirst.map((id) => mk(id, firstP)), ...finalSecond.map((id) => mk(id, secondP)), ...coversToReserve.map(mkEx)],
+  });
+  // eslint-disable-next-line no-console
+  console.log(`[بورد · ${DAY_AR[day]}] عيادة ${cn}: ف${firstP}=[${finalFirst.map((id) => nameOf(id).split(' ')[1] ?? nameOf(id)).join('+') || '—'}] ف${secondP}=[${finalSecond.map((id) => nameOf(id).split(' ')[1] ?? nameOf(id)).join('+') || '—'}]${anyStatus ? '' : ' (عاد للأصل)'}`);
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════

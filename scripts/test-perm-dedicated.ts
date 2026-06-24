@@ -18,10 +18,13 @@ async function cleanDay() { await supabase.from('schedule_slots').delete().eq('c
 
 async function main() {
   // أطبّاء نشطون فقط (لا تخفيف/متدرّب/بورد) — حالةُ العمل في group_members لا في doctors.
-  const { data: members } = await getAllGroupMembers(CID);
-  const roster = ((members || []) as any[])
-    .filter((m) => (m.work_status ?? 'active') === 'active' && m.group_template_key !== 'board')
-    .map((m) => ({ id: m.doctor_id, name: m.doctor_name }));
+  // الروستر من loadScheduleData (الحالةُ الواحدةُ الصحيحة لكلّ طبيب) — نستبعد البورد/التخفيف/
+  // المتدرّب/الإجازة؛ المضيفُ المكرّس لا يكون إلا طبيبًا عاديًّا نشطًا.
+  const { loadScheduleData } = await import('../lib/algorithms/schedule');
+  const sd = (await loadScheduleData(CID, WEEK)).data;
+  const roster = ((sd?.doctors) ?? [])
+    .filter((d) => d.workStatus === 'active' && d.groupTemplate.key !== 'board')
+    .map((d) => ({ id: d.id, name: d.name }));
   if (roster.length < 4) { console.log(`روستر نشطٌ صغير (${roster.length}) — يلزم ٤ أطبّاء نشطين`); process.exit(1); }
   const [H, P, A, B] = roster;
 

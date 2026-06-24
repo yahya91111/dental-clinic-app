@@ -44,13 +44,14 @@ async function build() {
     const r = await applyCoverage({ clinicId: CID, weekStart: W, label: 'test' });
     console.log(`     طُبّق: filled=${r.filled} shortages=${r.shortages}`);
 
+    const boardReserveExists = boardIds.size >= 3; // ٣+ بورد ⇒ يوجد احتياطُ بورد يُغطّي أوّلًا
     data = (await loadScheduleData(CID, W)).data!;
     const seatOccupants = data.existingSlots.filter((s) => DI[s.dayOfWeek] === 0 && s.clinicNumber === boardClinic && s.period === victim.period && s.status === 'active' && s.role === 'clinic');
-    // (أ) لا غيرُ بوردٍ دخل مقعد البورد.
-    check('(أ) لا طبيبٌ من البِركة العاديّة حشا مقعد البورد', seatOccupants.every((s) => boardIds.has(s.doctorId)), seatOccupants.map((s) => s.doctorName).join(','));
-    // (ج) إن مُلئ، فبِبورد؛ وإلّا نقصُ بوردٍ صريح (طبيبان فقط = لا احتياط).
-    if (seatOccupants.length >= 1) check('(ج) مُلئ ببورد', seatOccupants.every((s) => boardIds.has(s.doctorId) && s.doctorId !== victim.doctorId));
-    else check('(ج) لا احتياطَ بورد → نقصٌ صريح (مقعدٌ شاغر)', true);
+    // السياسة الجديدة (طلب المستخدم): مقعدُ البورد الغائب يُغطّى — احتياطُ البورد أوّلًا
+    // (إن كانوا ٣+)، وإلّا الآليّةُ الطبيعيّة (أيُّ طبيبٍ متاح). لا يُترَك فارغًا.
+    check('(أ) مقعد البورد الغائب مُغطًّى (لا فارغ)', seatOccupants.length === 1 && seatOccupants[0]!.doctorId !== victim.doctorId, seatOccupants.map((s) => s.doctorName).join(','));
+    if (boardReserveExists) check('(ج) مع احتياط بورد: غُطّي ببورد', seatOccupants.length === 1 && boardIds.has(seatOccupants[0]!.doctorId));
+    else check('(ج) بلا احتياط بورد: غُطّي بطبيبٍ عاديّ (الآليّة الطبيعيّة)', seatOccupants.length === 1 && !boardIds.has(seatOccupants[0]!.doctorId), seatOccupants.map((s) => s.doctorName).join(','));
 
     // (ب) التغطية لم تُضِف حجزًا مزدوجًا في **مقعد البورد** المعنيّ (الفكسجر قد يحوي
     //     مشاركةَ عيادةٍ سابقةً غير متعلّقةٍ بنا — نفحص مقعدنا فقط).
