@@ -46,7 +46,7 @@ const dayRows = (rows: any[], who: string, day: WeekDay) => rows.filter((s) => s
   const clinicBefore = data.existingSlots.filter((s) => s.dayOfWeek === D && s.status === 'active' && s.role === 'clinic' && s.period > 0).length;
   const shadowSeats = data.existingSlots.filter((s) => s.dayOfWeek === D && s.doctorId === T && s.status === 'active' && s.role === 'clinic' && s.period > 0).length;
 
-  const assertAbsence = async (status: 'sick_leave' | 'permission_end', label: string) => {
+  const assertAbsence = async (status: 'sick_leave' | 'vacation' | 'permission_end', label: string) => {
     await setScheduleStatus(actor, { clinicId: CID, weekStart: W, day: D, doctorId: T, doctorName: byId.get(T)!.name, status, shift: 'morning' });
     const a = (await loadScheduleData(CID, W)).data!.existingSlots;
     const mine = dayRows(a, T, D);
@@ -64,6 +64,7 @@ const dayRows = (rows: any[], who: string, day: WeekDay) => rows.filter((s) => s
 
   try {
     await assertAbsence('sick_leave', 'مرضيّة');
+    await assertAbsence('vacation', 'تفرّغ');
     await assertAbsence('permission_end', 'استئذان');
   } finally {
     await rebuild();
