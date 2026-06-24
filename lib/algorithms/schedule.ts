@@ -1638,92 +1638,21 @@ export async function rebalanceForward(args: {
    *  تشمل أيّام هذا الأسبوع **قبل** الحدث ما دامت مستقبلًا) بدل «بعد يوم الحدث». */
   today?: string;
 }): Promise<{ changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] }> {
-  const DAY_IDX: Record<WeekDay, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
-  const maxWeeks = args.maxWeeks ?? 4;
   const changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] = [];
 
-  let week = args.weekStart;
-  // مرساة «الآن»: أوّل شفتٍ لم يقع بعدُ (ضمنًا) — أوسع نافذة. وإلّا (افتراضيّ): الشفت
-  // التالي ليوم الحدث (المرساة نفسها عُولجت بالكرت).
-  let startOrder: number;
-  if (args.today) {
-    const sf = firstFutureShift(args.weekStart, args.today);
-    startOrder = sf ? DAY_IDX[sf.day] * 2 + (sf.shift === 'evening' ? 1 : 0) : 10;
-  } else {
-    startOrder = DAY_IDX[args.fromDay] * 2 + (args.fromShift === 'evening' ? 1 : 0) + 1;
-  }
-
-  // القلب الجديد كاتبٌ وحيدٌ لهذه العيادة (وضع apply)؟ نتخطّى الحلقة السببيّة القديمة
-  // فلا يتنازع كاتبان (تغطية الجديد + بناء القديم) على الجدول. القديم يبقى للعيادات
-  // خارج apply (ظلّ/مطفأ) — تطويرٌ بلا حذف.
-  let newHeartSole = false;
-  try { const { isApplyMode } = await import('./solver_shadow'); newHeartSole = isApplyMode(args.clinicId); } catch { /* تجاهل */ }
-
-  for (let wi = 0; !newHeartSole && wi < maxWeeks; wi++) {
-    const recipe = await loadBuildConfig(args.clinicId, week);
-    if (!recipe) break;                       // أسبوع بلا وصفةٍ محفوظة → غير مبنيّ
-    const { data } = await loadScheduleData(args.clinicId, week);
-    if (!data) break;
-    const builtThisWeek = data.existingSlots.some(
-      (s) => s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator'),
-    );
-    if (!builtThisWeek) break;                // لا خانات مكتوبة → ليس مبنيًّا فعلًا
-
-    const affected = new Set<string>();
-    for (let order = startOrder; order < 10; order++) {
-      const day = WEEK_DAYS_ORDER[Math.floor(order / 2)]!;
-      const shift: Shift = order % 2 === 0 ? 'morning' : 'evening';
-      // إعادة الحساب تقرأ DB طازجًا (يشمل ما كتبناه لشفتاتٍ أسبق) → التتالي طبيعيّ.
-      const r = await redistributeShift({ clinicId: args.clinicId, weekStart: week, day, shift });
-      if (!r.success) continue;               // عطلة/لا بِركة → تخطَّ
-      const periods = SHIFT_PERIODS[shift];
-      const exCol = shift === 'morning' ? 1 : 2;
-      // المرجع = المكتوب أصلًا (ما رآه الأطبّاء)؛ كتابةُ شفتٍ أسبق لا تمسّ صفوف هذا.
-      const curItems: SigItem[] = data.existingSlots
-        .filter((s) => s.dayOfWeek === day)
-        .map((s) => ({ role: s.role, status: s.status, period: s.period, clinicNumber: s.clinicNumber, doctorId: s.doctorId }));
-      const recItems: SigItem[] = r.slots.map((s) => ({
-        role: s.role === 'ex' ? 'clinic' : s.role,
-        status: s.role === 'ex' ? 'extra' : 'active',
-        period: s.role === 'ex' ? 0 : s.period,
-        clinicNumber: s.clinicNumber,
-        doctorId: s.doctor.id,
-      }));
-      const curKeys = shiftKeys(curItems, periods, exCol);
-      const recKeys = shiftKeys(recItems, periods, exCol);
-      if (curKeys.join(';') === recKeys.join(';')) continue;   // مطابق → لا نمسّه
-
-      const ap = await applyShiftRedistribution({ clinicId: args.clinicId, weekStart: week, day, shift, slots: r.slots });
-      if (!ap.success) continue;
-      // نكتب الفرق (شمل تبديل الفترة، للحفاظ على دقّة الميزان)، لكن **لا نُشعِر**
-      // إلّا مَن تبدّل موضعُه فعلًا (عيادة/شريك/دور) — لا مَن بدّل فترته فقط.
-      const curPlace = placementSigs(curItems, periods, exCol);
-      const recPlace = placementSigs(recItems, periods, exCol);
-      for (const id of new Set([...curPlace.keys(), ...recPlace.keys()])) {
-        if (curPlace.get(id) !== recPlace.get(id)) affected.add(id);
-      }
-    }
-    if (affected.size > 0) changedWeeks.push({ weekStart: week, affectedDoctorIds: [...affected] });
-
-    startOrder = 0;                            // الأسابيع التالية مبنيّة بالكامل للمستقبل
-    week = addDaysISO(week, 7);
-  }
-
-  // ── القلب الموحَّد ──
-  // • apply (newHeartSole): الجديد كاتبٌ وحيد — يغطّي الغياب (عيادة+بورد) ثمّ يمتصّ
-  //   الدليقيتر. الحلقة القديمة أعلاه لم تعمل، فلا تنازع. هذا هو الدمج الكامل.
-  // • shadow/off: القديم وزّع، والجديد يُسجّل قراره فقط (تشخيصٌ بلا كتابة).
+  // ── القلب الواحد (التوحيد النهائيّ، C2) ──
+  // القلبُ الجديد هو محرّكُ التفاعل **الوحيد** — لا فرعَ «قديم/جديد» بعد اليوم: يغطّي
+  // الغياب (عيادة + بورد)، يسدّد الاحتياط داخل الأسبوع، ثمّ يمتصّ الدليقيتر عبر الأيّام.
+  // العجلةُ القديمة (createWheels/distributeShiftWheel) تبقى **للبناء فقط** (تطويرٌ بلا
+  // حذفِ قلب البناء). مفتاحُ الإيقاف في new_heart_config: 'off' → القلبُ الجديد لا يتفاعل
+  // (المُطبِّقات تَخرج باكرًا)، فالعيادةُ تبقى كما كُتبت — وضعُ طوارئٍ آمن، لا فرعٌ موازٍ.
+  // الأثرُ عبر الأسابيع المبنيّة يتولّاه القلبُ الجديد للأسبوع المعنيّ؛ الإشعارُ من حركاته.
   try {
     const sh = await import('./solver_shadow');
-    if (newHeartSole) {
-      const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
-      // سدادُ الاحتياط داخل الأسبوع (محور الاحتياط) قبل امتصاص الدليقيتر — كترتيب المختبر.
-      await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' }, sh.reservePairsFromMoves(cov.moves));
-      await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
-    } else {
-      await sh.shadowRebalanceLog({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
-    }
-  } catch { /* الحلّال الجديد لا يُفشِل التسوية أبدًا */ }
+    const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+    await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' }, sh.reservePairsFromMoves(cov.moves));
+    await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+  } catch { /* القلبُ الجديد لا يُفشِل التسوية أبدًا */ }
 
   return { changedWeeks };
 }

@@ -760,23 +760,26 @@ export async function applyReturn(args: {
       && ((s.status === 'sick_leave' || s.status === 'vacation')
         || (s.status === 'permission_start' && P === periods[0]) || (s.status === 'permission_end' && P === periods[1])));
 
-    // ① الاستردادُ بالقوّة: العائدُ يأخذ كلَّ مقعدٍ من prevSeats.
+    // ① الاستردادُ بالقوّة: العائدُ يأخذ كلَّ مقعدٍ من prevSeats. نُخلي المقعدَ **تمامًا**
+    // (الشاغلُ + أيُّ ظلٍّ يطابقه — قد يحوي طبيبًا وظلَّه صفّين) ثمّ نضع العائدَ صفًّا
+    // واحدًا → لا حجزَ مزدوج بالبناء. الشاغلُ غيرُ المتدرّب = المُزاح (يُعاد امتصاصُه)؛
+    // الظلال تُحذف هنا، وتُعيد محاذاتَها طبقةُ الإلغاء (mirrorShadows) لموضع مدرّبها النهائيّ.
+    const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
     const displaced = new Set<string>();
     for (const ps of prevSeats) {
       const role = ps.clinicNumber === 0 ? 'delegator' : 'clinic';
-      const occ = rowsNow().find((s) => s.status === 'active' && s.role === role && s.period === ps.period && s.clinicNumber === ps.clinicNumber);
-      if (occ && occ.doctorId === returnerId) continue; // عاد أصلًا → لا لمس
-      touchedSet.add(returnerId);
-      if (occ) {
-        displaced.add(occ.doctorId); touchedSet.add(occ.doctorId);
-        await supabase.from('schedule_slots').update({ doctor_id: returnerId, doctor_name: nameOf(returnerId) }).eq('id', occ.id);
-      } else {
-        await supabase.from('schedule_slots').insert({
-          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-          period: ps.period, clinic_number: ps.clinicNumber,
-          doctor_id: returnerId, doctor_name: nameOf(returnerId), role, status: 'active', source: 'request',
-        });
+      const here = rowsNow().filter((s) => s.status === 'active' && s.role === role && s.period === ps.period && s.clinicNumber === ps.clinicNumber);
+      if (here.length === 1 && here[0]!.doctorId === returnerId) continue; // العائدُ وحدَه أصلًا → لا لمس
+      for (const r of here) {
+        if (r.doctorId !== returnerId && !traineeIds.has(r.doctorId)) { displaced.add(r.doctorId); touchedSet.add(r.doctorId); }
+        await supabase.from('schedule_slots').delete().eq('id', r.id);
       }
+      await supabase.from('schedule_slots').insert({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+        period: ps.period, clinic_number: ps.clinicNumber,
+        doctor_id: returnerId, doctor_name: nameOf(returnerId), role, status: 'active', source: 'request',
+      });
+      touchedSet.add(returnerId);
       z.reclaimed++;
     }
     data = await reload(); if (!data) return z;
