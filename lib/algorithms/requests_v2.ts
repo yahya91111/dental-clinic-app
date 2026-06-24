@@ -53,7 +53,8 @@ export type StatusResult = RequestResult & { gaps?: GapLocation[] };
  *  • swap: نتيجة التبديل التلقائيّ الصامت عند التعارض — مع مَن تمّ، أو تعذّره وسببه
  *  • covered: كان غائبًا (مرضية/تفرّغ) ومكانه مُغطًّى — صار مستأذنًا بلا مركز
  *  • wasReserve: كان احتياطيًّا — بقي احتياطًا والعلامة أُضيفت (تعايش)
- *  • shadowToReserve: ظلٌّ استأذن — نُقل إلى الاحتياط وحده، وإلغاؤه يعيده لمدرّبه
+ *  • shadowToReserve: ظلٌّ استأذن/غاب — يظهر غائبًا بسببه في خانة الاحتياط (صفٌّ واحد، بلا
+ *    تغطية، لا يُعرَض احتياطيًّا متاحًا)، ومدرّبه يبقى؛ وإلغاؤه يعيده لجانب مدرّبه
  */
 export type PermissionInfo = {
   conflict: boolean;
@@ -832,10 +833,12 @@ export async function setScheduleStatus(
             doctor_id: doctorId, doctor_name: doctorName,
             role: 'clinic', status, source: 'shadow',
           };
-          // استئذان الظلّ: علامة الاستئذان + صفّ احتياطٍ معًا (يظهر في قائمة EX)
+          // غيابُ الظلّ (مرضية/تفرّغ/استئذان): صفُّ حالته بسببه في خانة EX — **صفٌّ واحدٌ
+          // فقط** (لا صفَّ احتياطٍ زائد): يظهر بعلامة السبب (SL/تفرّغ/PS/PE) ولا يُعرَض
+          // احتياطيًّا متاحًا فلا يُقترح للتغطية. لا تغطية، ومدرّبه يبقى في مكانه.
           await applySlotChanges({
             deleteIds: [...myActive, ...oldSt, ...oldPrev].map((r) => r.id),
-            inserts: toPermission ? [statusRow, { ...statusRow, status: 'extra' }] : [statusRow],
+            inserts: [statusRow],
           });
           return {
             success: true, gaps: [],
@@ -875,9 +878,10 @@ export async function setScheduleStatus(
         doctor_id: doctorId, doctor_name: doctorName,
         role: 'clinic', status, source: 'shadow',
       };
+      // تحويلُ غياب الظلّ إلى استئذان: صفٌّ واحدٌ بالسبب في خانة EX (لا صفَّ احتياطٍ زائد).
       await applySlotChanges({
         deleteIds: oldSt.map((r) => r.id),
-        inserts: [statusRow, { ...statusRow, status: 'extra' }],
+        inserts: [statusRow],
       });
       return {
         success: true, gaps: [],
