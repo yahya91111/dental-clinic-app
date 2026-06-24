@@ -1081,6 +1081,15 @@ export async function setScheduleStatus(
       };
     }
 
+    // قاعدةٌ صلبة: الظلّ (المتدرّب) لا يغطّي أبدًا — هو مع مشرفه أو لا يكون. أزِل أيّ مقعدِ
+    // ظلٍّ بقي في فترةٍ غاب عنها مشرفُه (استئذانٌ حجبها بلا بديل، أو حالةٌ مركّبة: عدّةُ
+    // استئذاناتٍ/طبيّاتٍ معًا) → تبقى الفترةُ **فارغة** لا «مغطّاةً بمتدرّب».
+    try {
+      const pruned = await pruneOrphanedShadows({ clinicId, weekStart, day, preRows: rows });
+      // eslint-disable-next-line no-console
+      if (pruned) console.log(`[ظلّ-يتيم · ${DAY_AR[day]}] أُزيل ${pruned} مقعدَ ظلٍّ غاب مشرفُه — تبقى فارغة`);
+    } catch (e) { void e; }
+
     return {
       success: true, gaps, permission, keptPermissionAr,
       effShift: effShift ?? undefined,
@@ -2234,6 +2243,36 @@ async function mirrorShadows(args: {
       })),
     });
   }
+}
+
+/** القاعدةُ الصلبة: المتدرّبُ **الظلّ (المبتدئ)** لا يغطّي مقعدًا أبدًا — هو **مع مشرفه** أو
+ *  لا يكون. يُزيل أيّ مقعدِ ظلٍّ (عيادة/دليقيتر نشط) في فترةٍ **لا مقعدَ نشطًا لمشرفه فيها**
+ *  (استئذانٌ حجبها فأُخلِيت، أو غيابٌ/حالةٌ مركّبة) → يُحذَف فتبقى الفترةُ فارغة لا «مغطّاةً
+ *  بمتدرّب». يُميّز الظلَّ المبتدئ من حالة **ما قبل العمليّة** (preRows) عبر dayShadowTraineeIds
+ *  (مطابقةُ خانات المشرف) — فالمتدرّبُ **المستقلّ** (يخالف مشرفه) لا يُحتسب ظلًّا فلا يُهذَّب
+ *  أبدًا. يصمد لأيّ تركيب (٣ استئذانات، استئذانان+تخفيف، استئذاناتٌ وطبيّاتٌ معًا). آمن: لا
+ *  يمسّ ظلًّا حاضرًا مع مشرفه، ولا صفوفَ الاحتياط (فترتُها 0 خارج النطاق). يُرجِع عددَ المُزال. */
+async function pruneOrphanedShadows(args: { clinicId: string; weekStart: string; day: WeekDay; preRows: Row[] }): Promise<number> {
+  const { clinicId, weekStart, day, preRows } = args;
+  const { data: members } = await getAllGroupMembers(clinicId);
+  const mem = (members || []) as TraineeMember[];
+  const shadowIds = dayShadowTraineeIds(preRows, mem); // ظلال مبتدئون قبل العمليّة (المستقلّ مستثنًى)
+  if (shadowIds.size === 0) return 0;
+  const supOf = new Map(mem.filter((m) => shadowIds.has(m.doctor_id)).map((m) => [m.doctor_id, m.supervisor_doctor_id!]));
+  const cur = await loadDay(clinicId, weekStart, day); // الحالة بعد العمليّة
+  const inScope = (r: Row) => r.period > 0 && r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator');
+  const supActivePeriods = (supId: string) =>
+    new Set(cur.filter((r) => r.doctor_id === supId && inScope(r)).map((r) => r.period));
+  const orphan: string[] = [];
+  for (const tid of shadowIds) {
+    const supId = supOf.get(tid); if (!supId) continue;
+    const sp = supActivePeriods(supId);
+    for (const r of cur.filter((r) => r.doctor_id === tid && inScope(r))) {
+      if (!sp.has(r.period)) orphan.push(r.id); // مشرفُه غائبٌ عن هذه الفترة → ظلٌّ يتيمٌ يُزال
+    }
+  }
+  if (orphan.length) await applySlotChanges({ deleteIds: orphan });
+  return orphan.length;
 }
 
 // ═══════════════════════════════════════════════════════════════
