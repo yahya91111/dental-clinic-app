@@ -15,8 +15,6 @@ const DAYS: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday']
     await supabase.from('schedule_slots').delete().eq('clinic_id', CID).eq('week_start', W).eq('role', 'prev_placement');
     await supabase.from('schedule_slots').delete().eq('clinic_id', CID).eq('week_start', W).eq('source', 'request');
   }
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
-  newHeartConfig.mode = 'off';
   for (const W of WEEKS) {
     const pre = await loadScheduleData(CID, W);
     const tm: Record<string, TraineeMode> = {};

@@ -18,7 +18,6 @@ const ins = (row: Record<string, unknown>) => supabase.from('schedule_slots').in
 
 (async () => {
   const origCC = ((await supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', CID).maybeSingle()).data as any)?.clinic_count ?? 3;
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
   let leaderId = '';
   try {
     await setCC(3); await wipe();
@@ -29,7 +28,6 @@ const ins = (row: Record<string, unknown>) => supabase.from('schedule_slots').in
     leaderId = d0.doctors[0]!.id; // متلقٍّ للكرت (يكفي للاختبار)
     await supabase.from('notifications').delete().eq('clinic_id', CID).eq('recipient_id', leaderId).eq('type', 'gap_alert');
 
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
     await ins({ doctor_id: B1!.id, doctor_name: B1!.name, period: 1, clinic_number: 1, role: 'prev_placement', status: 'active' });
     await ins({ doctor_id: B2!.id, doctor_name: B2!.name, period: 0, clinic_number: 1, role: 'clinic', status: 'extra' });
 
@@ -65,7 +63,6 @@ const ins = (row: Record<string, unknown>) => supabase.from('schedule_slots').in
     check('(ج) القبول: B2 وُضع', pr.success && !!placed && placed.doctorId === B2!.id, placed?.doctorName);
     check('(ج) الكرت أُغلق (accepted)', (q3.data || []).every((x: any) => x.action_status === 'accepted'), JSON.stringify(q3.data));
   } finally {
-    newHeartConfig.mode = 'off';
     if (leaderId) await supabase.from('notifications').delete().eq('clinic_id', CID).eq('recipient_id', leaderId).eq('type', 'gap_alert');
     await setCC(origCC); await wipe();
     const { schedule } = await import('../lib/algorithms/schedule');

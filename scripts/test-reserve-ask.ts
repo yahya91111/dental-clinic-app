@@ -23,15 +23,13 @@ const activeAt = (slots: any[], c: number, p: number) => slots.find((s) => s.day
 
 (async () => {
   const origCC = ((await supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', CID).maybeSingle()).data as any)?.clinic_count ?? 3;
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
   try {
     await setCC(3); await wipe();
     const data0 = (await loadScheduleData(CID, W)).data!;
     const board = data0.doctors.filter((d) => d.groupTemplate.key === 'board');
     const pool = data0.doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty');
-    if (board.length < 2 || pool.length < 2) { console.log('ℹ الفكسجر يفتقر بوردَين/بِركتين — تخطّي.'); newHeartConfig.mode = 'off'; return; }
+    if (board.length < 2 || pool.length < 2) { console.log('ℹ الفكسجر يفتقر بوردَين/بِركتين — تخطّي.'); return; }
     const [B1, B2] = board; const [P1, P2] = pool;
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
 
     // ── (أ) احتياطيّ بِركة عاديّ يُملأ تلقائيًّا: مقعد بِركة شاغر (P1) + احتياطيّ بِركة (P2).
     await wipe();
@@ -64,10 +62,7 @@ const activeAt = (slots: any[], c: number, p: number) => slots.find((s) => s.day
     const placed = activeAt(sD, 1, 1);
     check('(د) القبول: B2 وُضع في المقعد', !!placed && placed.doctorId === B2!.id, placed?.doctorName);
     check('(د) أُزيل صفّ احتياط B2', exGone);
-
-    newHeartConfig.mode = 'off';
   } finally {
-    newHeartConfig.mode = 'off';
     await setCC(origCC); await wipe();
     const { schedule } = await import('../lib/algorithms/schedule');
     const pre = await loadScheduleData(CID, W);

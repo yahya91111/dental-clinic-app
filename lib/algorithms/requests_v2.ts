@@ -969,6 +969,23 @@ export async function setScheduleStatus(
             role: PREV_ROLE, status: 'active', source: 'request',
           })),
         );
+      } else {
+        // كان احتياطيًّا فقط (صفّ extra، فترة 0) وغاب غيابًا كاملًا → احفظ بصمةَ احتياطه
+        // كي يعكسه الإلغاء فيعود إلى صفّ الاحتياط لا يختفي. صفُّ الاحتياط نفسه يُحذف ضمن
+        // oldStatusRows؛ نحفظه prev_placement بفترة 0 (تميّزه عن حفظ العيادة/الدليقيتر).
+        const myReserve = mine.filter((r) => r.status === 'extra' && r.period === 0);
+        if (myReserve.length > 0) {
+          const oldPrev = mine.filter((r) => r.role === PREV_ROLE);
+          pendDel.push(...oldPrev.map((r) => r.id));
+          pendIns.push(
+            ...myReserve.map((r) => ({
+              clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+              period: 0, clinic_number: r.clinic_number,
+              doctor_id: doctorId, doctor_name: doctorName,
+              role: PREV_ROLE, status: 'active', source: 'request',
+            })),
+          );
+        }
       }
 
       // المتدرّب الظلّ (المبتدئ الملتصق بمدرّبه): عند غياب المدرّب يصبح احتياطيًّا
@@ -1210,14 +1227,11 @@ export async function cancelStatus(
       let permSwapReverted = false;
       let permSwapRecompute = false;
       let surgicalReturn = false;
-      // طيُّ الاتّجاه العكسيّ: حين يتعذّر العكسُ الحرفيّ (العالم تغيّر) والقلبُ الجديد كاتبٌ
-      // وحيد (apply)، نُجري **تغطيةً عكسيّةً جراحيّة** (applyReturn) بدل العجلة القديمة:
-      // العائدُ يستردّ مقاعده (prevSeats، قبل حذفها) ويُمتَصُّ المُزاحون بأقلّ لمس، وتتبعه
-      // ظلالُه. غير apply → نُبقي permSwapRecompute (العجلة القديمة سقوطًا).
+      // طيُّ الاتّجاه العكسيّ: حين يتعذّر العكسُ الحرفيّ (العالم تغيّر) نُجري **تغطيةً عكسيّةً
+      // جراحيّة** (applyReturn): العائدُ يستردّ مقاعده (prevSeats، قبل حذفها) ويُمتَصُّ المُزاحون
+      // بأقلّ لمس، وتتبعه ظلالُه. لو تعذّر ذلك (نادر) نُبقي permSwapRecompute علامةً أنّ العكسَ
+      // لم يكتمل — لا تفاعلَ بعده (القلبُ الجديد هو المحرّك الوحيد، لا عجلةَ سقوطًا).
       const tryApplyReturn = async (): Promise<boolean> => {
-        let apply = false;
-        try { apply = (await import('./solver_shadow')).isApplyMode(clinicId); } catch { /* */ }
-        if (!apply) return false;
         try {
           const sh = await import('./solver_shadow');
           const r = await sh.applyReturn({
@@ -1326,15 +1340,24 @@ export async function cancelStatus(
     const reclaimUpdates: { id: string; doctor_id: string; doctor_name: string }[] = [];
     const reserveInserts: Record<string, unknown>[] = [];
     if (restoreToPrevPlace && prev.length > 0) {
-      // في وضع apply التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها: مقعدُه الفارغ يُستعاد، ومقعدُه
-      // (عيادةً كان أو استضافة) الذي شغله **مُغطٍّ خالص** — أي لا خانةَ أخرى له في هذا الشفت
-      // سوى المقعد المُسترَدّ، فهو مسحوبٌ من الاحتياط للتغطية — يسترّده الطبيبُ ويعود المُغطّي
-      // احتياطًا (يطابق ما قبل الغياب حرفيًّا، فلا إعادةَ اشتقاق). أمّا المشغولُ بطبيبٍ له خانتُه
-      // الخاصّة هذا الشفت (انفرادُ شريك/تنسيبٌ يدويّ) فيقرّر القائد (covered) — لا ندوس عليه.
-      let applyMode = false;
-      try { applyMode = (await import('./solver_shadow')).isApplyMode(clinicId); } catch { /* تجاهل */ }
+      // التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها: مقعدُه الفارغ يُستعاد، ومقعدُه (عيادةً كان أو
+      // استضافة) الذي شغله **مُغطٍّ خالص** — أي لا خانةَ أخرى له في هذا الشفت سوى المقعد
+      // المُسترَدّ، فهو مسحوبٌ من الاحتياط للتغطية — يسترّده الطبيبُ ويعود المُغطّي احتياطًا
+      // (يطابق ما قبل الغياب حرفيًّا، فلا إعادةَ اشتقاق). أمّا المشغولُ بطبيبٍ له خانتُه الخاصّة
+      // هذا الشفت (انفرادُ شريك/تنسيبٌ يدويّ) فيقرّر القائد (covered) — لا ندوس عليه.
       const reservedBack = new Set<string>();
       for (const p of prev) {
+        // حفظُ فترة 0 = كان احتياطيًّا → أعِد صفّ الاحتياط (extra)، لا خانةَ عيادةٍ نشطة.
+        if (p.period === 0) {
+          restoreIns.push({
+            clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+            period: 0, clinic_number: p.clinic_number,
+            doctor_id: p.doctor_id, doctor_name: p.doctor_name,
+            role: 'clinic', status: 'extra', source: 'request',
+          });
+          restoredCount++;
+          continue;
+        }
         const occ = rows.find((r) => r.doctor_id !== doctorId && r.status === 'active' && r.period === p.period
           && (p.clinic_number === 0 ? r.role === 'delegator' : (r.role === 'clinic' && r.clinic_number === p.clinic_number)));
         if (!occ) {
@@ -1353,7 +1376,7 @@ export async function cancelStatus(
         //  • نعم (انفرادُ شريك: له مقعدُه ويُغطّي فترةً زائدة) → يبقى بمقعده، نزيل التغطية فقط.
         const occOther = rows.some((r) => r.doctor_id === occ.doctor_id && r.id !== occ.id && r.status === 'active'
           && shiftPs.includes(r.period) && (r.role === 'clinic' || r.role === 'delegator'));
-        if (applyMode && (occ.role === 'delegator' || occ.role === 'clinic')) {
+        if (occ.role === 'delegator' || occ.role === 'clinic') {
           reclaimUpdates.push({ id: occ.id, doctor_id: p.doctor_id, doctor_name: p.doctor_name });
           if (!occOther) {
             const exCol = p.period <= 2 ? 1 : 2;

@@ -1146,14 +1146,12 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     // لصق صفوف الغياب/الاستئذان بعمود شفت الطبيب الصحيح (مشترك مع مسار الحفظ saveSlots).
     await applyColFixes(computeAbsenceColFixes(data.existingSlots, data.doctors, input.aShiftPlan, input.boardConfig));
 
-    // 6.1 امتصاصٌ بعد البناء (وضع apply فقط): يمرّ القلب الجديد على الأسبوع المبنيّ
-    //     فيوازن الحِمل/الراحة فورًا — نفس ما يفعله عند البناء التالي، لكن هنا على الناتج
-    //     نفسه فلا ننتظر أسبوعًا. آمن: خلف العلم، لا يرمي، صفر هزّ (مبادلة دورين نظيفة).
+    // 6.1 امتصاصٌ بعد البناء: يمرّ القلب الجديد على الأسبوع المبنيّ فيوازن الحِمل/الراحة
+    //     فورًا — نفس ما يفعله عند البناء التالي، لكن هنا على الناتج نفسه فلا ننتظر أسبوعًا.
+    //     آمن: لا يرمي، صفر هزّ (مبادلة دورين نظيفة).
     try {
       const sh = await import('./solver_shadow');
-      if (sh.isApplyMode(input.clinicId)) {
-        await sh.applyNewHeartRebalance({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
-      }
+      await sh.applyNewHeartRebalance({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
     } catch { /* الامتصاص تحسينٌ اختياريّ — لا يُفشل البناء أبدًا */ }
   }
 
@@ -1640,13 +1638,12 @@ export async function rebalanceForward(args: {
 }): Promise<{ changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] }> {
   const changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] = [];
 
-  // ── القلب الواحد (التوحيد النهائيّ، C2) ──
-  // القلبُ الجديد هو محرّكُ التفاعل **الوحيد** — لا فرعَ «قديم/جديد» بعد اليوم: يغطّي
+  // ── القلب الواحد (التوحيد النهائيّ) ──
+  // القلبُ الجديد هو محرّكُ التفاعل **الوحيد** — لا مفتاح ولا فرعَ «قديم/جديد»: يغطّي
   // الغياب (عيادة + بورد)، يسدّد الاحتياط داخل الأسبوع، ثمّ يمتصّ الدليقيتر عبر الأيّام.
   // العجلةُ القديمة (createWheels/distributeShiftWheel) تبقى **للبناء فقط** (تطويرٌ بلا
-  // حذفِ قلب البناء). مفتاحُ الإيقاف في new_heart_config: 'off' → القلبُ الجديد لا يتفاعل
-  // (المُطبِّقات تَخرج باكرًا)، فالعيادةُ تبقى كما كُتبت — وضعُ طوارئٍ آمن، لا فرعٌ موازٍ.
-  // الأثرُ عبر الأسابيع المبنيّة يتولّاه القلبُ الجديد للأسبوع المعنيّ؛ الإشعارُ من حركاته.
+  // حذفِ قلب البناء). الأثرُ عبر الأسابيع المبنيّة يتولّاه القلبُ الجديد للأسبوع المعنيّ؛
+  // الإشعارُ من حركاته. التراجعُ (لو لزم) عبر الإصدارات لا عبر مفتاح.
   try {
     const sh = await import('./solver_shadow');
     const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });

@@ -1,8 +1,7 @@
-/* محكّ الامتصاص بعد البناء: في وضع apply، نبني أسبوعًا فيه طبيّة معروفة يوم الخميس،
- * ونتحقّق:
+/* محكّ الامتصاص بعد البناء: نبني أسبوعًا فيه طبيّة معروفة يوم الخميس، ونتحقّق:
  *  (أ) الجدول مكتمل (لا مقعد عيادة شاغر في أيّ شفت — الطبيّة لا تترك فراغًا).
  *  (ب) تمريرة الامتصاص بعد البناء تعمل (لا تكسر شيئًا؛ لا حجز مزدوج لغير المتدرّبين).
- *  (ج) المقارنة: نفس البناء بوضع off مقابل apply — apply لا يقلّ تغطيةً (وقد يحسّن التوازن). */
+ *  (د) الغائب المعروف ليس في عيادة الخميس. */
 import { supabase } from '../lib/supabase';
 import { loadScheduleData, schedule } from '../lib/algorithms/schedule';
 import type { WeekDay, Shift, TraineeMode, LoadedSlot, ExtraAbsence } from '../lib/algorithms/schedule';
@@ -43,33 +42,26 @@ function dblBook(slots: LoadedSlot[], day: WeekDay, half: 0 | 1, trainees: Set<s
 
 (async () => {
   const origCC = ((await supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', CID).maybeSingle()).data as any)?.clinic_count ?? 3;
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
   try {
     await setCC(3);
     const base = (await loadScheduleData(CID, W)).data!;
     const trainees = traineesOf(base.doctors);
     const pool = base.doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty');
     // اختر طبيب بِركة يعمل الخميس صباحًا ليكون غائبًا معروفًا.
-    newHeartConfig.mode = 'off'; await build([]);
+    await build([]);
     const built = (await loadScheduleData(CID, W)).data!;
     const thuDoc = built.existingSlots.find((s) => DI[s.dayOfWeek] === 4 && [1, 2].includes(s.period) && s.status === 'active' && s.role === 'clinic' && pool.some((p) => p.id === s.doctorId));
     const victimId = thuDoc!.doctorId; const victimName = thuDoc!.doctorName;
     const abs: ExtraAbsence[] = [{ doctorId: victimId, day: 'thursday', scope: 'full' }];
     console.log(`الغائب المعروف يوم الخميس: ${victimName}\n`);
 
-    // ① بناء بوضع off (المرجع).
-    newHeartConfig.mode = 'off'; await build(abs);
-    const off = (await loadScheduleData(CID, W)).data!;
-    // ② بناء بوضع apply (مع الامتصاص بعد البناء).
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null; await build(abs);
+    // بناء الأسبوع مع الطبيّة (الامتصاص بعد البناء يعمل دائمًا).
+    await build(abs);
     const ap = (await loadScheduleData(CID, W)).data!;
 
-    let okComplete = true, okNoDbl = true, okNoLess = true;
+    let okComplete = true, okNoDbl = true;
     for (const day of DAYS) for (const half of [0, 1] as const) {
-      const sOff = staffed(off.existingSlots, day, half, trainees);
-      const sAp = staffed(ap.existingSlots, day, half, trainees);
       if (dblBook(ap.existingSlots, day, half, trainees)) { okNoDbl = false; console.log(`   حجز مزدوج: ${day}/${half}`); }
-      if (sAp < sOff) { okNoLess = false; console.log(`   نقص: ${day}/${half} off=${sOff} apply=${sAp}`); }
     }
     // اكتمال الخميس: الغائب لا يترك فراغًا (المقاعد = نفس بقيّة الأيّام).
     const thuStaffed = staffed(ap.existingSlots, 'thursday', 0, trainees);
@@ -77,12 +69,9 @@ function dblBook(slots: LoadedSlot[], day: WeekDay, half: 0 | 1, trainees: Set<s
     okComplete = thuStaffed === sunStaffed;
     check('(أ) الخميس مكتمل رغم الطبيّة (= بقيّة الأيّام)', okComplete, `خميس=${thuStaffed} أحد=${sunStaffed}`);
     check('(ب) لا حجز مزدوج لغير المتدرّبين بعد الامتصاص', okNoDbl);
-    check('(ج) apply لا يقلّ تغطيةً عن off في أيّ شفت', okNoLess);
     // الغائب فعلًا غائب الخميس (لم يُوضع).
     const victimThu = ap.existingSlots.some((s) => DI[s.dayOfWeek] === 4 && s.doctorId === victimId && s.status === 'active' && s.role === 'clinic');
     check('(د) الغائب المعروف ليس في عيادة الخميس', !victimThu);
-
-    newHeartConfig.mode = 'off';
   } finally {
     await setCC(origCC); await cleanWeek();
     const pre = await loadScheduleData(CID, W);

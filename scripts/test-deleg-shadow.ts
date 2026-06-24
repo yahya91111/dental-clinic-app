@@ -27,13 +27,11 @@ const keyset = (slots: LoadedSlot[], id: string, day: WeekDay) => new Set(slots.
 
 (async () => {
   const origCC = ((await supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', CID).maybeSingle()).data as any)?.clinic_count ?? 3;
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
   try {
     await setCC(3);
     const d0 = (await loadScheduleData(CID, W)).data!;
     const pool = d0.doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty');
     const [P1, P2] = pool;
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
 
     // ── (أ) تغطية الدليقيتر: غائبٌ كان دليقيتر ف1 (prev_placement رقم 0) + احتياطيّ بِركة.
     await wipe();
@@ -63,10 +61,7 @@ const keyset = (slots: LoadedSlot[], id: string, day: WeekDay) => new Set(slots.
       }
     }
     check('(ب) كلّ ظلٍّ مبتدئٍ يطابق موضع مدرّبه بعد الامتصاص', mism === 0, `${mism} عدم تطابق — ${ex.join(' | ')}`);
-
-    newHeartConfig.mode = 'off';
   } finally {
-    newHeartConfig.mode = 'off';
     await setCC(origCC); await wipe();
     const pre = await loadScheduleData(CID, W);
     const tm: Record<string, TraineeMode> = {}; for (const t of pre.data!.doctors.filter((d) => d.workStatus === 'trainee')) tm[t.id] = 'beginner';

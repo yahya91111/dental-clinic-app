@@ -1,36 +1,24 @@
 // ═══════════════════════════════════════════════════════════════
-// مُسجِّل الظلّ — المرحلة ج، الخطوة ١ (الأكثر أمانًا)
+// مُطبِّقات القلب الجديد — محرّكُ التفاعل الوحيد (كتابة على الجدول)
 //
-// يُدمَج القلب الجديد في المسار الحيّ **بلا تطبيق**: عند كلّ إعادة توازنٍ حقيقيّة
-// (بعد استئذان/عودة)، يحسب ما **سيقرّره** القلب الجديد على الجدول الحاليّ ويُسجّله
-// بجانب القديم. لا يكتب شيئًا، ولا يرمي استثناءً، ويعمل **فقط** خلف علمٍ وعلى عيادة
-// الاختبار. هكذا نقارن القلبين في الإنتاج بأمانٍ قبل أيّ تحويلٍ فعليّ.
+// بعد كلّ حدثٍ حيّ (غياب/استئذان/عودة/إلغاء) يكتب القلبُ الجديد قرارَه على الجدول
+// مباشرةً: تغطيةُ الغياب (عيادة + بورد)، سدادُ الاحتياط داخل الأسبوع، امتصاصُ الدليقيتر،
+// إعادةُ التشكيل الرفيع، والتغطيةُ العكسيّة عند الإلغاء. لا مفتاح ولا وضعُ ظلّ بعد
+// التوحيد النهائيّ: المُطبِّقات تعمل دائمًا على أيّ عيادة، ولا ترمي أبدًا (لا تُفشل المسار
+// الحيّ). العجلةُ القديمة (createWheels/distributeShiftWheel) تبقى للبناء فقط.
 // ═══════════════════════════════════════════════════════════════
 import { loadScheduleData } from './schedule';
 import { supabase } from '../supabase';
-import { newHeartConfig } from './new_heart_config';
 import type { WeekDay, LoadedSlot } from './schedule';
 import {
-  extractHeavySeats, extractReserveSeats, lastHeavyStamps, lastRestStamps,
-  solveLookahead, solveHeavyRecency,
+  extractHeavySeats, lastHeavyStamps, solveLookahead,
   extractCoverageSeats, solveCoverage, lastClinicStamps, lastBoardStamps,
 } from './solver';
 import type { HeavySeat, CoverageSeat } from './solver';
 
-// المفتاح من new_heart_config (يعمل على Expo Go) — مع تجاوزٍ بيئيٍّ للسكربتات/الخادم.
-//  • shadow/apply: يسجّل القرار.   • apply فقط: يكتب فعلًا.
-const envMode = (): 'off' | 'shadow' | 'apply' | null =>
-  process.env.NEW_HEART_APPLY === '1' ? 'apply'
-    : process.env.NEW_HEART_SHADOW === '1' ? 'shadow'
-      : (process.env.NEW_HEART_APPLY === '0' || process.env.NEW_HEART_SHADOW === '0') ? 'off' : null;
-const mode = () => envMode() ?? newHeartConfig.mode;
-const clinicAllowed = (id: string) => newHeartConfig.clinics === null || newHeartConfig.clinics.includes(id);
-const shadowEnabled = (id: string) => mode() !== 'off' && clinicAllowed(id);
-const applyEnabled = (id: string) => mode() === 'apply' && clinicAllowed(id);
-
-/** هل القلب الجديد هو الكاتب الوحيد لهذه العيادة؟ (وضع apply) — تستعمله rebalanceForward
- *  لتخطّي حلقتها السببيّة القديمة فلا يتنازع كاتبان. */
-export function isApplyMode(clinicId: string): boolean { return applyEnabled(clinicId); }
+// القلبُ الجديد هو محرّكُ التفاعل الوحيد (لا مفتاح، لا فرعَ قديم/جديد): كلّ مُطبِّقٍ
+// يعمل دائمًا على أيّ عيادة. أُزيل new_heart_config ووضعُ الظلّ مع التوحيد النهائيّ —
+// لا عودةَ نظيفةٌ للعجلة القديمة في التفاعل (العجلةُ للبناء فقط)؛ التراجعُ عبر الإصدارات.
 
 /** مقعدٌ شاغرٌ مصدرُه الوحيد احتياطيٌّ **خاصّ** (بورد/متدرّب) — لا يُوضع تلقائيًّا، بل
  *  يُسأل القائد ويختار. ينتظر النقصُ ردَّه (لا مراحل تغطيةٍ لاحقة قبل القرار). */
@@ -51,54 +39,6 @@ const DAY_IDX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wedn
 const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 
 /**
- * يُسجّل (بالظلّ) ما سيفعله القلب الجديد على جدول (عيادة + أسبوع) الحاليّ — دون كتابة.
- * آمنٌ بالكامل: لا يرمي، ولا يعمل إلا خلف العلم وعلى عيادة الاختبار. يُستدعى بجانب
- * rebalanceForward القديم.
- */
-export async function shadowRebalanceLog(args: { clinicId: string; weekStart: string; label: string }): Promise<void> {
-  if (!shadowEnabled(args.clinicId)) return;
-  try {
-    const { data } = await loadScheduleData(args.clinicId, args.weekStart);
-    if (!data) return;
-    const doctors = data.doctors;
-    const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
-    const all: LoadedSlot[] = [...data.pastSlots, ...data.existingSlots];
-
-    // ① الدليقيتر (نظر-للأمام): هل يقترح القلب الجديد تغييرًا على الحاليّ؟
-    const delSeats: HeavySeat[] = [];
-    for (const day of Object.keys(DAY_IDX) as WeekDay[]) {
-      const ss = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day] && [1, 2].includes(s.period));
-      delSeats.push(...extractHeavySeats(ss, poolIds));
-    }
-    delSeats.sort((a, b) => a.stamp.localeCompare(b.stamp));
-    const delPrior = lastHeavyStamps(all.filter((s) => s.weekStart < args.weekStart));
-    const del = delSeats.length ? solveLookahead(doctors, delSeats, delPrior) : null;
-
-    // ② الاحتياط (حداثة): هل يقترح إعادة قسمةٍ للراحة؟
-    const rest = lastRestStamps(all.filter((s) => s.weekStart < args.weekStart));
-    let exTouch = 0; let exTotal = 0;
-    for (const day of Object.keys(DAY_IDX) as WeekDay[]) for (const h of [0, 1]) {
-      const ss = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day] && (s.status === 'extra' ? s.clinicNumber === (h === 0 ? 1 : 2) : (h === 0 ? [1, 2] : [3, 4]).includes(s.period)));
-      const seats = extractReserveSeats(ss, poolIds);
-      if (!seats.length) continue;
-      exTotal += seats.length;
-      exTouch += solveHeavyRecency(doctors, rest, seats).assignments.length;
-    }
-
-    const delN = del?.assignments.length ?? 0;
-    const verdict = (delN === 0 && exTouch === 0) ? 'يوافق القلب القديم تمامًا' : `يقترح تعديلًا (دليقيتر:${delN} احتياط:${exTouch})`;
-    // eslint-disable-next-line no-console
-    console.log(`[NEW-HEART SHADOW · ${args.label}] أسبوع ${args.weekStart}: ${verdict}` +
-      (del ? ` · حِمل ${del.maxLoadBefore}→${del.maxLoadAfter} · أهليّة=${del.eligibilityRespected ? '✓' : '✗'} · محفوظ=${del.conserved ? '✓' : '✗'}` : '') +
-      (delN ? ` · تغييرات الدليقيتر: ${del!.assignments.map((a) => `${a.from}→${a.to}`).join('، ')}` : ''));
-  } catch (e) {
-    // لا نُفشل المسار الحيّ أبدًا — الظلّ تشخيصٌ فقط.
-    // eslint-disable-next-line no-console
-    console.log('[NEW-HEART SHADOW] تعذّر الحساب:', e instanceof Error ? e.message : e);
-  }
-}
-
-/**
  * يطبّق تغطية الغياب (كتابة) لبِركتين: العاديّة (غير البورد) والبورد. لكلٍّ بِركتُه
  * واحتياطُه وحداثتُه: مقعد العيادة الشاغر يُملأ من احتياط البِركة العاديّة (الأطولُ راحةً)،
  * ومقعد البورد الشاغر يُملأ من احتياط البورد (الأقدمُ دخولًا). يَكتب خانةً نشطةً للمغطّي
@@ -113,7 +53,6 @@ export async function applyCoverage(
   //  • use (محكّ المقارنة، أو «استدعِه»): يُوضع تلقائيًّا كالعاديّ.
   //  • exclude («لا أحد»/الرفض): لا يُوضع ولا يُسأل — نُكمل بالمصادر الأخرى كأنّه غير موجود.
   const special = opts?.specialReserves ?? 'ask';
-  if (!applyEnabled(args.clinicId)) return { filled: 0, shortages: 0, pending: [], moves: [] };
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { filled: 0, shortages: 0, pending: [], moves: [] };
@@ -406,13 +345,12 @@ export async function applyCoverage(
 /**
  * يضع احتياطيًّا خاصًّا (بورد/متدرّب) اختاره القائد في مقعدٍ شاغرٍ محدّد — مسار «القبول»
  * لكرت السؤال. يكتب خانة عيادةٍ نشطةً ويُزيل صفّ احتياطه ذلك اليوم. آمن: لا يضع إن
- * كان المقعد مأهولًا أصلًا، ولا يعمل إلا في وضع apply. يُرجِع ما إن وُضع.
+ * كان المقعد مأهولًا أصلًا. يُرجِع ما إن وُضع.
  */
 export async function placeReserveInSeat(args: {
   clinicId: string; weekStart: string; day: WeekDay;
   clinicNumber: number; period: number; doctorId: string;
 }): Promise<{ success: boolean; reason?: string }> {
-  if (!applyEnabled(args.clinicId)) return { success: false, reason: 'not_apply' };
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { success: false, reason: 'no_data' };
@@ -446,13 +384,11 @@ export async function placeReserveInSeat(args: {
 }
 
 /**
- * C1 — يطبّق فعليًّا تحسينات القلب الجديد للدليقيتر (كتابة)، خلف علم `NEW_HEART_APPLY=1`
- * وعيادة الاختبار فقط. كلّ تعديلٍ = **مبادلة دورين** بين طبيبين حاضرين في الشفت نفسه
- * (الجديد يقول: مقعد الدليقيتر الأحقّ به Y لا Z → نبادل خانات Z و Y في ذلك الشفت).
- * آمن: لا يعمل إلا خلف العلم، لا يرمي أبدًا، ويُرجِع ما طبّقه. القديم يبقى كما هو.
+ * يطبّق فعليًّا تحسينات القلب الجديد للدليقيتر (كتابة). كلّ تعديلٍ = **مبادلة دورين** بين
+ * طبيبين حاضرين في الشفت نفسه (الجديد يقول: مقعد الدليقيتر الأحقّ به Y لا Z → نبادل خانات
+ * Z و Y في ذلك الشفت). آمن: لا يرمي أبدًا، ويُرجِع ما طبّقه.
  */
 export async function applyNewHeartRebalance(args: { clinicId: string; weekStart: string; label: string }): Promise<{ applied: number }> {
-  if (!applyEnabled(args.clinicId)) return { applied: 0 };
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { applied: 0 };
@@ -570,10 +506,9 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
  * — **M منفرد-عيادة + ١ منفرد-دليقيتر** (الكلُّ يعمل الفترتين) — بدل ترك زوجِ استضافةٍ أو
  * نصفِ زوجٍ أو عيادةٍ فارغة. يحفظ الاستمراريّة (كلٌّ يبقى في عيادته ما أمكن)، ويختار المضيفَ
  * بعدلِ حداثة الاستضافة (الأقدمُ عهدًا بها أحقُّ). تخفيفُ العمل يُعامَل عاديًّا هنا (الفترتان،
- * كقاعدة الحالة الرفيعة). آمنٌ: apply فقط، لا يرمي، يعمل فقط حين present == M+1 والشكلُ غيرُ مثاليّ.
+ * كقاعدة الحالة الرفيعة). آمنٌ: لا يرمي، يعمل فقط حين present == M+1 والشكلُ غيرُ مثاليّ.
  */
 export async function applyThinReshape(args: { clinicId: string; weekStart: string; label: string }): Promise<{ reshaped: number }> {
-  if (!applyEnabled(args.clinicId)) return { reshaped: 0 };
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { reshaped: 0 };
@@ -652,7 +587,7 @@ async function loadRepayWeek(clinicId: string, weekStart: string): Promise<Repay
  * ليوم الغياب) عن يومٍ فيه: A له دورُ احتياطٍ (راحة) في الشفت، و R يعمل عيادةً في نفس
  * الشفت → نبادل بالمعرّف: A يعمل خانةَ R (يدفع)، و R يأخذ دورَ الاحتياط (يستردّ راحته).
  * تعذّر (نفد احتياطُ A أو خارج النافذة)؟ **خيار ج**: خسارةٌ مقبولةٌ تُسجَّل بلا تدوير.
- * آمن: خلف العلم فقط، لا يرمي، مبادلةٌ نظيفة. يُرجِع مَن سُدِّد لهم كي لا يُدفَعوا لمؤخّرة
+ * آمن: لا يرمي، مبادلةٌ نظيفة. يُرجِع مَن سُدِّد لهم كي لا يُدفَعوا لمؤخّرة
  * عجلة الاحتياط أيضًا (خيار أ — تفادي العقوبة المزدوجة).
  */
 export async function applyReserveRepay(
@@ -660,7 +595,7 @@ export async function applyReserveRepay(
   pairs: { coverer: string; owner: string; exCol: number; coverDay: string }[],
 ): Promise<{ repaid: number; accepted: number; repaidAbsent: string[] }> {
   const repaidAbsent: string[] = [];
-  if (!applyEnabled(args.clinicId) || pairs.length === 0) return { repaid: 0, accepted: 0, repaidAbsent };
+  if (pairs.length === 0) return { repaid: 0, accepted: 0, repaidAbsent };
   // أزواجٌ فريدة (مُغطٍّ+غائب+شفت) — لا نسدّد المُغطّيَ نفسه مرّتين لنفس الغياب.
   const seen = new Set<string>();
   const uniq = pairs.filter((p) => {
@@ -721,7 +656,7 @@ export function reservePairsFromMoves(moves: CoverageMove[]): { coverer: string;
 
 /**
  * التغطيةُ العكسيّةُ الجراحيّة — طيُّ الاتّجاه العكسيّ في القلب الجديد (بديلُ العجلة القديمة
- * `redistributeOnReturn` في وضع apply). حين يعود طبيبٌ (أُلغيت حالتُه) وتعذّر العكسُ الحرفيّ
+ * `redistributeOnReturn`). حين يعود طبيبٌ (أُلغيت حالتُه) وتعذّر العكسُ الحرفيّ
  * لأنّ **العالم تغيّر** (مقاعدُه شغلها مَن لم يُتوقَّع)، نعيده **بأقلّ لمسٍ** بدل إعادة بناء
  * الشفت من الوصفة (التي تجلب الطاقمَ كلَّه وقد تُسقِط العائدَ نفسه):
  *   ① العائدُ يستردّ مقاعده (prevSeats) بالقوّة (يُزيح شاغلَها).
@@ -739,7 +674,7 @@ export async function applyReturn(args: {
 }): Promise<{ reclaimed: number; refilled: number; reserved: number; shortages: number; touched: string[] }> {
   const touchedSet = new Set<string>();
   const z = { reclaimed: 0, refilled: 0, reserved: 0, shortages: 0, touched: [] as string[] };
-  if (!applyEnabled(args.clinicId) || !args.prevSeats.length) return z;
+  if (!args.prevSeats.length) return z;
   try {
     const { clinicId, weekStart, day, returnerId, prevSeats } = args;
     const periods = prevSeats.some((s) => [1, 2].includes(s.period)) ? [1, 2] : [3, 4];

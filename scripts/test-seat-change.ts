@@ -17,7 +17,6 @@ const ins = (row: Record<string, unknown>) => supabase.from('schedule_slots').in
 
 (async () => {
   const origCC = ((await supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', CID).maybeSingle()).data as any)?.clinic_count ?? 3;
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
   let rcpt = '';
   try {
     await setCC(3); await wipe();
@@ -25,7 +24,6 @@ const ins = (row: Record<string, unknown>) => supabase.from('schedule_slots').in
     const pool = d0.doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty');
     const [P1, P2, P3] = pool;
     rcpt = P2!.id;
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
 
     // (أ) احتياطيّ ينزل: مقعد بِركة شاغر P1 (عيادة2/ف1) + احتياطيّ بِركة P2.
     await wipe();
@@ -55,10 +53,7 @@ const ins = (row: Record<string, unknown>) => supabase.from('schedule_slots').in
     q = await supabase.from('notifications').select('id, data, body').eq('clinic_id', CID).eq('recipient_id', rcpt).eq('type', 'request_result');
     rows = (q.data || []) as any[];
     check('(ج) لا تكرار — إشعارٌ واحدٌ مُحدَّث', rows.length === 1 && rows[0]?.data?.seat_change?.seats?.[0]?.clinic_number === 3, `${rows.length}`);
-
-    newHeartConfig.mode = 'off';
   } finally {
-    newHeartConfig.mode = 'off';
     if (rcpt) await supabase.from('notifications').delete().eq('clinic_id', CID).eq('recipient_id', rcpt).eq('type', 'request_result');
     await setCC(origCC); await wipe();
     const { schedule } = await import('../lib/algorithms/schedule');

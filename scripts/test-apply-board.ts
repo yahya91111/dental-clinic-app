@@ -28,14 +28,12 @@ async function build() {
 
 (async () => {
   await build();
-  const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
-  newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
   try {
     let data = (await loadScheduleData(CID, W)).data!;
     const boardIds = new Set(data.doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
     // طبيب بورد داخل العيادة يوم الأحد صباحًا.
     const inClinic = data.existingSlots.filter((s) => DI[s.dayOfWeek] === 0 && [1, 2].includes(s.period) && s.status === 'active' && s.role === 'clinic' && boardIds.has(s.doctorId));
-    if (inClinic.length === 0) { console.log('لا طبيب بورد في عيادة الأحد ص — تخطّي'); newHeartConfig.mode = 'off'; process.exit(0); }
+    if (inClinic.length === 0) { console.log('لا طبيب بورد في عيادة الأحد ص — تخطّي'); process.exit(0); }
     const victim = inClinic[0]!;
     const boardClinic = victim.clinicNumber;
     console.log(`الغائب بورد: ${victim.doctorName} (عيادة بورد ${boardClinic} ف${victim.period})`);
@@ -58,8 +56,6 @@ async function build() {
     //     مشاركةَ عيادةٍ سابقةً غير متعلّقةٍ بنا — نفحص مقعدنا فقط).
     const boardSeatDocs = data.existingSlots.filter((s) => DI[s.dayOfWeek] === 0 && s.clinicNumber === boardClinic && s.period === victim.period && s.status === 'active' && s.role === 'clinic');
     check('(ب) لا حجزٌ مزدوجٌ في مقعد البورد', boardSeatDocs.length <= 1, `${boardSeatDocs.length}`);
-
-    newHeartConfig.mode = 'off';
   } finally {
     await build();
   }

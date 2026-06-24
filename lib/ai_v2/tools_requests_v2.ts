@@ -828,15 +828,14 @@ export async function dispatchRequestToolV2(
         // الفرق محسوبٌ في الكود (لا يُكشَف «إعادة التوزيع» — سرّيّة الآليّة).
         if (status === 'sick_leave' || status === 'vacation') {
           try {
-            const { schedule, loadScheduleData } = await import('../algorithms/schedule');
+            const { loadScheduleData } = await import('../algorithms/schedule');
             const { notifications } = await import('../algorithms/notifications');
-            const { isApplyMode, applyCoverage, applyNewHeartRebalance, applyReserveRepay, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
+            const { applyCoverage, applyNewHeartRebalance, applyReserveRepay, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
             const { withXdayJournal } = await import('../algorithms/requests_v2');
-            // القلب الجديد (apply): تغطيةٌ تلقائيّةٌ فوريّةٌ (بلا كرت موافقة) + امتصاص
-            // الدليقيتر. القائد وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول.
-            // استثناء: الاحتياطيّ **الخاصّ** (بورد/متدرّب) لا يُوضع تلقائيًّا — يُرجِعه
-            // التغطية pending، فنرسل كرت سؤالٍ للقائد يختار مَن يُستدعى أو يرفض.
-            if (isApplyMode(ctx.clinicId)) {
+            // القلبُ الجديد يغطّي الغيابَ تلقائيًّا (بلا كرت موافقة) + امتصاص الدليقيتر. القائد
+            // وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول. استثناء: الاحتياطيّ **الخاصّ**
+            // (بورد/متدرّب) لا يُوضع تلقائيًّا — يُرجِعه التغطية pending، فنرسل كرت سؤالٍ للقائد.
+            {
               // نلفّ التغطية+الامتصاص بيوميّات الأثر البعيد كي يعكسها كنسلُ الغياب بدقّة
               // (يومُ الغياب نفسه يملكه إرجاع المكان المحفوظ؛ اليوميّات للأيّام البعيدة).
               const cov = await withXdayJournal(ctx.clinicId, wsEff, { day: String(r.day), doctorId: doc.id }, async () => {
@@ -890,23 +889,6 @@ export async function dispatchRequestToolV2(
                   senderId: sender.id, senderName: sender.name,
                 });
               }
-            } else {
-            const prop = await schedule.proposeCoverageForAbsence({
-              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day, absentDoctorId: doc.id,
-            });
-            if (prop) {
-              const slotsData = prop.slots.map((s) => ({
-                clinicNumber: s.clinicNumber, period: s.period, role: s.role,
-                doctorId: s.doctor.id, doctorName: s.doctor.name,
-              }));
-              for (const leaderId of await getTeamLeaderIds(ctx.clinicId)) {
-                await notifications.notifyCoverageFill({
-                  clinicId: ctx.clinicId, leaderId, weekStart: wsEff,
-                  day: r.day, shift: prop.shift, absentNames: prop.absentNames,
-                  diff: prop.diff, slots: slotsData,
-                });
-              }
-            }
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -1179,29 +1161,11 @@ export async function dispatchRequestToolV2(
         });
         if (!res.success) return `Tool error: ${res.error}`;
 
-        let autoReturned = false;
-        // غيابٌ مُغطًّى عاد، **أو** استئذانٌ بدّل مقعداً أُلغي → نُعيد حساب الشفت من
-        // الواقع: يعود لمقعده الصحيح (إن ثبت العالم) أو يُشتقّ الصواب (إن تغيّر). قاعدةٌ
-        // واحدةٌ للغياب والاستئذان.
-        // العجلةُ القديمة (redistributeOnReturn) لمسارِ العودة **خارج apply فقط** — طيُّ
-        // الاتّجاه العكسيّ: في apply يتولّى القلبُ الجديد (الاستردادُ الجراحيّ داخل
-        // cancelStatus + applyReturn للعالم-المتغيّر)، فلا تشتعل العجلةُ هنا أبدًا.
-        const { isApplyMode: isApplyModeRet } = await import('../algorithms/solver_shadow');
-        if ((res.covered || (res as { permSwapRecompute?: boolean }).permSwapRecompute) && returnShift && !isApplyModeRet(ctx.clinicId)) {
-          try {
-            const { schedule } = await import('../algorithms/schedule');
-            autoReturned = await schedule.redistributeOnReturn({
-              clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day, shift: returnShift,
-            });
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.log('[return-redistribute] failed', e instanceof Error ? e.message : e);
-          }
-        }
-
-        // عودة الطبيب غيّرت يومه → وازِن **من الآن** (أوّل شفتٍ لم يقع بعدُ، يشمل أيّام
-        // هذا الأسبوع قبل الحدث) عبر الأسابيع المبنيّة، صامتًا وفرقاً فقط — **بلا إشعار**.
-        if (returnShift && (autoReturned || res.restored)) {
+        // عودة الطبيب (غيابٍ مُغطًّى أو استئذانٍ بدّل مقعدًا): الاستردادُ الجراحيّ تمّ داخل
+        // cancelStatus (والعالم-المتغيّر بـapplyReturn) — لا عجلةَ قديمة هنا، القلبُ الجديد
+        // هو المحرّك الوحيد. إن استُرِدّ المكان نوازِن **من الآن** (أوّل شفتٍ لم يقع بعدُ، يشمل
+        // أيّام هذا الأسبوع قبل الحدث) عبر الأسابيع المبنيّة، صامتًا وفرقاً فقط — **بلا إشعار**.
+        if (returnShift && res.restored) {
           try {
             const { schedule } = await import('../algorithms/schedule');
             await schedule.rebalanceForward({
@@ -1251,9 +1215,7 @@ export async function dispatchRequestToolV2(
                 ? 'عاد إلى جانب مدرّبه'
                 : rc.shadowSupervisorAbsent
                   ? 'مدرّبه غائبٌ فبقي في الاحتياط'
-                  : autoReturned
-                    ? 'عاد إلى الجدول وانتظم الشفت تلقائيًّا'
-                    : res.covered && res.restored
+                  : res.covered && res.restored
                     ? 'أُعيد إلى بعض خاناته وبعضُها مشغول — حدّد مكان الباقي'
                     : res.covered
                       ? 'مكانه مُغطًّى — حدّد أين يوضَع'
@@ -1314,11 +1276,7 @@ export async function dispatchRequestToolV2(
         }
 
         const cancelBase = `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]}.`;
-        // مكانه كان مُغطًّى → أُعيد ترتيب الشفت تلقائيًّا فعاد إلى الجدول (لا كرت).
-        if (autoReturned) {
-          return final(cancelBase + ` عاد ${doc.name} إلى الجدول وانتظم الشفت تلقائيًّا — أُبلغ القادة للعلم.`);
-        }
-        // مُغطًّى لكن تعذّر الترتيب التلقائيّ (لا وصفة محفوظة مثلًا) — أبلِغ بصدق.
+        // مكانه السابق مُغطًّى ولا مقعدَ محفوظًا يُستردّ (كان احتياطًا) — أبلِغ بصدق، يحدّد القائد مكانه.
         if (res.covered) {
           return final(cancelBase + ' مكانه السابق مُغطًّى وتعذّر الترتيب التلقائيّ — أُبلغ القادة.');
         }
@@ -1433,9 +1391,8 @@ export async function dispatchRequestToolV2(
         if (!isLeaderPlusRole(actor.role)) return 'Tool error: حسمُ تغطية النقص باستدعاء احتياطيٍّ للقائد فأعلى.';
         if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
         const ws = String(r.weekStart);
-        const { isApplyMode, applyCoverage, placeReserveInSeat, applyReserveRepay, applyNewHeartRebalance, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
+        const { applyCoverage, placeReserveInSeat, applyReserveRepay, applyNewHeartRebalance, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
         const { notifications } = await import('../algorithms/notifications');
-        if (!isApplyMode(ctx.clinicId)) return 'Tool error: التغطية التلقائيّة غير مفعّلة لهذه العيادة.';
         if (r.decline) {
           // «لا أحد»: لا يُستدعى الاحتياطيّ الخاصّ — والذكاء يتكفّل بالتغطية بنفسه من
           // المتاح (كأنّ ذلك الاحتياطيّ غير موجود: شريك منفرد… إلخ). نلفّها بيوميّات الأثر

@@ -39,9 +39,6 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
 (async () => {
   const original = await getCC();
   try {
-    const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
-
     // جرّب أعدادَ عياداتٍ مختلفةً حتى يظهر دليقيترٌ منفردٌ بلا احتياطِ بِركة.
     let found: { cc: number; day: WeekDay; half: 0 | 1; victim: LoadedSlot; deleg: string } | null = null;
     for (const cc of [3, 2, 4]) {
@@ -62,7 +59,7 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
 
     if (!found) {
       console.log('ℹ لم يظهر (دليقيتر منفرد + بلا احتياط) في الفكسجر — منطقُ النزول مُثبَتٌ تركيبيًّا (solveCoverage). تخطّي.');
-      newHeartConfig.mode = 'off'; return;
+      return;
     }
 
     await build(found.cc, true);
@@ -78,18 +75,17 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
     console.log(`     طُبّق: filled=${r.filled} shortages=${r.shortages}`);
 
     data = (await loadScheduleData(CID, W)).data!;
-    const seatNow = data.existingSlots.filter((s) => DI[s.dayOfWeek] === DI[day] && s.clinicNumber === victim.clinicNumber && s.period === victim.period && s.status === 'active' && s.role === 'clinic');
+    // نعدّ شاغلي المقعد **غيرَ المتدرّبين** (ظلُّ المدرّب قد يتبعه إلى العيادة — مشاركةٌ مقصودة).
+    const traineeIds = new Set(data.doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
+    const seatNow = data.existingSlots.filter((s) => DI[s.dayOfWeek] === DI[day] && s.clinicNumber === victim.clinicNumber && s.period === victim.period && s.status === 'active' && s.role === 'clinic' && !traineeIds.has(s.doctorId));
     check('(أ) المقعد الشاغر مُغطًّى', seatNow.length === 1, `${seatNow.length}`);
     check('(أ) غطّاه الدليقيتر المنفرد (نزل للعيادة)', seatNow.length === 1 && seatNow[0]!.doctorId === found.deleg, seatNow[0]?.doctorName);
     const stillDeleg = data.existingSlots.some((s) => DI[s.dayOfWeek] === DI[day] && periods.includes(s.period) && s.status === 'active' && s.role === 'delegator' && s.doctorId === found!.deleg);
     check('(ب) لم يَعُد دليقيترًا (أُزيلت خانة دوره)', !stillDeleg);
     // لا حجزٌ مزدوجٌ لغير المتدرّبين (المدرّب+الظلّ في عيادةٍ واحدةٍ مسموح — مشاركةٌ مقصودة).
-    const traineeIds = new Set(data.doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
     const seen = new Set<string>(); let dbl = false;
     for (const s of data.existingSlots.filter((s) => DI[s.dayOfWeek] === DI[day] && periods.includes(s.period) && s.status === 'active' && s.role === 'clinic' && !traineeIds.has(s.doctorId))) { const k = `${s.clinicNumber}#${s.period}`; if (seen.has(k)) dbl = true; seen.add(k); }
     check('(ج) لا حجزٌ مزدوجٌ لغير المتدرّبين', !dbl);
-
-    newHeartConfig.mode = 'off';
   } finally {
     await setCC(original); await cleanWeek();
     const pre = await loadScheduleData(CID, W);

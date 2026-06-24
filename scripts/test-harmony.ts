@@ -41,8 +41,6 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
   const original = await getCC();
   try {
     await setCC(2);
-    const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
     await cleanWeek(W1); await build(W1);
     await cleanWeek(W2); await build(W2);
 
@@ -57,7 +55,7 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
       if (res.length && cds[0]) { tgt = { day, half, victim: cds[0] }; break; }
       if (tgt) break;
     }
-    if (!tgt) { console.log('لا هدفَ مناسب — تخطّي'); newHeartConfig.mode = 'off'; return; }
+    if (!tgt) { console.log('لا هدفَ مناسب — تخطّي'); return; }
     const { day, half, victim } = tgt; const X = victim.doctorId;
     const shift: Shift = half === 0 ? 'morning' : 'evening';
     console.log(`الأسبوع ١: الغائب X=${victim.doctorName} (عيادة ${victim.clinicNumber} ف${victim.period} ${day})`);
@@ -70,7 +68,7 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
     // R = مَن يشغل مقعد X الآن.
     const seat = d1.existingSlots.find((s) => DI[s.dayOfWeek] === DI[day] && s.clinicNumber === victim.clinicNumber && s.period === victim.period && s.status === 'active' && s.role === 'clinic' && s.doctorId !== X);
     check('(أ) مقعد X مأهولٌ ببديلٍ R', !!seat, 'لا بديل');
-    if (!seat) { newHeartConfig.mode = 'off'; throw new Error('no coverer'); }
+    if (!seat) { throw new Error('no coverer'); }
     const R = seat.doctorId; const rName = d1.doctors.find((x) => x.id === R)?.name ?? R;
     console.log(`     غطّى R=${rName}`);
     check('(أ) X مسجّلٌ غائبًا (استراح)', d1.existingSlots.some((s) => s.doctorId === X && (s.status === 'sick_leave' || (s.role as string) === 'prev_placement')));
@@ -95,8 +93,6 @@ const poolOf = (doctors: any[]) => new Set(doctors.filter((d) => d.groupTemplate
     // قرأ تاريخ الأوّل: pastSlots للأسبوع الثاني تضمّ خانات الأوّل (شاملةً التغطية).
     const reads = d2.pastSlots.some((s) => s.weekStart === W1 && s.doctorId === R && DI[s.dayOfWeek] === DI[day]);
     check('(ج) البناء قرأ عملَ R في الأسبوع الأوّل (التاريخ متّصل)', reads);
-
-    newHeartConfig.mode = 'off';
   } finally {
     await setCC(original);
     await cleanWeek(W1); await build(W1);

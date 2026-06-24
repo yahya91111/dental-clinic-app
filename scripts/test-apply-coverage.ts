@@ -39,8 +39,6 @@ const reservesOf = (slots: LoadedSlot[], day: WeekDay, exCol: number, pool: Set<
   try {
     await setCC(2);
     await build();
-    const { newHeartConfig } = await import('../lib/algorithms/new_heart_config');
-    newHeartConfig.mode = 'apply'; newHeartConfig.clinics = null;
 
     let data = (await loadScheduleData(CID, W)).data!;
     const pool = poolOf(data.doctors);
@@ -54,7 +52,7 @@ const reservesOf = (slots: LoadedSlot[], day: WeekDay, exCol: number, pool: Set<
       if (res.length >= 1 && cds.length >= 1) { tgt = { day, half, victim: cds[0]! }; break; }
       if (tgt) break;
     }
-    if (!tgt) { console.log('لا تكوينَ مناسبٍ حتى بعيادتين — تخطّي'); newHeartConfig.mode = 'off'; return; }
+    if (!tgt) { console.log('لا تكوينَ مناسبٍ حتى بعيادتين — تخطّي'); return; }
 
     const { day, half, victim } = tgt;
     const exCol = half === 0 ? 1 : 2;
@@ -88,8 +86,6 @@ const reservesOf = (slots: LoadedSlot[], day: WeekDay, exCol: number, pool: Set<
 
     const r2 = await applyCoverage({ clinicId: CID, weekStart: W, label: 'test' });
     check('(د) idempotent: إعادة التطبيق = صفر', r2.filled === 0, `${r2.filled}`);
-
-    newHeartConfig.mode = 'off';
   } finally {
     await setCC(original);
     await build();
