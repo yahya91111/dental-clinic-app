@@ -24,7 +24,7 @@ import {
   KNOWLEDGE_INDEX,
 } from './_compiled';
 import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type AnnounceOffer, type SwapOffer, type ConfirmOffer } from './tools';
-import { REQUESTS_TOOLS_V2, dispatchRequestToolV2, FINAL_MARK } from './tools_requests_v2';
+import { REQUESTS_TOOLS_V2, dispatchRequestToolV2, FINAL_MARK, requestsToolsForRole } from './tools_requests_v2';
 export type { SchedulePreview, AnnounceOffer, SwapOffer, ConfirmOffer } from './tools';
 
 // ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
@@ -328,7 +328,8 @@ export async function sendMessageV2(
       onConfirmOffer: (o) => { capturedConfirm = o; },
     };
 
-    const activeTools = bundle.tools;
+    // مهمّة الطلبات: الأدوات حسب الدور (الليدر → الأداة الشاملة + الإداريّة؛ الطبيب → الخدمة الذاتيّة).
+    const activeTools = task === 'requests' ? requestsToolsForRole(opts.user.role) : bundle.tools;
     const toolsEnabled = activeTools.length > 0;
     // ① خزّن الأدوات بالكاش: العلامة على آخر أداة تُخزّن كلّ كتلة الأدوات (ثابتة دائمًا).
     //    نستنسخ فلا نلوّث bundle.tools المشترك.

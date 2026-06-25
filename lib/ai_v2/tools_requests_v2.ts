@@ -610,7 +610,67 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
       required: ['doctorIndex', 'workStatus'],
     },
   },
+  {
+    name: 'leader_apply',
+    description:
+      'أداةُ الليدر الشاملة: ينفّذ أمرًا أو أكثر على جدول يومٍ **مباشرةً وبلا قيود** — ' +
+      'لأيّ طبيب (عاديّ/تخفيف/بورد/متدرّب/ظلّ، حتى المستثنى أو الغائب بعد إلغاء حالته). ' +
+      'العمليّات في `operations` تُطبَّق **بالترتيب** (كلٌّ ترى أثر سابقتها) دفعةً واحدة. ' +
+      'أنواع op: `place` (ضعه في عيادة+فترات) · `delegator` (اجعله دليقيتر) · `set_status` ' +
+      '(مرضية/تفرّغ/استئذان بداية/نهاية/احتياط — والاحتياط = أخرجه من العيادة واجعله ' +
+      'احتياطيًّا) · `cancel_status` (أزِل حالة) · `swap` (بدّل طبيبَين أو أكثر) · ' +
+      '`attach_trainee` (ألحِق متدرّبًا بمدرّب). **النقل بين يومَين** = `cancel_status` ثمّ ' +
+      '`set_status` في الدفعة نفسها. القائد فأعلى فقط. **انسخ الأرقام والعيادات والفترات ' +
+      'من كلام المستخدم حرفيًّا — لا تخمّن**؛ والاستئذان حدّد بدايةً أو نهايةً صراحةً.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string', description: 'بداية الأسبوع (أحد) YYYY-MM-DD.' },
+        operations: {
+          type: 'array',
+          description: 'العمليّات بالترتيب — تُطبَّق واحدةً تلو الأخرى.',
+          items: {
+            type: 'object',
+            properties: {
+              op: {
+                type: 'string',
+                enum: ['place', 'delegator', 'set_status', 'cancel_status', 'swap', 'attach_trainee'],
+                description: 'نوع العمليّة.',
+              },
+              day: { type: 'string', enum: [...DAYS], description: 'يوم العمل (لكلّ العمليّات).' },
+              doctorIndex: { type: 'integer', description: 'الطبيب المقصود (place/delegator/set_status/cancel_status).' },
+              clinicNumber: { type: 'integer', description: 'op=place: رقم العيادة.' },
+              periods: { type: 'array', items: { type: 'integer', enum: [1, 2, 3, 4] }, description: 'op=place: الفترات.' },
+              period: { type: 'integer', enum: [1, 2, 3, 4], description: 'op=delegator: الفترة (اتركها إن لم تُذكر).' },
+              status: { type: 'string', enum: ['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'], description: 'op=set_status. extra = أخرجه واجعله احتياطًا.' },
+              shift: { type: 'string', enum: ['morning', 'evening'], description: 'op=set_status: الشفت عند اللزوم لخانة EX.' },
+              statusType: { type: 'string', enum: ['permission', 'sick_leave', 'vacation'], description: 'op=cancel_status: نوع المُلغى حين يكون اليوم مبهمًا (اختياريّ).' },
+              doctorIndexes: { type: 'array', items: { type: 'integer' }, description: 'op=swap: أرقام الأطباء (تسلسليّ، كلٌّ يأخذ مكان التالي).' },
+              scope: { type: 'string', enum: ['day', 'shift', 'period'], description: 'op=swap: افتراضيًّا day.' },
+              traineeDoctorIndex: { type: 'integer', description: 'op=attach_trainee: المتدرّب.' },
+              supervisorDoctorIndex: { type: 'integer', description: 'op=attach_trainee: المدرّب.' },
+            },
+            required: ['op'],
+          },
+        },
+      },
+      required: ['weekStart', 'operations'],
+    },
+  },
 ];
+
+// ─── تعريض الأدوات حسب الدور ────────────────────────────────────
+// الليدر يرى الأداة الشاملة + الإداريّة + كرت الاحتياط (سطحٌ مصغّر)؛ الطبيب يرى أدوات
+// الخدمة الذاتيّة. الموزّع واحدٌ يخدم الجميع ويفرض الصلاحيّة لكلّ أداة على حدة.
+const LEADER_TOOL_NAMES = new Set([
+  'leader_apply', 'clear_week', 'set_clinic_count', 'move_doctor_group', 'set_group_status',
+  'cover_gap_with_reserve', 'announce_to',
+]);
+export function requestsToolsForRole(role: string): V2Tool[] {
+  return isLeaderPlusRole(role)
+    ? REQUESTS_TOOLS_V2.filter((t) => LEADER_TOOL_NAMES.has(t.name))
+    : REQUESTS_TOOLS_V2.filter((t) => t.name !== 'leader_apply');
+}
 
 // ─── أدوات مساعدة ──────────────────────────────────────────────
 type Resolved = { id: string; name: string };
@@ -1517,6 +1577,140 @@ export async function dispatchRequestToolV2(
         const supervisor = ws === 'trainee' ? resolveDoctor(ctx, r.supervisorIndex) : null;
         const res = await requestsV2.setDoctorGroupStatus(actor, groupId, doc.id, ws, supervisor?.id ?? null);
         return res.success ? final(`تمّ ضبط حالة ${doc.name}: ${WORK_AR[ws]}.`) : `Tool error: ${res.error}`;
+      }
+
+      case 'leader_apply': {
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: أداة الليدر الشاملة للقائد فأعلى.';
+        const ws = String(r.weekStart);
+        const ops = Array.isArray(r.operations) ? (r.operations as Record<string, unknown>[]) : [];
+        if (!ops.length) return 'Tool error: لا توجد عمليّات للتنفيذ.';
+        const done: string[] = [];
+        const failed: string[] = [];
+        let firstDay: (typeof DAYS)[number] | undefined;
+        for (let i = 0; i < ops.length; i++) {
+          const op = ops[i] || {};
+          const kind = String(op.op || '');
+          const tag = `[${i + 1}]`;
+          const day = isDay(op.day) ? op.day : undefined;
+          if (day && !firstDay) firstDay = day;
+          try {
+            if (kind === 'place') {
+              const doc = resolveDoctor(ctx, op.doctorIndex);
+              if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
+              if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
+              const periods = Array.isArray(op.periods)
+                ? op.periods.filter((p): p is number => Number.isInteger(p) && p >= 1 && p <= 4) : [];
+              const res = await requestsV2.placeInClinic(actor, {
+                clinicId: ctx.clinicId, weekStart: ws, day, doctorId: doc.id, doctorName: doc.name,
+                clinicNumber: Number(op.clinicNumber), periods,
+              });
+              if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
+              done.push(`${doc.name} → عيادة ${op.clinicNumber} (ف${periods.join('،')}) ${DAY_AR[day]}`);
+            } else if (kind === 'delegator') {
+              const doc = resolveDoctor(ctx, op.doctorIndex);
+              if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
+              if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
+              const res = await requestsV2.placeAsDelegator(actor, {
+                clinicId: ctx.clinicId, weekStart: ws, day, doctorId: doc.id, doctorName: doc.name,
+                period: op.period != null ? Number(op.period) : undefined,
+              });
+              if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
+              done.push(`${doc.name} دليقيتر (ف${res.period}) ${DAY_AR[day]}`);
+            } else if (kind === 'set_status') {
+              const doc = resolveDoctor(ctx, op.doctorIndex);
+              if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
+              if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
+              const status = String(op.status);
+              if (!['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'].includes(status)) {
+                failed.push(`${tag} ${doc.name}: حالة غير صالحة (حدّد بداية/نهاية الاستئذان)`); continue;
+              }
+              const shift = op.shift === 'evening' ? 'evening' : 'morning';
+              const res = await requestsV2.setScheduleStatus(actor, {
+                clinicId: ctx.clinicId, weekStart: ws, day, doctorId: doc.id, doctorName: doc.name,
+                status: status as 'sick_leave' | 'vacation' | 'permission_start' | 'permission_end' | 'extra', shift,
+              });
+              if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
+              done.push(`${doc.name} ${STATUS_AR[status]} ${DAY_AR[day]}`);
+            } else if (kind === 'cancel_status') {
+              const doc = resolveDoctor(ctx, op.doctorIndex);
+              if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
+              let cday = day;
+              if (!cday) {
+                const cands = await requestsV2.listDoctorStatuses({ clinicId: ctx.clinicId, weekStart: ws, doctorId: doc.id });
+                const tf = op.statusType;
+                const ofType = (s: string) =>
+                  tf === 'permission' ? (s === 'permission_start' || s === 'permission_end')
+                    : tf === 'sick_leave' ? s === 'sick_leave'
+                      : tf === 'vacation' ? s === 'vacation' : true;
+                const matches = cands.filter((c) => ofType(c.status));
+                if (matches.length === 1) cday = matches[0].day;
+                else { failed.push(`${tag} ${doc.name}: حدّد اليوم${matches.length > 1 ? ` (${matches.map((m) => DAY_AR[m.day]).join('، ')})` : ''}`); continue; }
+              }
+              const res = await requestsV2.cancelStatus(actor, {
+                clinicId: ctx.clinicId, weekStart: ws, day: cday, doctorId: doc.id, restoreToPrevPlace: true,
+              });
+              if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
+              done.push(`إلغاء حالة ${doc.name} ${DAY_AR[cday]}`);
+            } else if (kind === 'swap') {
+              if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
+              const idxs = Array.isArray(op.doctorIndexes) ? op.doctorIndexes : [];
+              const docs = idxs.map((n) => resolveDoctor(ctx, n)).filter((d): d is Resolved => d != null);
+              if (docs.length < 2) { failed.push(`${tag} التبديل يحتاج طبيبَين صالحَين`); continue; }
+              const scoped = op.scope === 'shift' || op.scope === 'period';
+              if (docs.length === 2 && !scoped) {
+                const res = await requestsV2.swapFullPositions(actor, {
+                  clinicId: ctx.clinicId, weekStart: ws, day, aId: docs[0]!.id, bId: docs[1]!.id,
+                });
+                if (!res.success) { failed.push(`${tag} ${res.error}`); continue; }
+              } else {
+                const scope = op.scope === 'shift'
+                  ? { kind: 'shift' as const, shift: (op.shift === 'evening' ? 'evening' : 'morning') as 'morning' | 'evening' }
+                  : op.scope === 'period'
+                    ? { kind: 'period' as const, period: Number(op.period) }
+                    : { kind: 'day' as const };
+                const res = await requestsV2.swapInSchedule(actor, {
+                  clinicId: ctx.clinicId, weekStart: ws, day, doctorIds: docs.map((d) => d.id), scope,
+                });
+                if (!res.success) { failed.push(`${tag} ${res.error}`); continue; }
+              }
+              done.push(`تبديل ${docs.map((d) => d.name).join(' ⇄ ')} ${DAY_AR[day]}`);
+            } else if (kind === 'attach_trainee') {
+              const trainee = resolveDoctor(ctx, op.traineeDoctorIndex);
+              const sup = resolveDoctor(ctx, op.supervisorDoctorIndex);
+              if (!trainee || !sup) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
+              if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
+              const res = await requestsV2.attachTraineeForDay(actor, {
+                clinicId: ctx.clinicId, weekStart: ws, day, traineeId: trainee.id, traineeName: trainee.name,
+                supervisorId: sup.id, supervisorName: sup.name,
+              });
+              if (!res.success) { failed.push(`${tag} ${res.error}`); continue; }
+              done.push(`${trainee.name} مع ${sup.name} ${DAY_AR[day]}`);
+            } else {
+              failed.push(`${tag} عمليّة غير معروفة "${kind}"`);
+            }
+          } catch (e) {
+            failed.push(`${tag} ${e instanceof Error ? e.message : 'خطأ'}`);
+          }
+        }
+        // إشعارٌ واحدٌ مجمّع لبقيّة القادة (للعلم). التغطية/العدل («ماذا بعد الطلب») لاحقًا.
+        if (done.length && !ctx.suppressLeaderInfo) {
+          try {
+            const { notifications } = await import('../algorithms/notifications');
+            for (const leaderId of await getTeamLeaderIds(ctx.clinicId)) {
+              if (leaderId !== actor.id) {
+                await notifications.notifyLeaderOfRequest({
+                  clinicId: ctx.clinicId, leaderId, senderId: actor.id, senderName: ctx.user?.name || '',
+                  summary: `تعديلٌ مباشرٌ على الجدول: ${done.join(' · ')}`,
+                  weekStart: ws, day: firstDay ?? DAYS[0], standalone: true, scheduleChanged: true,
+                });
+              }
+            }
+          } catch { /* الإشعار تحسينٌ — لا يُفشل التنفيذ */ }
+        }
+        const parts: string[] = [];
+        if (done.length) parts.push(`✅ نُفِّذ (${done.length}): ${done.join(' · ')}`);
+        if (failed.length) parts.push(`⚠️ تعذّر (${failed.length}): ${failed.join(' · ')}`);
+        return final(parts.join('\n') || 'لا تغيير.');
       }
 
       default:
