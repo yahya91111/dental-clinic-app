@@ -93,9 +93,6 @@ async function cancelVia(week: string, doc: any, day: string, _roster: any[]) {
   let returnShift: Shift | null = null;
   try { returnShift = await schedule.placementShift({ clinicId: CID, weekStart: week, day: day as any, doctorId: doc.id }); } catch { /* لا مكان */ }
   const res: any = await requestsV2.cancelStatus({ id: doc.id, role: 'team_leader' }, { clinicId: CID, weekStart: week, day: day as any, doctorId: doc.id, restoreToPrevPlace: true });
-  if ((res.covered || res.permSwapRecompute) && returnShift) {
-    await schedule.redistributeOnReturn({ clinicId: CID, weekStart: week, day: day as any, shift: returnShift }).catch(() => {});
-  }
   if (returnShift && (res.restored || res.covered)) await rebalance(week, day, returnShift);
   return res;
 }

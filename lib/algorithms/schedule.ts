@@ -1478,40 +1478,6 @@ function shiftDiff(
   return out;
 }
 
-// يجهّز تعويض نقصٍ ناتجٍ عن غياب طبيب: يحدّد شفته من مكانه المحفوظ (prev_placement)،
-// يعيد توزيع ذلك الشفت، ويُرجِع الفرق + المقاعد الجديدة (للكتابة عند التنفيذ).
-// null = لا نقص (لم يكن منسَّبًا، أو لا تغيير).
-export async function proposeCoverageForAbsence(args: {
-  clinicId: string;
-  weekStart: string;
-  day: WeekDay;
-  absentDoctorId: string;
-}): Promise<{ shift: Shift; slots: AssignedSlot[]; diff: { seat: string; from: string; to: string }[]; absentNames: string[] } | null> {
-  const { data } = await loadScheduleData(args.clinicId, args.weekStart);
-  if (!data) return null;
-  const prev = data.existingSlots.filter(
-    (s) => s.dayOfWeek === args.day && s.doctorId === args.absentDoctorId && (s.role as string) === 'prev_placement',
-  );
-  if (prev.length === 0) return null; // لم يكن في عيادة/دليقيتر → لا نقص
-  const shift: Shift = prev.some((p) => p.period >= 3) ? 'evening' : 'morning';
-  const r = await redistributeShift({ clinicId: args.clinicId, weekStart: args.weekStart, day: args.day, shift });
-  if (!r.success) return null;
-  const periods = SHIFT_PERIODS[shift];
-  const current = data.existingSlots.filter(
-    (s) => s.dayOfWeek === args.day && s.status === 'active'
-      && (s.role === 'clinic' || s.role === 'delegator') && periods.includes(s.period as Period),
-  );
-  const diff = shiftDiff(current, r.slots, periods);
-  if (diff.length === 0) return null;
-  // كلّ غائبي هذا الشفت (لهم مكانٌ سابقٌ ضمن فترات الشفت) — لعنوان الكرت يجمعهم
-  const absentNames = [...new Set(
-    data.existingSlots
-      .filter((s) => s.dayOfWeek === args.day && (s.role as string) === 'prev_placement' && periods.includes(s.period as Period))
-      .map((s) => s.doctorName),
-  )];
-  return { shift, slots: r.slots, diff, absentNames };
-}
-
 // شفت الطبيب من مكانه المحفوظ (prev_placement) لذلك اليوم. يُقرأ **قبل الإلغاء**
 // لأنّ cancelStatus يمسح صفوف prev_placement. null = لم يكن منسَّبًا في العيادة.
 export async function placementShift(args: {
@@ -1527,20 +1493,6 @@ export async function placementShift(args: {
   );
   if (prev.length === 0) return null;
   return prev.some((p) => p.period >= 3) ? 'evening' : 'morning';
-}
-
-// عند إلغاء غيابٍ كان مكانه مُغطًّى: العائد متاحٌ الآن (أُزيل صفّ حالته) فيدخل
-// البِركة تلقائيًّا → نعيد ترتيب شفته فتُرفع تغطيةُ من غطّاه ويعود هو إلى الجدول.
-export async function redistributeOnReturn(args: {
-  clinicId: string;
-  weekStart: string;
-  day: WeekDay;
-  shift: Shift;
-}): Promise<boolean> {
-  const r = await redistributeShift({ clinicId: args.clinicId, weekStart: args.weekStart, day: args.day, shift: args.shift });
-  if (!r.success) return false;
-  await applyShiftRedistribution({ clinicId: args.clinicId, weekStart: args.weekStart, day: args.day, shift: args.shift, slots: r.slots });
-  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1662,9 +1614,7 @@ export const schedule = {
   loadBuildConfig,
   redistributeShift,
   applyShiftRedistribution,
-  proposeCoverageForAbsence,
   placementShift,
-  redistributeOnReturn,
   rebalanceForward,
   firstFutureShift,
 };

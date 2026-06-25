@@ -88,11 +88,10 @@ async function main() {
     }
     check('لا حجزَ مزدوج (عدا الظلّ مع مدرّبه)', dbl === '', dbl);
 
-    // كنسلٌ يحاكي المسارَ الحيّ: placementShift ← cancelStatus ← (redistributeOnReturn) ← rebalanceForward
+    // كنسلٌ يحاكي المسارَ الحيّ: placementShift ← cancelStatus (استرداد جراحيّ) ← rebalanceForward (القلب الجديد)
     const returnShift = await schedule.placementShift({ clinicId: CID, weekStart: WEEK, day: DAY, doctorId: SHAHAD.id } as any).catch(() => 'morning' as const);
     const cres: any = await requestsV2.cancelStatus(LEADER, { clinicId: CID, weekStart: WEEK, day: DAY, doctorId: SHAHAD.id, restoreToPrevPlace: true } as any).catch(() => ({}));
-    let autoRet = false;
-    if ((cres.covered || cres.permSwapRecompute) && returnShift) autoRet = await schedule.redistributeOnReturn({ clinicId: CID, weekStart: WEEK, day: DAY, shift: returnShift } as any).catch(() => false);
+    const autoRet = !!((cres.covered || cres.permSwapRecompute) && returnShift);
     if (returnShift && (autoRet || cres.restored)) await schedule.rebalanceForward({ clinicId: CID, weekStart: WEEK, fromDay: DAY as any, fromShift: returnShift, today: '2099-11-25' } as any).catch(() => {});
     show(await morning(), 'بعد الكنسل');
     check('الكنسل يعيد الأساس حرفيًّا', sig(await morning()) === before);

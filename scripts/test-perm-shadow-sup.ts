@@ -87,7 +87,6 @@ async function main() {
     // ── الكنسل (مسار حيّ) ──
     const rs = await schedule.placementShift({ clinicId: CID, weekStart: WEEK, day: DAY, doctorId: YAHYA } as any).catch(() => 'morning' as const);
     const cres: any = await requestsV2.cancelStatus(LEADER, { clinicId: CID, weekStart: WEEK, day: DAY, doctorId: YAHYA, restoreToPrevPlace: true } as any).catch(() => ({}));
-    if ((cres.covered || cres.permSwapRecompute) && rs) await schedule.redistributeOnReturn({ clinicId: CID, weekStart: WEEK, day: DAY, shift: rs } as any).catch(() => false);
     if (rs && (cres.restored || cres.permSwapReverted)) await schedule.rebalanceForward({ clinicId: CID, weekStart: WEEK, fromDay: DAY as any, fromShift: rs, today: WEEK } as any).catch(() => {});
     const back = await rowsOf(); show(back, 'بعد الكنسل');
     const yB = back.filter((r) => r.doctor_id === YAHYA);

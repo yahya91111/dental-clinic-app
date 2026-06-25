@@ -39,7 +39,6 @@ async function cancelDirect(doc: any) {
   let rs: Shift | null = null;
   try { rs = await schedule.placementShift({ clinicId: CID, weekStart: W, day: DAY as any, doctorId: doc.id }); } catch { /* */ }
   const res: any = await requestsV2.cancelStatus({ id: doc.id, role: 'team_leader' }, { clinicId: CID, weekStart: W, day: DAY as any, doctorId: doc.id, restoreToPrevPlace: true });
-  if ((res.covered || res.permSwapRecompute) && rs) await schedule.redistributeOnReturn({ clinicId: CID, weekStart: W, day: DAY as any, shift: rs }).catch(() => {});
   if (rs && (res.restored || res.covered)) await schedule.rebalanceForward({ clinicId: CID, weekStart: W, fromDay: DAY as any, fromShift: rs, today: W } as any).catch(() => {});
   return res;
 }

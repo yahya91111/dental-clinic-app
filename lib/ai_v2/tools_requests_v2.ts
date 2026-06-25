@@ -326,7 +326,7 @@ async function refreshCoverageCards(
 }
 
 // ─── تعريفات الأدوات (تنمو مع كلّ قدرة) ────────────────────────
-const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
+export const REQUESTS_TOOLS_V2: V2Tool[] = [
   {
     name: 'set_schedule_status',
     description:
@@ -611,11 +611,6 @@ const REQUESTS_TOOLS_V2_ALL: V2Tool[] = [
     },
   },
 ];
-
-// ─── إطفاء النقص من الطلبات (مؤقّت) ────────────────────────────
-// التغطية تنتقل إلى خوارزميّة الجدول. لا نحذف شيئًا — نُخفي أدوات النقص من
-// النموذج ونوقف توليد كروت التغطية. أعِد المفتاح إلى true لاسترجاع السلوك القديم.
-export const REQUESTS_TOOLS_V2: V2Tool[] = REQUESTS_TOOLS_V2_ALL;
 
 // ─── أدوات مساعدة ──────────────────────────────────────────────
 type Resolved = { id: string; name: string };

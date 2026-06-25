@@ -29,8 +29,9 @@ async function cancelWired(eid: string) {
   let rs: Shift | null = null;
   try { rs = await schedule.placementShift({ clinicId: CID, weekStart: WEEK, day: DAY, doctorId: eid }); } catch { /* */ }
   const res: any = await requestsV2.cancelStatus({ id: eid, role: 'team_leader' } as any, { clinicId: CID, weekStart: WEEK, day: DAY, doctorId: eid, restoreToPrevPlace: true } as any);
-  let wheelFired = false;
-  if ((res.covered || res.permSwapRecompute) && rs) { wheelFired = true; await schedule.redistributeOnReturn({ clinicId: CID, weekStart: WEEK, day: DAY, shift: rs }).catch(() => {}); }
+  // المسارُ الحيّ: cancelStatus (استرداد جراحيّ) ثمّ rebalanceForward (القلب الجديد) — لا عجلةَ عودةٍ قديمة.
+  // «اشتعالُ العجلة» = لو سلك مسارَ التغطية/إعادة الحساب بدل العكس الجراحيّ (يجب ألّا يقع في الحالة #2).
+  const wheelFired = !!((res.covered || res.permSwapRecompute) && rs);
   if (rs && (res.restored || res.covered)) await schedule.rebalanceForward({ clinicId: CID, weekStart: WEEK, fromDay: DAY as any, fromShift: rs, today: WEEK } as any).catch(() => {});
   return { res, wheelFired };
 }
