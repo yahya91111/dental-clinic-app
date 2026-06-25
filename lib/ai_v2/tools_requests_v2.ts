@@ -359,28 +359,6 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
     },
   },
   {
-    name: 'swap_doctors',
-    description:
-      'يبدّل خانات طبيبين أو أكثر (تسلسل دائريّ). النطاق الافتراضيّ اليوم كامل — لا ' +
-      'تسأل عن الشفت/الفترة إلّا إن حدّدها المستخدم صراحةً. الليدر يبدّل آخرين فوريًّا. ' +
-      '(تبديل الطبيب لنفسه يحتاج موافقة الآخر — يأتي مع وحدة الإشعارات.)',
-    input_schema: {
-      type: 'object',
-      properties: {
-        weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
-        doctorIndexes: {
-          type: 'array', items: { type: 'integer' },
-          description: 'أرقام الأطباء مرتّبين؛ كلٌّ يأخذ مكان التالي.',
-        },
-        scope: { type: 'string', enum: ['day', 'shift', 'period'], description: 'افتراضيًّا day.' },
-        shift: { type: 'string', enum: ['morning', 'evening'], description: 'فقط لو scope=shift.' },
-        period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فقط لو scope=period.' },
-      },
-      required: ['weekStart', 'day', 'doctorIndexes'],
-    },
-  },
-  {
     name: 'request_swap',
     description:
       'يرسل **طلب تبديل** (تبادل مراكز يومٍ كامل — كلٌّ يستلم مكان الآخر بكلّ ما فيه) ' +
@@ -528,41 +506,6 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
     },
   },
   {
-    name: 'set_delegator',
-    description:
-      'يجعل طبيبًا دليقيترًا في يومٍ ما **بدل الدليقيتر الحاليّ** (المحرّك يُزيحه ويبقي ' +
-      'له خاناته الأخرى). الفترة تلقائيّة (فترة الدليقيتر التي يكون الطبيب فارغًا فيها) — ' +
-      'لا تمرّر period إلّا إن سمّاها المستخدم. لطلبٍ مثل «اجعلنا دليقيترز بدل الموجودين»: ' +
-      'نداء لكلّ طبيب — هذا **ليس تبديلًا** ولا يحتاج موافقة أحد. الليدر فأعلى.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
-        doctorIndex: { type: 'integer' },
-        period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فقط إن سمّاها المستخدم.' },
-      },
-      required: ['weekStart', 'day', 'doctorIndex'],
-    },
-  },
-  {
-    name: 'attach_trainee',
-    description:
-      'يُلحق متدرّبًا **احتياطيًّا** بمدرّبٍ آخر لذلك اليوم فقط: يُوضع اسمه مع المدرّب ' +
-      'في خاناته نفسها (عيادة/دليقيتر) ويُرفَع من صفّ الاحتياط. لا يغيّر مدرّبه الدائم. ' +
-      'الليدر فأعلى.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
-        traineeDoctorIndex: { type: 'integer', description: 'رقم المتدرّب الاحتياطيّ.' },
-        supervisorDoctorIndex: { type: 'integer', description: 'رقم المدرّب الذي يُلحَق به.' },
-      },
-      required: ['weekStart', 'day', 'traineeDoctorIndex', 'supervisorDoctorIndex'],
-    },
-  },
-  {
     name: 'clear_week',
     description:
       'يطلب مسح جدول أسبوعٍ كاملًا (كلّ الخانات والحالات). الليدر فأعلى. استدعِها متى ' +
@@ -660,16 +603,22 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
 ];
 
 // ─── تعريض الأدوات حسب الدور ────────────────────────────────────
-// الليدر يرى الأداة الشاملة + الإداريّة + كرت الاحتياط (سطحٌ مصغّر)؛ الطبيب يرى أدوات
-// الخدمة الذاتيّة. الموزّع واحدٌ يخدم الجميع ويفرض الصلاحيّة لكلّ أداة على حدة.
-const LEADER_TOOL_NAMES = new Set([
+// الطلبات للجميع: أدوات الطلب الذاتيّ/التبديل/الإبلاغ مشتركةٌ بين الطبيب والليدر.
+// الليدر يزيد فوقها أداتَه الشاملة (السلطة) + الأدوات الإداريّة + كرت الاحتياط.
+// الموزّع واحدٌ يخدم الجميع ويفرض الصلاحيّة لكلّ أداة على حدة.
+const SHARED_TOOL_NAMES = new Set([
+  'set_schedule_status', 'cancel_schedule_status', 'move_schedule_status', 'place_in_clinic',
+  'request_swap', 'swap_request_status', 'cancel_swap_request', 'announce_to',
+]);
+const LEADER_EXTRA_TOOL_NAMES = new Set([
   'leader_apply', 'clear_week', 'set_clinic_count', 'move_doctor_group', 'set_group_status',
-  'cover_gap_with_reserve', 'announce_to',
+  'cover_gap_with_reserve',
 ]);
 export function requestsToolsForRole(role: string): V2Tool[] {
-  return isLeaderPlusRole(role)
-    ? REQUESTS_TOOLS_V2.filter((t) => LEADER_TOOL_NAMES.has(t.name))
-    : REQUESTS_TOOLS_V2.filter((t) => t.name !== 'leader_apply');
+  const allowed = isLeaderPlusRole(role)
+    ? new Set([...SHARED_TOOL_NAMES, ...LEADER_EXTRA_TOOL_NAMES])
+    : SHARED_TOOL_NAMES;
+  return REQUESTS_TOOLS_V2.filter((t) => allowed.has(t.name));
 }
 
 // ─── أدوات مساعدة ──────────────────────────────────────────────
@@ -1012,101 +961,6 @@ export async function dispatchRequestToolV2(
           });
         }
         return final(base);
-      }
-
-      case 'swap_doctors': {
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        const idxs = Array.isArray(r.doctorIndexes) ? r.doctorIndexes : [];
-        const docs = idxs.map((n) => resolveDoctor(ctx, n)).filter((d): d is Resolved => d != null);
-        if (docs.length < 2) return 'Tool error: التبديل يحتاج طبيبين صالحين على الأقلّ.';
-        const wsEff = String(r.weekStart);
-        const actorIsParty = docs.some((d) => d.id === actor.id);
-
-        // القرار حتميّ — الطالب أحد طرفَي تبديلٍ ثنائيّ:
-        //  • طبيب → يفتح طلب تبديلٍ تلقائيًّا (موافقة الآخر بالإشعارات).
-        //  • قائد → سؤال أزرارٍ من الكود: [أرسل طلبًا] أم [بدّل مباشرة]؟
-        if (actorIsParty && docs.length === 2) {
-          const other = docs.find((d) => d.id !== actor.id)!;
-          if (isLeaderPlusRole(actor.role)) {
-            ctx.onSwapOffer?.({
-              kind: 'ask_mode', weekStart: wsEff, day: r.day,
-              target: { id: other.id, name: other.name },
-            });
-            return final(
-              `أنت طرفٌ في التبديل مع ${other.name} يوم ${DAY_AR[r.day]} — اختر من ` +
-              'الأزرار: إرسال طلبٍ لموافقته، أو تنفيذٌ مباشر.',
-            );
-          }
-          const sent = await sendSwapRequestByCode({
-            clinicId: ctx.clinicId,
-            requester: { id: actor.id, name: ctx.user?.name || '' },
-            weekStart: wsEff, day: r.day,
-            targetId: other.id, targetName: other.name,
-          });
-          return sent.success ? final(sent.info || 'أُرسل الطلب.') : `Tool error: ${sent.error}`;
-        }
-
-        // غير القائد لا يبدّل آخرين ولا جماعيًّا — له طلبٌ ثنائيٌّ لنفسه فقط.
-        if (!isLeaderPlusRole(actor.role)) {
-          return 'Tool error: يمكنك طلب تبديلٍ بينك وبين زميلٍ واحدٍ فقط — التبديل بين الآخرين أو الجماعيّ للقائد.';
-        }
-
-        // القائد يبدّل آخرين: تبديلٌ ثنائيّ كامل اليوم = تبادل مراكز كامل (يشمل
-        // الاحتياط)، ثمّ عرض «هل تُبلَّغان؟» أزرارًا. غير ذلك (٣+ أو نطاق فترة/شفت)
-        // يبقى تسلسلًا دائريًّا للخانات كما هو.
-        const scoped = r.scope === 'shift' || r.scope === 'period';
-        if (docs.length === 2 && !scoped) {
-          const res = await requestsV2.swapFullPositions(actor, {
-            clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-            aId: docs[0]!.id, bId: docs[1]!.id,
-          });
-          if (!res.success) return `Tool error: ${res.error}`;
-          {
-            const { notifications } = await import('../algorithms/notifications');
-            if (res.crossShift) {
-              await notifications.notifyLeadersCrossShiftSwap({
-                clinicId: ctx.clinicId, day: r.day,
-                aName: docs[0]!.name, bName: docs[1]!.name,
-                excludeIds: [actor.id, docs[0]!.id, docs[1]!.id],
-              });
-            }
-            // زال تعارض استئذانٍ بهذا التبديل؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق
-            await notifications.resolvePermissionAlertV2({
-              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-              doctorIds: [docs[0]!.id, docs[1]!.id],
-            });
-            // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
-            await notifications.invalidateSwapsTouching({
-              weekStart: wsEff, day: r.day,
-              doctorIds: [docs[0]!.id, docs[1]!.id],
-            });
-          }
-          ctx.onSwapOffer?.({
-            kind: 'offer_notify', weekStart: wsEff, day: r.day,
-            a: { id: docs[0]!.id, name: docs[0]!.name },
-            b: { id: docs[1]!.id, name: docs[1]!.name },
-          });
-          return final(`تمّ التبديل بين ${docs[0]!.name} و${docs[1]!.name} يوم ${DAY_AR[r.day]}.`);
-        }
-        const scope =
-          r.scope === 'shift'
-            ? { kind: 'shift' as const, shift: (r.shift === 'evening' ? 'evening' : 'morning') as 'morning' | 'evening' }
-            : r.scope === 'period'
-              ? { kind: 'period' as const, period: Number(r.period) }
-              : { kind: 'day' as const };
-        const res = await requestsV2.swapInSchedule(actor, {
-          clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-          doctorIds: docs.map((d) => d.id), scope,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
-        {
-          // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
-          const { notifications } = await import('../algorithms/notifications');
-          await notifications.invalidateSwapsTouching({
-            weekStart: wsEff, day: r.day, doctorIds: docs.map((d) => d.id),
-          });
-        }
-        return final(`تمّ التبديل بين: ${docs.map((d) => d.name).join('، ')} يوم ${DAY_AR[r.day]}.`);
       }
 
       case 'request_swap': {
@@ -1491,20 +1345,6 @@ export async function dispatchRequestToolV2(
         return final(`تمّ: ${pick.name} يغطّي عيادة ${cNum} الفترة ${per} يوم ${DAY_AR[r.day]}.`);
       }
 
-      case 'set_delegator': {
-        const doc = resolveDoctor(ctx, r.doctorIndex);
-        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        const res = await requestsV2.placeAsDelegator(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-          doctorId: doc.id, doctorName: doc.name,
-          period: r.period != null ? Number(r.period) : undefined,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
-        return final(`تمّ: ${doc.name} دليقيتر يوم ${DAY_AR[r.day]} (الفترة ${res.period})` +
-          (res.replaced ? ` بدل ${res.replaced}.` : '.'));
-      }
-
       case 'announce_to': {
         const res = await announceAbsence({
           clinicId: ctx.clinicId,
@@ -1516,28 +1356,6 @@ export async function dispatchRequestToolV2(
             : undefined,
         });
         return res.success ? final(res.info || 'تمّ الإبلاغ.') : `Tool error: ${res.error}`;
-      }
-
-      case 'attach_trainee': {
-        const trainee = resolveDoctor(ctx, r.traineeDoctorIndex);
-        const sup = resolveDoctor(ctx, r.supervisorDoctorIndex);
-        if (!trainee || !sup) return 'Tool error: رقم الطبيب غير صالح.';
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
-        const res = await requestsV2.attachTraineeForDay(actor, {
-          clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-          traineeId: trainee.id, traineeName: trainee.name,
-          supervisorId: sup.id, supervisorName: sup.name,
-        });
-        if (!res.success) return `Tool error: ${res.error}`;
-        // إبلاغ المدرّب المكلَّف (للعلم): سيكون معه متدرّب في عيادته هذا اليوم
-        const { notifications } = await import('../algorithms/notifications');
-        const sender = senderOf(ctx);
-        await notifications.notifyTraineeAttached({
-          clinicId: ctx.clinicId, supervisorId: sup.id,
-          traineeName: trainee.name, day: r.day, weekStart: String(r.weekStart),
-          senderId: sender.id, senderName: sender.name,
-        });
-        return final(`تمّ: ${trainee.name} مع ${sup.name} يوم ${DAY_AR[r.day]} (لهذا اليوم فقط)، ووصله إشعارٌ بذلك.`);
       }
 
       case 'clear_week': {
