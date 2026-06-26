@@ -104,6 +104,71 @@ export async function clearWeekByCode(params: {
   return { success: true, info: `تمّ مسح جدول أسبوع ${params.weekStart} كاملًا.` };
 }
 
+type ReserveDay = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+
+/**
+ * يضع احتياطيًّا خاصًّا (بورد/متدرّب) في مقعدٍ شاغرٍ من كرت «تغطية نقص — قرارك»
+ * **بالكود مباشرةً** — يستعمله زرّ الاسم في الكرت (لا ذكاء، لا كلفة). `closeCard`=true
+ * (آخر مقعدٍ) يُغلق الكرت بعد الوضع. يطابق غصنَ الاختيار في cover_gap_with_reserve.
+ */
+export async function placeReserveByCode(params: {
+  clinicId: string; weekStart: string; day: string;
+  clinicNumber: number; period: number; doctorId: string;
+  closeCard?: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { placeReserveInSeat } = await import('../algorithms/solver_shadow');
+    const day = params.day as ReserveDay;
+    const pr = await placeReserveInSeat({
+      clinicId: params.clinicId, weekStart: params.weekStart, day,
+      clinicNumber: params.clinicNumber, period: params.period, doctorId: params.doctorId,
+    });
+    if (!pr.success) return { success: false, error: pr.reason ?? 'تعذّر وضع الاحتياطيّ.' };
+    if (params.closeCard) {
+      const { notifications } = await import('../algorithms/notifications');
+      await notifications.resolveReserveChoiceV2({ clinicId: params.clinicId, weekStart: params.weekStart, day });
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+/**
+ * «لا أحد» في كرت «تغطية نقص — قرارك» **بالكود**: لا يُستدعى الاحتياطيّ الخاصّ،
+ * ويُكمل المحرّك التغطية من المتاح (تغطية → سداد احتياط → إعادة توازن → إعادة تشكيلٍ
+ * رفيعة)، ملفوفةً بيوميّات الأثر كي يعكسها كنسلُ الغياب، ثمّ يُغلق الكرت.
+ */
+export async function declineReserveChoiceByCode(params: {
+  clinicId: string; weekStart: string; day: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const day = params.day as ReserveDay;
+    const ws = params.weekStart;
+    const { applyCoverage, applyReserveRepay, applyNewHeartRebalance, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
+    const { notifications } = await import('../algorithms/notifications');
+    const { withXdayJournal } = await import('../algorithms/requests_v2');
+    const { supabase } = await import('../supabase');
+    const { data: pp } = await supabase.from('schedule_slots')
+      .select('doctor_id').eq('clinic_id', params.clinicId).eq('week_start', ws)
+      .eq('day_of_week', day).eq('role', 'prev_placement');
+    const owners = [...new Set(((pp || []) as { doctor_id: string }[]).map((x) => x.doctor_id))];
+    const runCov = async () => {
+      const c = await applyCoverage({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
+      await applyReserveRepay({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' }, reservePairsFromMoves(c.moves));
+      await applyNewHeartRebalance({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' });
+      await applyThinReshape({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' });
+      return c;
+    };
+    if (owners.length === 1) await withXdayJournal(params.clinicId, ws, { day, doctorId: owners[0]! }, runCov);
+    else await runCov();
+    await notifications.resolveReserveChoiceV2({ clinicId: params.clinicId, weekStart: ws, day });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
 const DAY_AR: Record<string, string> = {
   sunday: 'الأحد', monday: 'الاثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
@@ -1109,41 +1174,20 @@ export async function dispatchRequestToolV2(
         if (!isLeaderPlusRole(actor.role)) return 'Tool error: حسمُ تغطية النقص باستدعاء احتياطيٍّ للقائد فأعلى.';
         if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
         const ws = String(r.weekStart);
-        const { applyCoverage, placeReserveInSeat, applyReserveRepay, applyNewHeartRebalance, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
-        const { notifications } = await import('../algorithms/notifications');
         if (r.decline) {
-          // «لا أحد»: لا يُستدعى الاحتياطيّ الخاصّ — والذكاء يتكفّل بالتغطية بنفسه من
-          // المتاح (كأنّ ذلك الاحتياطيّ غير موجود: شريك منفرد… إلخ). نلفّها بيوميّات الأثر
-          // كي يعكسها كنسلُ الغياب (تشمل يومَ الغياب: إسقاطَ استضافةٍ وترقيةَ جيران). السببُ
-          // = مالكُ مقعدِ الغياب (prev_placement) لذلك اليوم — إن كان واحدًا (الحالة الشائعة).
-          const { withXdayJournal } = await import('../algorithms/requests_v2');
-          const { supabase } = await import('../supabase');
-          const { data: pp } = await supabase.from('schedule_slots')
-            .select('doctor_id').eq('clinic_id', ctx.clinicId).eq('week_start', ws)
-            .eq('day_of_week', r.day).eq('role', 'prev_placement');
-          const owners = [...new Set(((pp || []) as { doctor_id: string }[]).map((x) => x.doctor_id))];
-          // **الخطوات الثلاث** كالمرّة الأولى (مرضية) والمحكّ: تغطية → سداد احتياط → إعادة توازن.
-          // كان ينقص السدادُ والتوازن، فيبقى الدليقيتر/الاحتياط غيرَ متوازنٍ بعد «لا أحد» (الخللُ المُبلَّغ).
-          const runCov = async () => {
-            const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
-            await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' }, reservePairsFromMoves(c.moves));
-            await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' });
-            // الحالة الرفيعة (D=M+1): أعِد تشكيلَ الشفت إلى منفردين + مضيفٍ مكرّس.
-            await applyThinReshape({ clinicId: ctx.clinicId, weekStart: ws, label: 'لا-أحد' });
-            return c;
-          };
-          if (owners.length === 1) await withXdayJournal(ctx.clinicId, ws, { day: String(r.day), doctorId: owners[0]! }, runCov);
-          else await runCov(); // غيابٌ متعدّدٌ أو غامض → بلا يَوْمَنةٍ لهذا التمرير (نادر)
-          await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
+          // «لا أحد»: لا يُستدعى الاحتياطيّ الخاصّ — والمحرّك يتكفّل بالتغطية من المتاح
+          // (نفسُ منطق زرّ «لا أحد» في الكرت — declineReserveChoiceByCode بالكود).
+          const res = await declineReserveChoiceByCode({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
+          if (!res.success) return `Tool error: ${res.error ?? 'تعذّر إكمال التغطية.'}`;
           return final(`تمّ — لن نستدعي أحدًا، وسأتكفّل أنا بترتيب التغطية يوم ${DAY_AR[r.day]}.`);
         }
         const pick = resolveDoctor(ctx, r.doctorIndex);
         if (!pick) return 'Tool error: رقم الطبيب غير صالح.';
         const cNum = Number(r.clinicNumber); const per = Number(r.period);
         if (!Number.isInteger(cNum) || cNum < 1 || ![1, 2, 3, 4].includes(per)) return 'Tool error: حدّد العيادة والفترة من الكرت.';
-        const pr = await placeReserveInSeat({ clinicId: ctx.clinicId, weekStart: ws, day: r.day, clinicNumber: cNum, period: per, doctorId: pick.id });
-        if (!pr.success) return `Tool error: تعذّر وضع الاحتياطيّ (${pr.reason ?? ''}).`;
-        await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
+        // نفسُ مسار زرّ الاسم في الكرت (placeReserveByCode) — وضعٌ ثمّ إغلاق الكرت.
+        const pr = await placeReserveByCode({ clinicId: ctx.clinicId, weekStart: ws, day: r.day, clinicNumber: cNum, period: per, doctorId: pick.id, closeCard: true });
+        if (!pr.success) return `Tool error: تعذّر وضع الاحتياطيّ (${pr.error ?? ''}).`;
         // إبلاغ الاحتياطيّ المختار بمقعده الجديد تتولّاه طبقةُ الفرق (كرت «طرأ تغييرٌ على جدولك»).
         return final(`تمّ: ${pick.name} يغطّي عيادة ${cNum} الفترة ${per} يوم ${DAY_AR[r.day]}.`);
       }

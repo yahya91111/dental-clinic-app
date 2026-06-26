@@ -240,6 +240,91 @@ function coverageTitle(n: ConvoNotif): string {
 
 const SEED_TRIGGER = 'ابدأ'; // أوّل رسالة خفيّة تُشغّل صياغة الذكاء داخل الكرت (لا تُعرَض)
 
+// ───── جسمُ كرت «تغطية نقص — قرارك»: أزرارٌ بالكود (نصُّها من الخوارزميّة، لا الذكاء) ─────
+// لكلّ مقعدٍ شاغر: أزرارُ المرشّحين (بورد/متدرّب) + زرّ «لا أحد». نقرُ مرشّحٍ يضعه
+// (placeReserveByCode)؛ آخرُ مقعدٍ يُغلق الكرت. «لا أحد» يترك التغطية للمحرّك (declineReserveChoiceByCode).
+function ReserveChoiceBody({ notif, clinicId, onSeen }: {
+  notif: ConvoNotif;
+  clinicId?: string | null;
+  onSeen: () => void;
+}) {
+  const d = notif.data || {};
+  const rc = (d.reserve_choice || {}) as {
+    day?: string;
+    seats?: { clinic_number?: number; period?: number }[];
+    candidates?: { doctor_id?: string; doctor_name?: string; kind?: string }[];
+  };
+  const ws = String(d.week_start || '');
+  const day = String(rc.day || '');
+  const cid = clinicId || d.clinic_id || '';
+  const seats = (rc.seats || []).filter((s) => s.clinic_number != null && s.period != null);
+  const cands = (rc.candidates || []).filter((c) => !!c.doctor_id);
+  const seatKey = (s: { clinic_number?: number; period?: number }) => `${s.clinic_number}|${s.period}`;
+  const kindAr = (k?: string) => (k === 'board' ? 'بورد' : 'متدرّب');
+
+  const [filled, setFilled] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const remaining = seats.filter((s) => !filled.has(seatKey(s)));
+  const multi = seats.length > 1;
+
+  const pick = useCallback(async (seat: { clinic_number?: number; period?: number }, c: { doctor_id?: string }) => {
+    if (busy || !cid) return;
+    setBusy(true); setErr(null);
+    try {
+      const nextFilled = new Set(filled); nextFilled.add(seatKey(seat));
+      const isLast = seats.every((s) => nextFilled.has(seatKey(s)));
+      const mod = await import('../lib/ai_v2/tools_requests_v2');
+      const res = await mod.placeReserveByCode({
+        clinicId: cid, weekStart: ws, day,
+        clinicNumber: Number(seat.clinic_number), period: Number(seat.period),
+        doctorId: String(c.doctor_id), closeCard: isLast,
+      });
+      if (!res.success) { setErr(res.error || 'تعذّر وضع الاحتياطيّ.'); return; }
+      if (isLast) onSeen(); else setFilled(nextFilled);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+    } finally { setBusy(false); }
+  }, [busy, cid, ws, day, filled, seats, onSeen]);
+
+  const decline = useCallback(async () => {
+    if (busy || !cid) return;
+    setBusy(true); setErr(null);
+    try {
+      const mod = await import('../lib/ai_v2/tools_requests_v2');
+      const res = await mod.declineReserveChoiceByCode({ clinicId: cid, weekStart: ws, day });
+      if (!res.success) { setErr(res.error || 'تعذّر إكمال التغطية.'); return; }
+      onSeen();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+    } finally { setBusy(false); }
+  }, [busy, cid, ws, day, onSeen]);
+
+  return (
+    <View style={cardStyles.covBody}>
+      <Text style={styles.bodyPara}>{notif.body}</Text>
+      {!!err && <Text style={styles.rcErr}>{err}</Text>}
+      {busy && <ActivityIndicator color="#7C3AED" style={{ marginVertical: scale(6) }} />}
+      {remaining.map((seat) => (
+        <View key={seatKey(seat)} style={{ marginTop: scale(6) }}>
+          {multi && <Text style={styles.rcSeat}>عيادة {seat.clinic_number} الفترة {seat.period}</Text>}
+          {cands.map((c) => (
+            <TouchableOpacity
+              key={`${seatKey(seat)}-${c.doctor_id}`} activeOpacity={0.85} disabled={busy}
+              onPress={() => pick(seat, c)} style={styles.rcOpt}
+            >
+              <Text style={styles.rcOptTxt}>{dr(c.doctor_name)} ({kindAr(c.kind)})</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ))}
+      <TouchableOpacity activeOpacity={0.85} disabled={busy} onPress={decline} style={[styles.rcOpt, styles.rcOptMuted]}>
+        <Text style={styles.rcOptTxt}>لا أحد</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 /**
  * كرت تغطية مستقلّ: عنوانٌ ثابت من المحرّك، ونقره يفتح **خيطًا خاصًّا** يصوغ فيه
  * الذكاء الحلول بسياق هذا النقص وحده (sendMessageV2 بحقائقه). يحلّ تشويش تعدّد
@@ -256,6 +341,10 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   const [loading, setLoading] = useState(false);
   const [reply, setReply] = useState('');
   const startedRef = useRef(false);
+
+  // كرت «تغطية نقص — قرارك» (احتياطيّ خاصّ): خياراته أزرارٌ بالكود (الخوارزميّة تنصّ،
+  // لا الذكاء — توفيرًا للكلفة). لا خيطَ ذكاءٍ ولا خانةَ كتابة.
+  const isReserveChoice = !!notif.data?.reserve_choice;
 
   // حالة الكرت: معلّق (أحمر — تذكير) / متجاهَل (هذا القائد فقط) / تمّ (حُلّ يدويًّا
   // أو أغلقه المحرّك تلقائيًّا بعد تنفيذ التغطية = accepted)
@@ -341,12 +430,14 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
     if (next && !startedRef.current) {
       startedRef.current = true;
       try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأوربّ لاحقًا */ }
+      // كرت الاحتياط: أزرارٌ بالكود — لا خيطَ ذكاءٍ (لا نداء للنموذج، توفيرًا للكلفة).
+      if (isReserveChoice) return;
       // خيطٌ محفوظ سابقًا؟ حمّله بلا نداء للذكاء (توفير توكن). وإلّا ابدأ التوليد.
       const saved = Array.isArray(notif.data?.thread) ? (notif.data!.thread as V2Message[]) : null;
       if (saved && saved.length) setHistory(saved);
       else runTurn([{ role: 'user', content: SEED_TRIGGER }]);
     }
-  }, [expanded, notif.id, notif.data, onSeen, runTurn, closeSwipe]);
+  }, [expanded, notif.id, notif.data, onSeen, runTurn, closeSwipe, isReserveChoice]);
 
   const send = useCallback((text: string) => {
     const t = text.trim();
@@ -397,7 +488,9 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
             <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
           </TouchableOpacity>
 
-      {expanded && (
+      {expanded && (isReserveChoice ? (
+        <ReserveChoiceBody notif={notif} clinicId={clinicId ?? user.clinicId} onSeen={onSeen} />
+      ) : (
         <View style={cardStyles.covBody}>
           {/* نصّ الذكاء كفقرات (كالنموذج)، وردّ المستخدم كفقاعةٍ بنفسجيّة */}
           {shown.map((m, i) => (
@@ -429,7 +522,7 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
             />
           </View>
         </View>
-      )}
+      ))}
         </GlassCard>
       </Animated.View>
     </View>
@@ -1019,6 +1112,16 @@ const styles = StyleSheet.create({
     borderRadius: scale(14), backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.12)',
   },
   optTxt: { fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', fontWeight: '700', lineHeight: scale(20) },
+  // كرت «تغطية نقص — قرارك»: أزرار المرشّحين + «لا أحد» (بالكود، لا ذكاء)
+  rcErr: { fontSize: scale(12.5), color: '#FCA5A5', textAlign: 'right', fontWeight: '700', marginTop: scale(6) },
+  rcSeat: { fontSize: scale(11.5), color: '#C4B5FD', textAlign: 'right', fontWeight: '800', marginBottom: scale(4) },
+  rcOpt: {
+    alignSelf: 'stretch', marginTop: scale(7), paddingVertical: scale(9), paddingHorizontal: scale(12),
+    borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.16)',
+  },
+  rcOptMuted: { backgroundColor: 'rgba(255,255,255,0.04)', marginTop: scale(10) },
+  rcOptTxt: { fontSize: scale(13), color: '#F4F1FF', textAlign: 'right', fontWeight: '700' },
   covInputRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: scale(8), marginTop: scale(10) },
   covInput: {
     flex: 1, minHeight: scale(44), maxHeight: scale(90), borderRadius: scale(999),
