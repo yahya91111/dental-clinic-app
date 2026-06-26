@@ -80,6 +80,8 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
     // gap_alert: تغطية v2 — تبقى كهرمانيّةً ما دامت معلّقةً (لم تُحَلّ)، حتى بعد قراءتها.
     // تطفأ فقط بـ done/dismiss. القديمة بلا v2 تُستثنى.
     if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n);
+    // كرت «طرأ تغييرٌ على جدولك»: يتوهّج حتى يفتحه الطبيب (يُقرأ).
+    if (n.type === 'seat_change') return !n.is_read;
     // بقيّة عناصر المحادثة: كرتٌ معلّق (لم يُحَلّ) أو رسالةٌ غير مقروءة.
     return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
@@ -433,6 +435,60 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   );
 }
 
+// ───── كرت «طرأ تغييرٌ على جدولك» — للرؤية: نقرةٌ تُطفئ التوهّج وتعرض القديم→الجديد ─────
+type SeatRefUI = { clinic: number; period: number; role: string };
+function seatDesc(seats: SeatRefUI[]): string {
+  if (!seats || !seats.length) return 'خارج الجدول';
+  return seats.map((s) =>
+    s.role === 'extra' ? 'احتياط'
+      : s.role === 'delegator' ? `دليقيتر الفترة ${s.period}`
+        : `عيادة ${s.clinic} الفترة ${s.period}`,
+  ).join('، ');
+}
+
+function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const d = notif.data || {};
+  const changes: { week_start: string; day: string; old: SeatRefUI[]; new: SeatRefUI[] }[] =
+    Array.isArray(d.changes) ? d.changes : [];
+  const live = !notif.is_read;
+  const kind: CardKind = live ? 'coverage' : 'done';
+  const onToggle = useCallback(async () => {
+    const next = !expanded; setExpanded(next);
+    if (next && !notif.is_read) { try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأورب لاحقًا */ } }
+  }, [expanded, notif.id, notif.is_read, onSeen]);
+  return (
+    <View style={styles.feedCard}>
+      <GlassCard kind={kind} glow={live}>
+        <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
+          <CardBadge kind={kind} live={live} />
+          <View style={cardStyles.headTxt}>
+            <Text style={cardStyles.cardTitle} numberOfLines={2}>طرأ تغييرٌ على جدولك</Text>
+            <Pill kind={kind} text={live ? 'جديد' : 'تمّ الاطّلاع'} />
+          </View>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+        </TouchableOpacity>
+        {expanded && (
+          <View style={cardStyles.covBody}>
+            {changes.length === 0 ? (
+              <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right' }}>{notif.body}</Text>
+            ) : changes.map((ch, i) => (
+              <View key={`${ch.week_start}-${ch.day}-${i}`} style={{ marginTop: scale(6) }}>
+                <Text style={{ fontSize: scale(12.5), color: '#E9E4FF', fontWeight: '800', textAlign: 'right' }}>
+                  {DAY_AR_SEED[ch.day] || ch.day}
+                </Text>
+                <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right', marginTop: scale(2) }}>
+                  {`من: ${seatDesc(ch.old)}  ←  إلى: ${seatDesc(ch.new)}`}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </GlassCard>
+    </View>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // AICardsView — لوحةُ كروت الإبلاغ المشتركة (تغطية نقص / موافقات / نتائج)
 // ═══════════════════════════════════════════════════════════════
@@ -456,7 +512,10 @@ export function AICardsView({ user, clinicId }: {
       .filter((n) =>
         isPending(n)
         || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
-        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
+        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday)
+        // كرت «طرأ تغييرٌ على جدولك»: يبقى ما دام غير مقروء أو فيه تاريخٌ ضمن الأسبوع الحاليّ فصاعدًا.
+        || (n.type === 'seat_change' && (!n.is_read
+          || (Array.isArray(n.data?.changes) && n.data.changes.some((c: { week_start?: string }) => String(c.week_start || '') >= sunday)))));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
     setConvo(items);
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
@@ -499,6 +558,9 @@ export function AICardsView({ user, clinicId }: {
           return (
             <CoverageCard key={n.id} notif={n} user={user} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />
           );
+        }
+        if (n.type === 'seat_change') {
+          return <SeatChangeCard key={n.id} notif={n} onSeen={loadConvo} />;
         }
         if (isPending(n)) {
           const busy = busyId === n.id;
