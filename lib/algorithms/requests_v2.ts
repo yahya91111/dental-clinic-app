@@ -1301,6 +1301,7 @@ export async function cancelStatus(
   permissionCanceled?: boolean;       // أُزيلت علامة استئذانٍ وهو في عيادته — لا إرجاع
   permSwapReverted?: boolean;         // عُكِس تبديل الاستئذان حرفيًّا (عالمٌ ثابت)
   permSwapRecompute?: boolean;        // مُضيفٌ/عالمٌ متغيّر → تُعيد الطبقة الأعلى حساب الشفت
+  surgicalReturn?: boolean;           // عودةٌ جراحيّة (applyReturn) لغيابٍ مُغطًّى والعالم متغيّر
   returnedToReserve?: boolean;        // أُزيلت العلامة وبقي احتياطًا كما كان
   shadowReturned?: boolean;           // ظلٌّ عاد إلى جانب مدرّبه
   shadowSupervisorAbsent?: boolean;   // ظلٌّ أُلغيت حالته ومدرّبه غائب — بقي احتياطًا
@@ -1535,11 +1536,43 @@ export async function cancelStatus(
     const reclaimUpdates: { id: string; doctor_id: string; doctor_name: string }[] = [];
     const reserveInserts: Record<string, unknown>[] = [];
     if (restoreToPrevPlace && prev.length > 0) {
-      // التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها: مقعدُه الفارغ يُستعاد، ومقعدُه (عيادةً كان أو
-      // استضافة) الذي شغله **مُغطٍّ خالص** — أي لا خانةَ أخرى له في هذا الشفت سوى المقعد
-      // المُسترَدّ، فهو مسحوبٌ من الاحتياط للتغطية — يسترّده الطبيبُ ويعود المُغطّي احتياطًا
-      // (يطابق ما قبل الغياب حرفيًّا، فلا إعادةَ اشتقاق). أمّا المشغولُ بطبيبٍ له خانتُه الخاصّة
-      // هذا الشفت (انفرادُ شريك/تنسيبٌ يدويّ) فيقرّر القائد (covered) — لا ندوس عليه.
+      // الحالة #٢ (العالم تغيّر): مقعدٌ محفوظٌ (نشط) يشغله الآن طبيبٌ **له خانتُه الخاصّة** هذا
+      // الشفت (لا مُغطٍّ خالص) ⇒ إعادةٌ حرفيّةٌ فجّة قد تُخلّ بالتوازن. نُجري بدلها **عودةً
+      // جراحيّة** (applyReturn، خيار أ المختار من المستخدم، متّسقة مع الاستئذان والتحويل):
+      // العائدُ يستردّ مقاعده، المُزاحون يُمتَصّون بأقلّ لمسٍ، وظلُّه يعود — بلا كرت قائد.
+      // المُغطّي الخالص (بلا خانةٍ أخرى) يبقى على المسار الحرفيّ المُثبَت (#١) أدناه.
+      const prevActive = prev.filter((p) => p.period > 0);
+      const occAt = (p: Row) => rows.find((r) => r.doctor_id !== doctorId && r.status === 'active' && r.period === p.period
+        && (p.clinic_number === 0 ? r.role === 'delegator' : (r.role === 'clinic' && r.clinic_number === p.clinic_number)));
+      const worldChanged = prevActive.some((p) => {
+        const occ = occAt(p); if (!occ) return false;
+        const sp = p.period <= 2 ? [1, 2] : [3, 4]; // للمُغطّي خانةٌ أخرى في الشفت غيرَ المُسترَدّ؟
+        return rows.some((r) => r.doctor_id === occ.doctor_id && r.id !== occ.id && r.status === 'active'
+          && sp.includes(r.period) && (r.role === 'clinic' || r.role === 'delegator'));
+      });
+      if (worldChanged) {
+        const seatMap = new Map<string, { period: number; clinicNumber: number }>();
+        for (const p of prevActive) seatMap.set(`${p.period}|${p.clinic_number}`, { period: p.period, clinicNumber: p.clinic_number });
+        const prevSeats = [...seatMap.values()];
+        // صفوفُ الاحتياط المحفوظة (فترة 0) تُعاد مباشرةً؛ احذف الحالةَ وكلَّ صفوف الحفظ.
+        const reserveBack = prev.filter((p) => p.period === 0).map((p) => ({
+          clinic_id: clinicId, week_start: weekStart, day_of_week: day,
+          period: 0, clinic_number: p.clinic_number, doctor_id: p.doctor_id, doctor_name: p.doctor_name,
+          role: 'clinic', status: 'extra', source: 'request',
+        }));
+        await applySlotChanges({ deleteIds: [...statusRows, ...prev].map((r) => r.id), inserts: reserveBack });
+        const { applyReturn } = await import('./solver_shadow');
+        const ar = await applyReturn({ clinicId, weekStart, day, label: 'إلغاء-عودة', returnerId: doctorId, prevSeats });
+        await mirrorShadows({ clinicId, weekStart, day, supervisorIds: ar.touched, preRows: rows }); // ظلال المُزاحين
+        const rs = await returnShadowsWithSupervisor({ clinicId, weekStart, day, supervisorId: doctorId }); // ظلُّ العائد
+        return {
+          success: true, restored: true, surgicalReturn: true, canceledStatus: statusRow.status,
+          returnedShadows: rs.length ? rs : undefined,
+        };
+      }
+      // ── المسار الحرفيّ المُثبَت (#١ والمُغطّي الخالص): التغطيةُ تلقائيّة، فعودةُ الطبيب تعكسها:
+      // مقعدُه الفارغ يُستعاد، ومقعدُه الذي شغله **مُغطٍّ خالص** (لا خانةَ أخرى له) — مسحوبٌ من
+      // الاحتياط للتغطية — يسترّده الطبيبُ ويعود المُغطّي احتياطًا (مطابقةٌ حرفيّةٌ بلا اشتقاق). ──
       const reservedBack = new Set<string>();
       for (const p of prev) {
         // حفظُ فترة 0 = كان احتياطيًّا → أعِد صفّ الاحتياط (extra)، لا خانةَ عيادةٍ نشطة.
