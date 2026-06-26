@@ -258,59 +258,6 @@ export async function broadcast(args: {
   }
 }
 
-/**
- * إبلاغ طبيبٍ تغيّر مقعدُه (تعويضُ غيابٍ أو تبديلُ استئذان) — للعلم، يصل صفحة الذكاء
- * (الجرس) بتفاصيل صريحة: العيادة والفترة واليوم. لكلّ طبيبٍ إشعارٌ واحدٌ ليومه (نحذف
- * السابق غير المقروء لنفس اليوم فلا يتكرّر). لا يُرسَل للغائب نفسه (هو يعلم).
- */
-export async function notifyDoctorSeatChange(args: {
-  clinicId: string;
-  recipientId: string;
-  weekStart: string;
-  day: WeekDay;
-  seats: { clinicNumber: number; period: number; solo?: boolean; delegator?: boolean }[];
-  reason?: 'coverage' | 'swap';
-  senderId?: string;
-  senderName?: string;
-}): Promise<NotifResult> {
-  try {
-    if (!args.seats.length) return ok();
-    // أزِل إشعار تغيّرٍ سابقًا غير مقروءٍ لنفس (المتلقّي، الأسبوع، اليوم) — تحديثٌ لا تكرار.
-    const { data: prev } = await supabase
-      .from('notifications')
-      .select('id, data, is_read')
-      .eq('clinic_id', args.clinicId)
-      .eq('recipient_id', args.recipientId)
-      .eq('type', NotifType.REQUEST_RESULT);
-    for (const r of (prev || []) as { id: string; data: any; is_read: boolean }[]) {
-      if (!r.is_read && r.data?.seat_change && r.data?.week_start === args.weekStart && r.data?.day === args.day) {
-        await supabase.from('notifications').delete().eq('id', r.id);
-      }
-    }
-    const parts = args.seats.map((s) => s.delegator
-      ? `دليقيتر الفترة ${s.period}`
-      : `عيادة ${s.clinicNumber} الفترة ${s.period}${s.solo ? ' (منفردًا)' : ''}`);
-    const lead = args.reason === 'swap' ? 'بُدّلت فترتك' : 'تغيّر جدولك';
-    const body = `${lead} يوم ${dayWithDate(args.weekStart, args.day)} — أصبحتَ في ${parts.join('، ')}.`;
-    return await sendInfo({
-      clinicId: args.clinicId, recipientId: args.recipientId,
-      senderId: args.senderId, senderName: args.senderName,
-      type: NotifType.REQUEST_RESULT, title: 'تغيّر جدولك',
-      body,
-      data: {
-        week_start: args.weekStart, day: args.day,
-        seat_change: {
-          reason: args.reason ?? 'coverage',
-          seats: args.seats.map((s) => ({ clinic_number: s.clinicNumber, period: s.period, solo: !!s.solo })),
-        },
-        batch_at: Date.now(),
-      },
-    });
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // كرت «طرأ تغييرٌ على جدولك» — للطبيب المتأثّر بأيّ تغييرٍ على الجدول
 // ═══════════════════════════════════════════════════════════════
@@ -1192,8 +1139,6 @@ export const notifications = {
   alertLeaderPlacement, resolvePlacementV2,
   // كرت سؤال القائد عن استدعاء احتياطيّ خاصّ (بورد/متدرّب)
   notifyLeaderReserveChoice, resolveReserveChoiceV2,
-  // إبلاغ طبيبٍ تغيّر مقعدُه (تعويض/تبديل)
-  notifyDoctorSeatChange,
   // كرت «طرأ تغييرٌ على جدولك» (طبقة الفرق — أيّ تغيير)
   notifySeatChangeCard,
 };
