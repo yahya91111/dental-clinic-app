@@ -44,7 +44,6 @@ export const NotifType = {
   GAP_ALERT: 'gap_alert',               // action: تنبيه الليدر بنقصٍ يحتاج تصرّفًا
   REQUEST_RESULT: 'request_result',     // info: ردّ للطالب (تمّت الموافقة/الرفض)
   TRAINEE_ATTACHED: 'trainee_attached', // info: للمدرّب — أُلحق به متدرّب لهذا اليوم
-  COVERAGE_FILL: 'coverage_fill',       // action: ترتيب تعويض نقصٍ جاهز — للقائد [نفّذ]
 } as const;
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -236,78 +235,6 @@ export async function notifyLeaderOfRequest(args: {
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
-}
-
-/** ترتيب تعويض نقصٍ جاهز — كرت [نفّذ] للقائد. الفرق محسوبٌ في الكود (لا يُكشَف
- *  «إعادة توزيع الشفت» — سرّيّة الآليّة). يُحذف القائم المعلّق لنفس (القائد/اليوم/
- *  الشفت) ويُنشأ محدَّثًا، فلا تكرار. */
-export async function notifyCoverageFill(args: {
-  clinicId: string;
-  leaderId: string;
-  weekStart: string;
-  day: WeekDay;
-  shift: 'morning' | 'evening';
-  absentNames: string[];
-  diff: { seat: string; from: string; to: string }[];
-  slots: Record<string, unknown>[];
-}): Promise<NotifResult> {
-  try {
-    // أزِل القائم المعلّق لنفس الموقف (إنعاشٌ لا تكرار)
-    const { data: existing } = await supabase
-      .from('notifications')
-      .select('id, data')
-      .eq('clinic_id', args.clinicId)
-      .eq('recipient_id', args.leaderId)
-      .eq('type', NotifType.COVERAGE_FILL)
-      .eq('action_status', 'pending');
-    for (const r of (existing || []) as { id: string; data: any }[]) {
-      if (r.data?.day === args.day && r.data?.shift === args.shift
-        && (r.data?.week_start ?? '') === args.weekStart) {
-        await supabase.from('notifications').delete().eq('id', r.id);
-      }
-    }
-    const shiftAr = args.shift === 'morning' ? 'صباحًا' : 'مساءً';
-    const names = args.absentNames.length ? args.absentNames.map(dr).join(' و') : 'النقص';
-    const { error } = await createNotification({
-      clinic_id: args.clinicId,
-      recipient_id: args.leaderId,
-      type: NotifType.COVERAGE_FILL,
-      title: 'تعويض نقص',
-      body: `ترتيب تعويض نقص ${names} — ${dayWithDate(args.weekStart, args.day)} ${shiftAr}.`,
-      data: {
-        kind: 'coverage_fill', day: args.day, shift: args.shift,
-        absent_names: args.absentNames, diff: args.diff, slots: args.slots,
-        week_start: args.weekStart, batch_at: Date.now(),
-      },
-      action_type: 'execute',
-      action_status: 'pending',
-      is_read: false,
-    });
-    return error ? fail(error.message) : ok();
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-  }
-}
-
-/**
- * تعويض النقص يصل **كلّ** القادة. حين ينفّذه أحدهم (أو يُعلّمه done) فهو **عملٌ
- * مشترك**: تُحلّ كروت coverage_fill المعلّقة عند الجميع لنفس (العيادة/الأسبوع/اليوم/
- * الشفت) فتصير «تمّ» للكلّ. أمّا الـ dismiss (ignored) فلكلّ قائدٍ وحده (ليس مشتركًا).
- */
-export async function resolveCoverageFillGroup(args: {
-  clinicId: string; weekStart: string; day: WeekDay; shift: 'morning' | 'evening';
-}): Promise<void> {
-  try {
-    await supabase
-      .from('notifications')
-      .update({ action_status: 'done', is_read: true })
-      .eq('clinic_id', args.clinicId)
-      .eq('type', NotifType.COVERAGE_FILL)
-      .eq('action_status', 'pending')
-      .filter('data->>week_start', 'eq', args.weekStart)
-      .filter('data->>day', 'eq', args.day)
-      .filter('data->>shift', 'eq', args.shift);
-  } catch { /* مشاركة الحلّ تحسينٌ — لا تُفشِل التنفيذ المنفَّذ */ }
 }
 
 /** إبلاغ جمهورٍ (شفت/مركز) بحدثٍ — للعلم فقط (بعد سؤال «أبلغ المعنيّين؟») */
@@ -759,11 +686,6 @@ export async function acceptSwap(args: {
         excludeIds: [d.requester_id, d.target_id],
       });
     }
-    // زال تعارض استئذانٍ بهذا التبديل؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق تلقائيًّا
-    await resolvePermissionAlertV2({
-      clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
-      doctorIds: [d.requester_id, d.target_id],
-    });
     // طلبات تبديلٍ معلّقة مسّها هذا التبديل (متقاطعة أو متوازية) → تُبطَل ويُبلَّغ أصحابها
     await invalidateSwapsTouching({
       weekStart: d.week_start, day: d.day,
@@ -1103,62 +1025,6 @@ export async function resolveReserveChoiceV2(args: {
 }
 
 /**
- * v2 — يُغلق كروت «استئذان يحتاج ترتيبًا» القديمة (إن بقي منها شيءٌ من قبل التحويل إلى
- * الحلّ التلقائيّ) عند **كلّ** القادة متى زال التعارض فعلًا.
- * يُعاد حساب التعارض من الجدول الحيّ (لا ثقة بالحدث المستدعي): الطبيب ما زال
- * مستأذنًا ويستلم خانةً في فترةٍ محجوبة → الكرت يبقى؛ غير ذلك → يُغلَق (تمّ).
- * يُستدعى بعد كلّ تبديلٍ ناجح وبعد إلغاء الحالة. فشله لا يُفشل العمليّة.
- */
-export async function resolvePermissionAlertV2(args: {
-  clinicId: string;
-  weekStart: string;
-  day: WeekDay;
-  doctorIds: string[];
-}): Promise<void> {
-  try {
-    const { data: slots } = await supabase
-      .from('schedule_slots')
-      .select('doctor_id, period, role, status')
-      .eq('clinic_id', args.clinicId)
-      .eq('week_start', args.weekStart)
-      .eq('day_of_week', args.day);
-    const all = (slots || []) as { doctor_id: string; period: number; role: string; status: string }[];
-    const stillConflicted = (docId: string): boolean => {
-      const perm = all.find(
-        (r) => r.doctor_id === docId && r.period === 0
-          && (r.status === 'permission_start' || r.status === 'permission_end'),
-      );
-      if (!perm) return false; // لا استئذان أصلًا → لا تعارض
-      const blocked = perm.status === 'permission_start' ? [1, 3] : [2, 4];
-      return all.some(
-        (r) => r.doctor_id === docId && r.status === 'active' && r.period > 0
-          && (r.role === 'clinic' || r.role === 'delegator') && blocked.includes(r.period),
-      );
-    };
-    const resolved = args.doctorIds.filter((id) => !stillConflicted(id));
-    if (resolved.length === 0) return;
-
-    const { data } = await supabase
-      .from('notifications')
-      .select('id, data, action_status')
-      .eq('clinic_id', args.clinicId)
-      .eq('type', NotifType.GAP_ALERT);
-    for (const r of (data || []) as { id: string; data: any; action_status: string | null }[]) {
-      const d = r.data || {};
-      const pending = !r.action_status || r.action_status === 'pending';
-      if (!pending || d.v !== 2 || !d.perm_conflict) continue;
-      if (d.week_start !== args.weekStart) continue;
-      if (d.perm_conflict.day !== args.day) continue;
-      if (!resolved.includes(d.perm_conflict.doctor_id)) continue;
-      await supabase
-        .from('notifications')
-        .update({ action_status: 'accepted', is_read: true })
-        .eq('id', r.id);
-    }
-  } catch { /* إغلاق الكروت تحسينٌ — لا يُفشل العمليّة المنفَّذة */ }
-}
-
-/**
  * v2 — بعد **تنفيذ** التغطية فعليًّا (cover_gap / apply_coverage_option) يُحدِّث كروت
  * النقص عند **كلّ القادة** (قائدٌ واحد يحلّ، والبقيّة تُغلَق كروتهم تلقائيًّا):
  * يَشطب النقصَ المُغطّى من يومه في data.days[]؛ فإن لم يبقَ نقصٌ في أيّ يوم
@@ -1242,8 +1108,6 @@ export async function resolveCoverageV2(args: {
 export const notifications = {
   // إعلاميّ
   notifyLeaderOfRequest, broadcast, resolveAudience,
-  // تغطية
-  resolveCoverageFillGroup,
   // طلب تبديل (مجموعة كروت — أوّل موافقٍ يفوز)
   openSwapGroup, acceptSwap, rejectSwap, pruneExpiredSwaps,
   swapGroupsStatus, cancelSwapGroup, notifyLeadersCrossShiftSwap,
@@ -1251,11 +1115,8 @@ export const notifications = {
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
   resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
-  resolvePermissionAlertV2,
   // كرت سؤال القائد عن استدعاء احتياطيّ خاصّ (بورد/متدرّب)
   notifyLeaderReserveChoice, resolveReserveChoiceV2,
   // إبلاغ طبيبٍ تغيّر مقعدُه (تعويض/تبديل)
   notifyDoctorSeatChange,
-  // تعويض النقص (إعادة ترتيب الشفت) — كرت [نفّذ] للقائد
-  notifyCoverageFill,
 };

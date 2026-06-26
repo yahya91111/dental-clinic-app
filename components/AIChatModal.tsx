@@ -80,8 +80,6 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
     // gap_alert: تغطية v2 — تبقى كهرمانيّةً ما دامت معلّقةً (لم تُحَلّ)، حتى بعد قراءتها.
     // تطفأ فقط بـ done/dismiss. القديمة بلا v2 تُستثنى.
     if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n);
-    // coverage_fill: كرت تعويض النقص — كهرمانيّ ما دام معلّقًا (لم يُنفَّذ/يُلغَ).
-    if (n.type === 'coverage_fill') return !n.action_status || n.action_status === 'pending';
     // بقيّة عناصر المحادثة: كرتٌ معلّق (لم يُحَلّ) أو رسالةٌ غير مقروءة.
     return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
@@ -138,34 +136,6 @@ function coverageDays(d: Record<string, any>): SeedDay[] {
 
 function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
   const d = n.data || {};
-  // كرت «استئذان يحتاج ترتيبًا»: طبيبٌ استأذن وهو يستلم خانةً في فترةٍ يحجبها
-  // استئذانه — الذكاء يعرض الحال على القائد وينفّذ ما يأمر به (تبديل/نقل).
-  // يُغلَق الكرت تلقائيًّا متى زال التعارض.
-  if (d.perm_conflict) {
-    const p = d.perm_conflict as { day?: string; doctor_id?: string; doctor_name?: string; status_ar?: string };
-    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
-    const self = !!selfId && p.doctor_id === selfId;
-    return [
-      'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): طبيبٌ سجّل استئذانًا وهو يستلم خانةً في',
-      'الفترة التي يحجبها استئذانه — اسمه باقٍ في الجدول لكن يلزم تبديل فترة عمله',
-      '(أو نقله) كي لا تبقى عيادته معلّقةً وقت الاستئذان. ابدأ أنت الحديث مع القائد',
-      self
-        ? 'كأنّك لاحظتَ ذلك بنفسك — وهو نفسه صاحب الاستئذان فخاطبه مباشرةً: أخبره'
-        : `كأنّك لاحظتَ ذلك بنفسك: أخبره أنّ ${dr(p.doctor_name)} (${p.status_ar || 'استئذان'})`,
-      self
-        ? `أنّ استئذانه (${p.status_ar || 'استئذان'}) يوم ${dayAr} يتعارض مع استلامه، واسأله`
-        : `يوم ${dayAr} يستلم وقتَ استئذانه، واسأله **سطرًا واحدًا** كيف يرتّبه —`,
-      self
-        ? '**سطرًا واحدًا** كيف يرتّب فترته — **بلا اقتراحات ولا خيارات**.'
-        : '**بلا اقتراحات ولا خيارات**.',
-      'ثمّ نفّذ ما يطلبه كما هو بأدواتك المتاحة (تبديل/نقل بهذا اليوم',
-      'والأسبوع أدناه). أكّد بسطرٍ بعد التنفيذ.',
-      '',
-      `الأسبوع: ${d.week_start || ''}`,
-      `اليوم: ${p.day || ''} (${dayAr})`,
-      `الطبيب المستأذن: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
-    ].join('\n');
-  }
   // كرت «عودة تحتاج مكانًا»: أُلغيت حالةٌ ومكان صاحبها مُغطًّى — الذكاء يسأل القائد
   // أين يوضَع العائد (بلا اقتراحات) وينفّذ أمره كما هو. العائد قد يكون القائد نفسه
   // (ألغى حالته بنفسه) — حينها يُخاطَب مباشرةً: «أين تريد أن تعود؟».
@@ -245,18 +215,12 @@ function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
       `المتاح لتغطيته: ${candsAr}`,
     ].join('\n');
   }
-  // التغطية انتقلت إلى بناء الجدول (كرت coverage_fill) — هذا الكرت لم يعد يُنشأ للنقص.
   return '';
 }
 
 /** عنوان الكرت الثابت: الطبيب الغائب + أيّام النقص (بلا حلول وبلا فترات). */
 function coverageTitle(n: ConvoNotif): string {
   const d = n.data || {};
-  if (d.perm_conflict) {
-    const p = d.perm_conflict as { day?: string; doctor_name?: string };
-    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
-    return `استئذان يحتاج ترتيبًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
-  }
   if (d.placement) {
     const p = d.placement as { day?: string; doctor_name?: string };
     const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
@@ -469,282 +433,6 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   );
 }
 
-// ───────────── كرت تعويض النقص: مسوّدة شفتٍ مصغّرة، يُعاينها القائد ويبدّل بالنقر ─────────────
-type FillSlot = { clinicNumber: number; period: number; role: string; doctorId: string; doctorName: string };
-
-/** يبدّل طبيبين بكامل خاناتهما في الشفت (الفترتان معًا — لا يكسر التزاوج) */
-// يبدّل **مجموعتين** لا فردين: المتدرّب الظلّ يشغل نفس مقاعد مدرّبه تمامًا، فيُحسَب
-// معه (كلّ مَن يشغل نفس مقاعد المختار = مجموعته)، وينتقل معه عند التبديل لا وحده.
-function swapFillDocs(slots: FillSlot[], idA: string, idB: string): FillSlot[] {
-  if (idA === idB) return slots;
-  const key = (c: number, p: number) => `${c}|${p}`;
-  const seatsOf = (id: string) => {
-    const m = new Map<string, { c: number; p: number; role: string }>();
-    for (const s of slots) if (s.doctorId === id) m.set(key(s.clinicNumber, s.period), { c: s.clinicNumber, p: s.period, role: s.role });
-    return [...m.values()];
-  };
-  const aSeats = seatsOf(idA);
-  const bSeats = seatsOf(idB);
-  if (aSeats.length === 0 || bSeats.length === 0) return slots;
-  const aKeys = new Set(aSeats.map((x) => key(x.c, x.p)));
-  const bKeys = new Set(bSeats.map((x) => key(x.c, x.p)));
-  // نفس المقاعد (مشرف ↔ ظلّه) → لا تبديل (تجنّب التكرار)
-  if (aKeys.size === bKeys.size && [...aKeys].every((k) => bKeys.has(k))) return slots;
-  // المجموعة = كلّ طبيبٍ يشغل **نفس** مقاعد المختار تمامًا (المشرف + ظلاله)
-  const sameSeats = (id: string, keys: Set<string>) => {
-    const ks = new Set(slots.filter((s) => s.doctorId === id).map((s) => key(s.clinicNumber, s.period)));
-    return ks.size === keys.size && [...ks].every((k) => keys.has(k));
-  };
-  const groupOf = (keys: Set<string>) =>
-    [...new Set(slots.filter((s) => keys.has(key(s.clinicNumber, s.period))).map((s) => s.doctorId))].filter((id) => sameSeats(id, keys));
-  const groupA = groupOf(aKeys);
-  const groupB = groupOf(bKeys);
-  const nameOf = (id: string) => slots.find((s) => s.doctorId === id)?.doctorName ?? '';
-  // أزِل مقاعد المجموعتين، ثمّ أعِد: مقاعد A ← أطباء B، ومقاعد B ← أطباء A (مع الحفاظ على دور كلّ مقعد)
-  const out = slots.filter((s) => !aKeys.has(key(s.clinicNumber, s.period)) && !bKeys.has(key(s.clinicNumber, s.period)));
-  const fill = (seats: { c: number; p: number; role: string }[], group: string[]) => {
-    for (const seat of seats) for (const id of group) out.push({ clinicNumber: seat.c, period: seat.p, role: seat.role, doctorId: id, doctorName: nameOf(id) });
-  };
-  fill(aSeats, groupB);
-  fill(bSeats, groupA);
-  return out;
-}
-
-function FillCell({ docs, sel, onTap }: { docs: { id: string; name: string }[]; sel: string | null; onTap: (id: string) => void }) {
-  return (
-    <View style={styles.gridCell}>
-      {docs.length > 0 ? docs.map((d, i) => (
-        <TouchableOpacity
-          key={`${d.id}-${i}`}
-          activeOpacity={0.7}
-          hitSlop={{ top: scale(4), bottom: scale(4), left: scale(2), right: scale(2) }}
-          onPress={() => onTap(d.id)}
-          style={[styles.cellDoc, sel === d.id && styles.cellActive]}
-        >
-          <Text numberOfLines={1} style={styles.cellDocTxt}>{d.name}</Text>
-        </TouchableOpacity>
-      )) : <Text style={styles.cellEmpty}>—</Text>}
-    </View>
-  );
-}
-
-// نفس الأطباء في الفترتين = منفرد (يستلم العيادة كاملةً) → حاوية واحدة
-function sameDocs(a: { id: string }[], b: { id: string }[]): boolean {
-  if (a.length === 0 || a.length !== b.length) return false;
-  const sa = new Set(a.map((d) => d.id));
-  return b.every((d) => sa.has(d.id));
-}
-
-function FillRow({ label, left, right, sel, onTap }: {
-  label: string; left: { id: string; name: string }[]; right: { id: string; name: string }[];
-  sel: string | null; onTap: (id: string) => void;
-}) {
-  const merged = sameDocs(left, right);   // منفرد → خانةٌ واحدةٌ تمتدّ على الفترتين
-  return (
-    <View style={styles.gridRow}>
-      <View style={styles.gridLabel}><Text style={styles.gridLabelTxt}>{label}</Text></View>
-      {merged ? (
-        <FillCell docs={left} sel={sel} onTap={onTap} />
-      ) : (
-        <>
-          <FillCell docs={left} sel={sel} onTap={onTap} />
-          <FillCell docs={right} sel={sel} onTap={onTap} />
-        </>
-      )}
-    </View>
-  );
-}
-
-function CoverageFillCard({ notif, clinicId, onDone, setNote }: {
-  notif: ConvoNotif; clinicId?: string; onDone: () => void | Promise<void>; setNote: (s: string) => void;
-}) {
-  const d = notif.data || {};
-  const shift: 'morning' | 'evening' = d.shift === 'evening' ? 'evening' : 'morning';
-  const [pa, pb] = shift === 'morning' ? [1, 2] : [3, 4];
-  const [slots, setSlots] = useState<FillSlot[]>(() => ((d.slots as FillSlot[]) || []).map((s) => ({ ...s })));
-  const [sel, setSel] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
-  // حالة الكرت: معلّق (أحمر) / متجاهَل (دسمس) / تمّ (أخضر — نُفّذ أو دن). يبقى خلال أسبوعه.
-  const status: 'pending' | 'ignored' | 'done' =
-    !notif.action_status || notif.action_status === 'pending' ? 'pending'
-      : notif.action_status === 'ignored' ? 'ignored' : 'done';
-  const resolved = status !== 'pending';
-
-  // درج Done/Dismiss بالسحب يمينًا — يعمل والكرت مغلق فقط (كبقيّة الكروت)
-  const SW_OPEN = scale(140);
-  const tx = useRef(new Animated.Value(0)).current;
-  const swBase = useRef(0);
-  const expandedRef = useRef(false);
-  const closeSwipe = useCallback(() => {
-    Animated.spring(tx, { toValue: 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
-    swBase.current = 0;
-  }, [tx]);
-  const horizontal = (g: { dx: number; dy: number }) => Math.abs(g.dx) > Math.abs(g.dy) * 1.2 && Math.abs(g.dx) > 8;
-  const swipePan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_e, g) => !expandedRef.current && horizontal(g),
-    onMoveShouldSetPanResponderCapture: (_e, g) => !expandedRef.current && horizontal(g),
-    onPanResponderGrant: () => { tx.stopAnimation((v: number) => { swBase.current = v; }); },
-    onPanResponderMove: (_e, g) => {
-      let x = swBase.current + g.dx;
-      if (x < 0) x = 0; else if (x > SW_OPEN) x = SW_OPEN + (x - SW_OPEN) * 0.12;
-      tx.setValue(Math.min(x, SW_OPEN));
-    },
-    onPanResponderRelease: (_e, g) => {
-      const open = (swBase.current + g.dx) > SW_OPEN * 0.45;
-      Animated.spring(tx, { toValue: open ? SW_OPEN : 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
-      swBase.current = open ? SW_OPEN : 0;
-    },
-    onPanResponderTerminationRequest: () => false,
-  })).current;
-
-  const mark = useCallback(async (s: 'ignored' | 'done') => {
-    try {
-      const { updateNotificationAction } = await import('../lib/database');
-      await updateNotificationAction(notif.id, s);
-      // done = عملٌ مشترك → «تمّ» عند كلّ القادة لنفس الموقف. dismiss = لهذا القائد وحده.
-      if (s === 'done' && clinicId) {
-        const { notifications } = await import('../lib/algorithms/notifications');
-        await notifications.resolveCoverageFillGroup({
-          clinicId, weekStart: String(d.week_start || ''), day: d.day, shift,
-        });
-      }
-      await onDone();
-    } catch { /* يُعاد بسحبٍ آخر */ }
-  }, [notif.id, onDone, clinicId, d.day, d.week_start, shift]);
-
-  const onToggle = useCallback(() => {
-    if (swBase.current > 0) { closeSwipe(); return; }   // السحب مفتوح؟ النقرة تُغلقه فقط
-    const next = !expanded;
-    expandedRef.current = next;
-    setExpanded(next);
-  }, [expanded, closeSwipe]);
-
-  const onTap = (id: string) => {
-    if (resolved) return;                        // بعد الحلّ: عرضٌ فقط
-    if (!sel) { setSel(id); return; }            // تحديد
-    if (sel === id) { setSel(null); return; }    // نفسه → إلغاء
-    setSlots((s) => swapFillDocs(s, sel, id));    // تبديل ثمّ إلغاء
-    setSel(null);
-  };
-
-  const clinics = [...new Set(slots.filter((s) => s.role === 'clinic').map((s) => s.clinicNumber))].sort((a, b) => a - b);
-  const hasDlg = slots.some((s) => s.role === 'delegator');
-  const exDocs = (() => {
-    const seen = new Set<string>(); const out: { id: string; name: string }[] = [];
-    for (const s of slots) { if (s.role !== 'ex' || seen.has(s.doctorId)) continue; seen.add(s.doctorId); out.push({ id: s.doctorId, name: s.doctorName }); }
-    return out;
-  })();
-  const pick = (role: string, period: number, clinicNum?: number) =>
-    slots.filter((s) => s.role === role && s.period === period && (clinicNum == null || s.clinicNumber === clinicNum))
-      .map((s) => ({ id: s.doctorId, name: s.doctorName }));
-
-  const apply = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      if (!clinicId) throw new Error('لا توجد عيادة مرتبطة.');
-      const payload = slots.map((s) => ({ day: d.day, period: s.period, clinicNumber: s.clinicNumber, role: s.role, doctor: { id: s.doctorId, name: s.doctorName } }));
-      const { schedule } = await import('../lib/algorithms/schedule');
-      const res = await schedule.applyShiftRedistribution({ clinicId, weekStart: String(d.week_start || ''), day: d.day, shift, slots: payload as never });
-      if (res.success) {
-        // تنفيذٌ = عملٌ مشترك → «تمّ» عند كلّ القادة لنفس الموقف (لا عند المنفِّذ وحده)
-        const { notifications } = await import('../lib/algorithms/notifications');
-        await notifications.resolveCoverageFillGroup({
-          clinicId, weekStart: String(d.week_start || ''), day: d.day, shift,
-        });
-        setNote('تمّ ترتيب التعويض.');
-        // موازنةٌ صامتة لبقيّة الأسبوع (والأسابيع المبنيّة بعده) حفاظًا على العدالة:
-        // نكتب ما تغيّر فقط، **بلا إشعار** — إشعار مرضيّة الطبيب وحده يكفي للانطباع بأنّ الجدول تغيّر.
-        try {
-          await schedule.rebalanceForward({
-            clinicId, weekStart: String(d.week_start || ''), fromDay: d.day, fromShift: shift,
-          });
-        } catch { /* الموازنة تحسينٌ — لا تُفشِل التغطية المنفَّذة */ }
-      } else setNote(`تعذّر: ${res.error || ''}`);
-      await onDone();
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-    } finally { setBusy(false); }
-  };
-
-  const kind: CardKind = status === 'done' ? 'done' : status === 'ignored' ? 'ignored' : 'coverage';
-  const pillText = status === 'done' ? 'تمّ' : status === 'ignored' ? 'أُهمل' : 'يحتاج تنفيذك';
-
-  return (
-    <View style={styles.swWrap}>
-      {/* درج Done / Dismiss — يُكشَف بالسحب يمينًا */}
-      <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        <LinearGradient colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-        <View style={styles.swActs}>
-          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('done'); }}>
-            <Ionicons name="checkmark" size={scale(21)} color="#34D399" />
-            <Text style={[styles.swTxt, { color: '#34D399' }]}>Done</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('ignored'); }}>
-            <Ionicons name="close" size={scale(21)} color="#FB7185" />
-            <Text style={[styles.swTxt, { color: '#FB7185' }]}>Dismiss</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-
-      <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
-        <GlassCard kind={kind} glow={status === 'pending'} style={status === 'ignored' && cardStyles.glassDim}>
-          <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
-            <CardBadge kind={kind} live={status === 'pending'} />
-            <View style={cardStyles.headTxt}>
-              <Text style={cardStyles.cardTitle} numberOfLines={2}>{notif.body}</Text>
-              <Pill kind={kind} text={pillText} />
-            </View>
-            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
-          </TouchableOpacity>
-
-          {expanded && (
-            <View style={cardStyles.covBody}>
-              {!resolved && (
-                <Text style={styles.fillHint}>
-                  {sel ? 'انقر طبيبًا آخر للتبديل — أو انقر نفسه للإلغاء' : 'راجِع الترتيب — للتبديل انقر طبيبًا ثمّ آخر'}
-                </Text>
-              )}
-              <View style={styles.gridWrap}>
-                <View style={styles.gridHeadRow}>
-                  <View style={styles.gridLabel} />
-                  <View style={styles.gridCellHead}><Text style={styles.gridHeadTxt}>{`P${pa}`}</Text></View>
-                  <View style={styles.gridCellHead}><Text style={styles.gridHeadTxt}>{`P${pb}`}</Text></View>
-                </View>
-                {clinics.map((cn) => (
-                  <FillRow key={`c${cn}`} label={`CL${cn}`} sel={sel} onTap={onTap} left={pick('clinic', pa, cn)} right={pick('clinic', pb, cn)} />
-                ))}
-                {hasDlg && <FillRow label="DLG" sel={sel} onTap={onTap} left={pick('delegator', pa)} right={pick('delegator', pb)} />}
-              </View>
-              {exDocs.length > 0 && (
-                <View style={styles.exWrap}>
-                  <Text style={styles.exHead}>EX</Text>
-                  <View style={styles.exRow}>
-                    {exDocs.map((dd) => (
-                      <TouchableOpacity key={dd.id} activeOpacity={0.7} onPress={() => onTap(dd.id)} style={[styles.exChip, sel === dd.id && styles.cellActive]}>
-                        <Text style={styles.exChipTxt}>{dd.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-              {!resolved && (busy ? (
-                <ActivityIndicator color="#7C3AED" style={{ marginTop: scale(12) }} />
-              ) : (
-                <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={apply}>
-                  <Text style={styles.primaryBtnTxt}>موافق</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </GlassCard>
-      </Animated.View>
-    </View>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════
 // AICardsView — لوحةُ كروت الإبلاغ المشتركة (تغطية نقص / موافقات / نتائج)
 // ═══════════════════════════════════════════════════════════════
@@ -757,8 +445,6 @@ export function AICardsView({ user, clinicId }: {
 }) {
   const [convo, setConvo] = useState<ConvoNotif[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
-  const [swapResults, setSwapResults] = useState<Record<string, { text: string; ok: boolean }>>({});
   const [note, setNote] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
@@ -769,45 +455,12 @@ export function AICardsView({ user, clinicId }: {
     const items = ((data || []) as ConvoNotif[])
       .filter((n) =>
         isPending(n)
-        || (n.type === 'coverage_fill' && (!n.action_status || n.action_status === 'pending'))
         || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
         || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
     setConvo(items);
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
   }, [user?.id]);
-
-  const handlePermRetry = useCallback(async (n: ConvoNotif) => {
-    const pr = n.data?.perm_retry as
-      | { day: string; side: 'same' | 'other'; blocked: number[]; target_period?: number; status_ar?: string; leader_ids?: string[] }
-      | undefined;
-    if (!pr || swapBusyId) return;
-    setSwapBusyId(n.id);
-    try {
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const mod = await import('../lib/ai_v2/tools_requests_v2');
-      const perm = { blocked: pr.blocked, targetPeriod: pr.target_period, statusAr: pr.status_ar || 'استئذان', leaderIds: pr.leader_ids || [] };
-      const mode = pr.side === 'other'
-        ? { kind: 'other_shift' as const }
-        : { kind: 'period' as const, period: pr.target_period ?? 0 };
-      const res = await mod.sendSwapRequestModeByCode({
-        clinicId: cid, requester: { id: user.id, name: user.name },
-        weekStart: String(n.data?.week_start || ''), day: pr.day,
-        mode, excludePeriods: pr.blocked, perm,
-      });
-      setSwapResults((p) => ({ ...p, [n.id]: { text: res.success ? (res.info || 'تمّ.') : `تعذّر: ${res.error || ''}`, ok: res.success } }));
-      if (res.success) {
-        const { updateNotificationAction } = await import('../lib/database');
-        await updateNotificationAction(n.id, 'accepted');
-      }
-      loadConvo();
-    } catch (e) {
-      setSwapResults((p) => ({ ...p, [n.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
-    } finally {
-      setSwapBusyId(null);
-    }
-  }, [swapBusyId, clinicId, user, loadConvo]);
 
   async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
     if (!user?.id) return;
@@ -842,42 +495,10 @@ export function AICardsView({ user, clinicId }: {
       {convo.map((n) => {
         if (n.type === 'gap_alert') {
           if (n.data?.v !== 2) return null;
-          if (n.data?.perm_retry) {
-            const pr = n.data.perm_retry as { side: 'same' | 'other' };
-            const label = pr.side === 'other' ? 'اطلب من الشفت الآخر' : 'اطلب من فترتك';
-            return (
-              <GlassCard key={n.id} kind="swap" glow style={styles.feedCard}>
-                <View style={cardStyles.head}>
-                  <CardBadge kind="swap" live />
-                  <View style={cardStyles.headTxt}>
-                    <Text style={cardStyles.cardTitle}>تنبيه استئذان</Text>
-                    <Text style={styles.cardBody}>{n.body}</Text>
-                  </View>
-                </View>
-                {swapResults[n.id]?.ok ? (
-                  <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
-                ) : swapBusyId === n.id ? (
-                  <ActivityIndicator color="#7C3AED" style={{ marginTop: scale(10) }} />
-                ) : (
-                  <>
-                    {!!swapResults[n.id] && !swapResults[n.id].ok && (
-                      <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
-                    )}
-                    <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={() => handlePermRetry(n)}>
-                      <Text style={styles.primaryBtnTxt}>{label}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </GlassCard>
-            );
-          }
-          if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict && !n.data?.reserve_choice) return null;
+          if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.reserve_choice) return null;
           return (
             <CoverageCard key={n.id} notif={n} user={user} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />
           );
-        }
-        if (n.type === 'coverage_fill') {
-          return <CoverageFillCard key={n.id} notif={n} clinicId={clinicId ?? user.clinicId ?? undefined} onDone={loadConvo} setNote={setNote} />;
         }
         if (isPending(n)) {
           const busy = busyId === n.id;
@@ -937,22 +558,14 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
   const [view, setView] = useState<'chat' | 'cards'>('chat'); // تبويبٌ مؤقّت: المحادثة / كروت الإبلاغ
   const scrollRef = useRef<ScrollView>(null);
 
-  // أزرار التبديل للقائد: [أرسل طلبًا]/[بدّل مباشرة] حين يكون طرفًا، و[أبلغهما]/[لا داعي]
-  // بعد تبديله اثنين، وأزرار اقتراحات الاستئذان المتعارض (زميل/فترة/شفت آخر) —
-  // الضغط يُنفَّذ **بالكود مباشرةً**، لا نداء للنموذج.
-  const [swapResults, setSwapResults] = useState<Record<string, { text: string; ok: boolean }>>({});
-  const [swapBusyId, setSwapBusyId] = useState<string | null>(null);
   const loadConvo = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await getNotifications(user.id, 50);
     // الطلبات المعلّقة + النتائج الجديدة (تختفي الموافقة/الرفض بعد قراءتها).
-    // وكرت التغطية المُنهى (تمّ/متجاهَل/أغلقه المحرّك) يبقى ظاهرًا بلونه خلال أسبوعه
-    // فقط — المعلّق يبقى دائمًا (أحمر، تذكير).
     const sunday = currentSunday();
     const items = ((data || []) as ConvoNotif[])
       .filter((n) =>
         isPending(n)
-        || (n.type === 'coverage_fill' && (!n.action_status || n.action_status === 'pending'))
         || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
         || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
@@ -960,39 +573,6 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر وتختفي عند الفتح التالي)
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
   }, [user?.id]);
-
-  // كرت إعادة عرض تبديل الاستئذان: الطالب يضغط الجانب الآخر → يُرسَل الطلب ويُغلَق الكرت.
-  const handlePermRetry = useCallback(async (n: ConvoNotif) => {
-    const pr = n.data?.perm_retry as
-      | { day: string; side: 'same' | 'other'; blocked: number[]; target_period?: number; status_ar?: string; leader_ids?: string[] }
-      | undefined;
-    if (!pr || swapBusyId) return;
-    setSwapBusyId(n.id);
-    try {
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const mod = await import('../lib/ai_v2/tools_requests_v2');
-      const perm = { blocked: pr.blocked, targetPeriod: pr.target_period, statusAr: pr.status_ar || 'استئذان', leaderIds: pr.leader_ids || [] };
-      const mode = pr.side === 'other'
-        ? { kind: 'other_shift' as const }
-        : { kind: 'period' as const, period: pr.target_period ?? 0 };
-      const res = await mod.sendSwapRequestModeByCode({
-        clinicId: cid, requester: { id: user.id, name: user.name },
-        weekStart: String(n.data?.week_start || ''), day: pr.day,
-        mode, excludePeriods: pr.blocked, perm,
-      });
-      setSwapResults((p) => ({ ...p, [n.id]: { text: res.success ? (res.info || 'تمّ.') : `تعذّر: ${res.error || ''}`, ok: res.success } }));
-      if (res.success) {
-        const { updateNotificationAction } = await import('../lib/database');
-        await updateNotificationAction(n.id, 'accepted'); // أُغلق كرت إعادة العرض بعد الإرسال
-      }
-      loadConvo();
-    } catch (e) {
-      setSwapResults((p) => ({ ...p, [n.id]: { text: e instanceof Error ? e.message : 'خطأ غير متوقّع.', ok: false } }));
-    } finally {
-      setSwapBusyId(null);
-    }
-  }, [swapBusyId, clinicId, user, loadConvo]);
 
   // كروت الإبلاغ (تغطية/موافقات/نتائج) انتقلت إلى لوحةٍ مشتركة (AICardsView) تُعرَض
   // في تبويب «الكروت» — فلا تُحمَّل ولا تُدمَج هنا (المحادثة صارت رسائلَ فقط).
@@ -1148,33 +728,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                 // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
                 if (n.type === 'gap_alert') {
                   if (n.data?.v !== 2) return null;
-                  // كرت إعادة عرض تبديل الاستئذان للطالب — زرّ الجانب الآخر (تنفيذ بالكود).
-                  if (n.data?.perm_retry) {
-                    const pr = n.data.perm_retry as { side: 'same' | 'other' };
-                    const label = pr.side === 'other' ? 'اطلب من الشفت الآخر' : 'اطلب من فترتك';
-                    return (
-                      <View key={n.id} style={[styles.msg, styles.msgAI]}>
-                        <Text style={styles.msgTxt}>{n.body}</Text>
-                        {swapResults[n.id]?.ok ? (
-                          <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
-                        ) : swapBusyId === n.id ? (
-                          <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />
-                        ) : (
-                          <>
-                            {!!swapResults[n.id] && !swapResults[n.id].ok && (
-                              <Text style={styles.annNote}>{swapResults[n.id].text}</Text>
-                            )}
-                            <View style={styles.chipRow}>
-                              <TouchableOpacity style={styles.chip} onPress={() => handlePermRetry(n)}>
-                                <Text style={styles.chipTxt}>{label}</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </>
-                        )}
-                      </View>
-                    );
-                  }
-                  if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.perm_conflict && !n.data?.reserve_choice) return null;
+                  if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.reserve_choice) return null;
                   return (
                     <CoverageCard
                       key={n.id}

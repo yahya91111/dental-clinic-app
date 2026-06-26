@@ -127,47 +127,6 @@ export async function resolvePermissionByCode(params: {
 }
 
 /**
- * إرسال طلب تبديلٍ لمجموعةٍ **بالكود مباشرةً** (أزرار اقتراحات الاستئذان):
- * كلّ الفترة المكمّلة أو كلّ الشفت الآخر، مع استبعاد من يستلم فترةً محجوبةً
- * (التبديل معه لا يحلّ التعارض). يُرجِع سطرًا جاهزًا للعرض.
- */
-export async function sendSwapRequestModeByCode(params: {
-  clinicId: string;
-  requester: { id: string; name: string };
-  weekStart: string;
-  day: string;
-  mode: { kind: 'period'; period: number } | { kind: 'other_shift' };
-  excludePeriods?: number[];
-  perm?: PermSwapArg;
-}): Promise<{ success: boolean; info?: string; error?: string }> {
-  const { requestsV2 } = await import('../algorithms/requests_v2');
-  const { notifications } = await import('../algorithms/notifications');
-  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
-  const listed = await requestsV2.listSwapTargets({
-    clinicId: params.clinicId, weekStart: params.weekStart, day,
-    requesterId: params.requester.id, mode: params.mode,
-    excludePeriods: params.excludePeriods,
-  });
-  if (!listed.success || !listed.targets) return { success: false, error: listed.error };
-  const opened = await notifications.openSwapGroup({
-    clinicId: params.clinicId, weekStart: params.weekStart, day,
-    requesterId: params.requester.id, requesterName: params.requester.name,
-    targets: listed.targets,
-    ...(params.perm
-      ? { perm: { ...params.perm, side: params.mode.kind === 'other_shift' ? 'other' as const : 'same' as const } }
-      : {}),
-  });
-  if (!opened.success) return { success: false, error: opened.error };
-  const n = listed.targets.length;
-  return {
-    success: true,
-    info: n === 1
-      ? `أُرسل طلب التبديل إلى ${listed.targets[0]!.name} ليوم ${DAY_AR[day]} — يتمّ فور موافقته وتصلك النتيجة.`
-      : `أُرسل طلب التبديل إلى ${n} من الزملاء ليوم ${DAY_AR[day]} — أوّل موافقٍ يتمّ معه التبديل وتصلك النتيجة.`,
-  };
-}
-
-/**
  * تنفيذ تبديلٍ مباشرٍ **بالكود** (زرّ [بدّل مباشرة] للقائد الطرف): تبادل مراكز
  * كامل، مع علم القادة تلقائيًّا إن كان بين شفتين.
  */
@@ -196,11 +155,6 @@ export async function directSwapByCode(params: {
         excludeIds: [params.actor.id, params.targetId],
       });
     }
-    // زال تعارض استئذانٍ بهذا التبديل؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق
-    await notifications.resolvePermissionAlertV2({
-      clinicId: params.clinicId, weekStart: params.weekStart, day,
-      doctorIds: [params.actor.id, params.targetId],
-    });
     // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
     await notifications.invalidateSwapsTouching({
       weekStart: params.weekStart, day,
@@ -740,12 +694,6 @@ export async function dispatchRequestToolV2(
         if (ABSENCE.includes(status)) {
           try {
             const { notifications } = await import('../algorithms/notifications');
-            // زال تعارضُ استئذانٍ سابقٍ بهذا التسجيل/التحويل (استئذان→مرضية، أو
-            // بداية→نهاية بلا تعارض)؟ الفاحص يعيد الحساب من الجدول الحيّ ويغلق
-            // كروت «استئذان يحتاج ترتيبًا» التي زال سببها فقط — فلا كرت أحمر بائت.
-            await notifications.resolvePermissionAlertV2({
-              clinicId: ctx.clinicId, weekStart: wsEff, day: r.day, doctorIds: [doc.id],
-            });
             // استئذانٌ ناجح = الطبيب داخل عيادته (التحويل من مرضية ونحوها يُعيده إلى
             // مكانه أوّلًا أو يفشل) → يومُ غيابه السابق لم يعد نقصًا. أسقِطه من كروت
             // كلّ القادة صراحةً — تحديث الكرت وحده لا يطال كرتًا خارج نافذة التجميع.
@@ -1095,11 +1043,6 @@ export async function dispatchRequestToolV2(
           await notifications.resolveCoverageV2({
             clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
             absentDoctorId: doc.id, covered: { kind: 'all' },
-          });
-          // أُلغي استئذانٌ متعارض؟ كروت «استئذان يحتاج ترتيبًا» تُغلَق تلقائيًّا
-          await notifications.resolvePermissionAlertV2({
-            clinicId: ctx.clinicId, weekStart: String(r.weekStart), day: r.day,
-            doctorIds: [doc.id],
           });
           // وعروض تبديل الفترة المعلّقة وُجدت بسبب هذا الاستئذان فقط → اكنسها معه
           // (وافق زميلٌ فعلًا؟ cancelSwapGroup يُرجِع فشلًا ولا يكنس — التبديل تمّ).
