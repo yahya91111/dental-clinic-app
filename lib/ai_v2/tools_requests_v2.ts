@@ -52,6 +52,41 @@ export async function announceAbsence(params: {
     : { success: false, error: res.error };
 }
 
+/**
+ * الإبلاغ الحرّ (تعميم/بلاغ من القائد): يرسل نصًّا حرًّا إلى جمهورٍ كاملٍ — shift (قروب
+ * القائد) أو center (كلّ المركز) — للعلم. بخلاف إبلاغ الغياب: لا موضوعَ يُستثنى، ولا
+ * يُستثنى القادةُ الآخرون (التعميم للجميع)؛ يُستثنى المُرسِل وحده (هو كاتبُه). للقائد فأعلى.
+ */
+export async function broadcastAnnouncement(params: {
+  clinicId: string;
+  sender: { id?: string; name?: string };
+  audience: 'shift' | 'center';
+  message: string;
+  title?: string;
+}): Promise<{ success: boolean; info?: string; error?: string }> {
+  const { notifications } = await import('../algorithms/notifications');
+  const message = params.message.trim();
+  if (!message) return { success: false, error: 'نصّ التعميم فارغ.' };
+  let groupId: string | null = null;
+  if (params.audience === 'shift') {
+    if (params.sender.id) groupId = await findDoctorGroupId(params.clinicId, params.sender.id);
+    if (!groupId) return { success: false, error: 'تعذّر تحديد الشفت (قروب القائد) — حدّد المركز أو الشفت بوضوح.' };
+  }
+  const recipientIds = await notifications.resolveAudience(params.clinicId, params.audience, {
+    groupId: groupId ?? undefined,
+    excludeId: params.sender.id, // المُرسِل وحده يُستثنى — التعميم يصل بقيّةَ الجمهور (قادةً وأطبّاء)
+  });
+  if (recipientIds.length === 0) return { success: true, info: 'لا يوجد من يُبلَّغ بهذا التعميم.' };
+  const res = await notifications.broadcast({
+    clinicId: params.clinicId, recipientIds,
+    senderId: params.sender.id, senderName: params.sender.name,
+    title: (params.title || 'تعميم').trim() || 'تعميم', body: message,
+  });
+  return res.success
+    ? { success: true, info: `أرسلتُ التعميم إلى ${recipientIds.length} ${params.audience === 'center' ? 'في المركز' : 'في الشفت'}.` }
+    : { success: false, error: res.error };
+}
+
 /** القائد فأعلى (نسخة محلّيّة لقرارات التوجيه في الموزّع) */
 const LEADER_PLUS_ROLES = new Set(['team_leader', 'coordinator', 'super_admin', 'manager']);
 const isLeaderPlusRole = (role: string): boolean => LEADER_PLUS_ROLES.has(role);
@@ -337,6 +372,23 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
     },
   },
   {
+    name: 'broadcast_announcement',
+    description:
+      'تعميمٌ/بلاغٌ حرٌّ من القائد إلى جمهور: shift (قروب القائد) أو center (كلّ المركز). ' +
+      'للقائد فأعلى فقط، للعلم. **لا تستدعِها إلّا بعد أن يؤكّد القائدُ النصَّ النهائيّ والجمهور** ' +
+      '— التعميم يصل الجميع ولا يُسترجَع. إن أراد صياغةً أحسن فاعرض عليه نسخةً مُعادة الصياغة ' +
+      'واسأله: أُرسِل هذه أم نصَّك كما هو؟ ثمّ أرسِل ما يختاره. `message` هو النصّ النهائيّ الذي يُرسَل.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        audience: { type: 'string', enum: ['shift', 'center'], description: 'الشفت (قروب القائد) أو المركز (الجميع).' },
+        message: { type: 'string', description: 'نصّ التعميم النهائيّ بالعربيّة (كما أقرّه القائد).' },
+        title: { type: 'string', description: 'عنوان قصير اختياريّ (افتراضيًّا «تعميم»).' },
+      },
+      required: ['audience', 'message'],
+    },
+  },
+  {
     name: 'cancel_schedule_status',
     description:
       'يلغي حالة طبيبٍ ليومٍ (يُزيل المرضية/التفرّغ/الاستئذان/الاحتياط) ويُعيده إلى ' +
@@ -603,7 +655,7 @@ const SHARED_TOOL_NAMES = new Set([
 const LEADER_EXTRA_TOOL_NAMES = new Set([
   'leader_apply', 'clear_week', 'set_clinic_count', 'move_doctor_group', 'set_group_status',
   'cover_gap_with_reserve', 'add_doctor_to_schedule', 'replace_doctor_in_schedule',
-  'remove_doctor_from_schedule', 'promote_trainee_independent',
+  'remove_doctor_from_schedule', 'promote_trainee_independent', 'broadcast_announcement',
 ]);
 export function requestsToolsForRole(role: string): V2Tool[] {
   const allowed = isLeaderPlusRole(role)
@@ -1264,6 +1316,18 @@ export async function dispatchRequestToolV2(
             : undefined,
         });
         return res.success ? final(res.info || 'تمّ الإبلاغ.') : `Tool error: ${res.error}`;
+      }
+
+      case 'broadcast_announcement': {
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: التعميم للقائد فأعلى فقط.';
+        const res = await broadcastAnnouncement({
+          clinicId: ctx.clinicId,
+          sender: senderOf(ctx),
+          audience: r.audience === 'center' ? 'center' : 'shift',
+          message: String(r.message || ''),
+          title: r.title != null ? String(r.title) : undefined,
+        });
+        return res.success ? final(res.info || 'تمّ إرسال التعميم.') : `Tool error: ${res.error}`;
       }
 
       case 'clear_week': {
