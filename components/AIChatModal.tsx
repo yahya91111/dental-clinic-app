@@ -436,7 +436,7 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   );
 }
 
-// ───── كرت «طرأ تغييرٌ على جدولك» — توقّل: نقرةٌ تفتح/تطوي، وزرٌّ يمينًا يفتح المعاينة ─────
+// ───── كرت «طرأ تغييرٌ على جدولك» — توقّل + سحبٌ يمينًا يكشف زرّ «حذف» واحدًا ─────
 function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState(false);
@@ -444,40 +444,99 @@ function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => vo
   const changes: SeatChangeUI[] = Array.isArray(d.changes) ? d.changes : [];
   const live = !notif.is_read;
   const kind: CardKind = live ? 'coverage' : 'done';
+
+  // سحب الكرت يمينًا يكشف زرّ «حذف» واحدًا — يعمل والكرت مغلق فقط (لا أثناء فتحه)
+  const SW_OPEN = scale(78);
+  const tx = useRef(new Animated.Value(0)).current;
+  const swBase = useRef(0);
+  const expandedRef = useRef(false);
+  const closeSwipe = useCallback(() => {
+    Animated.spring(tx, { toValue: 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+    swBase.current = 0;
+  }, [tx]);
+  const horizontal = (g: { dx: number; dy: number }) => Math.abs(g.dx) > Math.abs(g.dy) * 1.2 && Math.abs(g.dx) > 8;
+  const swipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => !expandedRef.current && horizontal(g),
+    onMoveShouldSetPanResponderCapture: (_e, g) => !expandedRef.current && horizontal(g),
+    onPanResponderGrant: () => { tx.stopAnimation((v: number) => { swBase.current = v; }); },
+    onPanResponderMove: (_e, g) => {
+      let x = swBase.current + g.dx;
+      if (x < 0) x = 0; else if (x > SW_OPEN) x = SW_OPEN + (x - SW_OPEN) * 0.12;
+      tx.setValue(Math.min(x, SW_OPEN));
+    },
+    onPanResponderRelease: (_e, g) => {
+      const o = (swBase.current + g.dx) > SW_OPEN * 0.45;
+      Animated.spring(tx, { toValue: o ? SW_OPEN : 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+      swBase.current = o ? SW_OPEN : 0;
+    },
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
+  const onDelete = useCallback(async () => {
+    closeSwipe();
+    try {
+      const { deleteNotification } = await import('../lib/database');
+      await deleteNotification(notif.id);
+      onSeen();
+    } catch { /* يُعاد المحاولة بسحبٍ آخر */ }
+  }, [notif.id, onSeen, closeSwipe]);
+
   const onToggle = useCallback(async () => {
-    const next = !expanded; setExpanded(next);
+    if (swBase.current > 0) { closeSwipe(); return; }   // السحب مفتوح؟ النقرة تُغلقه فقط
+    const next = !expanded;
+    expandedRef.current = next;
+    setExpanded(next);
     if (next && !notif.is_read) { try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأورب لاحقًا */ } }
-  }, [expanded, notif.id, notif.is_read, onSeen]);
+  }, [expanded, notif.id, notif.is_read, onSeen, closeSwipe]);
+
   return (
-    <View style={styles.feedCard}>
-      <GlassCard kind={kind} glow={live}>
-        <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
-          <CardBadge kind={kind} live={live} />
-          <View style={cardStyles.headTxt}>
-            <Text style={cardStyles.cardTitle} numberOfLines={2}>طرأ تغييرٌ على جدولك</Text>
-            <Pill kind={kind} text={live ? 'جديد' : 'تمّ الاطّلاع'} />
-          </View>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
-        </TouchableOpacity>
-        {expanded && (
-          <View style={cardStyles.covBody}>
-            <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right' }}>{notif.body}</Text>
-            <TouchableOpacity
-              onPress={() => setOpen(true)}
-              activeOpacity={0.85}
-              style={{
-                flexDirection: 'row-reverse', alignItems: 'center', alignSelf: 'flex-end',
-                gap: scale(6), marginTop: scale(10), paddingVertical: scale(7), paddingHorizontal: scale(12),
-                borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)',
-                borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.16)',
-              }}
-            >
-              <Ionicons name="grid-outline" size={scale(14)} color="#EDE8FF" />
-              <Text style={{ fontSize: scale(12.5), color: '#F4F1FF', fontWeight: '700' }}>عرض على الجدول</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </GlassCard>
+    <View style={styles.swWrap}>
+      {/* درج «حذف» — يُكشَف بالسحب يمينًا (أحمر، خلف الكرت بنفس استدارته) */}
+      <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
+        <LinearGradient
+          colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']}
+          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN }}>
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
+            <Ionicons name="trash" size={scale(21)} color="#FECDD3" />
+            <Text style={[styles.swTxt, { color: '#FECDD3' }]}>حذف</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
+        <GlassCard kind={kind} glow={live}>
+          <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
+            <CardBadge kind={kind} live={live} />
+            <View style={cardStyles.headTxt}>
+              <Text style={cardStyles.cardTitle} numberOfLines={2}>طرأ تغييرٌ على جدولك</Text>
+              <Pill kind={kind} text={live ? 'جديد' : 'تمّ الاطّلاع'} />
+            </View>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+          </TouchableOpacity>
+          {expanded && (
+            <View style={cardStyles.covBody}>
+              <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right' }}>{notif.body}</Text>
+              <TouchableOpacity
+                onPress={() => setOpen(true)}
+                activeOpacity={0.85}
+                style={{
+                  flexDirection: 'row-reverse', alignItems: 'center', alignSelf: 'flex-end',
+                  gap: scale(6), marginTop: scale(10), paddingVertical: scale(7), paddingHorizontal: scale(12),
+                  borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)',
+                  borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.16)',
+                }}
+              >
+                <Ionicons name="grid-outline" size={scale(14)} color="#EDE8FF" />
+                <Text style={{ fontSize: scale(12.5), color: '#F4F1FF', fontWeight: '700' }}>عرض على الجدول</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </GlassCard>
+      </Animated.View>
+
       <SeatChangeOverlay
         visible={open}
         onClose={() => setOpen(false)}
