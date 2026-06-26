@@ -908,9 +908,8 @@ export function AISchedulePanel({ visible, onClose, onAction, messages, onSend, 
     if (!user?.id) return;
     const refresh = () => { countUnreadAIChat(user.id).then(setUnread).catch(() => {}); };
     refresh();
-    const unsub = subscribeToNotifications(user.id, refresh);
-    const t = setInterval(refresh, 30000);
-    return () => { clearInterval(t); unsub(); };
+    const unsub = subscribeToNotifications(user.id, refresh); // فوريّ + مزامنةٌ عند إعادة الاتّصال
+    return unsub;
     // يُحدَّث أيضًا عند فتح اللوحة وبعد كلّ رسالة (لا عند دخول/خروج المحادثة فقط)
   }, [user?.id, chatTab, chatOpen, visible, messages.length]);
   // مسارٌ أفقيٌّ متزامنٌ مع السحب: 0 = المحادثة، ‎-W‎ = الكروت

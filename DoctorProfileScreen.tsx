@@ -142,13 +142,11 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       setUnreadNotifications(count);
     };
     fetchUnread();
-    // وصول فوريّ (Realtime): يحدّث العدّاد لحظة إنشاء أيّ إشعار للمستخدم
+    // وصول فوريّ (Realtime): يحدّث العدّاد لحظة إنشاء أيّ إشعار للمستخدم،
+    // والمزامنةُ-عند-الاتّصال تغطّي إعادةَ الاتّصال (لا فحص دوريّ يُثقل الشبكة).
     const unsub = subscribeToNotifications(user.id, fetchUnread);
-    // فحص دوريّ احتياطيّ (في حال انقطاع/إعادة اتّصال)
-    const interval = setInterval(fetchUnread, 30000);
 
     return () => {
-      clearInterval(interval);
       unsub();
       notifSub.remove();
       responseSub.remove();

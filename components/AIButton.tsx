@@ -43,12 +43,11 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
     setPendingCount(await countUnreadAIChat(user.id));
   }, [user?.id]);
 
-  // وصول فوريّ (Realtime) + فحص دوريّ احتياطيّ (شبكة متقطّعة/إعادة اتّصال)
+  // وصول فوريّ (Realtime) — والمزامنةُ-عند-الاتّصال تغطّي إعادةَ الاتّصال (لا فحص دوريّ)
   useEffect(() => {
     refreshPending();
     const unsub = user?.id ? subscribeToNotifications(user.id, refreshPending) : () => {};
-    const t = setInterval(refreshPending, 30000);
-    return () => { clearInterval(t); unsub(); };
+    return unsub;
   }, [refreshPending, user?.id]);
 
   // عند إغلاق المحادثة، حدّث العدّاد (قد بُتّ في طلبات)

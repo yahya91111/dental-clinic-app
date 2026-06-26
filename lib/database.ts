@@ -1674,6 +1674,11 @@ export async function deletePromptTemplate(id: string): Promise<DatabaseResponse
  * إدراج/تحديث أيّ إشعار له — فيصل الإشعار لحظيًّا والتطبيق مفتوح (يعمل في
  * Expo Go أيضًا). يُرجِع دالّة لإلغاء الاشتراك. يتطلّب تفعيل Realtime على
  * جدول notifications في لوحة Supabase.
+ *
+ * إضافةً للوصول اللحظيّ: يستدعي onChange مرّةً عند كلّ **اشتراكٍ ناجح** (status
+ * = SUBSCRIBED) — أيْ عند الاتّصال الأوّل **وبعد كلّ إعادة اتّصالٍ** يُجريها العميل
+ * تلقائيًّا بعد انقطاع. هذه المزامنةُ-عند-الاتّصال تلتقط ما فات أثناء الانقطاع
+ * فتُغني عن الفحص الدوريّ (setInterval) الذي كان يُحدِث طلباتِ شبكةٍ متكرّرة.
  */
 export function subscribeToNotifications(recipientId: string, onChange: () => void): () => void {
   if (!recipientId) return () => {};
@@ -1689,7 +1694,11 @@ export function subscribeToNotifications(recipientId: string, onChange: () => vo
       { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${recipientId}` },
       () => onChange(),
     )
-    .subscribe();
+    .subscribe((status) => {
+      // SUBSCRIBED يُطلَق عند الاتّصال الأوّل وبعد كلّ إعادة اتّصال → مزامنةٌ واحدة
+      // تلتقط أيّ إشعارٍ وصل أثناء الانقطاع (بديلُ الفحص الدوريّ).
+      if (status === 'SUBSCRIBED') onChange();
+    });
   return () => { try { supabase.removeChannel(channel); } catch { /* تجاهل */ } };
 }
 
