@@ -334,6 +334,8 @@ export async function notifySeatChangeCard(args: {
   recipientId: string;
   recipientName: string;
   changes: SeatChange[];
+  /** عدد عيادات الأسبوع — لرسم هيكل الجدول الفارغ في عرض المعاينة (للرؤية). */
+  clinicCount?: number;
   senderId?: string;
   senderName?: string;
 }): Promise<NotifResult> {
@@ -352,6 +354,7 @@ export async function notifySeatChangeCard(args: {
       data: {
         v: 1, kind: 'seat_change',
         doctor_id: args.recipientId, doctor_name: args.recipientName,
+        clinic_count: args.clinicCount ?? 0,
         changes: args.changes.map((c) => ({
           week_start: c.weekStart, day: c.day,
           old: c.old.map((s) => ({ clinic: s.clinic, period: s.period, role: s.role })),

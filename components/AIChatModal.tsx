@@ -22,6 +22,7 @@ import { sendMessageV2, type V2Message, type V2User } from '../lib/ai_v2';
 import AssistantOffers from './AssistantOffers';
 import { CardBadge, Pill, GlassCard, cardStyles, type CardKind } from './AICard';
 import { ChatMessage } from './aiTypes';
+import SeatChangeOverlay, { type SeatChangeUI } from './SeatChangeOverlay';
 import { scale } from '../lib/scale';
 
 type Props = {
@@ -435,56 +436,53 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
   );
 }
 
-// ───── كرت «طرأ تغييرٌ على جدولك» — للرؤية: نقرةٌ تُطفئ التوهّج وتعرض القديم→الجديد ─────
-type SeatRefUI = { clinic: number; period: number; role: string };
-function seatDesc(seats: SeatRefUI[]): string {
-  if (!seats || !seats.length) return 'خارج الجدول';
-  return seats.map((s) =>
-    s.role === 'extra' ? 'احتياط'
-      : s.role === 'delegator' ? `دليقيتر الفترة ${s.period}`
-        : `عيادة ${s.clinic} الفترة ${s.period}`,
-  ).join('، ');
-}
-
+// ───── كرت «طرأ تغييرٌ على جدولك» — نقرةٌ تفتح المعاينة على الجدول الحقيقيّ (للرؤية) ─────
 function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
   const d = notif.data || {};
-  const changes: { week_start: string; day: string; old: SeatRefUI[]; new: SeatRefUI[] }[] =
-    Array.isArray(d.changes) ? d.changes : [];
+  const changes: SeatChangeUI[] = Array.isArray(d.changes) ? d.changes : [];
   const live = !notif.is_read;
   const kind: CardKind = live ? 'coverage' : 'done';
-  const onToggle = useCallback(async () => {
-    const next = !expanded; setExpanded(next);
-    if (next && !notif.is_read) { try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأورب لاحقًا */ } }
-  }, [expanded, notif.id, notif.is_read, onSeen]);
+  const onOpen = useCallback(async () => {
+    setOpen(true);
+    if (!notif.is_read) { try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأورب لاحقًا */ } }
+  }, [notif.id, notif.is_read, onSeen]);
   return (
     <View style={styles.feedCard}>
       <GlassCard kind={kind} glow={live}>
-        <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
+        <TouchableOpacity style={cardStyles.head} onPress={onOpen} activeOpacity={0.8}>
           <CardBadge kind={kind} live={live} />
           <View style={cardStyles.headTxt}>
             <Text style={cardStyles.cardTitle} numberOfLines={2}>طرأ تغييرٌ على جدولك</Text>
             <Pill kind={kind} text={live ? 'جديد' : 'تمّ الاطّلاع'} />
           </View>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+          <Ionicons name="chevron-back" size={scale(18)} color="#8B83A8" />
         </TouchableOpacity>
-        {expanded && (
-          <View style={cardStyles.covBody}>
-            {changes.length === 0 ? (
-              <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right' }}>{notif.body}</Text>
-            ) : changes.map((ch, i) => (
-              <View key={`${ch.week_start}-${ch.day}-${i}`} style={{ marginTop: scale(6) }}>
-                <Text style={{ fontSize: scale(12.5), color: '#E9E4FF', fontWeight: '800', textAlign: 'right' }}>
-                  {DAY_AR_SEED[ch.day] || ch.day}
-                </Text>
-                <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right', marginTop: scale(2) }}>
-                  {`من: ${seatDesc(ch.old)}  ←  إلى: ${seatDesc(ch.new)}`}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
+        <View style={cardStyles.covBody}>
+          <Text style={{ fontSize: scale(12), color: '#C9C0E8', textAlign: 'right' }}>{notif.body}</Text>
+          <TouchableOpacity
+            onPress={onOpen}
+            activeOpacity={0.85}
+            style={{
+              flexDirection: 'row-reverse', alignItems: 'center', alignSelf: 'flex-start',
+              gap: scale(6), marginTop: scale(10), paddingVertical: scale(7), paddingHorizontal: scale(12),
+              borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)',
+              borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.16)',
+            }}
+          >
+            <Ionicons name="grid-outline" size={scale(14)} color="#EDE8FF" />
+            <Text style={{ fontSize: scale(12.5), color: '#F4F1FF', fontWeight: '700' }}>عرض على الجدول</Text>
+          </TouchableOpacity>
+        </View>
       </GlassCard>
+      <SeatChangeOverlay
+        visible={open}
+        onClose={() => setOpen(false)}
+        doctorId={String(d.doctor_id || '')}
+        doctorName={String(d.doctor_name || '')}
+        changes={changes}
+        clinicCount={Number(d.clinic_count || 0)}
+      />
     </View>
   );
 }

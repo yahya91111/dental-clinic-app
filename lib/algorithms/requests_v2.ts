@@ -339,6 +339,9 @@ export async function withSeatChangeDiff<T>(
     try {
       const after = new Map<string, PlaceRow[]>();
       for (const w of weeks) after.set(w, await loadWeekPlacement(args.clinicId, w));
+      // عدد عيادات الأسبوع (أكبر رقم عيادةٍ نشطة) — لرسم هيكل الجدول الفارغ في المعاينة.
+      let clinicCount = 0;
+      for (const rows of after.values()) for (const r of rows) if (r.role === 'clinic' && r.clinic > clinicCount) clinicCount = r.clinic;
       const { byDoctor, names } = computeSeatChanges(weeks, before, after);
       if (byDoctor.size) {
         const { notifications } = await import('./notifications');
@@ -348,6 +351,7 @@ export async function withSeatChangeDiff<T>(
           await notifications.notifySeatChangeCard({
             clinicId: args.clinicId, recipientId: docId, recipientName: names.get(docId) ?? docId,
             changes: kept as { weekStart: string; day: WeekDay; old: SeatRefLocal[]; new: SeatRefLocal[] }[],
+            clinicCount,
             senderId: args.senderId, senderName: args.senderName,
           });
         }

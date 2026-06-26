@@ -54,6 +54,8 @@ async function buildWeek() {
       const thuCh = aCard?.data?.changes?.find((ch: any) => ch.day === 'thursday');
       check('(أ) الكرت يحمل تغيير الخميس بـ old/new مختلفَين', !!thuCh && JSON.stringify(thuCh.old) !== JSON.stringify(thuCh.new),
         JSON.stringify(thuCh));
+      check('(أ) الكرت يحمل clinic_count لرسم هيكل المعاينة', Number(aCard?.data?.clinic_count) > 0,
+        `clinic_count=${aCard?.data?.clinic_count}`);
       check('(أ) القائد (الفاعل) لا يصله كرت', !cards.some((c) => c.recipient_id === leader.id), `leader=${leader.id.slice(0, 8)}`);
     }
 

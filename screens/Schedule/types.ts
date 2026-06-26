@@ -13,6 +13,9 @@ export interface ScheduleSlot {
   doctorName: string;
   role: DoctorRole;
   status: DoctorStatus;
+  /** عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): 'old'=منطفئ، 'new'=مضيء.
+   *  غير معرّفٍ في الجدول الحيّ — لا يؤثّر عليه. */
+  tone?: 'old' | 'new';
 }
 
 export interface WeekSchedule {

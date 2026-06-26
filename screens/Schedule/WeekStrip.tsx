@@ -12,6 +12,14 @@ const CENTER_PAGE = Math.floor(TOTAL_PAGES / 2); // start in the middle
 interface WeekStripProps {
   selectedWeekStart: Date;
   onSelectWeek: (weekStart: Date) => void;
+  /** أسابيعُ (بداية الأحد ISO «YYYY-MM-DD») تُضيء كإيحاءٍ بوجود تغييرٍ فيها — عرض المعاينة فقط. */
+  highlightWeeks?: string[];
+}
+
+/** «YYYY-MM-DD» → تاريخٌ محلّيّ (تفادي انزياح UTC في new Date('YYYY-MM-DD')). */
+function parseLocalISO(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y || 1970, (m || 1) - 1, d || 1);
 }
 
 function getCurrentSunday(): Date {
@@ -53,7 +61,7 @@ function getPageLabel(pageIndex: number): string {
     : `${MONTHS[firstWeek.getMonth()]} - ${MONTHS[lastWeek.getMonth()]} ${lastWeek.getFullYear()}`;
 }
 
-export function WeekStrip({ selectedWeekStart, onSelectWeek }: WeekStripProps) {
+export function WeekStrip({ selectedWeekStart, onSelectWeek, highlightWeeks }: WeekStripProps) {
   const scrollRef = useRef<ScrollView>(null);
   const [currentPage, setCurrentPage] = useState(CENTER_PAGE);
   const pageWidth = SCREEN_WIDTH;
@@ -115,6 +123,8 @@ export function WeekStrip({ selectedWeekStart, onSelectWeek }: WeekStripProps) {
               const week = getWeekForPage(pageIndex, weekIndex);
               const isSelected = isSameWeek(week, selectedWeekStart);
               const isCurrent = isCurrentWeek(week);
+              // أسبوعٌ فيه تغييرٌ يخصّ الطبيب → يُضيء (إيحاء) حتى وإن لم يكن مُختارًا
+              const isChanged = !!highlightWeeks?.some(ws => isSameWeek(parseLocalISO(ws), week));
               const thursday = new Date(week);
               thursday.setDate(week.getDate() + 4);
 
@@ -127,20 +137,29 @@ export function WeekStrip({ selectedWeekStart, onSelectWeek }: WeekStripProps) {
                     flex: 1,
                     borderRadius: scale(12),
                     overflow: 'hidden',
-                    borderWidth: isSelected ? scale(2) : scale(1.5),
+                    borderWidth: (isSelected || isChanged) ? scale(2) : scale(1.5),
                     borderColor: isSelected
                       ? 'rgba(50, 80, 140, 0.5)'
-                      : isCurrent
-                        ? 'rgba(71,118,186,0.3)'
-                        : 'rgba(255,255,255,0.5)',
+                      : isChanged
+                        ? 'rgba(124,108,180,0.85)'
+                        : isCurrent
+                          ? 'rgba(71,118,186,0.3)'
+                          : 'rgba(255,255,255,0.5)',
+                    shadowColor: isChanged ? '#7C6CB4' : 'transparent',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: isChanged ? 0.9 : 0,
+                    shadowRadius: isChanged ? scale(7) : 0,
+                    elevation: isChanged ? 6 : 0,
                   }}
                 >
                   <LinearGradient
                     colors={isSelected
                       ? ['rgba(50,80,150,0.6)', 'rgba(90,130,200,0.4)', 'rgba(90,130,200,0.4)', 'rgba(50,80,150,0.6)']
-                      : isCurrent
-                        ? ['rgba(71,118,186,0.2)', 'rgba(120,160,210,0.12)', 'rgba(120,160,210,0.12)', 'rgba(71,118,186,0.2)']
-                        : ['rgba(71,118,186,0.1)', 'rgba(120,160,210,0.06)', 'rgba(120,160,210,0.06)', 'rgba(71,118,186,0.1)']
+                      : isChanged
+                        ? ['rgba(124,108,180,0.32)', 'rgba(167,155,203,0.2)', 'rgba(167,155,203,0.2)', 'rgba(124,108,180,0.32)']
+                        : isCurrent
+                          ? ['rgba(71,118,186,0.2)', 'rgba(120,160,210,0.12)', 'rgba(120,160,210,0.12)', 'rgba(71,118,186,0.2)']
+                          : ['rgba(71,118,186,0.1)', 'rgba(120,160,210,0.06)', 'rgba(120,160,210,0.06)', 'rgba(71,118,186,0.1)']
                     }
                     start={{ x: 0, y: 0 }}
                     end={{ x: 0, y: 1 }}
