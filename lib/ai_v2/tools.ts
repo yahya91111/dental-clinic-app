@@ -43,21 +43,6 @@ const WEEK_DAYS_LIST: WeekDay[] = [
 ];
 
 /**
- * عرض إبلاغ بعد تسجيل الطبيب غيابه لنفسه: الواجهة تعرض أزرار
- * [الشفت] [المركز] [لا داعي] وتنفّذ الضغط **بالكود مباشرةً** (announceAbsence) —
- * النموذج لا يسأل ولا يشارك في هذه الخطوة إطلاقًا (مبدأ المايسترو).
- */
-export type AnnounceOffer = {
-  weekStart: string;
-  day: string;
-  /** نصّ الإبلاغ الجاهز (يُرسَل كما هو عند اختيار الشفت/المركز) */
-  message: string;
-  /** صاحب الغياب (يُستثنى من المستلمين ويحدّد قروب الشفت) */
-  subjectId: string;
-  subjectName: string;
-};
-
-/**
  * تأكيدٌ حتميّ بالكود قبل إجراءٍ لا رجعة فيه (مسح الجدول): النموذج يستدعي الأداة،
  * فلا تُنفّذ مباشرةً بل تُرجِع هذا العرض — الواجهة تعرض [نعم، امسح][تراجع] وتنفّذ
  * المسح بالكود عند التأكيد (لا جولة نموذج، ولا مسحٌ مفاجئ).
@@ -70,22 +55,15 @@ export type ConfirmOffer = {
 
 /**
  * عرض أزرارٍ بعد أداة التبديل (تُنفَّذ بالكود مباشرةً — النموذج لا يسأل):
- *  • ask_mode: القائد طرفٌ في التبديل → [أرسل طلبًا] أو [بدّل مباشرة].
- *  • offer_notify: القائد بدّل اثنين → [أبلغهما] أو [لا داعي].
  *  • permission_clarify: استئذانٌ مبهم → [بداية]/[نهاية] يحسمانه بالكود.
  * (تعارض الاستئذان صار تبديلًا تلقائيًّا صامتًا في المحرّك — لا أزرار.)
  */
 export type SwapOffer =
-  | { kind: 'ask_mode'; weekStart: string; day: string; target: { id: string; name: string } }
   | {
     // استئذانٌ مبهم (لم يحدّد بداية/نهاية) → زرّان من الكود يحسمانه ويسجّلان مباشرةً
     // (بلا جولة نموذجٍ للحلّ). الواجهة تنفّذ عبر resolvePermissionByCode.
     kind: 'permission_clarify'; weekStart: string; day: string;
     doctorId: string; doctorName: string; shift?: 'morning' | 'evening';
-  }
-  | {
-    kind: 'offer_notify'; weekStart: string; day: string;
-    a: { id: string; name: string }; b: { id: string; name: string };
   };
 
 export type V2Tool = {
@@ -112,8 +90,6 @@ export type V2ToolContext = {
   roster?: { id: string; name: string; groupKey?: string }[];
   /** تُستدعى عند بناء معاينة (dryRun) — تُمرّر الحزمة للواجهة لتعرضها وتحفظها */
   onPreview?: (preview: SchedulePreview) => void;
-  /** تُستدعى بعد تسجيل غيابٍ ذاتيّ — الواجهة تعرض أزرار الإبلاغ وتنفّذها بالكود */
-  onAnnounceOffer?: (offer: AnnounceOffer) => void;
   /** تُستدعى بعد أداة التبديل حين يلزم قرارٌ من القائد — أزرارٌ تُنفَّذ بالكود */
   onSwapOffer?: (offer: SwapOffer) => void;
   /** تُستدعى حين يلزم تأكيدٌ قبل إجراءٍ خطير (مسح الجدول) — أزرارٌ تُنفَّذ بالكود */

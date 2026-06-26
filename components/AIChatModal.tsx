@@ -670,7 +670,7 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                     : { text: m.content, choices: [] as string[] };
                   // رسالةٌ تحمل عرضًا (إبلاغ/تبديل/تأكيد) → كرتٌ كامل يضمّ نصّها وأزرارها
                   // (لا فقاعة منفصلة)، وتتزامن نتيجته بين المحادثتين عبر onPatchMessage.
-                  const hasOffer = m.role === 'assistant' && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
+                  const hasOffer = m.role === 'assistant' && (!!m.swapOffer || !!m.confirmOffer);
                   if (hasOffer) {
                     return (
                       <AssistantOffers

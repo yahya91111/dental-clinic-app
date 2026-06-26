@@ -11,7 +11,7 @@
 //   3. حدّث requests_assistant_v2.md
 // ═══════════════════════════════════════════════════════════════
 
-import type { V2Tool, V2ToolContext, SwapOffer, AnnounceOffer } from './tools';
+import type { V2Tool, V2ToolContext, SwapOffer } from './tools';
 
 /**
  * تنفيذ الإبلاغ بالكود مباشرةً (يستعمله زرّا [الشفت]/[المركز] في الواجهة، وأداة
@@ -56,43 +56,6 @@ export async function announceAbsence(params: {
 const LEADER_PLUS_ROLES = new Set(['team_leader', 'coordinator', 'super_admin', 'manager']);
 const isLeaderPlusRole = (role: string): boolean => LEADER_PLUS_ROLES.has(role);
 
-/** وسم تبديل الاستئذان كما تمرّره الواجهة (الجانب same/other يُشتقّ من الخيار). */
-export type PermSwapArg = { blocked: number[]; targetPeriod?: number; statusAr: string; leaderIds: string[] };
-
-/**
- * إرسال طلب تبديلٍ لطبيبٍ واحد **بالكود مباشرةً** (يستعمله الموزّع للطبيب الطرف،
- * وزرّ [أرسل طلبًا] للقائد الطرف). يُرجِع سطرًا جاهزًا للعرض.
- */
-export async function sendSwapRequestByCode(params: {
-  clinicId: string;
-  requester: { id: string; name: string };
-  weekStart: string;
-  day: string;
-  targetId: string;
-  targetName: string;
-  perm?: PermSwapArg;
-}): Promise<{ success: boolean; info?: string; error?: string }> {
-  const { requestsV2 } = await import('../algorithms/requests_v2');
-  const { notifications } = await import('../algorithms/notifications');
-  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
-  const listed = await requestsV2.listSwapTargets({
-    clinicId: params.clinicId, weekStart: params.weekStart, day,
-    requesterId: params.requester.id, mode: { kind: 'doctor', doctorId: params.targetId },
-  });
-  if (!listed.success || !listed.targets) return { success: false, error: listed.error };
-  const opened = await notifications.openSwapGroup({
-    clinicId: params.clinicId, weekStart: params.weekStart, day,
-    requesterId: params.requester.id, requesterName: params.requester.name,
-    targets: listed.targets,
-    ...(params.perm ? { perm: { ...params.perm, side: 'same' as const } } : {}),
-  });
-  if (!opened.success) return { success: false, error: opened.error };
-  return {
-    success: true,
-    info: `أُرسل طلب التبديل إلى ${params.targetName} ليوم ${DAY_AR[day]} — يتمّ فور موافقته وتصلك النتيجة.`,
-  };
-}
-
 /**
  * يحسم استئذانًا مبهمًا (بداية/نهاية) **بالكود مباشرةً** — يستعمله زرّا
  * [بداية الدوام]/[نهاية الدوام] في الواجهة. يستدعي مُرسِل أدوات الطلبات الحقيقيّ
@@ -108,60 +71,20 @@ export async function resolvePermissionByCode(params: {
   day: string;
   status: 'permission_start' | 'permission_end';
   shift?: 'morning' | 'evening';
-}): Promise<{ text: string; swapOffer?: SwapOffer; announceOffer?: AnnounceOffer }> {
+}): Promise<{ text: string; swapOffer?: SwapOffer }> {
   let swapOffer: SwapOffer | undefined;
-  let announceOffer: AnnounceOffer | undefined;
   const ctx: V2ToolContext = {
     clinicId: params.clinicId,
     user: params.user,
     roster: [{ id: params.doctorId, name: params.doctorName }],
     onSwapOffer: (o) => { swapOffer = o; },
-    onAnnounceOffer: (o) => { announceOffer = o; },
   };
   const raw = await dispatchRequestToolV2('set_schedule_status', {
     doctorIndex: 1, day: params.day, weekStart: params.weekStart,
     status: params.status, ...(params.shift ? { shift: params.shift } : {}),
   }, ctx);
   const text = raw.startsWith(FINAL_MARK) ? raw.slice(FINAL_MARK.length) : raw;
-  return { text, swapOffer, announceOffer };
-}
-
-/**
- * تنفيذ تبديلٍ مباشرٍ **بالكود** (زرّ [بدّل مباشرة] للقائد الطرف): تبادل مراكز
- * كامل، مع علم القادة تلقائيًّا إن كان بين شفتين.
- */
-export async function directSwapByCode(params: {
-  clinicId: string;
-  actor: { id: string; role: string };
-  weekStart: string;
-  day: string;
-  targetId: string;
-  targetName: string;
-  actorName: string;
-}): Promise<{ success: boolean; info?: string; error?: string }> {
-  const { requestsV2 } = await import('../algorithms/requests_v2');
-  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
-  const res = await requestsV2.swapFullPositions(params.actor, {
-    clinicId: params.clinicId, weekStart: params.weekStart, day,
-    aId: params.actor.id, bId: params.targetId,
-  });
-  if (!res.success) return { success: false, error: res.error };
-  {
-    const { notifications } = await import('../algorithms/notifications');
-    if (res.crossShift) {
-      await notifications.notifyLeadersCrossShiftSwap({
-        clinicId: params.clinicId, day,
-        aName: params.actorName, bName: params.targetName,
-        excludeIds: [params.actor.id, params.targetId],
-      });
-    }
-    // طلبات تبديلٍ معلّقة مسّها هذا التبديل → تُبطَل ويُبلَّغ أصحابها
-    await notifications.invalidateSwapsTouching({
-      weekStart: params.weekStart, day,
-      doctorIds: [params.actor.id, params.targetId],
-    });
-  }
-  return { success: true, info: `تمّ التبديل بينك وبين ${params.targetName} يوم ${DAY_AR[day]}.` };
+  return { text, swapOffer };
 }
 
 /**
@@ -177,31 +100,6 @@ export async function clearWeekByCode(params: {
   const res = await requestsV2.clearWeek(params.actor, params.clinicId, params.weekStart);
   if (!res.success) return { success: false, error: res.error };
   return { success: true, info: `تمّ مسح جدول أسبوع ${params.weekStart} كاملًا.` };
-}
-
-/**
- * إبلاغ طرفَي تبديلٍ نفّذه القائد (زرّ [أبلغهما]) — إشعار علمٍ لكلٍّ منهما.
- */
-export async function notifySwappedPair(params: {
-  clinicId: string;
-  sender: { id?: string; name?: string };
-  day: string;
-  a: { id: string; name: string };
-  b: { id: string; name: string };
-}): Promise<{ success: boolean; info?: string; error?: string }> {
-  const { notifications } = await import('../algorithms/notifications');
-  const day = params.day as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
-  const dayAr = DAY_AR[day] || params.day;
-  const tell = async (to: { id: string; name: string }, other: { name: string }) =>
-    notifications.broadcast({
-      clinicId: params.clinicId, recipientIds: [to.id],
-      senderId: params.sender.id, senderName: params.sender.name,
-      title: 'تبديل', body: `بُدّلت مع ${other.name} يوم ${dayAr} — كلٌّ استلم مكان الآخر.`,
-    });
-  const r1 = await tell(params.a, params.b);
-  const r2 = await tell(params.b, params.a);
-  if (!r1.success && !r2.success) return { success: false, error: r1.error || r2.error };
-  return { success: true, info: 'أُبلغ الطرفان بالتبديل.' };
 }
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
@@ -890,13 +788,6 @@ export async function dispatchRequestToolV2(
           `${keptPermAr ? ` — وهو ${keptPermAr}` : ''}` +
           `${permSwapAr}` +
           `${backShadows?.length ? ` — وعاد معه ظلُّه ${backShadows.join(' و')}` : ''}.`;
-        if (actor.id === doc.id && ABSENCE.includes(status)) {
-          ctx.onAnnounceOffer?.({
-            weekStart: wsEff, day: r.day,
-            message: `${doc.name} ${STATUS_AR[status]} يوم ${DAY_AR[r.day]}.`,
-            subjectId: doc.id, subjectName: doc.name,
-          });
-        }
         return final(base);
       }
 
@@ -1065,17 +956,6 @@ export async function dispatchRequestToolV2(
           console.log('[notify-cancel] failed', e instanceof Error ? e.message : e);
         }
 
-        // إلغاءُ أيّ طلبٍ → اسأل صاحبَه (طبيبًا كان أو قائدًا) مَن يُبلِغ: أزرار
-        // [الشفت][المركز][لا داعي] من الكود (القادة وصلهم إشعارهم التلقائيّ، فيُستثنون).
-        {
-          const stAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الطلب';
-          ctx.onAnnounceOffer?.({
-            weekStart: String(r.weekStart), day: r.day,
-            message: `إلغاء ${stAr} ${doc.name} يوم ${DAY_AR[r.day]}.`,
-            subjectId: doc.id, subjectName: doc.name,
-          });
-        }
-
         const rcf = res as {
           permissionCanceled?: boolean; permSwapReverted?: boolean; permSwapRecompute?: boolean; returnedToReserve?: boolean;
           shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
@@ -1150,7 +1030,7 @@ export async function dispatchRequestToolV2(
 
         // إلغاء المصدر ثمّ تسجيل الوجهة بإشعارٍ **مكتوم** (لا إشعارَي علمٍ منفصلَين ولا
         // أزرار إبلاغ) — يُعاد استعمال منطق الإلغاء/التسجيل كاملًا (تبديل، تغطية…).
-        const subCtx: V2ToolContext = { ...ctx, suppressLeaderInfo: true, onAnnounceOffer: undefined };
+        const subCtx: V2ToolContext = { ...ctx, suppressLeaderInfo: true };
         const cancelRaw = await dispatchRequestToolV2('cancel_schedule_status', {
           weekStart: wsEff, day: fromDay, doctorIndex: r.doctorIndex,
         }, subCtx);

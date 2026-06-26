@@ -8,8 +8,7 @@
 //    المحادثتين: أيّ خيارٍ يُنفَّذ في إحداهما يظهر محلولًا في الأخرى بلا تكرار تنفيذ.
 //
 // عروضٌ ممكنة (تُنفَّذ **بالكود** — النموذج لا يسأل ولا يشارك):
-//  • announceOffer: غيابٌ ذاتيّ سُجّل ووصل القائدَ إشعارُه → «هل تُبلَّغ جهةٌ أخرى؟».
-//  • swapOffer: تبديل القائد / حسم استئذان مبهم / تبديل فترة استئذانٍ متعارض.
+//  • swapOffer: حسم استئذانٍ مبهم (بداية/نهاية).
 //  • confirmOffer: تأكيد مسح الجدول.
 // ═══════════════════════════════════════════════════════════════
 import React, { useCallback, useState } from 'react';
@@ -32,7 +31,6 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
   /** بعد إجراءٍ غيّر الجدول (مسح) — لإنعاش الأب */
   onDone?: () => void;
 }) {
-  const announceOffer = message.announceOffer;
   const baseSwap = message.swapOffer;
   const confirmOffer = message.confirmOffer;
   const resolved = message.offerResolved;        // النتيجة المشتركة (مصدر الحقيقة)
@@ -46,88 +44,27 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
     onResolved?.(text, done);
   }, [onResolved]);
 
-  const handleAnnounce = useCallback(async (choice: 'shift' | 'center' | 'none') => {
-    if (!announceOffer || busy || resolved) return;
-    if (choice === 'none') { resolve('حسنًا — بلا إبلاغ.', true); return; }
-    setBusy(true);
-    try {
-      const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const res = await announceAbsence({
-        clinicId: cid, sender: { id: user.id, name: user.name },
-        audience: choice, message: announceOffer.message, subjectId: announceOffer.subjectId,
-      });
-      resolve(res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}`, res.success);
-    } catch (e) {
-      resolve(e instanceof Error ? e.message : 'خطأ غير متوقّع.', false);
-    } finally {
-      setBusy(false);
-    }
-  }, [announceOffer, busy, resolved, clinicId, user, resolve]);
-
-  const handleSwap = useCallback(async (
-    choice: 'request' | 'direct' | 'notify' | 'none' | 'perm_colleague' | 'perm_period' | 'perm_other'
-      | 'perm_start' | 'perm_end',
-  ) => {
+  const handleSwap = useCallback(async (choice: 'perm_start' | 'perm_end') => {
     const offer = override ?? baseSwap;
-    if (!offer || busy || resolved) return;
-    if (choice === 'none') { resolve('حسنًا — بلا إبلاغ.', true); return; }
+    if (!offer || busy || resolved || offer.kind !== 'permission_clarify') return;
     // حسم استئذانٍ مبهم: بداية/نهاية → تسجيلٌ بالكود (بلا جولة نموذج)
-    if (offer.kind === 'permission_clarify' && (choice === 'perm_start' || choice === 'perm_end')) {
-      setBusy(true);
-      try {
-        const cid = clinicId || user.clinicId;
-        if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-        const mod = await import('../lib/ai_v2/tools_requests_v2');
-        const out = await mod.resolvePermissionByCode({
-          clinicId: cid, user: { id: user.id, name: user.name, role: user.role },
-          doctorId: offer.doctorId, doctorName: offer.doctorName,
-          weekStart: offer.weekStart, day: offer.day,
-          status: choice === 'perm_start' ? 'permission_start' : 'permission_end',
-          shift: offer.shift,
-        });
-        if (out.swapOffer) {           // تعارضٌ → أزرار تبديل الفترة في نفس الكرت
-          setOverride(out.swapOffer);
-          setErrText(out.text);
-        } else {
-          resolve(out.text, true);
-        }
-      } catch (e) {
-        setErrText(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
     setBusy(true);
     try {
       const cid = clinicId || user.clinicId;
       if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
       const mod = await import('../lib/ai_v2/tools_requests_v2');
-      let res: { success: boolean; info?: string; error?: string } | null = null;
-      if (offer.kind === 'ask_mode' && choice === 'request') {
-        res = await mod.sendSwapRequestByCode({
-          clinicId: cid, requester: { id: user.id, name: user.name },
-          weekStart: offer.weekStart, day: offer.day,
-          targetId: offer.target.id, targetName: offer.target.name,
-        });
-      } else if (offer.kind === 'ask_mode' && choice === 'direct') {
-        res = await mod.directSwapByCode({
-          clinicId: cid, actor: { id: user.id, role: user.role },
-          weekStart: offer.weekStart, day: offer.day,
-          targetId: offer.target.id, targetName: offer.target.name,
-          actorName: user.name,
-        });
-      } else if (offer.kind === 'offer_notify' && choice === 'notify') {
-        res = await mod.notifySwappedPair({
-          clinicId: cid, sender: { id: user.id, name: user.name },
-          day: offer.day, a: offer.a, b: offer.b,
-        });
-      }
-      if (res) {
-        if (res.success) resolve(res.info || 'تمّ.', true);
-        else setErrText(`تعذّر: ${res.error || ''}`);   // فشل → تبقى الأزرار للمحاولة
+      const out = await mod.resolvePermissionByCode({
+        clinicId: cid, user: { id: user.id, name: user.name, role: user.role },
+        doctorId: offer.doctorId, doctorName: offer.doctorName,
+        weekStart: offer.weekStart, day: offer.day,
+        status: choice === 'perm_start' ? 'permission_start' : 'permission_end',
+        shift: offer.shift,
+      });
+      if (out.swapOffer) {           // (نادر) عرضٌ بديلٌ ناتج → أزرار في نفس الكرت
+        setOverride(out.swapOffer);
+        setErrText(out.text);
+      } else {
+        resolve(out.text, true);
       }
     } catch (e) {
       setErrText(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -156,13 +93,13 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
     }
   }, [confirmOffer, busy, resolved, clinicId, user, resolve, onDone]);
 
-  if (!announceOffer && !baseSwap && !confirmOffer) return null;
+  if (!baseSwap && !confirmOffer) return null;
 
   const eff = override ?? baseSwap;
 
   // النوع/العنوان/الحالة — نفس لغة كرت النقص (شارة + عنوان + حبّة حالة)
   const kind: CardKind = resolved ? (resolved.done ? 'done' : 'swap') : confirmOffer ? 'coverage' : 'swap';
-  const title = confirmOffer ? 'مسح الجدول' : announceOffer ? 'إبلاغ الزملاء' : 'تبديل';
+  const title = confirmOffer ? 'مسح الجدول' : 'تبديل';
   const pillText = resolved ? (resolved.done ? 'تمّ' : 'تعذّر') : confirmOffer ? 'تأكيد' : 'يحتاج قرارك';
   const live = !resolved;
 
@@ -213,33 +150,11 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
                 <>
                   {!!errText && <Text style={st.err}>{errText}</Text>}
 
-                  {!!announceOffer && (
+                  {!!eff && eff.kind === 'permission_clarify' && (
                     <>
-                      <Text style={st.hint}>هل تريد إبلاغ جهةٍ أخرى؟</Text>
-                      <Opt label="الشفت" onPress={() => handleAnnounce('shift')} />
-                      <Opt label="المركز" onPress={() => handleAnnounce('center')} />
-                      <Opt label="لا داعي" onPress={() => handleAnnounce('none')} />
+                      <Opt label="بداية الدوام" onPress={() => handleSwap('perm_start')} />
+                      <Opt label="نهاية الدوام" onPress={() => handleSwap('perm_end')} />
                     </>
-                  )}
-
-                  {!!eff && (
-                    eff.kind === 'permission_clarify' ? (
-                      <>
-                        <Opt label="بداية الدوام" onPress={() => handleSwap('perm_start')} />
-                        <Opt label="نهاية الدوام" onPress={() => handleSwap('perm_end')} />
-                      </>
-                    ) : eff.kind === 'ask_mode' ? (
-                      <>
-                        <Opt label="أرسل طلبًا" onPress={() => handleSwap('request')} />
-                        <Opt label="بدّل مباشرة" onPress={() => handleSwap('direct')} />
-                      </>
-                    ) : (
-                      <>
-                        <Text style={st.hint}>هل يُبلَّغ الطرفان بالتبديل؟</Text>
-                        <Opt label="أبلغهما" onPress={() => handleSwap('notify')} />
-                        <Opt label="لا داعي" onPress={() => handleSwap('none')} />
-                      </>
-                    )
                   )}
 
                   {!!confirmOffer && (

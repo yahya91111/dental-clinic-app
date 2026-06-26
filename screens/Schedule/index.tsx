@@ -187,9 +187,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       setAiState('success');
       const assistantMsg: ChatMessage = {
         id: `a${Date.now()}`, role: 'assistant', content: response.message, timestamp: Date.now(),
-        // غيابٌ ذاتيّ سُجّل هذه الرسالة؟ → أزرار الإبلاغ تظهر تحت الردّ وتنفَّذ بالكود
-        announceOffer: response.announceOffer,
-        // القائد طرفٌ في تبديل أو بدّل اثنين؟ → أزرار القرار/الإبلاغ تحت الردّ
+        // حسم استئذانٍ مبهم؟ → أزرار [بداية]/[نهاية] تحت الردّ تُنفَّذ بالكود
         swapOffer: response.swapOffer,
         // طلب مسح الجدول؟ → أزرار تأكيد [نعم، امسح][تراجع] تُنفَّذ بالكود
         confirmOffer: response.confirmOffer,
