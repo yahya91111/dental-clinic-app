@@ -1020,33 +1020,24 @@ export async function setScheduleStatus(
       if (outRow!.status === 'extra') {
         permWasReserve = true; // احتياطيّ يستأذن — العلامة تُضاف والاحتياط باقٍ، حفظه القديم لا يُمسّ
       } else if (prevRows.length === 0) {
-        permCovered = true;
+        // لا حفظَ باقيًا (نادرٌ جدًّا) — لا مقاعدَ لاستردادها؛ يبقى التحويل بلا مركز.
         permConvertedFromAr = outRow!.status === 'vacation' ? 'التفرّغ' : 'المرضية';
       } else {
-        // لا إرجاع فوق ساكن: يُعاد إلى الخانات الفارغة فقط؛ ما شغله غيرُه يدويًّا
-        // يبقى له، ويُعلَم القائد بكرت «تحديد المكان» للباقي.
-        const free = prevRows.filter((r) => !slotOccupied(rows, r, doctorId));
-        const taken = prevRows.length - free.length;
-        await applySlotChanges({
-          deleteIds: prevRows.map((r) => r.id),
-          inserts: free.map((r) => ({
-            clinic_id: clinicId, week_start: weekStart, day_of_week: day,
-            period: r.period, clinic_number: r.clinic_number,
-            doctor_id: doctorId, doctor_name: doctorName,
-            role: r.clinic_number === 0 ? 'delegator' : 'clinic', status: 'active', source: 'request',
-          })),
-        });
-        permPlacedRows = free.map((r) => ({ period: r.period, clinic_number: r.clinic_number }));
-        if (taken > 0) {
-          permCovered = true;
-          permConvertedFromAr = outRow!.status === 'vacation' ? 'التفرّغ' : 'المرضية';
-        }
-        if (free.length > 0) {
-          // شفته الفعليّ الآن من مكانه المستعاد، لا من استنتاجٍ قديمٍ وهو غائب
-          effShift = free.some((r) => r.period >= 3) ? 'evening' : 'morning';
-          // عاد المدرّب إلى الجدول → ظلُّه (المنقول احتياطًا) يعود معه تلقائيًّا
-          returnedShadows = await returnShadowsWithSupervisor({ clinicId, weekStart, day, supervisorId: doctorId });
-        }
+        // التحويل = عودة: الطبيب حاضرٌ الآن، فيُعامَل كعائدٍ يستردّ **كلّ** مقاعده المحفوظة
+        // بالتغطية العكسيّة (applyReturn): الشاغرُ يُملأ مباشرةً، والمشغولُ يتنحّى مُغطّيه إلى
+        // الاحتياط (خيار أ). لا كرت «تحديد المكان» — المحرّك يُجلسه تلقائيًّا. ثمّ يُحلّ
+        // تعارضُ الفترة المحجوبة عاديًّا (autoResolvePermissionConflict أدناه).
+        const seatMap = new Map<string, { period: number; clinicNumber: number }>();
+        for (const r of prevRows) seatMap.set(`${r.period}|${r.clinic_number}`, { period: r.period, clinicNumber: r.clinic_number });
+        const prevSeats = [...seatMap.values()];
+        await applySlotChanges({ deleteIds: prevRows.map((r) => r.id), inserts: [] });
+        const { applyReturn } = await import('./solver_shadow');
+        await applyReturn({ clinicId, weekStart, day, label: 'تحويل-عودة', returnerId: doctorId, prevSeats });
+        permPlacedRows = prevSeats.map((s) => ({ period: s.period, clinic_number: s.clinicNumber }));
+        // شفته الفعليّ الآن من مكانه المستعاد، لا من استنتاجٍ قديمٍ وهو غائب
+        effShift = prevSeats.some((s) => s.period >= 3) ? 'evening' : 'morning';
+        // عاد المدرّب إلى الجدول → ظلُّه (المنقول احتياطًا) يعود معه تلقائيًّا
+        returnedShadows = await returnShadowsWithSupervisor({ clinicId, weekStart, day, supervisorId: doctorId });
       }
     }
     if (toPermission && permPlacedRows === null && stillPlaced) {

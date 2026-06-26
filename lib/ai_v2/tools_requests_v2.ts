@@ -691,24 +691,10 @@ export async function dispatchRequestToolV2(
               });
             }
             const leaders = await getTeamLeaderIds(ctx.clinicId);
-            // كروت التغطية (النقص) انتقلت إلى خوارزميّة الجدول. يبقى هنا إشعار العلم
-            // وكرت «تحديد المكان» (عند تحويل غيابٍ مُغطًّى إلى استئذان).
+            // كروت التغطية (النقص) انتقلت إلى خوارزميّة الجدول. وتحويلُ غيابٍ مُغطًّى إلى
+            // استئذانٍ لم يعد يُنشئ كرت «تحديد المكان»: المحرّك يُعيد إجلاس العائد تلقائيًّا
+            // (تغطيةٌ عكسيّة في requests_v2)، فيكفي إشعار العلم كأيّ استئذان.
             for (const leaderId of leaders) {
-              // تحويل مرضيّةٍ/تفرّغٍ مُغطًّى إلى استئذان: كرتُ «تحديد المكان» يحلّ
-              // محلّ إشعار العلم (إشعار واحد للحدث) — القائد يفتح الكرت ويأمر فيُنفَّذ.
-              if (perm?.covered) {
-                await notifications.alertLeaderPlacement({
-                  clinicId: ctx.clinicId, leaderId,
-                  weekStart: wsEff, day: r.day,
-                  doctorId: doc.id, doctorName: doc.name,
-                  converted: true,
-                  customBody: leaderId === doc.id
-                    ? `حوّلتَ ${perm.convertedFromAr || 'حالتك'} إلى ${STATUS_AR[status]} يوم ${DAY_AR[r.day]} ومكانك السابق مُغطًّى — حدّد أين تعود.`
-                    : `حوّل ${doc.name} ${perm.convertedFromAr || 'حالته'} إلى ${STATUS_AR[status]} يوم ${DAY_AR[r.day]} ومكانه السابق مُغطًّى — حدّد مكانه.`,
-                  senderId: doc.id, senderName: doc.name,
-                });
-                continue;
-              }
               if (leaderId !== actor.id && !ctx.suppressLeaderInfo) {
                 // إشعار علمٍ واحدٌ للقائد بتسجيل الحالة (تفاصيل نتيجة التبديل/التغطية
                 // التلقائيّة يتولّاها الأورب لاحقًا — لا تُذيَّل هنا).
