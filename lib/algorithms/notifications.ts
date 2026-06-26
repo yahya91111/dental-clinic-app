@@ -44,6 +44,7 @@ export const NotifType = {
   GAP_ALERT: 'gap_alert',               // action: تنبيه الليدر بنقصٍ يحتاج تصرّفًا
   REQUEST_RESULT: 'request_result',     // info: ردّ للطالب (تمّت الموافقة/الرفض)
   TRAINEE_ATTACHED: 'trainee_attached', // info: للمدرّب — أُلحق به متدرّب لهذا اليوم
+  SEAT_CHANGE: 'seat_change',           // card: «طرأ تغييرٌ على جدولك» — للطبيب المتأثّر (قبل/بعد على الجدول)
 } as const;
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -305,6 +306,62 @@ export async function notifyDoctorSeatChange(args: {
         batch_at: Date.now(),
       },
     });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// كرت «طرأ تغييرٌ على جدولك» — للطبيب المتأثّر بأيّ تغييرٍ على الجدول
+// ═══════════════════════════════════════════════════════════════
+// يُنشئه طبقةُ الفرق (withSeatChangeDiff): تلتقط موضع الطبيب قبل/بعد أيّ عمليّة
+// (نقل القائد، تغطية، موازنة العدل الصامتة، تبديل) عبر كلّ الأيّام والأسابيع، فتُرسل
+// كرتًا واحدًا لكلّ حدثٍ يحمل تغييراته كلَّها. النقرُ يعرض الجدول الحقيقيّ معتمًا مع
+// مكانه القديم منطفئًا والجديد مضيئًا (الواجهة). كلُّ حدثٍ كرتٌ جديد (لا دمج).
+
+/** خانةٌ مرجعيّة في الكرت: عيادة/دليقيتر (period>0) أو احتياط (extra: clinic=0,period=0). */
+export type SeatRef = { clinic: number; period: number; role: 'clinic' | 'delegator' | 'extra' };
+/** تغيّرُ يومٍ واحد لطبيب: مواضعه قبل (old) وبعد (new). new فارغة = خرج (غياب). */
+export type SeatChange = { weekStart: string; day: WeekDay; old: SeatRef[]; new: SeatRef[] };
+
+/**
+ * كرت «طرأ تغييرٌ على جدولك» لطبيبٍ واحد — حدثٌ واحدٌ يجمع كلّ تغييراته (أيّام/أسابيع).
+ * كرتٌ جديدٌ لكلّ حدث (لا دمج مع سابق) — تغييرٌ لاحقٌ ⇒ كرتٌ آخر. يصل صفحة الذكاء
+ * (الأورب) ويُحمِّر الأيقونة، ويُدفَع عبر مُحفِّز قاعدة البيانات (حتى والتطبيق مغلق).
+ */
+export async function notifySeatChangeCard(args: {
+  clinicId: string;
+  recipientId: string;
+  recipientName: string;
+  changes: SeatChange[];
+  senderId?: string;
+  senderName?: string;
+}): Promise<NotifResult> {
+  try {
+    if (!args.changes.length) return ok();
+    const dayList = [...new Set(args.changes.map((c) => dayWithDate(c.weekStart, c.day)))];
+    const body = `طرأ تغييرٌ على جدولك — ${dayList.join('، ')}.`;
+    const { error } = await createNotification({
+      clinic_id: args.clinicId,
+      recipient_id: args.recipientId,
+      sender_id: args.senderId,
+      sender_name: args.senderName,
+      type: NotifType.SEAT_CHANGE,
+      title: 'طرأ تغييرٌ على جدولك',
+      body,
+      data: {
+        v: 1, kind: 'seat_change',
+        doctor_id: args.recipientId, doctor_name: args.recipientName,
+        changes: args.changes.map((c) => ({
+          week_start: c.weekStart, day: c.day,
+          old: c.old.map((s) => ({ clinic: s.clinic, period: s.period, role: s.role })),
+          new: c.new.map((s) => ({ clinic: s.clinic, period: s.period, role: s.role })),
+        })),
+        batch_at: Date.now(),
+      },
+      is_read: false,
+    });
+    return error ? fail(error.message) : ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -631,14 +688,25 @@ export async function acceptSwap(args: {
       }
     }
 
-    // إعادة الفحص والتنفيذ — المحرّك يرفض إن تغيّر الجدول
-    const { swapFullPositions } = await import('./requests_v2');
-    const swap = await swapFullPositions(
-      { id: args.targetId, role: args.targetRole || 'doctor' },
+    // إعادة الفحص والتنفيذ — المحرّك يرفض إن تغيّر الجدول. نلفّه بطبقة الفرق فيصل
+    // كرتُ «طرأ تغييرٌ على جدولك» لكلّ متأثّر؛ المبدِّلان يُكتمان في يوم التبديل (يعلمانه).
+    const { swapFullPositions, withSeatChangeDiff } = await import('./requests_v2');
+    const swap = await withSeatChangeDiff(
       {
-        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
-        aId: d.requester_id, bId: d.target_id,
+        clinicId: d.clinic_id, weekStart: d.week_start,
+        senderId: args.targetId, senderName: args.targetName || d.target_name,
+        suppress: new Set([
+          `${d.requester_id}|${d.week_start}|${d.day}`,
+          `${d.target_id}|${d.week_start}|${d.day}`,
+        ]),
       },
+      () => swapFullPositions(
+        { id: args.targetId, role: args.targetRole || 'doctor' },
+        {
+          clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
+          aId: d.requester_id, bId: d.target_id,
+        },
+      ),
     );
     if (!swap.success) {
       // الطلب لم يعد صالحًا → أسقط الكرت كي لا يبقى قابلًا للضغط، وأبلغ الطالب صراحةً
@@ -1116,4 +1184,6 @@ export const notifications = {
   notifyLeaderReserveChoice, resolveReserveChoiceV2,
   // إبلاغ طبيبٍ تغيّر مقعدُه (تعويض/تبديل)
   notifyDoctorSeatChange,
+  // كرت «طرأ تغييرٌ على جدولك» (طبقة الفرق — أيّ تغيير)
+  notifySeatChangeCard,
 };

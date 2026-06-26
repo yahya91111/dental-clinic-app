@@ -522,6 +522,26 @@ async function resolveGroupId(clinicId: string, templateKey: string): Promise<st
   return (g as { id?: string } | undefined)?.id ?? null;
 }
 
+// ─── طبقة الفرق: الأدوات التي تُغيّر الجدول تُلَفّ بكرت «طرأ تغييرٌ على جدولك» ──
+// (الإضافيّة بحذر: المسح/إعادة البناء البنيويّة تُستثنى — ليست «تغييرًا تدريجيًّا»).
+const SEAT_CHANGE_TOOLS = new Set([
+  'set_schedule_status', 'cancel_schedule_status', 'move_schedule_status',
+  'place_in_clinic', 'leader_apply', 'cover_gap_with_reserve',
+]);
+
+/** مجموعة الكتم لطبقة الفرق: «${actorId}|${weekStart}|${day}» لكلّ يومٍ تصرّف فيه الفاعل
+ *  (يعلم تغييرَه بنفسه ذلك اليوم). نجمع القيم اليوميّة: day/toDay/fromDay/days[]/operations[].day. */
+function seatChangeSuppress(actorId: string, r: Record<string, unknown>, weekStart: string): Set<string> {
+  const out = new Set<string>();
+  const add = (d: unknown) => { if (typeof d === 'string' && d) out.add(`${actorId}|${weekStart}|${d}`); };
+  add(r.day); add(r.toDay); add(r.fromDay);
+  if (Array.isArray(r.days)) for (const d of r.days) add(d);
+  if (Array.isArray(r.operations)) for (const op of r.operations) {
+    if (op && typeof op === 'object') add((op as Record<string, unknown>).day);
+  }
+  return out;
+}
+
 // ─── الموزّع ───────────────────────────────────────────────────
 export async function dispatchRequestToolV2(
   name: string,
@@ -532,8 +552,10 @@ export async function dispatchRequestToolV2(
   const actor = actorOf(ctx);
   if (!actor) return 'Tool error: لا يوجد مستخدم لتحديد الصلاحيّة.';
   const r = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
-  const { requestsV2 } = await import('../algorithms/requests_v2');
+  const reqMod = await import('../algorithms/requests_v2');
+  const { requestsV2 } = reqMod;
 
+  const exec = async (): Promise<string> => {
   try {
     switch (name) {
       case 'set_schedule_status': {
@@ -709,25 +731,8 @@ export async function dispatchRequestToolV2(
                   }
                 }
               }
-              // إبلاغ كلّ طبيبٍ تحرّك مقعدُه نتيجة التعويض (للعلم، صفحة الذكاء): نجمع
-              // تحرّكاته ليومه ونرسل إشعارًا واحدًا بالعيادة/الفترة الصريحة.
-              const byDoc = new Map<string, { day: typeof r.day; seats: { clinicNumber: number; period: number; solo?: boolean; delegator?: boolean }[] }>();
-              for (const m of cov.moves) {
-                if (m.doctorId === doc.id) continue; // الغائب يعلم
-                const key = `${m.doctorId}|${m.day}`;
-                const e = byDoc.get(key) ?? { day: m.day as typeof r.day, seats: [] };
-                e.seats.push({ clinicNumber: m.clinicNumber, period: m.period, solo: m.kind === 'partner_solo', delegator: m.clinicNumber === 0 });
-                byDoc.set(key, e);
-              }
-              const sender = senderOf(ctx);
-              for (const [key, e] of byDoc) {
-                const docId = key.split('|')[0]!;
-                await notifications.notifyDoctorSeatChange({
-                  clinicId: ctx.clinicId, recipientId: docId, weekStart: wsEff,
-                  day: e.day, seats: e.seats, reason: 'coverage',
-                  senderId: sender.id, senderName: sender.name,
-                });
-              }
+              // إبلاغ الأطباء المتأثّرين بالتعويض تتولّاه طبقةُ الفرق (كرت «طرأ تغييرٌ
+              // على جدولك») التي تلفّ الموزّع — فلا إشعارَ يدويٌّ هنا.
             }
           } catch (e) {
             // eslint-disable-next-line no-console
@@ -767,16 +772,7 @@ export async function dispatchRequestToolV2(
             permSwapAr = self
               ? ` — وبُدّلت فترتك مع ${sw.withName} تلقائيًّا${gap}`
               : ` — وبُدّلت فترته مع ${sw.withName}${gap}`;
-            // أبلِغ الشريك الذي بُدّلت فترته بمقعده الجديد (للعلم، صفحة الذكاء).
-            try {
-              const { notifications } = await import('../algorithms/notifications');
-              const sndr = senderOf(ctx);
-              await notifications.notifyDoctorSeatChange({
-                clinicId: ctx.clinicId, recipientId: sw.withId, weekStart: wsEff,
-                day: r.day, seats: [{ clinicNumber: sw.withClinic, period: sw.withPeriod }], reason: 'swap',
-                senderId: sndr.id, senderName: sndr.name,
-              });
-            } catch { /* الإبلاغ تحسينٌ — لا يُفشل التبديل */ }
+            // إبلاغ الشريك المبدَّل تتولّاه طبقةُ الفرق (كرت «طرأ تغييرٌ على جدولك»).
           } else if (sw && 'none' in sw) {
             permSwapAr = sw.reason === 'delegator_left'
               ? (self ? ' — ودورك دليقيتر تلك الفترة، تُركت شاغرة وأُبلغ القائد' : ' — ودوره دليقيتر تلك الفترة بلا بديل')
@@ -1128,13 +1124,7 @@ export async function dispatchRequestToolV2(
         const pr = await placeReserveInSeat({ clinicId: ctx.clinicId, weekStart: ws, day: r.day, clinicNumber: cNum, period: per, doctorId: pick.id });
         if (!pr.success) return `Tool error: تعذّر وضع الاحتياطيّ (${pr.reason ?? ''}).`;
         await notifications.resolveReserveChoiceV2({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
-        // أبلِغ الاحتياطيّ المختار أنّه أصبح في عيادةٍ ذلك اليوم (للعلم، صفحة الذكاء).
-        const sndr = senderOf(ctx);
-        await notifications.notifyDoctorSeatChange({
-          clinicId: ctx.clinicId, recipientId: pick.id, weekStart: ws,
-          day: r.day, seats: [{ clinicNumber: cNum, period: per }], reason: 'coverage',
-          senderId: sndr.id, senderName: sndr.name,
-        });
+        // إبلاغ الاحتياطيّ المختار بمقعده الجديد تتولّاه طبقةُ الفرق (كرت «طرأ تغييرٌ على جدولك»).
         return final(`تمّ: ${pick.name} يغطّي عيادة ${cNum} الفترة ${per} يوم ${DAY_AR[r.day]}.`);
       }
 
@@ -1314,4 +1304,20 @@ export async function dispatchRequestToolV2(
   } catch (e) {
     return `Tool error: ${e instanceof Error ? e.message : 'خطأ غير متوقّع.'}`;
   }
+  };
+
+  // أداةٌ تُغيّر الجدول → لُفّها بطبقة الفرق: كلّ طبيبٍ تغيّر موضعُه يصله كرت «طرأ تغييرٌ
+  // على جدولك» (الفاعل يُستثنى من يومه الذي تصرّف فيه). غير المؤثّرة تجري كما هي.
+  const ws = String(r.weekStart || '');
+  if (SEAT_CHANGE_TOOLS.has(name) && ws) {
+    return await reqMod.withSeatChangeDiff(
+      {
+        clinicId: ctx.clinicId, weekStart: ws,
+        senderId: actor.id, senderName: ctx.user?.name ?? undefined,
+        suppress: seatChangeSuppress(actor.id, r, ws),
+      },
+      exec,
+    );
+  }
+  return await exec();
 }

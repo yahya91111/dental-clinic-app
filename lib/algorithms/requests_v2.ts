@@ -256,6 +256,110 @@ async function loadWeekPlacement(clinicId: string, weekStart: string): Promise<P
     }));
 }
 
+// ─── طبقة الفرق: «طرأ تغييرٌ على جدولك» ─────────────────────────────
+/** الأسابيع المبنيّة (لها خانات) من weekStart فصاعدًا — نطاقُ التقاط الفرق (الامتصاص
+ *  قد يمتدّ للأسابيع التالية). مرتّبةٌ تصاعديًّا. */
+async function builtWeeksFrom(clinicId: string, weekStart: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('schedule_slots')
+    .select('week_start')
+    .eq('clinic_id', clinicId)
+    .gte('week_start', weekStart);
+  const set = new Set<string>();
+  for (const r of (data || []) as { week_start: string }[]) if (r.week_start) set.add(r.week_start);
+  return [...set].sort();
+}
+
+type SeatRefLocal = { clinic: number; period: number; role: 'clinic' | 'delegator' | 'extra' };
+type SeatChangeLocal = { weekStart: string; day: string; old: SeatRefLocal[]; new: SeatRefLocal[] };
+
+/** صفُّ تنسيبٍ → خانةٌ مرجعيّة (الاحتياط extra,p0 = مقعد «احتياط» موحّد). */
+function rowToSeat(r: PlaceRow): SeatRefLocal {
+  if (r.status === 'extra') return { clinic: 0, period: 0, role: 'extra' };
+  return { clinic: r.clinic, period: r.period, role: (r.role === 'delegator' ? 'delegator' : 'clinic') };
+}
+const seatSig = (seats: SeatRefLocal[]): string =>
+  seats.map((s) => `${s.role}.${s.clinic}.${s.period}`).sort().join(';');
+
+/** يحسب تغيّرات المقاعد لكلّ طبيبٍ عبر الأسابيع: لكلّ (طبيب،يوم) مقارنةُ مواضعه قبل/بعد. */
+function computeSeatChanges(
+  weeks: string[], before: Map<string, PlaceRow[]>, after: Map<string, PlaceRow[]>,
+): { byDoctor: Map<string, SeatChangeLocal[]>; names: Map<string, string> } {
+  const byDoctor = new Map<string, SeatChangeLocal[]>();
+  const names = new Map<string, string>();
+  for (const w of weeks) {
+    const seatsOf = (rows: PlaceRow[]) => {
+      const m = new Map<string, SeatRefLocal[]>(); // `${docId}|${day}` → seats
+      for (const r of rows) {
+        names.set(r.doctorId, r.doctorName);
+        const k = `${r.doctorId}|${r.day}`;
+        const arr = m.get(k) ?? []; arr.push(rowToSeat(r)); m.set(k, arr);
+      }
+      return m;
+    };
+    const bMap = seatsOf(before.get(w) ?? []);
+    const aMap = seatsOf(after.get(w) ?? []);
+    for (const k of new Set([...bMap.keys(), ...aMap.keys()])) {
+      const oldSeats = bMap.get(k) ?? [];
+      const newSeats = aMap.get(k) ?? [];
+      if (seatSig(oldSeats) === seatSig(newSeats)) continue; // لم يتغيّر
+      const [docId, day] = k.split('|');
+      const arr = byDoctor.get(docId!) ?? [];
+      arr.push({ weekStart: w, day: day!, old: oldSeats, new: newSeats });
+      byDoctor.set(docId!, arr);
+    }
+  }
+  return { byDoctor, names };
+}
+
+/**
+ * يلفّ عمليّةً تمسّ الجدول: يلتقط مواضع الأطباء **قبل/بعد** عبر كلّ الأسابيع المبنيّة من
+ * weekStart فصاعدًا، ثمّ يُرسل لكلّ طبيبٍ تغيّر موضعُه كرت «طرأ تغييرٌ على جدولك» (حدثٌ
+ * واحدٌ يجمع تغييراته كلَّها). يُستثنى صاحبُ الحدث من تغيير **يومه** الذي تصرّف فيه فقط
+ * (excludeActorDays = «أسبوع|يوم»). آمن: الالتقاط/الإرسال تحسينٌ لا يُفشل العمليّة.
+ */
+export async function withSeatChangeDiff<T>(
+  args: {
+    clinicId: string; weekStart: string;
+    senderId?: string; senderName?: string;
+    /** «${doctorId}|${weekStart}|${day}» — لا يُرسَل لمن يعلم تغييرَه بنفسه ذلك اليوم
+     *  (صاحبُ الحدث، أو المبدِّلان في يوم التبديل). الأيّامُ الأخرى تصله. */
+    suppress?: Set<string>;
+  },
+  run: () => Promise<T>,
+): Promise<T> {
+  let weeks: string[] = [];
+  const before = new Map<string, PlaceRow[]>();
+  try {
+    weeks = await builtWeeksFrom(args.clinicId, args.weekStart);
+    for (const w of weeks) before.set(w, await loadWeekPlacement(args.clinicId, w));
+  } catch { weeks = []; /* الالتقاط القبليّ فشل → نتخطّى الإشعار، لا العمليّة */ }
+  const out = await run();
+  if (weeks.length) {
+    try {
+      const after = new Map<string, PlaceRow[]>();
+      for (const w of weeks) after.set(w, await loadWeekPlacement(args.clinicId, w));
+      const { byDoctor, names } = computeSeatChanges(weeks, before, after);
+      if (byDoctor.size) {
+        const { notifications } = await import('./notifications');
+        for (const [docId, changes] of byDoctor) {
+          const kept = changes.filter((c) => !args.suppress?.has(`${docId}|${c.weekStart}|${c.day}`));
+          if (!kept.length) continue;
+          await notifications.notifySeatChangeCard({
+            clinicId: args.clinicId, recipientId: docId, recipientName: names.get(docId) ?? docId,
+            changes: kept as { weekStart: string; day: WeekDay; old: SeatRefLocal[]; new: SeatRefLocal[] }[],
+            senderId: args.senderId, senderName: args.senderName,
+          });
+        }
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log('[seat-change-diff] skipped', e instanceof Error ? e.message : e);
+    }
+  }
+  return out;
+}
+
 /** يلفّ امتصاصًا عبر الأيّام (rebalanceForward) بلقطةٍ قبليّةٍ ويَوْمَنةٍ بعديّة: يكتب
  *  لقطةَ الأيّام البعيدة التي بدّلها الامتصاص كي يعكسها الكنسل لاحقًا بدقّة. آمن: لا
  *  يُفشل العمليّة أبدًا (اليَوْمَنة تحسينٌ للكنسل، لا شرطٌ لصحّة الجدول). */
