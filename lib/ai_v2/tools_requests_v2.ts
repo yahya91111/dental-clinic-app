@@ -11,7 +11,7 @@
 //   3. حدّث requests_assistant_v2.md
 // ═══════════════════════════════════════════════════════════════
 
-import type { V2Tool, V2ToolContext, SwapOffer } from './tools';
+import type { V2Tool, V2ToolContext, SwapOffer, AnnounceOffer } from './tools';
 
 /**
  * تنفيذ الإبلاغ بالكود مباشرةً (يستعمله زرّا [الشفت]/[المركز] في الواجهة، وأداة
@@ -71,20 +71,22 @@ export async function resolvePermissionByCode(params: {
   day: string;
   status: 'permission_start' | 'permission_end';
   shift?: 'morning' | 'evening';
-}): Promise<{ text: string; swapOffer?: SwapOffer }> {
+}): Promise<{ text: string; swapOffer?: SwapOffer; announceOffer?: AnnounceOffer }> {
   let swapOffer: SwapOffer | undefined;
+  let announceOffer: AnnounceOffer | undefined;
   const ctx: V2ToolContext = {
     clinicId: params.clinicId,
     user: params.user,
     roster: [{ id: params.doctorId, name: params.doctorName }],
     onSwapOffer: (o) => { swapOffer = o; },
+    onAnnounceOffer: (o) => { announceOffer = o; },
   };
   const raw = await dispatchRequestToolV2('set_schedule_status', {
     doctorIndex: 1, day: params.day, weekStart: params.weekStart,
     status: params.status, ...(params.shift ? { shift: params.shift } : {}),
   }, ctx);
   const text = raw.startsWith(FINAL_MARK) ? raw.slice(FINAL_MARK.length) : raw;
-  return { text, swapOffer };
+  return { text, swapOffer, announceOffer };
 }
 
 /**
@@ -784,6 +786,13 @@ export async function dispatchRequestToolV2(
           `${keptPermAr ? ` — وهو ${keptPermAr}` : ''}` +
           `${permSwapAr}` +
           `${backShadows?.length ? ` — وعاد معه ظلُّه ${backShadows.join(' و')}` : ''}.`;
+        if (actor.id === doc.id && ABSENCE.includes(status)) {
+          ctx.onAnnounceOffer?.({
+            weekStart: wsEff, day: r.day,
+            message: `${doc.name} ${STATUS_AR[status]} يوم ${DAY_AR[r.day]}.`,
+            subjectId: doc.id, subjectName: doc.name,
+          });
+        }
         return final(base);
       }
 
@@ -952,6 +961,17 @@ export async function dispatchRequestToolV2(
           console.log('[notify-cancel] failed', e instanceof Error ? e.message : e);
         }
 
+        // إلغاءُ أيّ طلبٍ → اسأل صاحبَه (طبيبًا كان أو قائدًا) مَن يُبلِغ: أزرار
+        // [الشفت][المركز][لا داعي] من الكود (القادة وصلهم إشعارهم التلقائيّ، فيُستثنون).
+        {
+          const stAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الطلب';
+          ctx.onAnnounceOffer?.({
+            weekStart: String(r.weekStart), day: r.day,
+            message: `إلغاء ${stAr} ${doc.name} يوم ${DAY_AR[r.day]}.`,
+            subjectId: doc.id, subjectName: doc.name,
+          });
+        }
+
         const rcf = res as {
           permissionCanceled?: boolean; permSwapReverted?: boolean; permSwapRecompute?: boolean; returnedToReserve?: boolean;
           shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
@@ -1026,7 +1046,7 @@ export async function dispatchRequestToolV2(
 
         // إلغاء المصدر ثمّ تسجيل الوجهة بإشعارٍ **مكتوم** (لا إشعارَي علمٍ منفصلَين ولا
         // أزرار إبلاغ) — يُعاد استعمال منطق الإلغاء/التسجيل كاملًا (تبديل، تغطية…).
-        const subCtx: V2ToolContext = { ...ctx, suppressLeaderInfo: true };
+        const subCtx: V2ToolContext = { ...ctx, suppressLeaderInfo: true, onAnnounceOffer: undefined };
         const cancelRaw = await dispatchRequestToolV2('cancel_schedule_status', {
           weekStart: wsEff, day: fromDay, doctorIndex: r.doctorIndex,
         }, subCtx);

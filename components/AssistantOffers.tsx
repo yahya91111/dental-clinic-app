@@ -8,6 +8,7 @@
 //    المحادثتين: أيّ خيارٍ يُنفَّذ في إحداهما يظهر محلولًا في الأخرى بلا تكرار تنفيذ.
 //
 // عروضٌ ممكنة (تُنفَّذ **بالكود** — النموذج لا يسأل ولا يشارك):
+//  • announceOffer: غيابٌ/إلغاءٌ ذاتيّ سُجّل ووصل القائدَ إشعارُه → «هل تُبلَّغ جهةٌ أخرى؟».
 //  • swapOffer: حسم استئذانٍ مبهم (بداية/نهاية).
 //  • confirmOffer: تأكيد مسح الجدول.
 // ═══════════════════════════════════════════════════════════════
@@ -31,6 +32,7 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
   /** بعد إجراءٍ غيّر الجدول (مسح) — لإنعاش الأب */
   onDone?: () => void;
 }) {
+  const announceOffer = message.announceOffer;
   const baseSwap = message.swapOffer;
   const confirmOffer = message.confirmOffer;
   const resolved = message.offerResolved;        // النتيجة المشتركة (مصدر الحقيقة)
@@ -43,6 +45,26 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
   const resolve = useCallback((text: string, done: boolean) => {
     onResolved?.(text, done);
   }, [onResolved]);
+
+  const handleAnnounce = useCallback(async (choice: 'shift' | 'center' | 'none') => {
+    if (!announceOffer || busy || resolved) return;
+    if (choice === 'none') { resolve('حسنًا — بلا إبلاغ.', true); return; }
+    setBusy(true);
+    try {
+      const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
+      const cid = clinicId || user.clinicId;
+      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+      const res = await announceAbsence({
+        clinicId: cid, sender: { id: user.id, name: user.name },
+        audience: choice, message: announceOffer.message, subjectId: announceOffer.subjectId,
+      });
+      resolve(res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}`, res.success);
+    } catch (e) {
+      resolve(e instanceof Error ? e.message : 'خطأ غير متوقّع.', false);
+    } finally {
+      setBusy(false);
+    }
+  }, [announceOffer, busy, resolved, clinicId, user, resolve]);
 
   const handleSwap = useCallback(async (choice: 'perm_start' | 'perm_end') => {
     const offer = override ?? baseSwap;
@@ -93,13 +115,13 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
     }
   }, [confirmOffer, busy, resolved, clinicId, user, resolve, onDone]);
 
-  if (!baseSwap && !confirmOffer) return null;
+  if (!announceOffer && !baseSwap && !confirmOffer) return null;
 
   const eff = override ?? baseSwap;
 
   // النوع/العنوان/الحالة — نفس لغة كرت النقص (شارة + عنوان + حبّة حالة)
   const kind: CardKind = resolved ? (resolved.done ? 'done' : 'swap') : confirmOffer ? 'coverage' : 'swap';
-  const title = confirmOffer ? 'مسح الجدول' : 'تبديل';
+  const title = confirmOffer ? 'مسح الجدول' : announceOffer ? 'إبلاغ الزملاء' : 'تبديل';
   const pillText = resolved ? (resolved.done ? 'تمّ' : 'تعذّر') : confirmOffer ? 'تأكيد' : 'يحتاج قرارك';
   const live = !resolved;
 
@@ -149,6 +171,15 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
             : (
                 <>
                   {!!errText && <Text style={st.err}>{errText}</Text>}
+
+                  {!!announceOffer && (
+                    <>
+                      <Text style={st.hint}>هل تريد إبلاغ جهةٍ أخرى؟</Text>
+                      <Opt label="الشفت" onPress={() => handleAnnounce('shift')} />
+                      <Opt label="المركز" onPress={() => handleAnnounce('center')} />
+                      <Opt label="لا داعي" onPress={() => handleAnnounce('none')} />
+                    </>
+                  )}
 
                   {!!eff && eff.kind === 'permission_clarify' && (
                     <>

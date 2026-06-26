@@ -23,9 +23,9 @@ import {
   DOCTOR_PROMPT_V2,
   KNOWLEDGE_INDEX,
 } from './_compiled';
-import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type SwapOffer, type ConfirmOffer } from './tools';
+import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type AnnounceOffer, type SwapOffer, type ConfirmOffer } from './tools';
 import { REQUESTS_TOOLS_V2, dispatchRequestToolV2, FINAL_MARK, requestsToolsForRole } from './tools_requests_v2';
-export type { SchedulePreview, SwapOffer, ConfirmOffer } from './tools';
+export type { SchedulePreview, AnnounceOffer, SwapOffer, ConfirmOffer } from './tools';
 
 // ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
 // مهمّة الإشعارات أُلغيت: التغطية والإشعارات صارت ضمن «الطلبات» (المحرّك يكتشف
@@ -114,6 +114,8 @@ export type SendMessageV2Result = {
   error?: string;
   /** حزمة معاينة جدول (لو بنى الذكاء معاينة هذه الرسالة) — الواجهة تعرضها وتحفظها */
   preview?: SchedulePreview;
+  /** عرض إبلاغ بعد غيابٍ ذاتيّ — الواجهة تعرض أزراره وتنفّذها بالكود (لا بالنموذج) */
+  announceOffer?: AnnounceOffer;
   /** عرض أزرار حسم الاستئذان المبهم (بداية/نهاية) — تُنفَّذ بالكود */
   swapOffer?: SwapOffer;
   /** عرض تأكيدٍ قبل إجراءٍ خطير (مسح الجدول) — الواجهة تعرض [نعم][تراجع] وتنفّذ بالكود */
@@ -311,6 +313,8 @@ export async function sendMessageV2(
 
     // آخر معاينة بناها الذكاء هذه الرسالة (تُرجَّع للواجهة لتعرضها وتحفظها)
     let capturedPreview: SchedulePreview | undefined;
+    // وعرض الإبلاغ بعد غيابٍ ذاتيّ (الواجهة تعرض أزراره وتنفّذها بالكود)
+    let capturedAnnounce: AnnounceOffer | undefined;
     // أزرار حسم الاستئذان المبهم (بداية/نهاية)
     let capturedSwap: SwapOffer | undefined;
     let capturedConfirm: ConfirmOffer | undefined;
@@ -319,6 +323,7 @@ export async function sendMessageV2(
       user: opts.user,
       roster: rosterForTools,
       onPreview: (p) => { capturedPreview = p; },
+      onAnnounceOffer: (o) => { capturedAnnounce = o; },
       onSwapOffer: (o) => { capturedSwap = o; },
       onConfirmOffer: (o) => { capturedConfirm = o; },
     };
@@ -477,6 +482,7 @@ export async function sendMessageV2(
       success: true,
       message: allText,
       preview: capturedPreview,
+      announceOffer: capturedAnnounce,
       swapOffer: capturedSwap,
       confirmOffer: capturedConfirm,
       usage: {

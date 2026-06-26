@@ -757,7 +757,7 @@ function ChatBody({ messages, isLoading, onSend, style, light, header, user, cli
         const isLastAssistant = !isUser && mi === messages.length - 1;
         const { text, choices } = isLastAssistant && !isLoading ? parseChoices(m.content) : { text: m.content, choices: [] as string[] };
         // رسالةٌ تحمل عرضًا → كرتٌ كامل (نصّها + أزرارها) بلا فقاعة منفصلة، يتزامن مع الضغطة المطوّلة
-        const hasOffer = !isUser && (!!m.swapOffer || !!m.confirmOffer);
+        const hasOffer = !isUser && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
         if (hasOffer && user) {
           return (
             <AssistantOffers
