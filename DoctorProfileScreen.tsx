@@ -2438,7 +2438,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                   // محادثة الذكاء (تغطية/نتائجها) لا تظهر هنا — مكانها الجات.
                   // أمّا **طلبات التبديل** ونتائجها (request_result مع data.swap_v2)
                   // فمكانها هنا حصرًا (موافق/رفض من الإشعارات، لا من الذكاء).
-                  const AI_CHAT_TYPES = ['coverage_request', 'gap_alert', 'request_result'];
+                  const AI_CHAT_TYPES = ['gap_alert', 'request_result'];
                   const filtered = notifications.filter(n => {
                     if (AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2)) return false;
                     if (notifTab === 'unread') return !n.is_read;
@@ -2522,9 +2522,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                 const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
                                 try {
                                   // المحرّك يطبّق التبديل/التغطية ويُلغي الأشقّاء عند التغطية
-                                  if (notif.type === 'coverage_request') {
-                                    await notifEngine.acceptCoverage({ notificationId: notif.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name });
-                                  } else if (notif.type === 'swap_request') {
+                                  if (notif.type === 'swap_request') {
                                     // قبولٌ ذرّيّ: قد يفشل (سبقك زميل / انتهت المهلة / تغيّر
                                     // الجدول) — أظهر السبب وأسقط الكرت بدل «تمت الموافقة» كاذبة.
                                     const res = await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role, targetName: user.name });
@@ -2550,9 +2548,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                 const { updateNotificationAction } = await import('./lib/database');
                                 const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
                                 try {
-                                  if (notif.type === 'coverage_request') {
-                                    await notifEngine.rejectCoverage({ notificationId: notif.id });
-                                  } else if (notif.type === 'swap_request') {
+                                  if (notif.type === 'swap_request') {
                                     // رفضٌ صامت للطالب؛ رفض آخر معلّقٍ يُطلق «لم يقبل أحد»
                                     await notifEngine.rejectSwap({ notificationId: notif.id, targetName: user?.name });
                                   } else {

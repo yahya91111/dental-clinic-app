@@ -12,7 +12,7 @@
 // swapInSchedule — هذا هو التسليم بين الوحدتين.
 //
 // قيد تقنيّ: لا مؤقّت خلفيّ. مهلة الـ24 ساعة تُخزَّن في data.expires_at
-// وتُسقَط كسولًا عند العرض/الفحص (sweepCoverageGroup / pruneExpired).
+// وتُسقَط كسولًا عند العرض/الفحص (pruneExpiredSwaps).
 // ═══════════════════════════════════════════════════════════════
 
 import { supabase } from '../supabase';
@@ -160,35 +160,6 @@ export async function resolveAudience(
 // ═══════════════════════════════════════════════════════════════
 // إعلاميّ — info
 // ═══════════════════════════════════════════════════════════════
-
-/** إشعار إنشاء جدول أسبوع لكلّ أطباء العيادة (للعلم) */
-export async function notifyScheduleCreated(args: {
-  clinicId: string;
-  weekStart: string;
-  recipientIds?: string[]; // إن لم تُمرَّر تُجلَب كلّ أطباء العيادة
-  senderId?: string;
-  senderName?: string;
-}): Promise<NotifResult> {
-  try {
-    const recipients =
-      args.recipientIds && args.recipientIds.length
-        ? args.recipientIds
-        : await resolveAudience(args.clinicId, 'center');
-    const title = 'جدول جديد';
-    const body = `صدر جدول أسبوع ${args.weekStart}.`;
-    for (const rid of recipients) {
-      await sendInfo({
-        clinicId: args.clinicId, recipientId: rid,
-        senderId: args.senderId, senderName: args.senderName,
-        type: NotifType.SCHEDULE_CREATED, title, body,
-        data: { week_start: args.weekStart },
-      });
-    }
-    return ok();
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-  }
-}
 
 /**
  * إبلاغ الليدر بطلبٍ أو إلغاءٍ قدّمه طبيب (للعلم، تلقائيّ).
@@ -362,30 +333,6 @@ export async function broadcast(args: {
   }
 }
 
-/** إبلاغ المدرّب أنّ متدرّبًا أُلحق به في عيادته ذلك اليوم (للعلم) */
-export async function notifyTraineeAttached(args: {
-  clinicId: string;
-  supervisorId: string;
-  traineeName: string;
-  day: WeekDay;
-  weekStart: string;
-  senderId?: string;
-  senderName?: string;
-}): Promise<NotifResult> {
-  try {
-    return await sendInfo({
-      clinicId: args.clinicId, recipientId: args.supervisorId,
-      senderId: args.senderId, senderName: args.senderName,
-      type: NotifType.TRAINEE_ATTACHED,
-      title: 'متدرّب معك اليوم',
-      body: `سيكون ${dr(args.traineeName)} معك في عيادتك يوم ${DAY_AR[args.day]} (لهذا اليوم فقط).`,
-      data: { week_start: args.weekStart, day: args.day },
-    });
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-  }
-}
-
 /**
  * إبلاغ طبيبٍ تغيّر مقعدُه (تعويضُ غيابٍ أو تبديلُ استئذان) — للعلم، يصل صفحة الذكاء
  * (الجرس) بتفاصيل صريحة: العيادة والفترة واليوم. لكلّ طبيبٍ إشعارٌ واحدٌ ليومه (نحذف
@@ -439,70 +386,6 @@ export async function notifyDoctorSeatChange(args: {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// طلب قرار — التغطية (24 ساعة، أوّل موافقة تُطبّق وتُلغي الباقي)
-// ═══════════════════════════════════════════════════════════════
-
-/** بيانات تُخزَّن مع كلّ طلب تغطية لتطبيق التبديل عند القبول */
-type CoverageData = {
-  coverage_group: string;
-  stage: 'same_shift' | 'other_shift';
-  expires_at: string;
-  clinic_id: string;
-  week_start: string;
-  day: WeekDay;
-  gap: Gap;
-  absent_doctor_id: string;
-  absent_doctor_name: string;
-};
-
-/**
- * يفتح طلبات تغطيةٍ لنقصٍ واحد: إشعار action لكلّ مرشّح، تشترك جميعها في
- * coverage_group واحد وتنتهي بعد 24 ساعة. القبول يُطبّق تبديلًا خانةً بخانة
- * بين الغائب والمُغطّي على نطاق الشفت، ويُلغي البقيّة بصمت.
- */
-export async function openCoverageRequests(args: {
-  clinicId: string;
-  weekStart: string;
-  day: WeekDay;
-  gap: Gap;
-  absentDoctorId: string;
-  absentDoctorName: string;
-  candidates: CoverageCandidate[];
-  stage?: 'same_shift' | 'other_shift';
-  senderId?: string;
-  senderName?: string;
-}): Promise<{ success: boolean; error?: string; groupId?: string; sent?: number }> {
-  try {
-    if (!args.candidates.length) return { success: false, error: 'لا يوجد مرشّحون للتغطية.' };
-    const stage = args.stage ?? 'same_shift';
-    const groupId = `cov_${args.clinicId}_${args.weekStart}_${args.day}_${args.gap.clinicNumber}_${args.gap.period}_${Date.now()}`;
-    const expiresAt = new Date(Date.now() + TWENTY_FOUR_HOURS_MS).toISOString();
-    const data: CoverageData = {
-      coverage_group: groupId, stage, expires_at: expiresAt,
-      clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
-      gap: args.gap, absent_doctor_id: args.absentDoctorId, absent_doctor_name: args.absentDoctorName,
-    };
-    const title = 'طلب تغطية';
-    const body =
-      `تغطية العيادة ${args.gap.clinicNumber} الفترة ${periodLabel(args.gap.period)} ` +
-      `يوم ${DAY_AR[args.day]} — تبديل مع ${dr(args.absentDoctorName)}؟`;
-
-    let sent = 0;
-    for (const c of args.candidates) {
-      const { error } = await sendAction({
-        clinicId: args.clinicId, recipientId: c.doctorId,
-        senderId: args.senderId, senderName: args.senderName,
-        type: NotifType.COVERAGE_REQUEST, title, body, data,
-      });
-      if (!error) sent++;
-    }
-    return { success: sent > 0, groupId, sent, error: sent ? undefined : 'تعذّر إرسال الطلبات.' };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
-  }
-}
-
 /** يقرأ صفّ إشعار واحد (id, recipient_id, data, action_status) */
 async function loadNotif(notificationId: string): Promise<{
   id: string; recipient_id: string; data: any; action_status: string | null;
@@ -514,182 +397,6 @@ async function loadNotif(notificationId: string): Promise<{
     .single();
   if (error || !data) return null;
   return data as any;
-}
-
-const isExpired = (d: CoverageData): boolean =>
-  !!d.expires_at && new Date(d.expires_at).getTime() < Date.now();
-
-/**
- * قبول طلب تغطية: يُطبّق التبديل (خانة بخانة، نطاق الشفت) بين الغائب
- * والمُغطّي، يثبّت هذا الطلب «مقبولًا»، ويُلغي بقيّة طلبات المجموعة بصمت.
- * المُغطّي أحد طرفَي التبديل، فصلاحيّته كافية.
- */
-export async function acceptCoverage(args: {
-  notificationId: string;
-  accepterId: string;
-  accepterRole?: string;
-  accepterName?: string;
-}): Promise<NotifResult & { absentDoctorId?: string; absentDoctorName?: string }> {
-  try {
-    const notif = await loadNotif(args.notificationId);
-    if (!notif) return fail('الطلب غير موجود.');
-    const d = notif.data as CoverageData;
-    if (!d?.coverage_group) return fail('بيانات الطلب ناقصة.');
-    if (notif.action_status && notif.action_status !== 'pending') return fail('عولِج هذا الطلب مسبقًا.');
-    if (isExpired(d)) return fail('انتهت مهلة الطلب.');
-
-    // القفل الذرّيّ أوّلًا — قبل أيّ تنفيذٍ في الجدول (لا يقبله إلّا واحد)
-    const { data: claimed } = await supabase
-      .from('notifications')
-      .update({ action_status: 'accepted', is_read: true })
-      .eq('id', args.notificationId)
-      .eq('action_status', 'pending')
-      .select('id');
-    if (!claimed || claimed.length === 0) return fail('عولِج هذا الطلب مسبقًا.');
-
-    // سباق الإخوة: شقيقٌ آخر حجز كرته في اللحظة نفسها؟ من رأى محجوزًا قبله
-    // انسحب وطوى كرته قبل أيّ تنفيذ — فلا تُطبَّق التغطية مرّتين أبدًا.
-    const { data: siblings } = await supabase
-      .from('notifications')
-      .select('id, action_status')
-      .filter('data->>coverage_group', 'eq', d.coverage_group);
-    if ((siblings || []).some(
-      (r: { id: string; action_status: string | null }) =>
-        r.id !== args.notificationId && r.action_status === 'accepted',
-    )) {
-      await supabase.from('notifications').delete().eq('id', args.notificationId);
-      return fail('سبقك زميلٌ آخر — انتهى الطلب.');
-    }
-
-    // التبديل: الغائب ↔ المُغطّي خانةً بخانة. نفس الشفت → نطاق الشفت؛ الشفت
-    // الآخر → اليوم كامل (كلٌّ يأخذ مكان الآخر مهما كان شفته/فترته/مكانه).
-    const scope =
-      d.stage === 'other_shift'
-        ? { kind: 'day' as const }
-        : { kind: 'shift' as const, shift: d.gap.shift };
-    const swap = await swapInSchedule(
-      { id: args.accepterId, role: args.accepterRole || 'doctor' },
-      {
-        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
-        doctorIds: [d.absent_doctor_id, args.accepterId],
-        scope,
-      },
-    );
-    if (!swap.success) {
-      // تعذّر التنفيذ → يُفكّ الحجز ويعود الكرت قابلًا للضغط (لا موت صامت)
-      await supabase
-        .from('notifications')
-        .update({ action_status: 'pending' })
-        .eq('id', args.notificationId);
-      return fail(swap.error || 'تعذّر تطبيق التبديل.');
-    }
-
-    // ألغِ البقيّة بصمت (حذف)
-    await supabase
-      .from('notifications')
-      .delete()
-      .filter('data->>coverage_group', 'eq', d.coverage_group)
-      .neq('id', args.notificationId);
-
-    // التغطية حرّكت الجدول → طلبات تبديلٍ معلّقة لطرفيها تُبطَل ويُبلَّغ أصحابها
-    await invalidateSwapsTouching({
-      weekStart: d.week_start, day: d.day,
-      doctorIds: [d.absent_doctor_id, args.accepterId],
-    });
-
-    // إنعاش كروت النقص عند **كلّ** القادة: زميلٌ قبِل التغطية فسُدّ النقص — أعِد
-    // حساب حقائق اليوم (المعادلة من جديد) كي ينطفئ الأحمر الكاذب ولا يبقى الكرت
-    // معلّقًا «يوجد نقص» بلا نقص. يُنعَش كلّ غائبي اليوم لا المُغطَّى وحده: المُغطّي
-    // صار مشغولًا فقد يسقط من اقتراحات غائبٍ آخر في الكرت نفسه. فشله لا يُفشل التغطية.
-    try {
-      const { computeDayCoverageBriefs } = await import('./requests_v2');
-      const briefs = await computeDayCoverageBriefs({
-        clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
-      });
-      const ids = new Set(briefs.map((b) => b.absentId));
-      const all = ids.has(d.absent_doctor_id)
-        ? briefs
-        : [...briefs, { day: d.day, absentId: d.absent_doctor_id, absentName: d.absent_doctor_name, gaps: [], reserves: [] }];
-      for (const b of all) {
-        await resolveCoverageV2({
-          clinicId: d.clinic_id, weekStart: d.week_start, day: d.day,
-          absentDoctorId: b.absentId,
-          covered: { kind: 'fresh', gaps: b.gaps, reserves: b.reserves },
-        });
-      }
-    } catch { /* إنعاش الكروت تحسينٌ — لا يُفشل التغطية المنفَّذة */ }
-
-    // ردّ للطالب (الغائب): تمّت تغطية فترتك
-    await sendInfo({
-      clinicId: d.clinic_id, recipientId: d.absent_doctor_id,
-      senderId: args.accepterId, senderName: args.accepterName,
-      type: NotifType.REQUEST_RESULT, title: 'تمّت التغطية',
-      body: `وافق ${args.accepterName ? dr(args.accepterName) : 'زميلك'} وتمّت تغطية فترتك يوم ${DAY_AR[d.day]}.`,
-    });
-    return { success: true, absentDoctorId: d.absent_doctor_id, absentDoctorName: d.absent_doctor_name };
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-  }
-}
-
-/**
- * رفض طلب تغطية. يُرجِع allExhausted=true إن لم يبقَ في المجموعة طلبٌ
- * معلّق غير منتهٍ — عندها يصعّد المساعد (الشفت الآخر، ثمّ الليدر).
- */
-export async function rejectCoverage(args: {
-  notificationId: string;
-}): Promise<NotifResult & { allExhausted?: boolean; groupId?: string; coverage?: CoverageData }> {
-  try {
-    const notif = await loadNotif(args.notificationId);
-    if (!notif) return fail('الطلب غير موجود.');
-    const d = notif.data as CoverageData;
-    await supabase
-      .from('notifications')
-      .update({ action_status: 'rejected', is_read: true })
-      .eq('id', args.notificationId);
-
-    const outcome = await sweepCoverageGroup(d.coverage_group);
-    // عند نفاد كلّ المرشّحين: أبلِغ الطالب (الغائب) أنّ التغطية لم تكتمل
-    if (outcome === 'exhausted' && d?.absent_doctor_id) {
-      await sendInfo({
-        clinicId: d.clinic_id, recipientId: d.absent_doctor_id,
-        type: NotifType.REQUEST_RESULT, title: 'لم تكتمل التغطية',
-        body: `لم يوافق أحد على تغطية فترتك يوم ${DAY_AR[d.day]}.`,
-      });
-    }
-    return { success: true, allExhausted: outcome === 'exhausted', groupId: d.coverage_group, coverage: d };
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-  }
-}
-
-/**
- * يفحص مجموعة تغطيةٍ ويُسقط المنتهية كسولًا:
- *  - 'accepted'  : قُبِل أحد طلباتها.
- *  - 'pending'   : ما زال فيها طلبٌ حيّ (لم ينتهِ ولم يُرفَض).
- *  - 'exhausted' : رُفِض الجميع أو انتهت المهلة → يصعّد المساعد.
- * المنتهية المعلّقة تُحذف هنا (لا تبقى معروضة).
- */
-export async function sweepCoverageGroup(
-  groupId: string,
-): Promise<'accepted' | 'pending' | 'exhausted'> {
-  const { data } = await supabase
-    .from('notifications')
-    .select('id, data, action_status')
-    .filter('data->>coverage_group', 'eq', groupId);
-  const rows = (data || []) as { id: string; data: CoverageData; action_status: string | null }[];
-  if (rows.some((r) => r.action_status === 'accepted')) return 'accepted';
-
-  let livePending = false;
-  for (const r of rows) {
-    const pending = !r.action_status || r.action_status === 'pending';
-    if (pending && isExpired(r.data)) {
-      await supabase.from('notifications').delete().eq('id', r.id); // منتهٍ → أسقطه
-    } else if (pending) {
-      livePending = true;
-    }
-  }
-  return livePending ? 'pending' : 'exhausted';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1531,45 +1238,18 @@ export async function resolveCoverageV2(args: {
   } catch { /* تحديث الكروت تحسينٌ — لا يُفشل التغطية المنفَّذة */ }
 }
 
-/**
- * يُنهي كروت النقص المطابقة (نفس العيادة/الفترة/اليوم/الأسبوع) بعد التغطية
- * الفعليّة — كي يخفت زرّ الذكاء ولا يبقى الكرت معلّقًا. (يستعمله مساعد v1.)
- */
-export async function resolveGapAlert(args: {
-  clinicId: string; weekStart: string; day: WeekDay; clinicNumber: number; period: number;
-}): Promise<void> {
-  const { data } = await supabase
-    .from('notifications')
-    .select('id, data, action_status')
-    .eq('clinic_id', args.clinicId)
-    .eq('type', NotifType.GAP_ALERT);
-  const rows = (data || []) as { id: string; data: any; action_status: string | null }[];
-  for (const r of rows) {
-    const pending = !r.action_status || r.action_status === 'pending';
-    if (!pending) continue;
-    if (
-      r.data?.week_start === args.weekStart && r.data?.day === args.day &&
-      r.data?.gap?.clinicNumber === args.clinicNumber && r.data?.gap?.period === args.period
-    ) {
-      await supabase.from('notifications').update({ action_status: 'accepted', is_read: true }).eq('id', r.id);
-    }
-  }
-}
-
 // ─── تجميع التصدير ─────────────────────────────────────────────
 export const notifications = {
   // إعلاميّ
-  notifyScheduleCreated, notifyLeaderOfRequest, broadcast, resolveAudience,
-  notifyTraineeAttached,
+  notifyLeaderOfRequest, broadcast, resolveAudience,
   // تغطية
-  openCoverageRequests, acceptCoverage, rejectCoverage, sweepCoverageGroup,
   resolveCoverageFillGroup,
   // طلب تبديل (مجموعة كروت — أوّل موافقٍ يفوز)
   openSwapGroup, acceptSwap, rejectSwap, pruneExpiredSwaps,
   swapGroupsStatus, cancelSwapGroup, notifyLeadersCrossShiftSwap,
   invalidateSwapsTouching,
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
-  resolveGapAlert, resolveCoverageV2,
+  resolveCoverageV2,
   alertLeaderPlacement, resolvePlacementV2,
   resolvePermissionAlertV2,
   // كرت سؤال القائد عن استدعاء احتياطيّ خاصّ (بورد/متدرّب)

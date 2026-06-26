@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase';
 const NAME = process.argv[2] || 'يحيى';
 const ALL = process.argv[3] === 'all';
 
-const AI_CHAT_TYPES = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
+const AI_CHAT_TYPES = ['swap_request', 'gap_alert', 'request_result'];
 
 async function main() {
   const { data: docs, error: dErr } = await supabase

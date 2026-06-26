@@ -50,10 +50,10 @@ type ConvoNotif = {
 // أنواع «محادثة الذكاء» — مكانها الجات لا صفحة الإشعارات.
 // طلبات التبديل (swap_request) ونتائجها (request_result مع data.swap_v2) مكانها
 // **صفحة الإشعارات** حصرًا — لا تظهر هنا.
-const AI_CHAT_TYPES = ['coverage_request', 'gap_alert', 'request_result'];
+const AI_CHAT_TYPES = ['gap_alert', 'request_result'];
 const inAIChat = (n: { type: string; data?: any }) =>
   AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2);
-const isActionType = (t: string) => t === 'coverage_request' || t === 'gap_alert';
+const isActionType = (t: string) => t === 'gap_alert';
 const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
 
@@ -814,16 +814,9 @@ export function AICardsView({ user, clinicId }: {
     setBusyId(n.id);
     try {
       let msg = '';
-      if (n.type === 'coverage_request') {
-        const res = decision === 'accept'
-          ? await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name })
-          : await notifEngine.rejectCoverage({ notificationId: n.id });
-        msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'رفضتَ الطلب.') : `تعذّر: ${res.error || ''}`;
-      } else {
-        const { updateNotificationAction } = await import('../lib/database');
-        await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
-        msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
-      }
+      const { updateNotificationAction } = await import('../lib/database');
+      await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
+      msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
       setNote(msg);
       await loadConvo();
     } catch (e) {
@@ -1015,16 +1008,9 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
     setBusyId(n.id);
     try {
       let msg = '';
-      if (n.type === 'coverage_request') {
-        const res = decision === 'accept'
-          ? await notifEngine.acceptCoverage({ notificationId: n.id, accepterId: user.id, accepterRole: user.role, accepterName: user.name })
-          : await notifEngine.rejectCoverage({ notificationId: n.id });
-        msg = res.success ? (decision === 'accept' ? 'تمّت الموافقة وطُبّق التبديل.' : 'رفضتَ الطلب.') : `تعذّر: ${res.error || ''}`;
-      } else {
-        const { updateNotificationAction } = await import('../lib/database');
-        await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
-        msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
-      }
+      const { updateNotificationAction } = await import('../lib/database');
+      await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
+      msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
       setNote(msg);
       await loadConvo();
     } catch (e) {

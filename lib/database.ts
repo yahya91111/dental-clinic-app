@@ -1722,7 +1722,7 @@ export async function getUnreadCount(recipientId: string): Promise<number> {
       .select('id')
       .eq('recipient_id', recipientId)
       .eq('is_read', false)
-      .not('type', 'in', '("swap_request","coverage_request","gap_alert","request_result")');
+      .not('type', 'in', '("swap_request","gap_alert","request_result")');
     if (error) throw error;
     // eslint-disable-next-line no-console
     console.log(`[bell-count] recipient=${recipientId.slice(0, 8)} unread=${data?.length ?? 0}`);

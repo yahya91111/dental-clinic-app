@@ -223,7 +223,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     try {
       const { getNotifications, deleteNotification } = await import('../../lib/database');
       const { data } = await getNotifications(user.id, 50);
-      const types = ['swap_request', 'coverage_request', 'gap_alert', 'request_result'];
+      const types = ['swap_request', 'gap_alert', 'request_result'];
       const ids = ((data || []) as { id: string; type: string }[])
         .filter((n) => types.includes(n.type)).map((n) => n.id);
       for (const id of ids) await deleteNotification(id);
