@@ -336,13 +336,19 @@ export async function notifySeatChangeCard(args: {
   changes: SeatChange[];
   /** عدد عيادات الأسبوع — لرسم هيكل الجدول الفارغ في عرض المعاينة (للرؤية). */
   clinicCount?: number;
+  /** للظلّ (المتدرّب المبتدئ): مدرّبُه الذي تغيّر مكانُه فتبِعه — ليعلم أنّ تغيّرَه تبعٌ
+   *  لتغيّر مدرّبه (يُذكَر في نصّ الكرت ويُخزَّن في البيانات). */
+  supervisorMoved?: { id: string; name: string };
   senderId?: string;
   senderName?: string;
 }): Promise<NotifResult> {
   try {
     if (!args.changes.length) return ok();
     const dayList = [...new Set(args.changes.map((c) => dayWithDate(c.weekStart, c.day)))];
-    const body = `طرأ تغييرٌ على جدولك — ${dayList.join('، ')}.`;
+    const sup = args.supervisorMoved;
+    const body = sup
+      ? `طرأ تغييرٌ على جدولك — ${dayList.join('، ')} (تبِعتَ مدرّبك ${dr(sup.name)}).`
+      : `طرأ تغييرٌ على جدولك — ${dayList.join('، ')}.`;
     const { error } = await createNotification({
       clinic_id: args.clinicId,
       recipient_id: args.recipientId,
@@ -355,6 +361,7 @@ export async function notifySeatChangeCard(args: {
         v: 1, kind: 'seat_change',
         doctor_id: args.recipientId, doctor_name: args.recipientName,
         clinic_count: args.clinicCount ?? 0,
+        ...(sup ? { supervisor_moved: { id: sup.id, name: sup.name } } : {}),
         changes: args.changes.map((c) => ({
           week_start: c.weekStart, day: c.day,
           old: c.old.map((s) => ({ clinic: s.clinic, period: s.period, role: s.role })),

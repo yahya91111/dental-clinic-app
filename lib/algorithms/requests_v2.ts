@@ -345,13 +345,31 @@ export async function withSeatChangeDiff<T>(
       const { byDoctor, names } = computeSeatChanges(weeks, before, after);
       if (byDoctor.size) {
         const { notifications } = await import('./notifications');
+        // خريطة الظلّ→مدرّبه: لو تغيّر مكانُ الظلّ تبعًا لمدرّبه (مدرّبُه أيضًا في byDoctor
+        // وتغيّر يوم تغيّرِ الظلّ) نوسم كرتَ الظلّ بأنّ تغيّره تبعٌ لمدرّبه — «ليعلم هو أيضًا».
+        let supOfShadow = new Map<string, string>(); // shadowId → supervisorId
+        try {
+          const { data: mem } = await getAllGroupMembers(args.clinicId);
+          for (const m of (mem || []) as { doctor_id: string; work_status?: string; supervisor_doctor_id?: string | null }[]) {
+            if (m.work_status === 'trainee' && m.supervisor_doctor_id) supOfShadow.set(m.doctor_id, m.supervisor_doctor_id);
+          }
+        } catch { supOfShadow = new Map(); }
         for (const [docId, changes] of byDoctor) {
           const kept = changes.filter((c) => !args.suppress?.has(`${docId}|${c.weekStart}|${c.day}`));
           if (!kept.length) continue;
+          // الظلّ تبِع مدرّبه؟ مدرّبُه في byDoctor وله تغيّرٌ في يومٍ من أيّام الظلّ ⇒ وسمٌ بالسبب.
+          let supervisorMoved: { id: string; name: string } | undefined;
+          const supId = supOfShadow.get(docId);
+          if (supId && byDoctor.has(supId)) {
+            const supDays = new Set((byDoctor.get(supId) ?? []).map((c) => `${c.weekStart}|${c.day}`));
+            if (kept.some((c) => supDays.has(`${c.weekStart}|${c.day}`))) {
+              supervisorMoved = { id: supId, name: names.get(supId) ?? supId };
+            }
+          }
           await notifications.notifySeatChangeCard({
             clinicId: args.clinicId, recipientId: docId, recipientName: names.get(docId) ?? docId,
             changes: kept as { weekStart: string; day: WeekDay; old: SeatRefLocal[]; new: SeatRefLocal[] }[],
-            clinicCount,
+            clinicCount, supervisorMoved,
             senderId: args.senderId, senderName: args.senderName,
           });
         }
