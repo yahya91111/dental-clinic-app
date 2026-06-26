@@ -9,32 +9,36 @@ import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } fr
 // نفسُها هي التي **تُضيء** (المكان الجديد) أو **تنطفئ** (المكان السابق) — لا حاويةٌ
 // داخل حاوية. الاسم نصٌّ عاديّ. الجدول الحيّ لا يمرّر tone فيبقى كما هو تمامًا.
 type Tone = 'new' | 'old' | undefined;
+// ألوان إضاءة الخانة (نفس عائلة لون العيادة/الدليقيتر) — إضاءةٌ ناعمةٌ لا تهويل.
+const CLINIC_ACCENT = '#4776BA';
+const DLG_ACCENT = '#7C6CB4';
 /** نبرةُ الخانة من صفوفها: مضيءٌ يغلب المنطفئ (نادرًا ما يجتمعان في خانة). */
 function slotsTone(arr: ScheduleSlot[]): Tone {
   if (arr.some(s => s.tone === 'new')) return 'new';
   if (arr.some(s => s.tone === 'old')) return 'old';
   return undefined;
 }
-/** أنماطُ الحاوية المضيئة/المنطفئة — تُدمَج فوق نمط الخانة الأساسيّ. */
-function toneBox(t: Tone) {
-  if (t === 'new') return tone.boxNew;
+/** نمطُ الحاوية: المضيءُ إضاءةٌ ناعمةٌ بلون الخانة نفسه (هالةٌ خفيفة + تعبئةٌ رقيقة،
+ *  بلا حدٍّ غامقٍ ولا تهويل)، والمنطفئُ باهتٌ هادئ. يُدمَج فوق نمط الخانة الأساسيّ. */
+function toneBox(t: Tone, accent: string) {
+  if (t === 'new') {
+    return {
+      borderColor: accent + '66',                 // حدٌّ رقيقٌ بلون الخانة (لا غامق)
+      backgroundColor: accent + '1A',             // تعبئةٌ خفيفةٌ بنفس اللون
+      shadowColor: accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.55, shadowRadius: scale(8), elevation: 5,
+    };
+  }
   if (t === 'old') return tone.boxOld;
   return null;
 }
 function SlotName({ slot, base }: { slot: ScheduleSlot; base: string }) {
-  const t: Tone = slot.tone;
-  const txt = t === 'new' ? tone.txtNew : t === 'old' ? tone.txtOld : { color: base };
+  // المضيءُ والعاديّ: الاسم بلونه الطبيعيّ (الإضاءةُ على الحاوية لا على الاسم).
+  // المنطفئ فقط: رماديٌّ باهتٌ مشطوب.
+  const txt = slot.tone === 'old' ? tone.txtOld : { color: base };
   return <Text style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, txt]} numberOfLines={1}>{slot.doctorName}</Text>;
 }
 
 const tone = StyleSheet.create({
-  // الحاوية المضيئة: حدٌّ أزرقُ مضيءٌ + تعبئةٌ زرقاء + هالةُ توهّج — حديثةٌ لافتة.
-  boxNew: {
-    borderColor: '#2563EB', borderWidth: scale(1.6),
-    backgroundColor: 'rgba(37,99,235,0.16)',
-    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.85, shadowRadius: scale(8), elevation: 7,
-  },
-  txtNew: { color: '#1D4ED8', fontWeight: '900' as const },
   // الحاوية المنطفئة: حدٌّ رماديٌّ خافتٌ + تعبئةٌ باهتةٌ + شفافيّةٌ خفيفة — هادئة.
   boxOld: {
     borderColor: 'rgba(148,163,184,0.55)', borderWidth: scale(1),
@@ -186,7 +190,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                               borderColor: userInA ? 'rgba(255,255,255,0.6)' : 'transparent',
                               backgroundColor: userInA ? 'rgba(255,255,255,0.25)' : 'transparent',
                               minHeight: lineH + scale(6),
-                            }, toneBox(slotsTone(slotsA))]}>
+                            }, toneBox(slotsTone(slotsA), CLINIC_ACCENT)]}>
                               {userInA ? (<>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {slotsA.map(s => (
@@ -218,7 +222,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderColor: visible ? 'rgba(255,255,255,0.6)' : 'transparent',
                                 backgroundColor: visible ? 'rgba(255,255,255,0.2)' : 'transparent',
                                 minHeight: lineH + scale(6),
-                              }, toneBox(slotsTone(sl))]}>
+                              }, toneBox(slotsTone(sl), CLINIC_ACCENT)]}>
                                 {visible ? (<>
                                   <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                     {sl.length > 0 ? sl.map(s => (
@@ -266,7 +270,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderWidth: scale(1),
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
-                              }, toneBox(slotsTone(dlgA))]}>
+                              }, toneBox(slotsTone(dlgA), DLG_ACCENT)]}>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {dlgA.length > 0 ? dlgA.map(s => (
                                     <SlotName key={s.id} slot={s} base="#6B4C9A" />
@@ -296,7 +300,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                   borderWidth: scale(1),
                                   borderColor: visible ? 'rgba(255,255,255,0.6)' : 'transparent',
                                   backgroundColor: visible ? 'rgba(255,255,255,0.2)' : 'transparent',
-                                }, toneBox(slotsTone(dl))]}>
+                                }, toneBox(slotsTone(dl), DLG_ACCENT)]}>
                                   {visible ? (<>
                                     <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                       {dl.map(s => (
@@ -329,7 +333,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderWidth: scale(1),
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
-                              }, toneBox(slotsTone(dlgA))]}>
+                              }, toneBox(slotsTone(dlgA), DLG_ACCENT)]}>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {dlgA.length > 0 ? dlgA.map(s => (
                                     <SlotName key={s.id} slot={s} base="#6B4C9A" />
@@ -356,7 +360,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                     borderWidth: scale(1),
                                     borderColor: 'rgba(255,255,255,0.6)',
                                     backgroundColor: 'rgba(255,255,255,0.2)',
-                                  }, toneBox(slotsTone(dl))]}>
+                                  }, toneBox(slotsTone(dl), DLG_ACCENT)]}>
                                     <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                       {dl.length > 0 ? dl.map(s => (
                                         <SlotName key={s.id} slot={s} base="#6B4C9A" />
@@ -476,7 +480,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                           borderWidth: scale(1),
                           borderColor: 'rgba(255,255,255,0.6)',
                           backgroundColor: 'rgba(255,255,255,0.2)',
-                        }, toneBox(slotsTone([slot]))]}>
+                        }, toneBox(slotsTone([slot]), color)]}>
                           {slot.tone ? (
                             <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(4), justifyContent: 'center' }}>
                               <SlotName slot={slot} base={color} />
