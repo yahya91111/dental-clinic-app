@@ -537,6 +537,59 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
       required: ['weekStart', 'day'],
     },
   },
+  {
+    name: 'replace_doctor_in_schedule',
+    description:
+      'استبدالٌ **حرفيّ**: يجعل طبيبًا يداوم مكان آخرَ بالضبط (نفس العيادة/الفترة/الدور/الاحتياط) ' +
+      'من يومٍ فصاعدًا — **بلا إعادة توزيع**. «خلِّ د١ مكان د٢» أو «شيل د٢ وخلِّ مكانه د١». ' +
+      'الليدر فأعلى. حدّد يوم البداية (اليوم إن قبل الشفت وإلّا الغد؛ اسأل إن لم تتأكّد). ' +
+      'إن كان دائمًا (الخارج غادر المركز) مرّر permanent=true فيُحدَّث القروبُ أيضًا.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS], description: 'يوم بداية الاستبدال.' },
+        outDoctorIndex: { type: 'integer', description: 'الطبيب الذي يُستبدَل (يخرج).' },
+        inDoctorIndex: { type: 'integer', description: 'الطبيب البديل (يأخذ مكانه حرفيًّا).' },
+        permanent: { type: 'boolean', description: 'true = دائم: الخارج يغادر القائمة والبديل يحلّ في قروبه.' },
+      },
+      required: ['weekStart', 'day', 'outDoctorIndex', 'inDoctorIndex'],
+    },
+  },
+  {
+    name: 'remove_doctor_from_schedule',
+    description:
+      'يحذف طبيبًا من الجدول ويُعيد توزيعَ الباقين **بعدلٍ** من يومٍ فصاعدًا (الأيّامُ السابقةُ ' +
+      'لا تُمسّ). «احذف د فلان من الجدول». الليدر فأعلى. حدّد يوم البداية (اليوم/الغد؛ اسأل إن ' +
+      'لم تتأكّد). دائمٌ (غادر المركز) → permanent=true فيُزال من قروبه ولا يظهر مستقبلًا؛ ' +
+      'وإلّا فهذا الأسبوع فقط. (لاستبدالٍ مباشرٍ بوافدٍ استعمل replace_doctor_in_schedule.)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS], description: 'يوم بداية إعادة التوزيع.' },
+        doctorIndex: { type: 'integer', description: 'الطبيب المحذوف.' },
+        permanent: { type: 'boolean', description: 'true = دائم (يُزال من القروب)، false = هذا الأسبوع فقط.' },
+      },
+      required: ['weekStart', 'day', 'doctorIndex'],
+    },
+  },
+  {
+    name: 'promote_trainee_independent',
+    description:
+      'يحوّل متدرّبًا ظلًّا (مبتدئًا) إلى **مستقلّ** أثناء الأسبوع ويُعيد توزيعَه كوافدٍ جديد من ' +
+      'يومٍ فصاعدًا (يدخل عجلاتِ التوزيع كطبيبٍ عاديّ). «خلِّ د فلان بعيادة لوحده» (وهو ظلّ). ' +
+      'الليدر فأعلى. حدّد يوم البداية (اليوم/الغد؛ اسأل إن لم تتأكّد).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS], description: 'يوم بداية إعادة التوزيع.' },
+        doctorIndex: { type: 'integer', description: 'المتدرّب المُرقَّى.' },
+      },
+      required: ['weekStart', 'day', 'doctorIndex'],
+    },
+  },
 ];
 
 // ─── تعريض الأدوات حسب الدور ────────────────────────────────────
@@ -549,7 +602,8 @@ const SHARED_TOOL_NAMES = new Set([
 ]);
 const LEADER_EXTRA_TOOL_NAMES = new Set([
   'leader_apply', 'clear_week', 'set_clinic_count', 'move_doctor_group', 'set_group_status',
-  'cover_gap_with_reserve', 'add_doctor_to_schedule',
+  'cover_gap_with_reserve', 'add_doctor_to_schedule', 'replace_doctor_in_schedule',
+  'remove_doctor_from_schedule', 'promote_trainee_independent',
 ]);
 export function requestsToolsForRole(role: string): V2Tool[] {
   const allowed = isLeaderPlusRole(role)
@@ -608,10 +662,13 @@ async function resolveGroupId(clinicId: string, templateKey: string): Promise<st
 }
 
 // ─── طبقة الفرق: الأدوات التي تُغيّر الجدول تُلَفّ بكرت «طرأ تغييرٌ على جدولك» ──
-// (الإضافيّة بحذر: المسح/إعادة البناء البنيويّة تُستثنى — ليست «تغييرًا تدريجيًّا»).
+// قاعدةُ المستخدم: أيُّ تغييرٍ لمكان الطبيب (عيادة/احتياط/دليقيتر) أو حالته يصله إشعار —
+// فحتى عمليّاتُ القائمة (إضافة/استبدال/حذف/ترقية) تُلَفّ، فيُعلَم كلُّ مَن تأثّر موضعُه.
 const SEAT_CHANGE_TOOLS = new Set([
   'set_schedule_status', 'cancel_schedule_status', 'move_schedule_status',
   'place_in_clinic', 'leader_apply', 'cover_gap_with_reserve',
+  'add_doctor_to_schedule', 'replace_doctor_in_schedule',
+  'remove_doctor_from_schedule', 'promote_trainee_independent',
 ]);
 
 /** مجموعة الكتم لطبقة الفرق: «${actorId}|${weekStart}|${day}» لكلّ يومٍ تصرّف فيه الفاعل
@@ -1263,6 +1320,76 @@ export async function dispatchRequestToolV2(
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
         const who = resolveDoctor(ctx, r.doctorIndex);
         return final(`تمّ — أُعيد توزيعُ الجدول من يوم ${DAY_AR[r.day]} بإدخال ${who ? who.name : 'الطبيب الجديد'} بتوزيعٍ عادل (الأيّامُ السابقةُ كما هي).`);
+      }
+
+      case 'replace_doctor_in_schedule': {
+        // استبدالٌ حرفيّ: د(in) يأخذ خانات د(out) نفسها من اليوم المحدّد — بلا إعادة توزيع.
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: الاستبدال للقائد فأعلى.';
+        const day = r.day;
+        if (!isDay(day)) return 'Tool error: حدّد يوم البداية (اليوم/الغد/يومًا محدّدًا).';
+        const outD = resolveDoctor(ctx, r.outDoctorIndex);
+        const inD = resolveDoctor(ctx, r.inDoctorIndex);
+        if (!outD || !inD) return 'Tool error: رقم الطبيب غير صالح.';
+        if (outD.id === inD.id) return 'Tool error: لا يصحّ استبدال الطبيب بنفسه.';
+        const ws2 = String(r.weekStart);
+        const rep = await reqMod.replaceDoctorLiteral({ clinicId: ctx.clinicId, weekStart: ws2, fromDay: day, outId: outD.id, inId: inD.id, inName: inD.name });
+        if (r.permanent) {
+          const { supabase } = await import('../supabase');
+          const outGid = await findDoctorGroupId(ctx.clinicId, outD.id);
+          const inGid = await findDoctorGroupId(ctx.clinicId, inD.id);
+          if (outGid && inGid && outGid !== inGid) await requestsV2.moveDoctorGroup(actor, inD.id, inD.name, inGid, outGid);
+          if (outGid) await supabase.from('doctor_group_members').delete().eq('doctor_id', outD.id).eq('group_id', outGid);
+        }
+        return final(`تمّ — ${inD.name} حلّ مكان ${outD.name} حرفيًّا من يوم ${DAY_AR[day]} (${rep.replaced} خانة)${r.permanent ? ' · ودائمًا في القائمة' : ''}.`);
+      }
+
+      case 'remove_doctor_from_schedule': {
+        // حذفٌ + إعادةُ توزيعٍ عادلة من اليوم المحدّد (الأيّامُ السابقةُ لا تُمسّ).
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: الحذف للقائد فأعلى.';
+        const day = r.day;
+        if (!isDay(day)) return 'Tool error: حدّد يوم البداية (اليوم/الغد/يومًا محدّدًا).';
+        const doc = resolveDoctor(ctx, r.doctorIndex);
+        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        const ws2 = String(r.weekStart);
+        const { schedule } = await import('../algorithms/schedule');
+        const recipe = await schedule.loadBuildConfig(ctx.clinicId, ws2);
+        if (!recipe) return 'Tool error: لا توجد وصفة بناءٍ محفوظة لهذا الأسبوع — أعِد بناء الجدول أوّلًا.';
+        const order = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
+        const daysFrom = order.slice(order.indexOf(day));
+        let recipeForBuild: typeof recipe = recipe;
+        if (r.permanent) {
+          // غادر المركز: أزِله من قروبه فلا يظهر في الأسابيع القادمة، ثمّ أعِد البناء (N−1).
+          const { supabase } = await import('../supabase');
+          const gid = await findDoctorGroupId(ctx.clinicId, doc.id);
+          if (gid) await supabase.from('doctor_group_members').delete().eq('doctor_id', doc.id).eq('group_id', gid);
+        } else {
+          // هذا الأسبوع فقط: علّمه غائبًا للأيّام من البداية في الوصفة (يُستثنى من البناء)، واحفظها.
+          const extra = daysFrom.map((d) => ({ doctorId: doc.id, day: d, scope: 'full' as const, status: 'vacation' as const }));
+          recipeForBuild = { ...recipe, extraAbsences: [...((recipe as { extraAbsences?: unknown[] }).extraAbsences as { doctorId: string; day: string; scope: string; status?: string }[] || []), ...extra] } as typeof recipe;
+          await schedule.saveBuildConfig({ ...recipeForBuild, clinicId: ctx.clinicId, weekStart: ws2, dryRun: true } as Parameters<typeof schedule.saveBuildConfig>[0]);
+        }
+        const built = await schedule.build({ ...recipeForBuild, clinicId: ctx.clinicId, weekStart: ws2, fromDay: day, dryRun: false } as Parameters<typeof schedule.build>[0]);
+        if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
+        return final(`تمّ — حُذف ${doc.name} وأُعيد توزيعُ الباقين بعدلٍ من يوم ${DAY_AR[day]}${r.permanent ? ' · وأُزيل من القائمة (الأسابيع القادمة بلا اسمه)' : ' (هذا الأسبوع فقط)'}.`);
+      }
+
+      case 'promote_trainee_independent': {
+        // ترقيةُ متدرّبٍ ظلٍّ إلى مستقلّ ثمّ إعادةُ توزيعه كوافدٍ جديد من اليوم المحدّد.
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: الترقية للقائد فأعلى.';
+        const day = r.day;
+        if (!isDay(day)) return 'Tool error: حدّد يوم البداية (اليوم/الغد/يومًا محدّدًا).';
+        const doc = resolveDoctor(ctx, r.doctorIndex);
+        if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
+        const ws2 = String(r.weekStart);
+        const { schedule } = await import('../algorithms/schedule');
+        const recipe = await schedule.loadBuildConfig(ctx.clinicId, ws2);
+        if (!recipe) return 'Tool error: لا توجد وصفة بناءٍ محفوظة لهذا الأسبوع — أعِد بناء الجدول أوّلًا.';
+        const tm = { ...((recipe as { traineeModes?: Record<string, string> }).traineeModes || {}), [doc.id]: 'independent' as const };
+        const newRecipe = { ...recipe, traineeModes: tm } as typeof recipe;
+        await schedule.saveBuildConfig({ ...newRecipe, clinicId: ctx.clinicId, weekStart: ws2, dryRun: true } as Parameters<typeof schedule.saveBuildConfig>[0]);
+        const built = await schedule.build({ ...newRecipe, clinicId: ctx.clinicId, weekStart: ws2, fromDay: day, dryRun: false } as Parameters<typeof schedule.build>[0]);
+        if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
+        return final(`تمّ — ${doc.name} صار مستقلًّا وأُعيد توزيعُه من يوم ${DAY_AR[day]} كطبيبٍ عاديّ.`);
       }
 
       case 'leader_apply': {

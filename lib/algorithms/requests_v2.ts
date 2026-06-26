@@ -364,6 +364,34 @@ export async function withSeatChangeDiff<T>(
   return out;
 }
 
+/** استبدالٌ حرفيّ (ج١، سيناريو ٢): د(in) يأخذ خاناتِ د(out) نفسها (عيادة/دليقيتر/احتياط)
+ *  من يومٍ فصاعدًا — بلا إعادة توزيع. تُحذف كلُّ صفوف الخارج في النطاق وصفوفُ الداخل (تفادي
+ *  ازدواج)، ويُدخَل الداخلُ في مواضع الخارج النشطة/الاحتياط حرفيًّا. الأيّامُ السابقةُ لا تُمسّ. */
+export async function replaceDoctorLiteral(args: {
+  clinicId: string; weekStart: string; fromDay: string;
+  outId: string; inId: string; inName: string;
+}): Promise<{ replaced: number }> {
+  const order = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+  const fi = order.indexOf(args.fromDay);
+  if (fi < 0) return { replaced: 0 };
+  const { data } = await supabase.from('schedule_slots')
+    .select('id, day_of_week, period, clinic_number, role, status, doctor_id')
+    .eq('clinic_id', args.clinicId).eq('week_start', args.weekStart);
+  const rows = ((data || []) as { id: string; day_of_week: string; period: number; clinic_number: number; role: string; status: string; doctor_id: string }[])
+    .filter((r) => order.indexOf(r.day_of_week) >= fi);
+  const outRows = rows.filter((r) => r.doctor_id === args.outId);
+  const inRows = rows.filter((r) => r.doctor_id === args.inId);
+  const take = outRows.filter((r) => (r.status === 'active' && (r.role === 'clinic' || r.role === 'delegator')) || r.status === 'extra');
+  const deleteIds = [...new Set([...outRows.map((r) => r.id), ...inRows.map((r) => r.id)])];
+  const inserts = take.map((r) => ({
+    clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: r.day_of_week,
+    period: r.period, clinic_number: r.clinic_number, doctor_id: args.inId, doctor_name: args.inName,
+    role: r.role, status: r.status, source: 'request',
+  }));
+  await applySlotChanges({ deleteIds, inserts });
+  return { replaced: take.length };
+}
+
 /** يلفّ امتصاصًا عبر الأيّام (rebalanceForward) بلقطةٍ قبليّةٍ ويَوْمَنةٍ بعديّة: يكتب
  *  لقطةَ الأيّام البعيدة التي بدّلها الامتصاص كي يعكسها الكنسل لاحقًا بدقّة. آمن: لا
  *  يُفشل العمليّة أبدًا (اليَوْمَنة تحسينٌ للكنسل، لا شرطٌ لصحّة الجدول). */
