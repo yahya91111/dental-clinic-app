@@ -169,6 +169,14 @@ export type ScheduleBuildInput = {
 
   /** dryRun=true يحسب فقط، لا يكتب في DB */
   dryRun?: boolean;
+
+  /**
+   * إعادةُ بناءٍ جزئيّة من يومٍ معيّن فصاعدًا (إضافة طبيبٍ منتصف الأسبوع، ج١):
+   * الأيّام **قبل** fromDay لا تُمسّ، وتُغذّى كتاريخٍ في العجلات كي تستمرّ العدالة
+   * (لا يُثقَّل مَن عمل سابقًا). الأيّام **من** fromDay تُعاد كتابتها بالقائمة الجديدة.
+   * غياب المفتاح = بناءٌ كاملٌ للأسبوع (سلوكٌ مطابقٌ تمامًا للقديم — لا خطر).
+   */
+  fromDay?: WeekDay;
 };
 
 // ─── المخرجات ─────────────────────────────────────────────────
@@ -846,27 +854,33 @@ async function writeSlots(
   clinicId: string,
   weekStart: string,
   slots: AssignedSlot[],
+  onlyDays?: WeekDay[],
 ): Promise<string | null> {
-  // 1. حذف الخانات النشطة القديمة
-  const { error: delErr } = await supabase
+  // 1. حذف الخانات النشطة القديمة (إعادةٌ جزئيّة: أيّامُ البناء الجديد فقط — الأيّامُ
+  //    السابقةُ لا تُمسّ).
+  let delActive = supabase
     .from('schedule_slots')
     .delete()
     .eq('clinic_id', clinicId)
     .eq('week_start', weekStart)
     .eq('status', 'active');
+  if (onlyDays) delActive = delActive.in('day_of_week', onlyDays);
+  const { error: delErr } = await delActive;
   if (delErr) return `فشل حذف الخانات القديمة: ${delErr.message}`;
 
   // 1.b حذف احتياط البناء السابق (status='extra' بمصدر البناء أو ظلّ) —
   //     ظلّ المتدرّب يُعاد اشتقاقه من صفوف الغياب الباقية عند كلّ بناء،
   //     فيُحذف القديم تفاديًا للتكرار. احتياطُ قرارٍ مستقلّ (source='request')
   //     لا يُمسّ.
-  const { error: delExErr } = await supabase
+  let delEx = supabase
     .from('schedule_slots')
     .delete()
     .eq('clinic_id', clinicId)
     .eq('week_start', weekStart)
     .eq('status', 'extra')
     .in('source', ['ai', 'shadow']);
+  if (onlyDays) delEx = delEx.in('day_of_week', onlyDays);
+  const { error: delExErr } = await delEx;
   if (delExErr) return `فشل حذف احتياط البناء القديم: ${delExErr.message}`;
 
   // 2. إدخال الخانات الجديدة
@@ -1087,7 +1101,14 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   // تُمرَّر لكل شفت وتدور (مَن يأخذ الدور → آخر الطابور).
   // الظلال (المبتدئون) خارج كلّ العجلات — لا يأخذون دورًا، يتبعون مدرّبهم فقط.
   const shadowIds = beginnerShadowIds(input);
-  const wheels = createWheels(data.doctors, data.pastSlots, shadowIds);
+  // إعادةُ بناءٍ جزئيّة (fromDay): الأيّامُ السابقةُ تُغذّى في العجلات كتاريخٍ (مثل الأسابيع
+  // السابقة) فتستمرّ العدالةُ ولا يُثقَّل مَن عمل سابقًا — createWheels يعيد تشغيل التاريخ
+  // زمنيًّا، وأيّامُ هذا الأسبوع السابقة تأتي بعد الأسابيع القديمة فتموضِع العجلةَ بدقّة.
+  const fromIdx = input.fromDay ? WEEK_DAYS.indexOf(input.fromDay) : 0;
+  const wheelHistory = fromIdx > 0
+    ? [...data.pastSlots, ...data.existingSlots.filter((s) => { const i = WEEK_DAYS.indexOf(s.dayOfWeek as WeekDay); return i >= 0 && i < fromIdx; })]
+    : data.pastSlots;
+  const wheels = createWheels(data.doctors, wheelHistory, shadowIds);
 
   // استثناءات التريني المستقلّ من دورتَي الدليقيتر/الاحتياطي (حسب خيارات الويزرد)
   const modesForExcl = input.traineeModes || {};
@@ -1102,6 +1123,8 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
 
   for (const day of plan) {
     if (day.isHoliday) continue;
+    // إعادةٌ جزئيّة: تخطَّ الأيّامَ السابقةَ ليوم البداية (لا تُمسّ؛ هي تاريخٌ في العجلات).
+    if (fromIdx > 0 && WEEK_DAYS.indexOf(day.day) < fromIdx) continue;
 
     // مقدّمة طابور الاحتياط بداية اليوم — تُحمى من عقوبة الغياب ("في دوره")
     const exFrontToday = wheels.ex[0];
@@ -1130,7 +1153,7 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
 
   // 6. كتابة في DB (إلا لو dryRun)
   if (!input.dryRun) {
-    const writeErr = await writeSlots(input.clinicId, input.weekStart, allSlots);
+    const writeErr = await writeSlots(input.clinicId, input.weekStart, allSlots, fromIdx > 0 ? WEEK_DAYS.slice(fromIdx) : undefined);
     if (writeErr) {
       return {
         success: false,
