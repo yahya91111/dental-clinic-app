@@ -5,50 +5,43 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } from './types';
 
-// عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): اسم الطبيب في مكانه الجديد
-// «شارةٌ مضيئة» متوهّجة، وفي القديم «شارةٌ منطفئة» باهتةٌ مشطوبة. الجدول الحيّ
-// لا يمرّر tone، فيرجع SlotName لنصٍّ عاديٍّ مطابقٍ تمامًا للتصميم القديم (لا يتأثّر).
+// عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): حاويةُ خانة العيادة/الدليقيتر
+// نفسُها هي التي **تُضيء** (المكان الجديد) أو **تنطفئ** (المكان السابق) — لا حاويةٌ
+// داخل حاوية. الاسم نصٌّ عاديّ. الجدول الحيّ لا يمرّر tone فيبقى كما هو تمامًا.
+type Tone = 'new' | 'old' | undefined;
+/** نبرةُ الخانة من صفوفها: مضيءٌ يغلب المنطفئ (نادرًا ما يجتمعان في خانة). */
+function slotsTone(arr: ScheduleSlot[]): Tone {
+  if (arr.some(s => s.tone === 'new')) return 'new';
+  if (arr.some(s => s.tone === 'old')) return 'old';
+  return undefined;
+}
+/** أنماطُ الحاوية المضيئة/المنطفئة — تُدمَج فوق نمط الخانة الأساسيّ. */
+function toneBox(t: Tone) {
+  if (t === 'new') return tone.boxNew;
+  if (t === 'old') return tone.boxOld;
+  return null;
+}
 function SlotName({ slot, base }: { slot: ScheduleSlot; base: string }) {
-  if (slot.tone === 'new') {
-    return (
-      <View style={tone.newChip}>
-        <View style={tone.newDot} />
-        <Text style={tone.newTxt} numberOfLines={1}>{slot.doctorName}</Text>
-      </View>
-    );
-  }
-  if (slot.tone === 'old') {
-    return (
-      <View style={tone.oldChip}>
-        <Text style={tone.oldTxt} numberOfLines={1}>{slot.doctorName}</Text>
-      </View>
-    );
-  }
-  return <Text style={{ fontSize: scale(8), fontWeight: '700', color: base, textAlign: 'right' }} numberOfLines={1}>{slot.doctorName}</Text>;
+  const t: Tone = slot.tone;
+  const txt = t === 'new' ? tone.txtNew : t === 'old' ? tone.txtOld : { color: base };
+  return <Text style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, txt]} numberOfLines={1}>{slot.doctorName}</Text>;
 }
 
 const tone = StyleSheet.create({
-  // المضيء: شارةٌ زرقاءُ متوهّجة، حدٌّ مضيء، نقطةُ توهّجٍ صغيرة — حديثةٌ نظيفة.
-  newChip: {
-    flexDirection: 'row-reverse', alignItems: 'center', alignSelf: 'flex-end', gap: scale(4),
-    backgroundColor: 'rgba(37,99,235,0.14)',
-    borderWidth: scale(1.2), borderColor: 'rgba(37,99,235,0.85)', borderRadius: scale(8),
-    paddingHorizontal: scale(7), paddingVertical: scale(3),
-    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.75, shadowRadius: scale(7), elevation: 6,
+  // الحاوية المضيئة: حدٌّ أزرقُ مضيءٌ + تعبئةٌ زرقاء + هالةُ توهّج — حديثةٌ لافتة.
+  boxNew: {
+    borderColor: '#2563EB', borderWidth: scale(1.6),
+    backgroundColor: 'rgba(37,99,235,0.16)',
+    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.85, shadowRadius: scale(8), elevation: 7,
   },
-  newDot: {
-    width: scale(5), height: scale(5), borderRadius: scale(3), backgroundColor: '#2563EB',
-    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: scale(4), elevation: 4,
-  },
-  newTxt: { fontSize: scale(8.5), fontWeight: '900', color: '#1D4ED8', textAlign: 'right' },
-  // المنطفئ: شارةٌ رماديّةٌ باهتةٌ مشطوبة (المكان السابق) — هادئةٌ لا تنافس المضيء.
-  oldChip: {
-    alignSelf: 'flex-end',
+  txtNew: { color: '#1D4ED8', fontWeight: '900' as const },
+  // الحاوية المنطفئة: حدٌّ رماديٌّ خافتٌ + تعبئةٌ باهتةٌ + شفافيّةٌ خفيفة — هادئة.
+  boxOld: {
+    borderColor: 'rgba(148,163,184,0.55)', borderWidth: scale(1),
     backgroundColor: 'rgba(148,163,184,0.10)',
-    borderWidth: scale(1), borderColor: 'rgba(148,163,184,0.4)', borderRadius: scale(8),
-    paddingHorizontal: scale(7), paddingVertical: scale(3),
+    opacity: 0.6,
   },
-  oldTxt: { fontSize: scale(8), fontWeight: '500', color: '#94A3B8', textAlign: 'right', textDecorationLine: 'line-through' },
+  txtOld: { color: '#64748B', fontWeight: '600' as const, textDecorationLine: 'line-through' as const },
 });
 
 interface ScheduleGridProps {
@@ -184,7 +177,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                         if (isMerged) {
                           // Merged card spanning both periods
                           return (
-                            <TouchableOpacity key={`c${clinicNum}`} activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={{
+                            <TouchableOpacity key={`c${clinicNum}`} activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={[{
                               flexDirection: 'row',
                               marginBottom: scale(3),
                               borderRadius: scale(6),
@@ -193,7 +186,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                               borderColor: userInA ? 'rgba(255,255,255,0.6)' : 'transparent',
                               backgroundColor: userInA ? 'rgba(255,255,255,0.25)' : 'transparent',
                               minHeight: lineH + scale(6),
-                            }}>
+                            }, toneBox(slotsTone(slotsA))]}>
                               {userInA ? (<>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {slotsA.map(s => (
@@ -216,7 +209,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                         return (
                           <View key={`c${clinicNum}`} style={{ flexDirection: 'row', marginBottom: scale(3), gap: scale(2) }}>
                             {[{ sl: slotsA, p: pA, visible: userInA }, { sl: slotsB, p: pB, visible: userInB }].map(({ sl, p, visible }) => (
-                              <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={{
+                              <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={[{
                                 flex: 1,
                                 flexDirection: 'row',
                                 borderRadius: scale(6),
@@ -225,7 +218,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 borderColor: visible ? 'rgba(255,255,255,0.6)' : 'transparent',
                                 backgroundColor: visible ? 'rgba(255,255,255,0.2)' : 'transparent',
                                 minHeight: lineH + scale(6),
-                              }}>
+                              }, toneBox(slotsTone(sl))]}>
                                 {visible ? (<>
                                   <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                     {sl.length > 0 ? sl.map(s => (
@@ -266,14 +259,14 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
 
                           if (dlgMerged) {
                             return (
-                              <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={{
+                              <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={[{
                                 flexDirection: 'row',
                                 borderRadius: scale(6),
                                 overflow: 'hidden',
                                 borderWidth: scale(1),
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
-                              }}>
+                              }, toneBox(slotsTone(dlgA))]}>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {dlgA.length > 0 ? dlgA.map(s => (
                                     <SlotName key={s.id} slot={s} base="#6B4C9A" />
@@ -295,7 +288,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                           return (
                             <View style={{ flexDirection: 'row', gap: scale(2) }}>
                               {[{ dl: dlgA, p: pA, visible: userInA }, { dl: dlgB, p: pB, visible: userInB }].map(({ dl, p, visible }) => (
-                                <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={{
+                                <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={[{
                                   flex: 1,
                                   flexDirection: 'row',
                                   borderRadius: scale(6),
@@ -303,7 +296,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                   borderWidth: scale(1),
                                   borderColor: visible ? 'rgba(255,255,255,0.6)' : 'transparent',
                                   backgroundColor: visible ? 'rgba(255,255,255,0.2)' : 'transparent',
-                                }}>
+                                }, toneBox(slotsTone(dl))]}>
                                   {visible ? (<>
                                     <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                       {dl.map(s => (
@@ -329,14 +322,14 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                             {/* Divider */}
                             <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(2) }} />
                             {dlgMerged ? (
-                              <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={{
+                              <TouchableOpacity activeOpacity={0.7} onPress={() => onCellPress(day.key, pA.id)} style={[{
                                 flexDirection: 'row',
                                 borderRadius: scale(6),
                                 overflow: 'hidden',
                                 borderWidth: scale(1),
                                 borderColor: 'rgba(255,255,255,0.6)',
                                 backgroundColor: 'rgba(255,255,255,0.2)',
-                              }}>
+                              }, toneBox(slotsTone(dlgA))]}>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {dlgA.length > 0 ? dlgA.map(s => (
                                     <SlotName key={s.id} slot={s} base="#6B4C9A" />
@@ -355,7 +348,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                             ) : (
                               <View style={{ flexDirection: 'row', gap: scale(2) }}>
                                 {[{ dl: dlgA, p: pA }, { dl: dlgB, p: pB }].map(({ dl, p }) => (
-                                  <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={{
+                                  <TouchableOpacity key={p.id} activeOpacity={0.7} onPress={() => onCellPress(day.key, p.id)} style={[{
                                     flex: 1,
                                     flexDirection: 'row',
                                     borderRadius: scale(6),
@@ -363,7 +356,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                     borderWidth: scale(1),
                                     borderColor: 'rgba(255,255,255,0.6)',
                                     backgroundColor: 'rgba(255,255,255,0.2)',
-                                  }}>
+                                  }, toneBox(slotsTone(dl))]}>
                                     <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                       {dl.length > 0 ? dl.map(s => (
                                         <SlotName key={s.id} slot={s} base="#6B4C9A" />
@@ -474,7 +467,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                       const color = isExRole ? '#7C3AED' : statusConfig.color;
                       const shortLabel = isExRole ? 'EX' : statusConfig.shortLabel;
                       return (
-                        <View key={slot.id} style={{
+                        <View key={slot.id} style={[{
                           flexDirection: 'row',
                           alignSelf: 'stretch',
                           marginBottom: scale(3),
@@ -483,9 +476,9 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                           borderWidth: scale(1),
                           borderColor: 'rgba(255,255,255,0.6)',
                           backgroundColor: 'rgba(255,255,255,0.2)',
-                        }}>
+                        }, toneBox(slotsTone([slot]))]}>
                           {slot.tone ? (
-                            <View style={{ flex: 1, paddingVertical: scale(2), paddingHorizontal: scale(3) }}>
+                            <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(4), justifyContent: 'center' }}>
                               <SlotName slot={slot} base={color} />
                             </View>
                           ) : (
