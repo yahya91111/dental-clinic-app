@@ -91,51 +91,50 @@ export default function SeatChangeOverlay({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View style={st.scrim}>
-        {/* رأس */}
+      {/* الصفحة كلّها بخلفيّة صفحة الجدول الحقيقيّة — الرأس مثل باقي الصفحة (فاتح) */}
+      <LinearGradient colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']} style={{ flex: 1 }}>
+        {/* رأسٌ بنفس تصميم رأس صفحة الجدول (زرٌّ زجاجيّ + عنوانٌ وسطيّ) */}
         <View style={st.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={st.closeBtn}>
-            <Ionicons name="close" size={scale(22)} color="#EDE8FF" />
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={st.iconBtn}>
+            <Ionicons name="close" size={scale(24)} color="#2D3748" />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={st.title} numberOfLines={1}>طرأ تغييرٌ على جدولك</Text>
             <Text style={st.subtitle} numberOfLines={1}>{doctorName} · للرؤية فقط</Text>
           </View>
+          <View style={{ width: scale(40) }} />
         </View>
 
-        {/* سطحٌ معتمٌ (نفس خلفيّة صفحة الجدول الحقيقيّة) — الشريط والجدول عليه «كما هما» */}
-        <LinearGradient colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']} style={{ flex: 1 }}>
-          {/* شريط الأسابيع — كما هو، مع إضاءة أسابيع التغيير */}
-          <WeekStrip
-            selectedWeekStart={parseLocalISO(selWeek)}
-            onSelectWeek={(d) => setSelWeek(toISO(d))}
-            highlightWeeks={weeks}
-          />
+        {/* شريط الأسابيع — كما هو، مع إضاءة أسابيع التغيير */}
+        <WeekStrip
+          selectedWeekStart={parseLocalISO(selWeek)}
+          onSelectWeek={(d) => setSelWeek(toISO(d))}
+          highlightWeeks={weeks}
+        />
 
-          {/* الجدول الحقيقيّ — للرؤية: كلّ الخانات فارغة إلّا القديم/الجديد */}
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: scale(12), paddingBottom: scale(40) }} showsVerticalScrollIndicator={false}>
-            {weekChanges.length === 0 && (
-              <Text style={st.empty}>لا تغييرات في هذا الأسبوع.</Text>
-            )}
-            <ScheduleGrid slots={slots} clinicCount={cols} onCellPress={() => {}} />
-          </ScrollView>
-        </LinearGradient>
-      </View>
+        {/* الجدول الحقيقيّ — للرؤية: كلّ الخانات فارغة إلّا القديم/الجديد */}
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: scale(12), paddingBottom: scale(40) }} showsVerticalScrollIndicator={false}>
+          {weekChanges.length === 0 && (
+            <Text style={st.empty}>لا تغييرات في هذا الأسبوع.</Text>
+          )}
+          <ScheduleGrid slots={slots} clinicCount={cols} onCellPress={() => {}} />
+        </ScrollView>
+      </LinearGradient>
     </Modal>
   );
 }
 
 const st = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: 'rgba(12,10,24,0.94)' },
   header: {
-    flexDirection: 'row-reverse', alignItems: 'center', gap: scale(10),
-    paddingTop: scale(48), paddingBottom: scale(12), paddingHorizontal: scale(14),
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: scale(48), paddingBottom: scale(12), paddingHorizontal: scale(16),
   },
-  closeBtn: {
-    width: scale(36), height: scale(36), borderRadius: scale(18),
-    backgroundColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center',
+  iconBtn: {
+    width: scale(40), height: scale(40), borderRadius: scale(20),
+    backgroundColor: 'rgba(255,255,255,0.25)', borderWidth: scale(2), borderColor: 'rgba(255,255,255,0.4)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: scale(16), fontWeight: '800', color: '#F4F1FF', textAlign: 'right' },
-  subtitle: { fontSize: scale(11.5), fontWeight: '600', color: 'rgba(214,196,255,0.7)', textAlign: 'right', marginTop: scale(2) },
+  title: { fontSize: scale(18), fontWeight: '800', color: '#4A5568', textAlign: 'center' },
+  subtitle: { fontSize: scale(11.5), fontWeight: '600', color: '#718096', textAlign: 'center', marginTop: scale(2) },
   empty: { fontSize: scale(13), color: '#64708A', textAlign: 'center', marginBottom: scale(14), fontWeight: '600' },
 });

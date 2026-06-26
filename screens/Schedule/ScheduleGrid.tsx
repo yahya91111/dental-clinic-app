@@ -1,22 +1,55 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, StyleSheet } from 'react-native';
 import { scale } from '../../lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } from './types';
 
-// عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): اسم الطبيب في مكانه القديم
-// منطفئٌ باهت، وفي الجديد مضيءٌ متوهّج. الجدول الحيّ لا يمرّر tone فلا يتأثّر.
-const TONE_NEW = '#1D4ED8';
-const TONE_OLD = '#6B7280';
-function toneText(slot: ScheduleSlot, base: string) {
+// عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): اسم الطبيب في مكانه الجديد
+// «شارةٌ مضيئة» متوهّجة، وفي القديم «شارةٌ منطفئة» باهتةٌ مشطوبة. الجدول الحيّ
+// لا يمرّر tone، فيرجع SlotName لنصٍّ عاديٍّ مطابقٍ تمامًا للتصميم القديم (لا يتأثّر).
+function SlotName({ slot, base }: { slot: ScheduleSlot; base: string }) {
   if (slot.tone === 'new') {
-    return { color: TONE_NEW, fontWeight: '900' as const, textShadowColor: 'rgba(29,78,216,0.6)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: scale(6) };
+    return (
+      <View style={tone.newChip}>
+        <View style={tone.newDot} />
+        <Text style={tone.newTxt} numberOfLines={1}>{slot.doctorName}</Text>
+      </View>
+    );
   }
-  // المكان القديم «منطفئ»: رماديٌّ خافتٌ لكنّه ظاهرٌ (لا شفافيّة تُخفيه) + شطبٌ خفيف.
-  if (slot.tone === 'old') return { color: TONE_OLD, fontWeight: '600' as const, textDecorationLine: 'line-through' as const };
-  return { color: base };
+  if (slot.tone === 'old') {
+    return (
+      <View style={tone.oldChip}>
+        <Text style={tone.oldTxt} numberOfLines={1}>{slot.doctorName}</Text>
+      </View>
+    );
+  }
+  return <Text style={{ fontSize: scale(8), fontWeight: '700', color: base, textAlign: 'right' }} numberOfLines={1}>{slot.doctorName}</Text>;
 }
+
+const tone = StyleSheet.create({
+  // المضيء: شارةٌ زرقاءُ متوهّجة، حدٌّ مضيء، نقطةُ توهّجٍ صغيرة — حديثةٌ نظيفة.
+  newChip: {
+    flexDirection: 'row-reverse', alignItems: 'center', alignSelf: 'flex-end', gap: scale(4),
+    backgroundColor: 'rgba(37,99,235,0.14)',
+    borderWidth: scale(1.2), borderColor: 'rgba(37,99,235,0.85)', borderRadius: scale(8),
+    paddingHorizontal: scale(7), paddingVertical: scale(3),
+    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.75, shadowRadius: scale(7), elevation: 6,
+  },
+  newDot: {
+    width: scale(5), height: scale(5), borderRadius: scale(3), backgroundColor: '#2563EB',
+    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: scale(4), elevation: 4,
+  },
+  newTxt: { fontSize: scale(8.5), fontWeight: '900', color: '#1D4ED8', textAlign: 'right' },
+  // المنطفئ: شارةٌ رماديّةٌ باهتةٌ مشطوبة (المكان السابق) — هادئةٌ لا تنافس المضيء.
+  oldChip: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(148,163,184,0.10)',
+    borderWidth: scale(1), borderColor: 'rgba(148,163,184,0.4)', borderRadius: scale(8),
+    paddingHorizontal: scale(7), paddingVertical: scale(3),
+  },
+  oldTxt: { fontSize: scale(8), fontWeight: '500', color: '#94A3B8', textAlign: 'right', textDecorationLine: 'line-through' },
+});
 
 interface ScheduleGridProps {
   slots: ScheduleSlot[];
@@ -164,7 +197,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                               {userInA ? (<>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {slotsA.map(s => (
-                                    <Text key={s.id} style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, toneText(s, '#3B5998')]} numberOfLines={1}>{s.doctorName}</Text>
+                                    <SlotName key={s.id} slot={s} base="#3B5998" />
                                   ))}
                                 </View>
                                 <LinearGradient
@@ -196,7 +229,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                 {visible ? (<>
                                   <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                     {sl.length > 0 ? sl.map(s => (
-                                      <Text key={s.id} style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, toneText(s, '#3B5998')]} numberOfLines={1}>{s.doctorName}</Text>
+                                      <SlotName key={s.id} slot={s} base="#3B5998" />
                                     )) : (
                                       <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
                                     )}
@@ -243,7 +276,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                               }}>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {dlgA.length > 0 ? dlgA.map(s => (
-                                    <Text key={s.id} style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, toneText(s, '#6B4C9A')]} numberOfLines={1}>{s.doctorName}</Text>
+                                    <SlotName key={s.id} slot={s} base="#6B4C9A" />
                                   )) : (
                                     <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
                                   )}
@@ -274,7 +307,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                   {visible ? (<>
                                     <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                       {dl.map(s => (
-                                        <Text key={s.id} style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, toneText(s, '#6B4C9A')]} numberOfLines={1}>{s.doctorName}</Text>
+                                        <SlotName key={s.id} slot={s} base="#6B4C9A" />
                                       ))}
                                     </View>
                                     <LinearGradient
@@ -306,7 +339,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                               }}>
                                 <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(6), justifyContent: 'center' }}>
                                   {dlgA.length > 0 ? dlgA.map(s => (
-                                    <Text key={s.id} style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, toneText(s, '#6B4C9A')]} numberOfLines={1}>{s.doctorName}</Text>
+                                    <SlotName key={s.id} slot={s} base="#6B4C9A" />
                                   )) : (
                                     <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
                                   )}
@@ -333,7 +366,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                                   }}>
                                     <View style={{ flex: 1, paddingVertical: scale(3), paddingHorizontal: scale(3), justifyContent: 'center' }}>
                                       {dl.length > 0 ? dl.map(s => (
-                                        <Text key={s.id} style={[{ fontSize: scale(8), fontWeight: '700', textAlign: 'right' }, toneText(s, '#6B4C9A')]} numberOfLines={1}>{s.doctorName}</Text>
+                                        <SlotName key={s.id} slot={s} base="#6B4C9A" />
                                       )) : (
                                         <Text style={{ fontSize: scale(8), fontWeight: '700', color: '#CBD5E0', textAlign: 'right' }}>—</Text>
                                       )}
@@ -451,14 +484,21 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                           borderColor: 'rgba(255,255,255,0.6)',
                           backgroundColor: 'rgba(255,255,255,0.2)',
                         }}>
-                          <Text style={[{
-                            flex: 1,
-                            fontSize: scale(8),
-                            fontWeight: '700',
-                            paddingVertical: scale(3),
-                            paddingHorizontal: scale(4),
-                            textAlign: 'right',
-                          }, toneText(slot, color)]} numberOfLines={1}>{slot.doctorName}</Text>
+                          {slot.tone ? (
+                            <View style={{ flex: 1, paddingVertical: scale(2), paddingHorizontal: scale(3) }}>
+                              <SlotName slot={slot} base={color} />
+                            </View>
+                          ) : (
+                            <Text style={{
+                              flex: 1,
+                              fontSize: scale(8),
+                              fontWeight: '700',
+                              color,
+                              paddingVertical: scale(3),
+                              paddingHorizontal: scale(4),
+                              textAlign: 'right',
+                            }} numberOfLines={1}>{slot.doctorName}</Text>
+                          )}
                           <LinearGradient
                             colors={[color + '90', color + '50', color + '50', color + '90']}
                             start={{ x: 0, y: 0 }}
