@@ -12,6 +12,12 @@
 -- card) and `coverage_fill` (shift-fill draft card) redden the AI button
 -- silently — never push them.
 --
+-- Pushing orb cards: `seat_change` (the «طرأ تغييرٌ على جدولك» card) is an
+-- orb card BUT must reach the affected doctor even when the app is closed,
+-- so it deliberately PUSHES (it is NOT in the silent list). One row is
+-- inserted per affected doctor per change-event → one ring each. Do not add
+-- it to the silent list.
+--
 -- Grouped requests: a multi-day request (e.g. sick leave Sun+Mon+Tue)
 -- is collected into ONE `request_info` row whose `body` grows as days
 -- are appended (day 1 = INSERT, days 2+ = UPDATE). We push ONCE per
