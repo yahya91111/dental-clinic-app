@@ -53,11 +53,18 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
   // عند إغلاق المحادثة، حدّث العدّاد (قد بُتّ في طلبات)
   useEffect(() => { if (!showChat) refreshPending(); }, [showChat, refreshPending]);
 
-  // سؤال معلّق: آخر رسالة من الذكاء تحمل خيارات [..] ولم يُجَب عنها بعد →
-  // يبقى الزرّ أحمر إشارةً إلى وجود سؤال ينتظر ردًّا (حتى لو أُغلقت المحادثة).
+  // سؤال معلّق يُبقي الزرّ متغيّرًا حتى يُعالَج (حتى لو أُغلقت المحادثة):
+  //  • عرضٌ (إبلاغ/تبديل/تأكيد) لم يُحَلّ بعد — يُطفَأ بمجرّد ضبط offerResolved، الذي
+  //    يتزامن من **أيّ سطح** (محادثة الذكاء أو المنبثقة) عبر الرسالة المشتركة.
+  //  • سؤالٌ نصّيّ بخيارات [..] بلا عرضٍ مرتبط — يبقى حتى يتقدّم الحوار (ردُّ المستخدم).
   const last = messages[messages.length - 1];
-  const hasPendingQuestion =
-    !!last && last.role === 'assistant' && /\[[^\]\n]{1,30}\]/.test(last.content);
+  const lastIsAssistant = !!last && last.role === 'assistant';
+  const lastHasOffer = lastIsAssistant && (!!last.announceOffer || !!last.swapOffer || !!last.confirmOffer);
+  const hasPendingQuestion = lastIsAssistant && (
+    lastHasOffer
+      ? !last.offerResolved
+      : /\[[^\]\n]{1,30}\]/.test(last.content)
+  );
 
   return (
     <>
