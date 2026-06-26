@@ -519,6 +519,24 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
       required: ['weekStart', 'operations'],
     },
   },
+  {
+    name: 'add_doctor_to_schedule',
+    description:
+      'يُدخِل طبيبًا **أُضيف حديثًا إلى قروبه** ضمن جدول هذا الأسبوع: يُعيد توزيع الأيّام ' +
+      'من يومٍ محدّد فصاعدًا بالعدد الجديد (عيادات/دليقيتر/احتياط/فترات) بتوزيعٍ عادل، مع ' +
+      'مراعاة مَن عمل سابقًا — والأيّامُ السابقةُ لا تُمسّ. الليدر فأعلى. **حدّد يوم البداية:** ' +
+      'اليومَ إن كان الطلب قبل بدء شفت اليوم، وإلّا الغد؛ وإن لم تتأكّد متى بالضبط فاسأل ' +
+      'القائد قبل التنفيذ. (يجب أن يكون الطبيب مُضافًا لقروبه أوّلًا عبر إدارة القائمة.)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        weekStart: { type: 'string' },
+        day: { type: 'string', enum: [...DAYS], description: 'يوم البداية لإعادة التوزيع (منه حتى نهاية الأسبوع).' },
+        doctorIndex: { type: 'integer', description: 'رقم الطبيب المُضاف (للتأكيد في الرسالة، اختياريّ).' },
+      },
+      required: ['weekStart', 'day'],
+    },
+  },
 ];
 
 // ─── تعريض الأدوات حسب الدور ────────────────────────────────────
@@ -531,7 +549,7 @@ const SHARED_TOOL_NAMES = new Set([
 ]);
 const LEADER_EXTRA_TOOL_NAMES = new Set([
   'leader_apply', 'clear_week', 'set_clinic_count', 'move_doctor_group', 'set_group_status',
-  'cover_gap_with_reserve',
+  'cover_gap_with_reserve', 'add_doctor_to_schedule',
 ]);
 export function requestsToolsForRole(role: string): V2Tool[] {
   const allowed = isLeaderPlusRole(role)
@@ -1228,6 +1246,23 @@ export async function dispatchRequestToolV2(
         const supervisor = ws === 'trainee' ? resolveDoctor(ctx, r.supervisorIndex) : null;
         const res = await requestsV2.setDoctorGroupStatus(actor, groupId, doc.id, ws, supervisor?.id ?? null);
         return res.success ? final(`تمّ ضبط حالة ${doc.name}: ${WORK_AR[ws]}.`) : `Tool error: ${res.error}`;
+      }
+
+      case 'add_doctor_to_schedule': {
+        // إدخالُ طبيبٍ أُضيف لقروبه: إعادةُ بناءٍ جزئيّة من اليوم المحدّد بالوصفة المحفوظة
+        // والقائمة الحاليّة (تضمّ الطبيب الجديد تلقائيًّا). الأيّامُ السابقةُ لا تُمسّ.
+        if (!isLeaderPlusRole(actor.role)) return 'Tool error: إضافةُ طبيبٍ للجدول للقائد فأعلى.';
+        if (!isDay(r.day)) return 'Tool error: حدّد يوم البداية (اليوم/الغد/يومًا محدّدًا).';
+        const ws2 = String(r.weekStart);
+        const { schedule } = await import('../algorithms/schedule');
+        const recipe = await schedule.loadBuildConfig(ctx.clinicId, ws2);
+        if (!recipe) return 'Tool error: لا توجد وصفة بناءٍ محفوظة لهذا الأسبوع — أعِد بناء الجدول أوّلًا.';
+        const built = await schedule.build({
+          ...recipe, clinicId: ctx.clinicId, weekStart: ws2, fromDay: r.day, dryRun: false,
+        } as Parameters<typeof schedule.build>[0]);
+        if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
+        const who = resolveDoctor(ctx, r.doctorIndex);
+        return final(`تمّ — أُعيد توزيعُ الجدول من يوم ${DAY_AR[r.day]} بإدخال ${who ? who.name : 'الطبيب الجديد'} بتوزيعٍ عادل (الأيّامُ السابقةُ كما هي).`);
       }
 
       case 'leader_apply': {
