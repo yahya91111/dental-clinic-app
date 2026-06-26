@@ -723,23 +723,12 @@ export async function dispatchRequestToolV2(
                 continue;
               }
               if (leaderId !== actor.id && !ctx.suppressLeaderInfo) {
-                // علم الاستئذان يحمل نتيجة التبديل التلقائيّ الصامت (المحرّك نفّذه):
-                // «تمّ تبديله مع فلان» أو «لا بديل يغطّي فترته» — إشعارٌ واحدٌ للعلم.
-                // (النقل يكتمه ليُرسل إشعارًا مجمّعًا واحدًا.)
-                let note = '';
-                if (perm && (status === 'permission_start' || status === 'permission_end')) {
-                  const sw = perm.swap;
-                  if (sw && 'withName' in sw) note = ` — وتمّ تبديله مع ${sw.withName}${sw.delegatorGap ? '، وبقيت فترة دليقيتر فارغة' : ''}`;
-                  else if (sw && 'none' in sw) {
-                    note = sw.reason === 'delegator_left'
-                      ? ' — ودوره دليقيتر تلك الفترة بلا بديل'
-                      : ' — ولا يوجد بديلٌ يغطّي فترته';
-                  }
-                }
+                // إشعار علمٍ واحدٌ للقائد بتسجيل الحالة (تفاصيل نتيجة التبديل/التغطية
+                // التلقائيّة يتولّاها الأورب لاحقًا — لا تُذيَّل هنا).
                 await notifications.notifyLeaderOfRequest({
                   clinicId: ctx.clinicId, leaderId,
                   senderId: doc.id, senderName: doc.name,
-                  summary: `${STATUS_AR[status]} يوم ${dayWithDate(wsEff, r.day)}${note}`,
+                  summary: `${STATUS_AR[status]} يوم ${dayWithDate(wsEff, r.day)}`,
                   weekStart: wsEff, day: r.day,
                   // غيابٌ كامل (مرضية/تفرّغ) يُرتّب المحرّك تعويضه → القائد يُطّلع على الجدول
                   scheduleChanged: ABSENCE.includes(status),
@@ -1055,25 +1044,6 @@ export async function dispatchRequestToolV2(
           // (كما يفعل مسار تسجيل الغياب تمامًا — وإلّا بقيت اقتراحاتهم بائتةً بلا العائد).
           await refreshCoverageCards(ctx.clinicId, String(r.weekStart), r.day, { id: doc.id, name: doc.name });
           const statusAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الحالة';
-          const rc = res as {
-            permissionCanceled?: boolean; permSwapReverted?: boolean; permSwapRecompute?: boolean; returnedToReserve?: boolean;
-            shadowReturned?: boolean; shadowSupervisorAbsent?: boolean; returnedShadows?: string[];
-          };
-          const fate = rc.permissionCanceled
-            ? ((rc.permSwapReverted || rc.permSwapRecompute) ? 'أُزيلت العلامة وعاد إلى مقعده (عُكِس التبديل)' : 'أُزيلت علامة الاستئذان ومكانه في الجدول كما هو')
-            : rc.returnedToReserve
-              ? 'أُزيلت العلامة وبقي احتياطًا كما كان'
-              : rc.shadowReturned
-                ? 'عاد إلى جانب مدرّبه'
-                : rc.shadowSupervisorAbsent
-                  ? 'مدرّبه غائبٌ فبقي في الاحتياط'
-                  : res.covered && res.restored
-                    ? 'أُعيد إلى بعض خاناته وبعضُها مشغول — حدّد مكان الباقي'
-                    : res.covered
-                      ? 'مكانه مُغطًّى — حدّد أين يوضَع'
-                      : res.restored
-                        ? `عاد إلى مكانه${rc.returnedShadows?.length ? ` ومعه ظلُّه ${rc.returnedShadows.join(' و')}` : ''}`
-                        : 'لم يكن منسَّبًا في العيادة';
           const leaders = await getTeamLeaderIds(ctx.clinicId);
           for (const leaderId of leaders) {
             // الإلغاء (وأيُّ انعكاسٍ تلقائيّ) = إشعار علمٍ للقائد فقط — لا كرت ولا
@@ -1082,7 +1052,7 @@ export async function dispatchRequestToolV2(
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
-                summary: `إلغاء ${statusAr} يوم ${DAY_AR[r.day]} — ${fate}`,
+                summary: `إلغاء ${statusAr} يوم ${DAY_AR[r.day]}`,
                 weekStart: String(r.weekStart), day: r.day,
                 standalone: true, // الإلغاء حدثٌ مميَّز — لا يُدمَج في إشعار التسجيل فيختفي
                 // الإلغاء أعاد ترتيب الجدول (عودة/رفع تغطية) → القائد يُطّلع عليه
@@ -1347,13 +1317,11 @@ export async function dispatchRequestToolV2(
         if (!ops.length) return 'Tool error: لا توجد عمليّات للتنفيذ.';
         const done: string[] = [];
         const failed: string[] = [];
-        let firstDay: (typeof DAYS)[number] | undefined;
         for (let i = 0; i < ops.length; i++) {
           const op = ops[i] || {};
           const kind = String(op.op || '');
           const tag = `[${i + 1}]`;
           const day = isDay(op.day) ? op.day : undefined;
-          if (day && !firstDay) firstDay = day;
           try {
             if (kind === 'place') {
               const doc = resolveDoctor(ctx, op.doctorIndex);
@@ -1453,21 +1421,7 @@ export async function dispatchRequestToolV2(
             failed.push(`${tag} ${e instanceof Error ? e.message : 'خطأ'}`);
           }
         }
-        // إشعارٌ واحدٌ مجمّع لبقيّة القادة (للعلم). التغطية/العدل («ماذا بعد الطلب») لاحقًا.
-        if (done.length && !ctx.suppressLeaderInfo) {
-          try {
-            const { notifications } = await import('../algorithms/notifications');
-            for (const leaderId of await getTeamLeaderIds(ctx.clinicId)) {
-              if (leaderId !== actor.id) {
-                await notifications.notifyLeaderOfRequest({
-                  clinicId: ctx.clinicId, leaderId, senderId: actor.id, senderName: ctx.user?.name || '',
-                  summary: `تعديلٌ مباشرٌ على الجدول: ${done.join(' · ')}`,
-                  weekStart: ws, day: firstDay ?? DAYS[0], standalone: true, scheduleChanged: true,
-                });
-              }
-            }
-          } catch { /* الإشعار تحسينٌ — لا يُفشل التنفيذ */ }
-        }
+        // لا إشعار لبقيّة القادة عن التعديل المباشر — الأورب يتولّى ذلك لاحقًا.
         const parts: string[] = [];
         if (done.length) parts.push(`✅ نُفِّذ (${done.length}): ${done.join(' · ')}`);
         if (failed.length) parts.push(`⚠️ تعذّر (${failed.length}): ${failed.join(' · ')}`);

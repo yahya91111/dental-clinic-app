@@ -176,10 +176,8 @@ export async function notifyLeaderOfRequest(args: {
   weekStart?: string;  // للتجميع (طلبات نفس الأسبوع)
   day?: string;        // مفتاح التمييز (لا يتكرّر السطر لو أُعيد نفس اليوم)
   standalone?: boolean; // حدثٌ مميَّز (إلغاء/إرجاع) لا يُدمَج في إشعار سابق — إشعار جديد دائمًا
-  scheduleChanged?: boolean; // الطلب غيّر الجدول → يُذيَّل الإشعار بسطر «راجِع الجدول»
+  scheduleChanged?: boolean; // الطلب غيّر الجدول → وسمٌ في data (الأورب يتولّى عرضه لاحقًا)
 }): Promise<NotifResult> {
-  // ذيلٌ يُلحَق بإشعار القائد متى مسّ الطلبُ الجدول (غياب/إلغاء) — كي يطّلع على التغيير
-  const REVIEW_LINE = '📋 راجِع الجدول لمتابعة التغيير.';
   try {
     const now = Date.now();
     // الإلغاء/الإرجاع يصل **مستقلًّا** (standalone): حدثٌ مميَّز لا يُدمَج في إشعار
@@ -212,8 +210,7 @@ export async function notifyLeaderOfRequest(args: {
         const entry = { day: args.day, summary: args.summary };
         if (i >= 0) items[i] = entry; else items.push(entry);
         const changed = args.scheduleChanged || !!existing.data?.schedule_changed;
-        const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`
-          + (changed ? `\n${REVIEW_LINE}` : '');
+        const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`;
         await supabase
           .from('notifications')
           .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now, schedule_changed: changed }, body, is_read: false })
@@ -229,7 +226,7 @@ export async function notifyLeaderOfRequest(args: {
       senderName: args.senderName,
       type: NotifType.REQUEST_INFO,
       title: 'طلب جديد',
-      body: `${args.senderName}: ${args.summary}` + (args.scheduleChanged ? `\n${REVIEW_LINE}` : ''),
+      body: `${args.senderName}: ${args.summary}`,
       data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now, schedule_changed: !!args.scheduleChanged },
     });
   } catch (e) {
