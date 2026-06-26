@@ -8,12 +8,13 @@ import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } fr
 // عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): اسم الطبيب في مكانه القديم
 // منطفئٌ باهت، وفي الجديد مضيءٌ متوهّج. الجدول الحيّ لا يمرّر tone فلا يتأثّر.
 const TONE_NEW = '#1D4ED8';
-const TONE_OLD = '#9AA0B4';
+const TONE_OLD = '#6B7280';
 function toneText(slot: ScheduleSlot, base: string) {
   if (slot.tone === 'new') {
     return { color: TONE_NEW, fontWeight: '900' as const, textShadowColor: 'rgba(29,78,216,0.6)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: scale(6) };
   }
-  if (slot.tone === 'old') return { color: TONE_OLD, opacity: 0.5 };
+  // المكان القديم «منطفئ»: رماديٌّ خافتٌ لكنّه ظاهرٌ (لا شفافيّة تُخفيه) + شطبٌ خفيف.
+  if (slot.tone === 'old') return { color: TONE_OLD, fontWeight: '600' as const, textDecorationLine: 'line-through' as const };
   return { color: base };
 }
 

@@ -103,32 +103,23 @@ export default function SeatChangeOverlay({
           </View>
         </View>
 
-        {/* مفتاح الألوان */}
-        <View style={st.legend}>
-          <View style={st.legendItem}>
-            <View style={[st.dot, { backgroundColor: '#1D4ED8', shadowColor: '#1D4ED8', shadowOpacity: 0.9, shadowRadius: scale(5), shadowOffset: { width: 0, height: 0 } }]} />
-            <Text style={st.legendTxt}>المكان الجديد (مضيء)</Text>
-          </View>
-          <View style={st.legendItem}>
-            <View style={[st.dot, { backgroundColor: '#9AA0B4', opacity: 0.6 }]} />
-            <Text style={st.legendTxt}>المكان السابق (منطفئ)</Text>
-          </View>
-        </View>
+        {/* سطحٌ معتمٌ (نفس خلفيّة صفحة الجدول الحقيقيّة) — الشريط والجدول عليه «كما هما» */}
+        <LinearGradient colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']} style={{ flex: 1 }}>
+          {/* شريط الأسابيع — كما هو، مع إضاءة أسابيع التغيير */}
+          <WeekStrip
+            selectedWeekStart={parseLocalISO(selWeek)}
+            onSelectWeek={(d) => setSelWeek(toISO(d))}
+            highlightWeeks={weeks}
+          />
 
-        {/* شريط الأسابيع — كما هو، مع إضاءة أسابيع التغيير */}
-        <WeekStrip
-          selectedWeekStart={parseLocalISO(selWeek)}
-          onSelectWeek={(d) => setSelWeek(toISO(d))}
-          highlightWeeks={weeks}
-        />
-
-        {/* الجدول الحقيقيّ — للرؤية: كلّ الخانات فارغة إلّا القديم/الجديد */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: scale(12), paddingBottom: scale(40) }} showsVerticalScrollIndicator={false}>
-          {weekChanges.length === 0 && (
-            <Text style={st.empty}>لا تغييرات في هذا الأسبوع.</Text>
-          )}
-          <ScheduleGrid slots={slots} clinicCount={cols} onCellPress={() => {}} />
-        </ScrollView>
+          {/* الجدول الحقيقيّ — للرؤية: كلّ الخانات فارغة إلّا القديم/الجديد */}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: scale(12), paddingBottom: scale(40) }} showsVerticalScrollIndicator={false}>
+            {weekChanges.length === 0 && (
+              <Text style={st.empty}>لا تغييرات في هذا الأسبوع.</Text>
+            )}
+            <ScheduleGrid slots={slots} clinicCount={cols} onCellPress={() => {}} />
+          </ScrollView>
+        </LinearGradient>
       </View>
     </Modal>
   );
@@ -146,12 +137,5 @@ const st = StyleSheet.create({
   },
   title: { fontSize: scale(16), fontWeight: '800', color: '#F4F1FF', textAlign: 'right' },
   subtitle: { fontSize: scale(11.5), fontWeight: '600', color: 'rgba(214,196,255,0.7)', textAlign: 'right', marginTop: scale(2) },
-  legend: {
-    flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(14),
-    paddingHorizontal: scale(16), paddingBottom: scale(10),
-  },
-  legendItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: scale(6) },
-  dot: { width: scale(11), height: scale(11), borderRadius: scale(6) },
-  legendTxt: { fontSize: scale(11.5), color: '#D8D2F0', fontWeight: '600' },
-  empty: { fontSize: scale(13), color: '#C9C0E8', textAlign: 'center', marginBottom: scale(14), fontWeight: '600' },
+  empty: { fontSize: scale(13), color: '#64708A', textAlign: 'center', marginBottom: scale(14), fontWeight: '600' },
 });
