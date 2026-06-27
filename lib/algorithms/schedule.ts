@@ -287,28 +287,31 @@ export async function loadScheduleData(
   clinicId: string,
   weekStart: string,
 ): Promise<{ data: LoadedData | null; error: string | null }> {
+  // الاستعلامات الأربعة مستقلّةٌ تمامًا (إعدادات/قروبات/خانات الأسبوع/خانات الماضي) — ننفّذها
+  // **بالتوازي** (Promise.all) فتُختصر أربع جولاتِ شبكةٍ متتابعة إلى واحدة. loadScheduleData
+  // يُنادى مرّاتٍ كثيرة في خطّ التفاعل، فهذا أكبرُ توفيرٍ آمنٍ للكمون (يفيد الذكاء واليدويّ معًا).
+  const windowStart = shiftWeekStart(weekStart, 2);
+  const [settingsRes, groupsRes, existingRes, pastRes] = await Promise.all([
+    supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', clinicId).maybeSingle(),
+    supabase.from('doctor_groups').select('id, name, doctor_group_members(doctor_id, doctor_name, work_status, supervisor_doctor_id)').eq('clinic_id', clinicId),
+    supabase.from('schedule_slots').select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status').eq('clinic_id', clinicId).eq('week_start', weekStart),
+    supabase.from('schedule_slots').select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status').eq('clinic_id', clinicId).gte('week_start', windowStart).lt('week_start', weekStart),
+  ]);
+
   // 1. عدد العيادات من schedule_settings
-  const { data: settings, error: settingsErr } = await supabase
-    .from('schedule_settings')
-    .select('clinic_count')
-    .eq('clinic_id', clinicId)
-    .maybeSingle();
-  if (settingsErr) {
-    return { data: null, error: `فشل تحميل إعدادات العيادة: ${settingsErr.message}` };
+  if (settingsRes.error) {
+    return { data: null, error: `فشل تحميل إعدادات العيادة: ${settingsRes.error.message}` };
   }
-  const clinicCount = settings?.clinic_count;
+  const clinicCount = settingsRes.data?.clinic_count;
   if (!clinicCount || clinicCount < 1) {
     return { data: null, error: 'عدد العيادات غير محدّد. اضبطه في الإعدادات.' };
   }
 
   // 2. القروبات + أعضاؤها (نفلتر للقوالب الأربعة فقط)
-  const { data: groupsData, error: groupsErr } = await supabase
-    .from('doctor_groups')
-    .select('id, name, doctor_group_members(doctor_id, doctor_name, work_status, supervisor_doctor_id)')
-    .eq('clinic_id', clinicId);
-  if (groupsErr) {
-    return { data: null, error: `فشل تحميل القروبات: ${groupsErr.message}` };
+  if (groupsRes.error) {
+    return { data: null, error: `فشل تحميل القروبات: ${groupsRes.error.message}` };
   }
+  const groupsData = groupsRes.data;
 
   const doctors: LoadedDoctor[] = [];
   for (const g of (groupsData || []) as Array<{
@@ -340,28 +343,18 @@ export async function loadScheduleData(
   }
 
   // 3. الخانات الموجودة في الأسبوع الحالي
-  const { data: existing, error: existingErr } = await supabase
-    .from('schedule_slots')
-    .select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
-    .eq('clinic_id', clinicId)
-    .eq('week_start', weekStart);
-  if (existingErr) {
-    return { data: null, error: `فشل تحميل خانات الأسبوع: ${existingErr.message}` };
+  if (existingRes.error) {
+    return { data: null, error: `فشل تحميل خانات الأسبوع: ${existingRes.error.message}` };
   }
+  const existing = existingRes.data;
 
   // 4. خانات الأسابيع السابقة (للعدالة) — نافذة أسبوعين متحرّكة.
   // أسبوعان ينعّمان التذبذب التراكمي، ويلتقطهما تمهيد «أقلّ من الأقران»
   // الذي يحمي العائد من الغياب الجزئي داخل النافذة.
-  const windowStart = shiftWeekStart(weekStart, 2);
-  const { data: past, error: pastErr } = await supabase
-    .from('schedule_slots')
-    .select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status')
-    .eq('clinic_id', clinicId)
-    .gte('week_start', windowStart)
-    .lt('week_start', weekStart);
-  if (pastErr) {
-    return { data: null, error: `فشل تحميل سجل الأسبوع السابق: ${pastErr.message}` };
+  if (pastRes.error) {
+    return { data: null, error: `فشل تحميل سجل الأسبوع السابق: ${pastRes.error.message}` };
   }
+  const past = pastRes.data;
 
   const mapSlot = (s: any): LoadedSlot => ({
     id: s.id,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StatusBar, Animated, Modal, TextInput, Keyboard, TouchableWithoutFeedback, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StatusBar, Animated, Modal, TextInput, Keyboard, TouchableWithoutFeedback, Alert, ActivityIndicator } from 'react-native';
 import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -106,6 +106,9 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiState, setAiState] = useState<AIState>('idle');
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
+  // تغييرٌ يدويّ (طبيّة/تفرّغ/استئذان/إلغاء) يُعالَج في الخلفيّة بعد إغلاق النافذة فورًا —
+  // هذا الوسمُ يُظهر شريط «جارٍ التطبيق…» كي يَعلم القائدُ أنّ العمل جارٍ (لا تجمُّد).
+  const [statusBusy, setStatusBusy] = useState(false);
   const aiHistoryRef = useRef<V2Message[]>([]);
   // معاينة جدول بناها الذكاء في الشات — تُعرَض فوق صفحة الذكاء، والحفظ من هناك
   const [aiPreview, setAiPreview] = useState<SchedulePreview | null>(null);
@@ -223,6 +226,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   }): Promise<{ ok: boolean; error?: string }> => {
     if (!clinicId || !user?.id) return { ok: false, error: 'لا مستخدم أو عيادة.' };
     const ws = formatWeekStart(selectedWeekStart);
+    setStatusBusy(true);
     try {
       const { dispatchRequestToolV2, FINAL_MARK } = await import('../../lib/ai_v2/tools_requests_v2');
       // عرضُ الإبلاغ يقرّره المحرّكُ (يكتمه للظلّ/المُغطّى/المكرّر) — نلتقطه ولا نُعيد بناءه نصيًّا.
@@ -236,7 +240,11 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       const out = await dispatchRequestToolV2('set_schedule_status', {
         weekStart: ws, day: req.day, doctorIndex: 1, status: req.status, shift: req.shift,
       }, ctx);
-      if (out.startsWith('Tool error')) return { ok: false, error: out.replace(/^Tool error:\s*/, '') };
+      if (out.startsWith('Tool error')) {
+        const err = out.replace(/^Tool error:\s*/, '');
+        Alert.alert('تعذّر', err);
+        return { ok: false, error: err };
+      }
       const content = out.split(FINAL_MARK).join('');
       const msg: ChatMessage = {
         id: `m${Date.now()}`, role: 'assistant', content,
@@ -245,10 +253,14 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       };
       setAiMessages((prev) => [...prev, msg]);
       aiHistoryRef.current.push({ role: 'assistant', content });
-      // تحديثُ الجدول يتولّاه onSaved في النافذة (لا تحميلٌ مزدوج).
+      loadSchedule(); // النافذة أُغلقت فورًا؛ ننعش الجدولَ هنا عند انتهاء الخلفيّة.
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+      const err = e instanceof Error ? e.message : 'خطأ غير متوقّع.';
+      Alert.alert('تعذّر', err);
+      return { ok: false, error: err };
+    } finally {
+      setStatusBusy(false);
     }
   };
 
@@ -259,6 +271,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   }): Promise<{ ok: boolean; error?: string }> => {
     if (!clinicId || !user?.id) return { ok: false, error: 'لا مستخدم أو عيادة.' };
     const ws = formatWeekStart(selectedWeekStart);
+    setStatusBusy(true);
     try {
       const { dispatchRequestToolV2, FINAL_MARK } = await import('../../lib/ai_v2/tools_requests_v2');
       const ctx: V2ToolContext = {
@@ -269,14 +282,23 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       const out = await dispatchRequestToolV2('cancel_schedule_status', {
         weekStart: ws, day: req.day, doctorIndex: 1,
       }, ctx);
-      if (out.startsWith('Tool error')) return { ok: false, error: out.replace(/^Tool error:\s*/, '') };
+      if (out.startsWith('Tool error')) {
+        const err = out.replace(/^Tool error:\s*/, '');
+        Alert.alert('تعذّر', err);
+        return { ok: false, error: err };
+      }
       const content = out.split(FINAL_MARK).join('');
       const msg: ChatMessage = { id: `m${Date.now()}`, role: 'assistant', content, timestamp: Date.now() };
       setAiMessages((prev) => [...prev, msg]);
       aiHistoryRef.current.push({ role: 'assistant', content });
+      loadSchedule(); // النافذة أُغلقت فورًا؛ ننعش الجدولَ هنا عند انتهاء الخلفيّة.
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+      const err = e instanceof Error ? e.message : 'خطأ غير متوقّع.';
+      Alert.alert('تعذّر', err);
+      return { ok: false, error: err };
+    } finally {
+      setStatusBusy(false);
     }
   };
 
@@ -840,6 +862,19 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           }
         }}
       />
+
+      {/* شريط «جارٍ التطبيق…» — تعديلٌ يدويّ يُعالَج في الخلفيّة (تغطية/موازنة/استرداد) بعد إغلاق النافذة */}
+      {statusBusy && (
+        <View pointerEvents="none" style={{
+          position: 'absolute', top: scale(54), alignSelf: 'center',
+          flexDirection: 'row-reverse', alignItems: 'center', gap: scale(8),
+          paddingVertical: scale(8), paddingHorizontal: scale(14), borderRadius: scale(20),
+          backgroundColor: 'rgba(20,16,40,0.92)', borderWidth: scale(1), borderColor: 'rgba(150,120,255,0.35)',
+        }}>
+          <ActivityIndicator size="small" color="#B9A7FF" />
+          <Text style={{ color: '#EDE8FF', fontSize: scale(12.5), fontWeight: '700' }}>جارٍ تطبيق التغيير على الجدول…</Text>
+        </View>
+      )}
     </View>
   );
 }

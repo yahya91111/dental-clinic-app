@@ -332,13 +332,16 @@ export async function withSeatChangeDiff<T>(
   const before = new Map<string, PlaceRow[]>();
   try {
     weeks = await builtWeeksFrom(args.clinicId, args.weekStart);
-    for (const w of weeks) before.set(w, await loadWeekPlacement(args.clinicId, w));
+    // التقاطٌ متوازٍ لكلّ الأسابيع (قراءاتٌ مستقلّة) — يختصر جولاتِ الشبكة في العيادات متعدّدة الأسابيع.
+    const rows = await Promise.all(weeks.map((w) => loadWeekPlacement(args.clinicId, w)));
+    weeks.forEach((w, i) => before.set(w, rows[i]!));
   } catch { weeks = []; /* الالتقاط القبليّ فشل → نتخطّى الإشعار، لا العمليّة */ }
   const out = await run();
   if (weeks.length) {
     try {
       const after = new Map<string, PlaceRow[]>();
-      for (const w of weeks) after.set(w, await loadWeekPlacement(args.clinicId, w));
+      const afterRows = await Promise.all(weeks.map((w) => loadWeekPlacement(args.clinicId, w)));
+      weeks.forEach((w, i) => after.set(w, afterRows[i]!));
       // عدد عيادات الأسبوع (أكبر رقم عيادةٍ نشطة) — لرسم هيكل الجدول الفارغ في المعاينة.
       let clinicCount = 0;
       for (const rows of after.values()) for (const r of rows) if (r.role === 'clinic' && r.clinic > clinicCount) clinicCount = r.clinic;

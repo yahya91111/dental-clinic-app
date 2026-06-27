@@ -241,9 +241,9 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
         text: 'Remove', style: 'destructive',
         onPress: async () => {
           if (isAbsenceCancel) {
-            const res = await onStatusCancel!({ doctorId: slot.doctorId, doctorName: slot.doctorName, day: day!, status: slot.status });
-            if (!res.ok) { Alert.alert('تعذّر', res.error || 'تعذّر إلغاء الحالة.'); return; }
-            onSaved();
+            // أغلِق فورًا — الاستردادُ والموازنة في الخلفيّة، والشاشةُ تنعش الجدولَ عند الانتهاء.
+            onClose();
+            void onStatusCancel!({ doctorId: slot.doctorId, doctorName: slot.doctorName, day: day!, status: slot.status });
             return;
           }
           await deleteScheduleSlot(slot.id);
@@ -540,13 +540,13 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
     if (PIPELINE.includes(status)) {
       if (!onStatusRequest) { Alert.alert('تعذّر', 'تعذّر تسجيل الحالة الآن.'); return; }
       const shift = exClinicNumber === 2 ? 'evening' : 'morning';
-      const res = await onStatusRequest({
-        doctorId: exSelectedDoctor.id, doctorName: exSelectedDoctor.name, day, status, shift,
-      });
+      const doc = exSelectedDoctor;
+      // أغلِق المودال فورًا — التغطيةُ والموازنة تجريان في الخلفيّة، وتنعش الشاشةُ الجدولَ
+      // عند الانتهاء وتعرض أيّ خطأ. (الخطّ ثقيلٌ بطبيعته فلا نُجمّد الواجهة بانتظاره.)
       setExSelectedDoctor(null);
       setExMode('list');
-      if (!res.ok) { Alert.alert('تعذّر', res.error || 'تعذّر تسجيل الحالة.'); return; }
-      onSaved();
+      onClose();
+      void onStatusRequest({ doctorId: doc.id, doctorName: doc.name, day, status, shift });
       return;
     }
 
