@@ -22,6 +22,11 @@
 -- PUSHES: an unfillable clinic gap is important, so each team leader's copy
 -- must reach the phone. One row per leader → one ring each. NOT silent.
 --
+-- `rebalance_consent` (the «موازنةُ يومٍ عدّلتَه» card) is SILENT: a low-urgency
+-- in-app decision (the engine asking permission to balance a day the leader edited
+-- by hand — coverage already happened, no patient is uncovered). It reddens the AI
+-- orb like the reserve-choice card; the leader decides نعم/لا when convenient. Silent.
+--
 -- Grouped requests: a multi-day request (e.g. sick leave Sun+Mon+Tue)
 -- is collected into ONE `request_info` row whose `body` grows as days
 -- are appended (day 1 = INSERT, days 2+ = UPDATE). We push ONCE per
@@ -37,7 +42,7 @@ DECLARE
   token_record RECORD;
 BEGIN
   -- أنواع صامتة: لا تُرسِل لها دفعًا (مكانها داخل التطبيق فقط)
-  IF NEW.type IN ('gap_alert', 'coverage_fill') THEN
+  IF NEW.type IN ('gap_alert', 'coverage_fill', 'rebalance_consent') THEN
     RETURN NEW;
   END IF;
 

@@ -1610,8 +1610,12 @@ export async function rebalanceForward(args: {
   /** اليوم (ISO) — إن مُرِّر فالمرساة «أوّل شفتٍ لم يقع بعدُ» (أوسع نافذةٍ للعدل،
    *  تشمل أيّام هذا الأسبوع **قبل** الحدث ما دامت مستقبلًا) بدل «بعد يوم الحدث». */
   today?: string;
-}): Promise<{ changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] }> {
+  /** أيّامٌ رتّبها القائدُ يدويًّا — تُحمى من موازنة العدل؛ ما أرادتِ الموازنةُ تعديلَه
+   *  منها يعود في deferred ليُسأل القائدُ موافقتَه (كرت «موازنةُ يومٍ عدّلتَه»). */
+  protectedDays?: Set<WeekDay>;
+}): Promise<{ changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[]; deferred: WeekDay[] }> {
   const changedWeeks: { weekStart: string; affectedDoctorIds: string[] }[] = [];
+  let deferred: WeekDay[] = [];
 
   // ── القلب الواحد (التوحيد النهائيّ) ──
   // القلبُ الجديد هو محرّكُ التفاعل **الوحيد** — لا مفتاح ولا فرعَ «قديم/جديد»: يغطّي
@@ -1623,10 +1627,11 @@ export async function rebalanceForward(args: {
     const sh = await import('./solver_shadow');
     const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
     await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' }, sh.reservePairsFromMoves(cov.moves));
-    await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
+    const rb = await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays });
+    deferred = rb.deferred;
   } catch { /* القلبُ الجديد لا يُفشِل التسوية أبدًا */ }
 
-  return { changedWeeks };
+  return { changedWeeks, deferred };
 }
 
 export const schedule = {

@@ -46,6 +46,7 @@ export const NotifType = {
   TRAINEE_ATTACHED: 'trainee_attached', // info: للمدرّب — أُلحق به متدرّب لهذا اليوم
   SEAT_CHANGE: 'seat_change',           // card: «طرأ تغييرٌ على جدولك» — للطبيب المتأثّر (قبل/بعد على الجدول)
   SHORTAGE_ALERT: 'shortage_alert',     // card: «يوجد فترة فارغة» — للقائد: نقصٌ تعذّر ملؤه (لكلّ قائدٍ نسخته)
+  REBALANCE_CONSENT: 'rebalance_consent', // action: «موازنةُ يومٍ عدّلتَه» — استئذانُ القائد قبل موازنة العدل ليومٍ عدّله يدويًّا (نعم/لا)
 } as const;
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -380,6 +381,84 @@ export async function notifyShortage(args: {
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// كرت «موازنةُ يومٍ عدّلتَه» — استئذانُ القائد قبل موازنة العدل ليومٍ رتّبه يدويًّا
+// ═══════════════════════════════════════════════════════════════
+// أرادتِ الموازنةُ تعديلَ يومٍ عدّله القائدُ بنفسه → نَسأله أولًا (نعم/لا) بدل أن نمسّ
+// ترتيبه. «نعم» → نطبّق الموازنة لذلك اليوم. «لا» → يبقى كما رتّبه (نقبل عدمَ توازنه).
+// كرتٌ لكلّ قائد. لا يُكرَّر لنفس (القائد، الأسبوع، اليوم) ما دام معلّقًا أو مرفوضًا
+// (القرارُ السابق يُحترَم فلا إزعاج)؛ تعديلٌ جديد لليوم يمسحه (clearRebalanceConsent).
+
+/** كرتُ استئذانٍ (نعم/لا) لقائدٍ واحد بموازنة يومٍ عدّله يدويًّا. */
+export async function notifyRebalanceConsent(args: {
+  clinicId: string; leaderId: string; weekStart: string; day: WeekDay;
+  senderId?: string; senderName?: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  try {
+    const { data: rows } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('type', NotifType.REBALANCE_CONSENT);
+    const dup = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find((r) => {
+      const d = r.data || {};
+      // معلّقٌ أو مرفوض = قرارٌ قائمٌ يُحترَم (لا نُعيد السؤال). المقبول لا يَحجب (رُفعت الحماية أصلًا).
+      const open = !r.action_status || r.action_status === 'pending' || r.action_status === 'rejected';
+      return open && d.week_start === args.weekStart && d.day === args.day;
+    });
+    if (dup) return { success: true, id: dup.id };
+    const { id, error } = await sendAction({
+      clinicId: args.clinicId, recipientId: args.leaderId,
+      senderId: args.senderId, senderName: args.senderName,
+      type: NotifType.REBALANCE_CONSENT, title: 'موازنةُ يومٍ عدّلتَه',
+      body: `عدّلتَ ${dayWithDate(args.weekStart, args.day)} يدويًّا، وأريدُ التعديلَ على هذا اليوم للموازنة.`,
+      data: { v: 1, clinic_id: args.clinicId, week_start: args.weekStart, day: args.day, batch_at: Date.now() },
+    });
+    return { success: !error, error, id };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+/** حسمُ كرت الموازنة عند **كلّ** القادة لنفس (الأسبوع، اليوم): accepted (نعم) أو
+ *  rejected (لا). فشلُه لا يُفشِل العمليّة المنفَّذة. */
+export async function resolveRebalanceConsent(args: {
+  clinicId: string; weekStart: string; day: WeekDay; decision: 'accepted' | 'rejected';
+}): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data, action_status')
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.REBALANCE_CONSENT);
+    for (const r of (data || []) as { id: string; data: any; action_status: string | null }[]) {
+      const d = r.data || {};
+      const pending = !r.action_status || r.action_status === 'pending';
+      if (!pending || d.week_start !== args.weekStart || d.day !== args.day) continue;
+      await supabase.from('notifications').update({ action_status: args.decision, is_read: true }).eq('id', r.id);
+    }
+  } catch { /* الإغلاق تحسينٌ — لا يُفشِل المسار */ }
+}
+
+/** مسحُ أيّ كرت موازنةٍ سابقٍ لـ(الأسبوع، اليوم) عند كلّ القادة — يُستدعى حين يُعدّل
+ *  القائدُ اليومَ من جديد (قرارٌ بائتٌ يُلغى كي نَسأل ثانيةً إن لزم). */
+export async function clearRebalanceConsent(args: {
+  clinicId: string; weekStart: string; day: WeekDay;
+}): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, data')
+      .eq('clinic_id', args.clinicId)
+      .eq('type', NotifType.REBALANCE_CONSENT);
+    const ids = ((data || []) as { id: string; data: any }[])
+      .filter((r) => r.data?.week_start === args.weekStart && r.data?.day === args.day)
+      .map((r) => r.id);
+    for (const id of ids) await supabase.from('notifications').delete().eq('id', id);
+  } catch { /* المسح تحسينٌ — لا يُفشِل المسار */ }
 }
 
 /** يقرأ صفّ إشعار واحد (id, recipient_id, data, action_status) */
@@ -1201,4 +1280,6 @@ export const notifications = {
   notifySeatChangeCard,
   // كرت «يوجد فترة فارغة» (نقصٌ تعذّر ملؤه — للقائد، لكلٍّ نسخته)
   notifyShortage,
+  // كرت «موازنةُ يومٍ عدّلتَه» (استئذانُ القائد قبل موازنة العدل ليومٍ عدّله يدويًّا)
+  notifyRebalanceConsent, resolveRebalanceConsent, clearRebalanceConsent,
 };

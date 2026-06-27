@@ -391,10 +391,13 @@ export async function placeReserveInSeat(args: {
  * طبيبين حاضرين في الشفت نفسه (الجديد يقول: مقعد الدليقيتر الأحقّ به Y لا Z → نبادل خانات
  * Z و Y في ذلك الشفت). آمن: لا يرمي أبدًا، ويُرجِع ما طبّقه.
  */
-export async function applyNewHeartRebalance(args: { clinicId: string; weekStart: string; label: string }): Promise<{ applied: number }> {
+export async function applyNewHeartRebalance(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay> }): Promise<{ applied: number; deferred: WeekDay[] }> {
+  // أيّامٌ أرادتِ الموازنةُ تعديلَها لكنّها محميّةٌ (رتّبها القائدُ يدويًّا) — نؤجّلها
+  // ونُرجِعها كي يُسأل القائدُ موافقتَه (كرت «موازنةُ يومٍ عدّلتَه») قبل المساس بترتيبه.
+  const deferred = new Set<WeekDay>();
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
-    if (!data) return { applied: 0 };
+    if (!data) return { applied: 0, deferred: [] };
     const doctors = data.doctors;
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
     // المتدرّبون (ظلال): قد يرثون صفَّ استضافةٍ من مدرّبٍ مُرقًّى. لا يُعَدُّ مقعدَ استضافةٍ
@@ -433,7 +436,7 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       }
     }
     delSeats.sort((a, b) => a.stamp.localeCompare(b.stamp));
-    if (delSeats.length === 0) return { applied: 0 };
+    if (delSeats.length === 0) return { applied: 0, deferred: [] };
     const rec = solveLookahead(doctors, delSeats, lastHeavyStamps(all.filter((s) => s.weekStart < args.weekStart)));
 
     let applied = 0;
@@ -446,6 +449,8 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       // الشفت: من الختم week#dayIdx#half.
       const parts = seat.stamp.split('#'); const dayIdx = Number(parts[1]); const half = Number(parts[2]);
       const day = DAY_OF[dayIdx]; if (!day) continue;
+      // يومٌ عدّله القائدُ يدويًّا: لا تمسّه موازنةُ العدل — أجِّلْه واسأل موافقتَه أولًا.
+      if (args.protectedDays?.has(day)) { deferred.add(day); continue; }
       const periods = half === 0 ? [1, 2] : [3, 4];
       // مبادلةٌ نظيفة: كلٌّ من Z و Y حاضرٌ بخاناتٍ نشطةٍ في هذا الشفت → نتبادل بالمعرّف.
       const zRows = data.existingSlots.filter((s) => s.doctorId === Z && s.dayOfWeek === day && periods.includes(s.period) && s.status === 'active');
@@ -495,11 +500,11 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       }
     }
     if (applied === 0) console.log(`[NEW-HEART APPLY · ${args.label}] لا تحسينات — يوافق القديم.`);
-    return { applied };
+    return { applied, deferred: [...deferred] };
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log('[NEW-HEART APPLY] تعذّر التطبيق:', e instanceof Error ? e.message : e);
-    return { applied: 0 };
+    return { applied: 0, deferred: [...deferred] };
   }
 }
 

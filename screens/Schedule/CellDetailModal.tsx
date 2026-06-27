@@ -177,6 +177,17 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
     setLoadingDoctors(false);
   };
 
+  // وَسْمُ «يومٍ عدّله القائد يدويًّا»: أيُّ تعديلٍ مباشرٍ على خانات هذا اليوم يَسِمُه
+  // لحمايته من موازنة العدل التلقائيّة (تُستأذَن قبل تعديله — كرت «موازنةُ يومٍ عدّلتَه»).
+  // تحسينٌ لا يُفشِل الحفظ: يفشل بصمتٍ إن غاب المستخدم/العيادة/اليوم.
+  const markDayEdited = async () => {
+    if (!clinicId || !day || !userId) return;
+    try {
+      const { markLeaderEditedDay } = await import('../../lib/algorithms/leader_marks');
+      await markLeaderEditedDay({ clinicId, weekStart, day: day as any, byId: userId });
+    } catch { /* الوسم تحسينٌ — لا يُفشِل التعديل */ }
+  };
+
   const handleSelectDoctor = async (doctor: DoctorOption) => {
     if (!selectingFor || !clinicId) return;
     const currentClinicNum = selectingFor.clinicNumber;
@@ -193,6 +204,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
       currentRole,
       'active'
     );
+    await markDayEdited();
     onSaved();
 
     // Auto-advance: clinic → next clinic → next period CL1 → done
@@ -214,6 +226,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
         text: 'Remove', style: 'destructive',
         onPress: async () => {
           await deleteScheduleSlot(slot.id);
+          await markDayEdited();
           onSaved();
         },
       },
@@ -257,6 +270,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
           <TouchableOpacity
             onPress={async () => {
               await deleteScheduleSlot(assignedSlot.id);
+              await markDayEdited();
               onSaved();
             }}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -514,6 +528,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
     );
     setExSelectedDoctor(null);
     setExMode('list');
+    await markDayEdited();
     onSaved();
   };
 

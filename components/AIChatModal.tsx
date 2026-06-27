@@ -54,7 +54,7 @@ type ConvoNotif = {
 const AI_CHAT_TYPES = ['gap_alert', 'request_result'];
 const inAIChat = (n: { type: string; data?: any }) =>
   AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2);
-const isActionType = (t: string) => t === 'gap_alert';
+const isActionType = (t: string) => t === 'gap_alert' || t === 'rebalance_consent';
 const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
 
@@ -85,6 +85,8 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
     if (n.type === 'seat_change') return !n.is_read;
     // كرت «يوجد فترة فارغة»: يتوهّج للقائد حتى يطّلع عليه (يُقرأ) ثمّ يختفي.
     if (n.type === 'shortage_alert') return !n.is_read;
+    // كرت «موازنةُ يومٍ عدّلتَه»: يتوهّج للقائد ما دام معلّقًا (لم يُحسَم بنعم/لا).
+    if (n.type === 'rebalance_consent') return isPending(n);
     // بقيّة عناصر المحادثة: كرتٌ معلّق (لم يُحَلّ) أو رسالةٌ غير مقروءة.
     return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
@@ -746,6 +748,67 @@ function ShortageCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void
   );
 }
 
+// ───── كرت «موازنةُ يومٍ عدّلتَه» — استئذانُ القائد قبل موازنة العدل ليومٍ عدّله يدويًّا ─────
+// كرتُ قرار (نعم/لا): «نعم» يطبّق موازنةَ العدل على ذلك اليوم، «لا» يتركه كما رتّبه القائد.
+// لكلّ قائدٍ نسخته؛ يُحسَم عند الجميع بأوّل قرار. يتوهّج ما دام معلّقًا (لم يُحسَم).
+function RebalanceConsentCard({ notif, clinicId, onSeen }: {
+  notif: ConvoNotif; clinicId?: string | null; onSeen: () => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const d = notif.data || {};
+  const ws = String(d.week_start || '');
+  const day = String(d.day || '');
+  const cid = clinicId || d.clinic_id || '';
+
+  const decide = useCallback(async (approve: boolean) => {
+    if (busy || !cid || !ws || !day) return;
+    setBusy(true); setErr(null);
+    try {
+      const mod = await import('../lib/ai_v2/tools_requests_v2');
+      const res = approve
+        ? await mod.approveRebalance({ clinicId: cid, weekStart: ws, day })
+        : await mod.declineRebalance({ clinicId: cid, weekStart: ws, day });
+      if (!res.success) { setErr(res.error || 'تعذّر إكمال العمليّة.'); return; }
+      onSeen();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+    } finally { setBusy(false); }
+  }, [busy, cid, ws, day, onSeen]);
+
+  return (
+    <GlassCard kind="decision" glow>
+      <TouchableOpacity style={cardStyles.head} onPress={() => setExpanded((v) => !v)} activeOpacity={0.8}>
+        <CardBadge kind="decision" live />
+        <View style={cardStyles.headTxt}>
+          <Text style={cardStyles.cardTitle} numberOfLines={2}>{notif.title || 'موازنةُ يومٍ عدّلتَه'}</Text>
+          <Pill kind="decision" text="بانتظار قرارك" />
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+      </TouchableOpacity>
+      {expanded && (
+        <View style={cardStyles.covBody}>
+          <Text style={{ fontSize: scale(12.5), color: '#C9C0E8', textAlign: 'right', lineHeight: scale(20) }}>{notif.body}</Text>
+          {!!err && <Text style={{ color: '#FCA5A5', fontSize: scale(12), textAlign: 'right', marginTop: scale(6) }}>{err}</Text>}
+          {busy ? (
+            <ActivityIndicator color="#7C3AED" style={{ marginTop: scale(10) }} />
+          ) : (
+            <View style={[styles.reqActions, { marginTop: scale(10) }]}>
+              <TouchableOpacity style={[styles.actBtn, styles.accept]} activeOpacity={0.85} onPress={() => decide(true)}>
+                <Text style={styles.actTxt}>نعم</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actBtn, styles.reject]} activeOpacity={0.85} onPress={() => decide(false)}>
+                <Text style={styles.rejectTxt}>لا</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </GlassCard>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // AICardsView — لوحةُ كروت الإبلاغ المشتركة (تغطية نقص / موافقات / نتائج)
 // ═══════════════════════════════════════════════════════════════
@@ -774,7 +837,9 @@ export function AICardsView({ user, clinicId }: {
         || (n.type === 'seat_change' && (!n.is_read
           || (Array.isArray(n.data?.changes) && n.data.changes.some((c: { week_start?: string }) => String(c.week_start || '') >= sunday))))
         // كرت «يوجد فترة فارغة»: يظهر للقائد ما دام غير مقروء؛ يختفي بمجرّد الاطّلاع (لكلٍّ نسخته).
-        || (n.type === 'shortage_alert' && !n.is_read));
+        || (n.type === 'shortage_alert' && !n.is_read)
+        // كرت «موازنةُ يومٍ عدّلتَه»: يظهر للقائد ما دام معلّقًا؛ يختفي بحسمِه (نعم/لا).
+        || (n.type === 'rebalance_consent' && isPending(n)));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
     setConvo(items);
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
@@ -823,6 +888,9 @@ export function AICardsView({ user, clinicId }: {
         }
         if (n.type === 'shortage_alert') {
           return <ShortageCard key={n.id} notif={n} onSeen={loadConvo} />;
+        }
+        if (n.type === 'rebalance_consent') {
+          return <RebalanceConsentCard key={n.id} notif={n} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />;
         }
         if (isPending(n)) {
           const busy = busyId === n.id;
@@ -1062,6 +1130,10 @@ export default function AIChatModal({ visible, onClose, user, clinicId, messages
                       onSeen={loadConvo}
                     />
                   );
+                }
+                // كرت «موازنةُ يومٍ عدّلتَه» (استئذانُ موازنة العدل ليومٍ عدّله القائد) — نعم/لا.
+                if (n.type === 'rebalance_consent') {
+                  return <RebalanceConsentCard key={n.id} notif={n} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />;
                 }
                 if (isPending(n)) {
                   const busy = busyId === n.id;

@@ -204,6 +204,73 @@ export async function declineReserveChoiceByCode(params: {
   }
 }
 
+// ─── كرت «موازنةُ يومٍ عدّلتَه» (نعم/لا) ───────────────────────────
+// «نعم» (approve): اسمح بموازنة هذا اليوم وحده (تبقى بقيّةُ أيّام القائد محميّة)، ثمّ
+// ارفع حمايته (وافق ⇒ صار يومًا عاديًّا)، وأبلِغ المتأثّرين بكرت «طرأ تغييرٌ على جدولك».
+// «لا» (decline): اتركه كما رتّبه القائد (تبقى الحماية فلا يُعاد السؤال) وأغلِق الكرت.
+
+/** «نعم، وازِن»: طبّق موازنةَ العدل على اليوم الذي عدّله القائد (بعد إذنه). */
+export async function approveRebalance(params: {
+  clinicId: string; weekStart: string; day: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const day = params.day as ReserveDay;
+    const { applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
+    const { loadLeaderEditedDays, clearLeaderEditedDay } = await import('../algorithms/leader_marks');
+    const { notifications } = await import('../algorithms/notifications');
+    const { withSeatChangeDiff } = await import('../algorithms/requests_v2');
+    // اسمح بهذا اليوم وحده — تبقى بقيّةُ الأيّام المعدّلة محميّة.
+    const allow = await loadLeaderEditedDays({ clinicId: params.clinicId, weekStart: params.weekStart });
+    allow.delete(day);
+    await withSeatChangeDiff({ clinicId: params.clinicId, weekStart: params.weekStart }, () =>
+      applyNewHeartRebalance({ clinicId: params.clinicId, weekStart: params.weekStart, label: 'موافقة-موازنة', protectedDays: allow }));
+    await clearLeaderEditedDay({ clinicId: params.clinicId, weekStart: params.weekStart, day });
+    await notifications.resolveRebalanceConsent({ clinicId: params.clinicId, weekStart: params.weekStart, day, decision: 'accepted' });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+/** «لا، اتركه كما هو»: يبقى اليومُ كما رتّبه القائد؛ أغلِق الكرت (تبقى الحماية). */
+export async function declineRebalance(params: {
+  clinicId: string; weekStart: string; day: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { notifications } = await import('../algorithms/notifications');
+    await notifications.resolveRebalanceConsent({
+      clinicId: params.clinicId, weekStart: params.weekStart, day: params.day as ReserveDay, decision: 'rejected',
+    });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+/** أيّامُ القائد المحميّة في هذا الأسبوع (للموازنة المُستأذَنة). */
+async function protectedDaysFor(clinicId: string, weekStart: string): Promise<Set<ReserveDay>> {
+  const { loadLeaderEditedDays } = await import('../algorithms/leader_marks');
+  return (await loadLeaderEditedDays({ clinicId, weekStart })) as Set<ReserveDay>;
+}
+
+/** أرسِل كرت «موازنةُ يومٍ عدّلتَه» لكلّ قائدٍ عن كلّ يومٍ أجّلتِ الموازنةُ تعديلَه. */
+async function askRebalanceConsent(
+  clinicId: string, weekStart: string, days: string[], senderId?: string, senderName?: string,
+): Promise<void> {
+  if (!days.length) return;
+  try {
+    const { notifications } = await import('../algorithms/notifications');
+    const leaderIds = await getTeamLeaderIds(clinicId);
+    for (const day of [...new Set(days)]) {
+      for (const leaderId of leaderIds) {
+        await notifications.notifyRebalanceConsent({
+          clinicId, leaderId, weekStart, day: day as ReserveDay, senderId, senderName,
+        });
+      }
+    }
+  } catch { /* الكرت تحسينٌ — لا يُفشِل المسار */ }
+}
+
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
 const DAY_AR: Record<string, string> = {
   sunday: 'الأحد', monday: 'الاثنين', tuesday: 'الثلاثاء', wednesday: 'الأربعاء', thursday: 'الخميس',
@@ -851,13 +918,17 @@ export async function dispatchRequestToolV2(
             // الشفت الفعليّ كما صحّحه المحرّك من مكان الطبيب (وإلّا ما طلبه الذكاء).
             const fromShift = (res as { effShift?: 'morning' | 'evening' }).effShift ?? shift;
             const rDay = String(r.day) as 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
+            // أيّامُ القائد المحميّة (عدّلها يدويًّا) لا تمسّها موازنةُ العدل — تُؤجَّل وتُستأذَن.
+            const protectedDays = await protectedDaysFor(ctx.clinicId, wsEff);
             // نلفّ الموازنة بيوميّاتٍ تلتقط امتصاصها في الأيّام البعيدة، فيعكسها الكنسل بدقّة.
-            await withXdayJournal(ctx.clinicId, wsEff, { day: rDay, doctorId: doc.id }, () =>
+            const rbf = await withXdayJournal(ctx.clinicId, wsEff, { day: rDay, doctorId: doc.id }, () =>
               schedule.rebalanceForward({
                 clinicId: ctx.clinicId, weekStart: wsEff, fromDay: rDay, fromShift,
-                today: todayISOFrom(r),
+                today: todayISOFrom(r), protectedDays,
               }));
             // القلب الجديد مدموجٌ داخل rebalanceForward نفسه (قلبٌ واحد) — لا استدعاءَ منفصلٌ هنا.
+            // أيّامٌ أرادتِ الموازنةُ تعديلَها لكنّها محميّة → استأذِن القائدَ (كرت «موازنةُ يومٍ عدّلتَه»).
+            await askRebalanceConsent(ctx.clinicId, wsEff, rbf?.deferred ?? [], doc.id, doc.name);
           } catch (e) {
             // eslint-disable-next-line no-console
             console.log('[rebalance-forward perm] failed', e instanceof Error ? e.message : e);
@@ -877,17 +948,24 @@ export async function dispatchRequestToolV2(
             // وصله إشعار العلم أصلًا (scheduleChanged) فيرى الجدول. استثناء: الاحتياطيّ **الخاصّ**
             // (بورد/متدرّب) لا يُوضع تلقائيًّا — يُرجِعه التغطية pending، فنرسل كرت سؤالٍ للقائد.
             {
+              // أيّامُ القائد المحميّة (عدّلها يدويًّا): التغطيةُ تلقائيّةٌ دائمًا (سلامةُ المرضى)،
+              // لكنّ موازنةَ العدل لا تمسّها — تُؤجَّل وتُستأذَن (كرت «موازنةُ يومٍ عدّلتَه»).
+              const protectedDays = await protectedDaysFor(ctx.clinicId, wsEff);
+              let deferredRebal: string[] = [];
               // نلفّ التغطية+الامتصاص بيوميّات الأثر البعيد كي يعكسها كنسلُ الغياب بدقّة
               // (يومُ الغياب نفسه يملكه إرجاع المكان المحفوظ؛ اليوميّات للأيّام البعيدة).
               const cov = await withXdayJournal(ctx.clinicId, wsEff, { day: String(r.day), doctorId: doc.id }, async () => {
                 const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
                 // سدادُ الاحتياط داخل الأسبوع (محور الاحتياط) قبل امتصاص الدليقيتر.
                 await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' }, reservePairsFromMoves(c.moves));
-                await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                const rb = await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية', protectedDays });
+                deferredRebal = rb.deferred;
                 // الحالة الرفيعة (D=M+1): أعِد تشكيلَ الشفت إلى منفردين + مضيفٍ مكرّس (لا زوجَ استضافة).
                 await applyThinReshape({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
                 return c;
               });
+              // أيّامٌ أرادتِ الموازنةُ تعديلَها لكنّها محميّة → استأذِن القائدَ.
+              await askRebalanceConsent(ctx.clinicId, wsEff, deferredRebal, doc.id, doc.name);
               if (cov.pending.length) {
                 const sd = (await loadScheduleData(ctx.clinicId, wsEff)).data;
                 const docById = new Map((sd?.doctors ?? []).map((d) => [d.id, d]));
@@ -1474,11 +1552,14 @@ export async function dispatchRequestToolV2(
         if (!ops.length) return 'Tool error: لا توجد عمليّات للتنفيذ.';
         const done: string[] = [];
         const failed: string[] = [];
+        const editedDays = new Set<string>(); // أيّامٌ رتّبها القائدُ بنجاح → تُوسَم لحمايتها من موازنة العدل
         for (let i = 0; i < ops.length; i++) {
           const op = ops[i] || {};
           const kind = String(op.op || '');
           const tag = `[${i + 1}]`;
           const day = isDay(op.day) ? op.day : undefined;
+          let opDay: string | undefined = day; // يومُ العمليّة (قد يُحدَّد داخليًّا — cancel_status)
+          const doneBefore = done.length;
           try {
             if (kind === 'place') {
               const doc = resolveDoctor(ctx, op.doctorIndex);
@@ -1536,6 +1617,7 @@ export async function dispatchRequestToolV2(
                 clinicId: ctx.clinicId, weekStart: ws, day: cday, doctorId: doc.id, restoreToPrevPlace: true,
               });
               if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
+              opDay = cday; // يومُ الإلغاء (قد يكون استُنبط) — لوسمِ التعديل
               done.push(`إلغاء حالة ${doc.name} ${DAY_AR[cday]}`);
             } else if (kind === 'swap') {
               if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
@@ -1576,6 +1658,15 @@ export async function dispatchRequestToolV2(
             }
           } catch (e) {
             failed.push(`${tag} ${e instanceof Error ? e.message : 'خطأ'}`);
+          }
+          if (done.length > doneBefore && opDay) editedDays.add(opDay);
+        }
+        // وَسْمُ الأيّام التي رتّبها القائدُ يدويًّا (عبر الذكاء) → تُحمى من موازنة العدل
+        // التلقائيّة؛ تُستأذَن قبل تعديلها (كرت «موازنةُ يومٍ عدّلتَه»). الوسمُ تحسينٌ لا يُفشِل.
+        if (editedDays.size) {
+          const { markLeaderEditedDay } = await import('../algorithms/leader_marks');
+          for (const d of editedDays) {
+            await markLeaderEditedDay({ clinicId: ctx.clinicId, weekStart: ws, day: d as ReserveDay, byId: actor.id, byName: ctx.user?.name });
           }
         }
         // لا إشعار لبقيّة القادة عن التعديل المباشر — الأورب يتولّى ذلك لاحقًا.
