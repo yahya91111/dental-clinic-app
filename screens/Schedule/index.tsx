@@ -252,6 +252,34 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     }
   };
 
+  // إلغاءُ غيابٍ يدويًّا من الجدول (X على كرت EX) → نفس خطّ إلغاء الذكاء
+  // (cancel_schedule_status): استردادٌ جراحيّ + رفع تغطية + موازنة + إشعار علمٍ للقادة.
+  const handleManualStatusCancel = async (req: {
+    doctorId: string; doctorName: string; day: string; status: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (!clinicId || !user?.id) return { ok: false, error: 'لا مستخدم أو عيادة.' };
+    const ws = formatWeekStart(selectedWeekStart);
+    try {
+      const { dispatchRequestToolV2, FINAL_MARK } = await import('../../lib/ai_v2/tools_requests_v2');
+      const ctx: V2ToolContext = {
+        clinicId,
+        user: { id: user.id, name: user.name, role: user.role, clinicId, clinicName: user.clinicName },
+        roster: [{ id: req.doctorId, name: req.doctorName }],
+      };
+      const out = await dispatchRequestToolV2('cancel_schedule_status', {
+        weekStart: ws, day: req.day, doctorIndex: 1,
+      }, ctx);
+      if (out.startsWith('Tool error')) return { ok: false, error: out.replace(/^Tool error:\s*/, '') };
+      const content = out.split(FINAL_MARK).join('');
+      const msg: ChatMessage = { id: `m${Date.now()}`, role: 'assistant', content, timestamp: Date.now() };
+      setAiMessages((prev) => [...prev, msg]);
+      aiHistoryRef.current.push({ role: 'assistant', content });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+    }
+  };
+
   // مسح محادثة الذكاء: فقاعات الذاكرة + كروت محادثة الذكاء من قاعدة البيانات
   const handleClearConversation = async () => {
     setAiMessages([]);
@@ -346,16 +374,20 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     const weekStr = formatWeekStart(selectedWeekStart);
     const { data } = await getWeeklySchedule(clinicId, weekStr);
     if (data) {
-      const mapped: ScheduleSlot[] = data.map((s: any) => ({
-        id: s.id,
-        day: s.day_of_week as DayOfWeek,
-        period: s.period,
-        clinicNumber: s.clinic_number,
-        doctorId: s.doctor_id,
-        doctorName: s.doctor_name,
-        role: s.role,
-        status: s.status,
-      }));
+      const mapped: ScheduleSlot[] = data
+        // صفوفٌ داخليّةٌ للبكنينغ (مكانٌ محفوظ + يوميّات الأثر البعيد) لا تُعرَض إطلاقًا:
+        // يُنشئها القلبُ الجديد للتغطية/الإلغاء. تسرُّبها يُربك الشبكة وكرت EX (دور/حالة مجهولة).
+        .filter((s: any) => { const role = String(s.role || ''); return role !== 'prev_placement' && !role.startsWith('xday'); })
+        .map((s: any) => ({
+          id: s.id,
+          day: s.day_of_week as DayOfWeek,
+          period: s.period,
+          clinicNumber: s.clinic_number,
+          doctorId: s.doctor_id,
+          doctorName: s.doctor_name,
+          role: s.role,
+          status: s.status,
+        }));
       setSlots(mapped);
     } else {
       setSlots([]);
@@ -801,6 +833,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           loadSchedule();
         }}
         onStatusRequest={handleManualStatusRequest}
+        onStatusCancel={handleManualStatusCancel}
         onChangePeriod={(p) => {
           if (selectedCell) {
             setSelectedCell({ ...selectedCell, period: p });

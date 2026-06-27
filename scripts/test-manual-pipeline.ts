@@ -72,6 +72,23 @@ const reqInfoCount = async () =>
     const dup = await dispatchRequestToolV2('set_schedule_status', { weekStart: W, day: 'sunday', doctorIndex: 1, status: 'sick_leave', shift: 'morning' }, mkCtx(adminId, 'super_admin', (o) => { annDup = o; }));
     check('(ب) تكرار: لا إبلاغ (المحرّك يكتمه)', !annDup && /مكرّر|مسجّل/.test(dup), `ann=${JSON.stringify(annDup)} out=${dup}`);
 
+    // ── (هـ) نظافةُ صفوف EX: القلبُ الجديد يُنشئ صفوفًا داخليّة (مكان محفوظ + يوميّات) تتسرّب
+    //         لو لم تُرشَّح — ومرشّحُ الواجهة (role≠prev_placement && !xday*) يمنع config.color undefined.
+    const { data: p0 } = await supabase.from('schedule_slots').select('role, status').eq('clinic_id', CID).eq('week_start', W).eq('day_of_week', 'sunday').eq('period', 0);
+    const p0rows = (p0 || []) as { role: string; status: string }[];
+    const internal = p0rows.filter((x) => x.role === 'prev_placement' || x.role.startsWith('xday'));
+    const visible = p0rows.filter((x) => x.role !== 'prev_placement' && !x.role.startsWith('xday'));
+    const KNOWN = new Set(['active', 'sick_leave', 'permission_start', 'permission_end', 'vacation', 'extra']);
+    check('(هـ) صفوفٌ داخليّةٌ تتسرّب فعلًا (يلزم الترشيح)', internal.length > 0, `internal=${internal.length}`);
+    check('(هـ) كلّ صفٍّ معروضٍ حالتُه معروفة (لا انهيار config.color)', visible.every((x) => KNOWN.has(x.status)), JSON.stringify(visible.filter((x) => !KNOWN.has(x.status))));
+
+    // ── (د) الإلغاء اليدويّ (X) = خطّ إلغاء الذكاء: cancel_schedule_status يستردّ الطبيب ──
+    const cancel = await dispatchRequestToolV2('cancel_schedule_status', { weekStart: W, day: 'sunday', doctorIndex: 1 }, mkCtx(adminId, 'super_admin'));
+    check('(د) الإلغاء نجح', !cancel.startsWith('Tool error'), cancel);
+    const restored = (await loadScheduleData(CID, W)).data!;
+    check('(د) الطبيب عاد إلى عيادته الأحد (استرداد)', activeClinic(restored.existingSlots, 'sunday', Xid).length > 0, 'لم يَعُد');
+    check('(د) لا صفّ مرضية بعد الإلغاء', !restored.existingSlots.some((s) => DI[s.dayOfWeek] === 0 && s.doctorId === Xid && s.status === 'sick_leave'), 'بقيت المرضية');
+
     // ── (ج) الفاعلُ نفسُه الطبيب → سؤال الإبلاغ يُطلَق ──
     let announce: AnnounceOffer | undefined;
     const outSelf = await dispatchRequestToolV2('set_schedule_status', { weekStart: W, day: 'monday', doctorIndex: 1, status: 'sick_leave', shift: 'morning' }, mkCtx(Xid, 'doctor', (o) => { announce = o; }));

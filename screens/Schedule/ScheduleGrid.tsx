@@ -468,6 +468,7 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId }: Schedu
                       // غير active (غياب)، نستخدم لون الحالة بدلاً.
                       const statusConfig = STATUS_CONFIG[slot.status];
                       const isExRole = slot.role === 'ex';
+                      if (!isExRole && !statusConfig) return null; // حالةٌ غير معروفة — لا تُعطِب العرض
                       const color = isExRole ? '#7C3AED' : statusConfig.color;
                       const shortLabel = isExRole ? 'EX' : statusConfig.shortLabel;
                       return (

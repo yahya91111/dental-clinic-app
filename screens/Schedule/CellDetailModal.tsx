@@ -26,6 +26,11 @@ interface CellDetailModalProps {
     doctorId: string; doctorName: string; day: DayOfWeek;
     status: DoctorStatus; shift: 'morning' | 'evening';
   }) => Promise<{ ok: boolean; error?: string }>;
+  /** إلغاءُ غيابٍ يدويًّا (X على كرت EX لطبيّة/تفرّغ/استئذان) → يمرّ بخطّ الإلغاء (استرداد
+   *  جراحيّ + رفع تغطية + موازنة) كإلغاءٍ من الذكاء — لا حذفٌ خامٌّ يُخلّف يتامى. */
+  onStatusCancel?: (req: {
+    doctorId: string; doctorName: string; day: DayOfWeek; status: DoctorStatus;
+  }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const GROUP_COLORS = [
@@ -53,7 +58,7 @@ interface PickerGroup {
   isExpanded: boolean;
 }
 
-export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, onClose, onSaved, onChangePeriod, onStatusRequest }: CellDetailModalProps) {
+export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, onClose, onSaved, onChangePeriod, onStatusRequest, onStatusCancel }: CellDetailModalProps) {
   const [selectingFor, setSelectingFor] = useState<{ role: 'clinic' | 'delegator'; clinicNumber: number } | null>(null);
   const [pickerGroups, setPickerGroups] = useState<PickerGroup[]>([]);
   const [unassignedDoctors, setUnassignedDoctors] = useState<DoctorOption[]>([]);
@@ -226,11 +231,21 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   };
 
   const handleRemoveSlot = (slot: ScheduleSlot) => {
+    // إلغاءُ غيابٍ (طبيّة/تفرّغ/استئذان) يمرّ بخطّ الإلغاء كاملًا (استرداد + رفع تغطية +
+    // موازنة) كإلغاءٍ من الذكاء — لا حذفٌ خامٌّ. وضعُ عيادة/دليقيتر يبقى حذفًا يدويًّا.
+    const PIPELINE: DoctorStatus[] = ['sick_leave', 'vacation', 'permission_start', 'permission_end'];
+    const isAbsenceCancel = PIPELINE.includes(slot.status) && !!onStatusCancel && !!day;
     Alert.alert('Remove', `Remove ${slot.doctorName}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove', style: 'destructive',
         onPress: async () => {
+          if (isAbsenceCancel) {
+            const res = await onStatusCancel!({ doctorId: slot.doctorId, doctorName: slot.doctorName, day: day!, status: slot.status });
+            if (!res.ok) { Alert.alert('تعذّر', res.error || 'تعذّر إلغاء الحالة.'); return; }
+            onSaved();
+            return;
+          }
           await deleteScheduleSlot(slot.id);
           await markDayEdited();
           onSaved();
@@ -795,6 +810,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
               {/* Existing EX slots as mini cards */}
               {exSlots.length > 0 ? exSlots.map(slot => {
                 const config = STATUS_CONFIG[slot.status];
+                if (!config) return null; // حالةٌ غير معروفة (صفٌّ داخليّ تسرّب) — لا تعرضها ولا تُعطِب
                 return (
                   <View key={slot.id} style={{
                     flexDirection: 'row',
