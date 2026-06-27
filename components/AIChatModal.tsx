@@ -869,13 +869,29 @@ export function AICardsView({ user, clinicId }: {
     return unsub;
   }, [user?.id, loadConvo]);
 
+  // طابورُ القرارات (طلبٌ مركّب / تراكمُ بطاقات): لا نعرض إلّا **بطاقةَ قرارٍ واحدةً** في
+  // كلّ مرّة (الأحدث) — البقيّة تنتظر دورَها فتظهر تلقائيًّا بعد حسمِ الحاليّة (لا تكدّس).
+  // بطاقاتُ «للعلم» (طرأ تغيير/فترة فارغة/نتيجة + التغطية التلقائيّة) لا تُقاطِع وتظهر كالمعتاد.
+  const isDecisionCard = (n: ConvoNotif) =>
+    (n.type === 'rebalance_consent' && isPending(n))
+    || (n.type === 'gap_alert' && !!n.data?.reserve_choice)
+    || (n.type !== 'gap_alert' && n.type !== 'seat_change' && n.type !== 'shortage_alert'
+      && n.type !== 'request_result' && n.type !== 'rebalance_consent' && isPending(n));
+  const decisionQueue = convo.filter(isDecisionCard);
+  const activeDecisionId = decisionQueue.length ? decisionQueue[0].id : null;
+
   return (
     <ScrollView
       ref={scrollRef}
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
     >
+      {decisionQueue.length > 1 && (
+        <Text style={styles.queueNote}>يُعرَض قرارٌ واحدٌ في كلّ مرّة — بقي {decisionQueue.length - 1} في الطابور.</Text>
+      )}
       {convo.map((n) => {
+        // طابور: أخفِ بطاقاتِ القرار غيرَ النشطة حتّى يُحسَم دورُها (تظهر تلقائيًّا بعده).
+        if (isDecisionCard(n) && n.id !== activeDecisionId) return null;
         if (n.type === 'gap_alert') {
           if (n.data?.v !== 2) return null;
           if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.reserve_choice) return null;
@@ -1224,6 +1240,7 @@ const styles = StyleSheet.create({
   },
 
   empty: { textAlign: 'center', color: 'rgba(244,241,255,0.5)', marginTop: scale(46), fontSize: scale(13.5), fontWeight: '600', letterSpacing: scale(0.3) },
+  queueNote: { textAlign: 'right', color: 'rgba(214,196,255,0.75)', fontSize: scale(12), fontWeight: '700', marginBottom: scale(8), paddingHorizontal: scale(4) },
 
   // ════════ Aurora (داكن) — لغة الكروت المشتركة في AICard.tsx ════════
   feedCard: { marginBottom: scale(14) },

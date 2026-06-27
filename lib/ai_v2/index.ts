@@ -114,8 +114,11 @@ export type SendMessageV2Result = {
   error?: string;
   /** حزمة معاينة جدول (لو بنى الذكاء معاينة هذه الرسالة) — الواجهة تعرضها وتحفظها */
   preview?: SchedulePreview;
-  /** عرض إبلاغ بعد غيابٍ ذاتيّ — الواجهة تعرض أزراره وتنفّذها بالكود (لا بالنموذج) */
+  /** عرض إبلاغ بعد غيابٍ ذاتيّ — الواجهة تعرض أزراره وتنفّذها بالكود (لا بالنموذج).
+   *  (= أوّلُ عناصر announceOffers؛ مُبقًى للتوافق ولمنطق الأورب.) */
   announceOffer?: AnnounceOffer;
+  /** طابورُ عروضِ الإبلاغ من طلبٍ مركّب — تُعرَض واحدةً واحدة فلا يُفقَد أيُّ إبلاغ */
+  announceOffers?: AnnounceOffer[];
   /** عرض أزرار حسم الاستئذان المبهم (بداية/نهاية) — تُنفَّذ بالكود */
   swapOffer?: SwapOffer;
   /** عرض تأكيدٍ قبل إجراءٍ خطير (مسح الجدول) — الواجهة تعرض [نعم][تراجع] وتنفّذ بالكود */
@@ -313,8 +316,10 @@ export async function sendMessageV2(
 
     // آخر معاينة بناها الذكاء هذه الرسالة (تُرجَّع للواجهة لتعرضها وتحفظها)
     let capturedPreview: SchedulePreview | undefined;
-    // وعرض الإبلاغ بعد غيابٍ ذاتيّ (الواجهة تعرض أزراره وتنفّذها بالكود)
-    let capturedAnnounce: AnnounceOffer | undefined;
+    // عروضُ الإبلاغ بعد غيابٍ ذاتيّ. **طلبٌ مركّب** (طبيّة يومًا + استئذان يومًا آخر) قد
+    // يُطلِق عدّةَ عروض — نُراكِمها كلَّها في طابورٍ مرتّب (لا نكتب فوق السابق فيضيع)، ونُزيل
+    // المكرّر. الواجهة تعرضها واحدةً واحدة.
+    const capturedAnnounces: AnnounceOffer[] = [];
     // أزرار حسم الاستئذان المبهم (بداية/نهاية)
     let capturedSwap: SwapOffer | undefined;
     let capturedConfirm: ConfirmOffer | undefined;
@@ -323,7 +328,10 @@ export async function sendMessageV2(
       user: opts.user,
       roster: rosterForTools,
       onPreview: (p) => { capturedPreview = p; },
-      onAnnounceOffer: (o) => { capturedAnnounce = o; },
+      onAnnounceOffer: (o) => {
+        const k = `${o.subjectId}|${o.day}|${o.message}`;
+        if (!capturedAnnounces.some((p) => `${p.subjectId}|${p.day}|${p.message}` === k)) capturedAnnounces.push(o);
+      },
       onSwapOffer: (o) => { capturedSwap = o; },
       onConfirmOffer: (o) => { capturedConfirm = o; },
     };
@@ -482,7 +490,8 @@ export async function sendMessageV2(
       success: true,
       message: allText,
       preview: capturedPreview,
-      announceOffer: capturedAnnounce,
+      announceOffer: capturedAnnounces[0],
+      announceOffers: capturedAnnounces.length ? capturedAnnounces : undefined,
       swapOffer: capturedSwap,
       confirmOffer: capturedConfirm,
       usage: {

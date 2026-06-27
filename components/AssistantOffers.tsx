@@ -33,6 +33,11 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
   onDone?: () => void;
 }) {
   const announceOffer = message.announceOffer;
+  // طابورُ الإبلاغ: طلبٌ مركّبٌ (طبيّة يومًا + استئذان يومًا آخر) قد يحمل عدّةَ عروض —
+  // نعرضها واحدةً واحدة. المفردُ (announceOffer) مُبقًى للتوافق فيُلَفّ في قائمة.
+  const announceList = message.announceOffers && message.announceOffers.length
+    ? message.announceOffers
+    : (announceOffer ? [announceOffer] : []);
   const baseSwap = message.swapOffer;
   const confirmOffer = message.confirmOffer;
   const resolved = message.offerResolved;        // النتيجة المشتركة (مصدر الحقيقة)
@@ -41,30 +46,63 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
   const [errText, setErrText] = useState<string | null>(null);  // فشلٌ يُبقي الأزرار (تبديل فقط)
   // بديلٌ يحلّ محلّ swapOffer محلّيًّا بعد حسم استئذانٍ مبهمٍ نتج عنه تعارض
   const [override, setOverride] = useState<SwapOffer | undefined>(undefined);
+  // موضعُ الطابور (أيُّ عرضٍ معروضٌ الآن) ونتائجُ ما حُسِم منه — نتيجةٌ مجمّعةٌ واحدةٌ
+  // تُكتَب في offerResolved عند انتهاء الطابور فتتزامن وتختفي البطاقة.
+  const [annIdx, setAnnIdx] = useState(0);
+  const [annResults, setAnnResults] = useState<{ name: string; announced: boolean; ok: boolean; text: string }[]>([]);
 
   const resolve = useCallback((text: string, done: boolean) => {
     onResolved?.(text, done);
   }, [onResolved]);
 
+  // ينهي الطابور: نتيجةٌ واحدةٌ تُكتَب في offerResolved. عرضٌ واحد → نصُّه كما هو (توافق)؛
+  // عدّة عروض → ملخّصٌ مقتضب (أُبلغ عن س · تُرك ص بلا إبلاغ · تعذّر ع).
+  const finalizeAnnounce = useCallback((results: { name: string; announced: boolean; ok: boolean; text: string }[]) => {
+    if (results.length <= 1) { const r = results[0]; resolve(r?.text || 'تمّ.', r ? r.ok : true); return; }
+    const okAll = results.every((r) => r.ok);
+    const annc = results.filter((r) => r.announced && r.ok).length;
+    const skip = results.filter((r) => !r.announced).length;
+    const failn = results.filter((r) => !r.ok).length;
+    const text = [annc ? `أُبلغ عن ${annc}` : null, skip ? `تُرك ${skip} بلا إبلاغ` : null, failn ? `تعذّر ${failn}` : null]
+      .filter(Boolean).join(' · ') || 'تمّ.';
+    resolve(text, okAll);
+  }, [resolve]);
+
   const handleAnnounce = useCallback(async (choice: 'shift' | 'center' | 'none') => {
-    if (!announceOffer || busy || resolved) return;
-    if (choice === 'none') { resolve('حسنًا — بلا إبلاغ.', true); return; }
-    setBusy(true);
-    try {
-      const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
-      const cid = clinicId || user.clinicId;
-      if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-      const res = await announceAbsence({
-        clinicId: cid, sender: { id: user.id, name: user.name },
-        audience: choice, message: announceOffer.message, subjectId: announceOffer.subjectId,
-      });
-      resolve(res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}`, res.success);
-    } catch (e) {
-      resolve(e instanceof Error ? e.message : 'خطأ غير متوقّع.', false);
-    } finally {
-      setBusy(false);
+    if (busy || resolved) return;
+    const cur = announceList[annIdx];
+    if (!cur) return;
+    let result: { name: string; announced: boolean; ok: boolean; text: string };
+    if (choice === 'none') {
+      result = { name: cur.subjectName, announced: false, ok: true, text: 'حسنًا — بلا إبلاغ.' };
+    } else {
+      setBusy(true);
+      try {
+        const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
+        const cid = clinicId || user.clinicId;
+        if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
+        const res = await announceAbsence({
+          clinicId: cid, sender: { id: user.id, name: user.name },
+          audience: choice, message: cur.message, subjectId: cur.subjectId,
+        });
+        result = { name: cur.subjectName, announced: true, ok: !!res.success, text: res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}` };
+      } catch (e) {
+        result = { name: cur.subjectName, announced: true, ok: false, text: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+      } finally {
+        setBusy(false);
+      }
     }
-  }, [announceOffer, busy, resolved, clinicId, user, resolve]);
+    const all = [...annResults, result];
+    if (annIdx < announceList.length - 1) { setAnnResults(all); setAnnIdx(annIdx + 1); } // العرض التالي
+    else finalizeAnnounce(all);                                                          // انتهى الطابور
+  }, [busy, resolved, announceList, annIdx, annResults, clinicId, user, finalizeAnnounce]);
+
+  // «تخطّي البقيّة»: تُحسَم العروضُ المتبقّية كلُّها «بلا إبلاغ» دفعةً واحدةً.
+  const handleSkipRest = useCallback(() => {
+    if (busy || resolved) return;
+    const rest = announceList.slice(annIdx).map((o) => ({ name: o.subjectName, announced: false, ok: true, text: 'حسنًا — بلا إبلاغ.' }));
+    finalizeAnnounce([...annResults, ...rest]);
+  }, [busy, resolved, announceList, annIdx, annResults, finalizeAnnounce]);
 
   const handleSwap = useCallback(async (choice: 'perm_start' | 'perm_end') => {
     const offer = override ?? baseSwap;
@@ -115,13 +153,15 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
     }
   }, [confirmOffer, busy, resolved, clinicId, user, resolve, onDone]);
 
-  if (!announceOffer && !baseSwap && !confirmOffer) return null;
+  if (announceList.length === 0 && !baseSwap && !confirmOffer) return null;
 
   const eff = override ?? baseSwap;
+  const hasAnnounce = announceList.length > 0;
+  const cur = announceList[annIdx];
 
   // النوع/العنوان/الحالة — نفس لغة كرت النقص (شارة + عنوان + حبّة حالة)
   const kind: CardKind = resolved ? (resolved.done ? 'done' : 'swap') : confirmOffer ? 'coverage' : 'swap';
-  const title = confirmOffer ? 'مسح الجدول' : announceOffer ? 'إبلاغ الزملاء' : 'تبديل';
+  const title = confirmOffer ? 'مسح الجدول' : hasAnnounce ? 'إبلاغ الزملاء' : 'تبديل';
   const pillText = resolved ? (resolved.done ? 'تمّ' : 'تعذّر') : confirmOffer ? 'تأكيد' : 'يحتاج قرارك';
   const live = !resolved;
 
@@ -172,12 +212,19 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
                 <>
                   {!!errText && <Text style={st.err}>{errText}</Text>}
 
-                  {!!announceOffer && (
+                  {hasAnnounce && (
                     <>
+                      {/* طلبٌ مركّب: مؤشّرُ موضع الطابور + سطرُ العرض الحاليّ (مَن/أيُّ يوم) */}
+                      {announceList.length > 1 && (
+                        <Text style={st.hint}>القرار {annIdx + 1} من {announceList.length} — {cur?.message}</Text>
+                      )}
                       <Text style={st.hint}>هل تريد إبلاغ جهةٍ أخرى؟</Text>
                       <Opt label="الشفت" onPress={() => handleAnnounce('shift')} />
                       <Opt label="المركز" onPress={() => handleAnnounce('center')} />
                       <Opt label="لا داعي" onPress={() => handleAnnounce('none')} />
+                      {announceList.length > 1 && annIdx < announceList.length - 1 && (
+                        <Opt label="تخطّي البقيّة بلا إبلاغ" onPress={handleSkipRest} />
+                      )}
                     </>
                   )}
 
