@@ -911,6 +911,17 @@ export async function dispatchRequestToolV2(
                   }
                 }
               }
+              // نقصٌ حقيقيّ تعذّر ملؤه (عيادةٌ بلا طبيب) → كرت «يوجد فترة فارغة» لكلّ قائد
+              // (لكلٍّ نسخته، يختفي عمّن اطّلع وحده). للعلم فقط — لا قرارَ فيه.
+              if (cov.shortageSeats.length) {
+                const leaderIds = await getTeamLeaderIds(ctx.clinicId);
+                for (const leaderId of leaderIds) {
+                  await notifications.notifyShortage({
+                    clinicId: ctx.clinicId, leaderId, weekStart: wsEff,
+                    seats: cov.shortageSeats, senderId: doc.id, senderName: doc.name,
+                  });
+                }
+              }
               // إبلاغ الأطباء المتأثّرين بالتعويض تتولّاه طبقةُ الفرق (كرت «طرأ تغييرٌ
               // على جدولك») التي تلفّ الموزّع — فلا إشعارَ يدويٌّ هنا.
             }

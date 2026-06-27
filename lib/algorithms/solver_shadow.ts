@@ -47,7 +47,7 @@ const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday
 export async function applyCoverage(
   args: { clinicId: string; weekStart: string; label: string },
   opts?: { specialReserves?: 'ask' | 'use' | 'exclude' },
-): Promise<{ filled: number; shortages: number; pending: PendingReserveChoice[]; moves: CoverageMove[] }> {
+): Promise<{ filled: number; shortages: number; pending: PendingReserveChoice[]; moves: CoverageMove[]; shortageSeats: { day: WeekDay; clinicNumber: number; period: number }[] }> {
   // كيف نتعامل مع الاحتياطيّ **الخاصّ** (بورد/متدرّب) — ثلاث حالات:
   //  • ask (الافتراضيّ، المسار الحيّ): لا يُوضع تلقائيًّا، يُسجَّل pending ليُسأل القائد.
   //  • use (محكّ المقارنة، أو «استدعِه»): يُوضع تلقائيًّا كالعاديّ.
@@ -55,7 +55,7 @@ export async function applyCoverage(
   const special = opts?.specialReserves ?? 'ask';
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
-    if (!data) return { filled: 0, shortages: 0, pending: [], moves: [] };
+    if (!data) return { filled: 0, shortages: 0, pending: [], moves: [], shortageSeats: [] };
     const doctors = data.doctors;
     const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart);
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
@@ -92,6 +92,8 @@ export async function applyCoverage(
     let filled = 0; let shortages = 0;
     const pending: PendingReserveChoice[] = [];
     const moves: CoverageMove[] = [];
+    // مقاعدُ عيادةٍ شاغرةٌ تعذّر ملؤها (نقصٌ حقيقيّ مُواجِهٌ للمرضى) — لكرت «يوجد فترة فارغة».
+    const shortageSeats: { day: WeekDay; clinicNumber: number; period: number }[] = [];
     // استضافاتٌ أُسقِطت لأنّ شاغلها سُحب «منفردًا» للعيادة — تحاول المرحلةُ الثانية إعادة
     // إسنادها لجسدٍ حرٍّ (نماذج مرنة + لجنة) قبل تركها فارغة.
     const droppedHosts: { day: WeekDay; period: number; absentId?: string }[] = [];
@@ -219,6 +221,7 @@ export async function applyCoverage(
 
           if (vacant.length) {
             shortages += vacant.length;
+            for (const v of vacant) shortageSeats.push({ day, clinicNumber: v.clinicNumber, period: v.period });
             // eslint-disable-next-line no-console
             console.log(`[NEW-HEART ${sc.name} · ${args.label}] نقصٌ: ${vacant.length} مقعدٌ بلا بديلٍ (${day}/${half === 0 ? 'ص' : 'م'})`);
           }
@@ -334,11 +337,11 @@ export async function applyCoverage(
       console.log('[NEW-HEART COVER·ظلّ] تعذّر:', e instanceof Error ? e.message : e);
     }
 
-    return { filled, shortages, pending, moves };
+    return { filled, shortages, pending, moves, shortageSeats };
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log('[NEW-HEART COVER] تعذّر:', e instanceof Error ? e.message : e);
-    return { filled: 0, shortages: 0, pending: [], moves: [] };
+    return { filled: 0, shortages: 0, pending: [], moves: [], shortageSeats: [] };
   }
 }
 

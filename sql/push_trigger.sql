@@ -18,6 +18,10 @@
 -- inserted per affected doctor per change-event → one ring each. Do not add
 -- it to the silent list.
 --
+-- `shortage_alert` (the «يوجد فترة فارغة» card) is likewise an orb card that
+-- PUSHES: an unfillable clinic gap is important, so each team leader's copy
+-- must reach the phone. One row per leader → one ring each. NOT silent.
+--
 -- Grouped requests: a multi-day request (e.g. sick leave Sun+Mon+Tue)
 -- is collected into ONE `request_info` row whose `body` grows as days
 -- are appended (day 1 = INSERT, days 2+ = UPDATE). We push ONCE per

@@ -83,6 +83,8 @@ export async function countUnreadAIChat(userId: string): Promise<number> {
     if (n.type === 'gap_alert') return n.data?.v === 2 && isPending(n);
     // كرت «طرأ تغييرٌ على جدولك»: يتوهّج حتى يفتحه الطبيب (يُقرأ).
     if (n.type === 'seat_change') return !n.is_read;
+    // كرت «يوجد فترة فارغة»: يتوهّج للقائد حتى يطّلع عليه (يُقرأ) ثمّ يختفي.
+    if (n.type === 'shortage_alert') return !n.is_read;
     // بقيّة عناصر المحادثة: كرتٌ معلّق (لم يُحَلّ) أو رسالةٌ غير مقروءة.
     return inAIChat(n) && (isPending(n) || !n.is_read);
   }).length;
@@ -642,6 +644,108 @@ function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => vo
   );
 }
 
+// ───── كرت «يوجد فترة فارغة» — نقصٌ تعذّر ملؤه (للقائد). توقّل + «تمّ الاطّلاع» + سحبٌ يمينًا «حذف» ─────
+// لكلّ قائدٍ نسخته (صفٌّ مستقلّ): الحذف/الاطّلاع يخصّ المُطّلِع وحده. يختفي بعد الاطّلاع أو الحذف.
+function ShortageCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const live = !notif.is_read;
+  const kind: CardKind = live ? 'coverage' : 'done';
+
+  const SW_OPEN = scale(78);
+  const tx = useRef(new Animated.Value(0)).current;
+  const swBase = useRef(0);
+  const expandedRef = useRef(false);
+  const closeSwipe = useCallback(() => {
+    Animated.spring(tx, { toValue: 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+    swBase.current = 0;
+  }, [tx]);
+  const horizontal = (g: { dx: number; dy: number }) => Math.abs(g.dx) > Math.abs(g.dy) * 1.2 && Math.abs(g.dx) > 8;
+  const swipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => !expandedRef.current && horizontal(g),
+    onMoveShouldSetPanResponderCapture: (_e, g) => !expandedRef.current && horizontal(g),
+    onPanResponderGrant: () => { tx.stopAnimation((v: number) => { swBase.current = v; }); },
+    onPanResponderMove: (_e, g) => {
+      let x = swBase.current + g.dx;
+      if (x < 0) x = 0; else if (x > SW_OPEN) x = SW_OPEN + (x - SW_OPEN) * 0.12;
+      tx.setValue(Math.min(x, SW_OPEN));
+    },
+    onPanResponderRelease: (_e, g) => {
+      const o = (swBase.current + g.dx) > SW_OPEN * 0.45;
+      Animated.spring(tx, { toValue: o ? SW_OPEN : 0, useNativeDriver: false, bounciness: 0, speed: 16 }).start();
+      swBase.current = o ? SW_OPEN : 0;
+    },
+    onPanResponderTerminationRequest: () => false,
+  })).current;
+
+  const onDelete = useCallback(async () => {
+    closeSwipe();
+    try {
+      const { deleteNotification } = await import('../lib/database');
+      await deleteNotification(notif.id);
+      onSeen();
+    } catch { /* يُعاد بسحبٍ آخر */ }
+  }, [notif.id, onSeen, closeSwipe]);
+
+  const onToggle = useCallback(() => {
+    if (swBase.current > 0) { closeSwipe(); return; } // السحب مفتوح؟ النقرة تُغلقه فقط
+    const next = !expanded;
+    expandedRef.current = next;
+    setExpanded(next);
+  }, [expanded, closeSwipe]);
+
+  // «تمّ الاطّلاع» يُعلّمه مقروءًا (فيختفي عند هذا القائد وحده) — لا قرارَ فيه، إعلامٌ فقط.
+  const onAck = useCallback(async () => {
+    try { await markAsRead(notif.id); onSeen(); } catch { /* يهدأ الأورب لاحقًا */ }
+  }, [notif.id, onSeen]);
+
+  return (
+    <View style={styles.swWrap}>
+      <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
+        <LinearGradient colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN }}>
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
+            <Ionicons name="trash" size={scale(21)} color="#FECDD3" />
+            <Text style={[styles.swTxt, { color: '#FECDD3' }]}>حذف</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+
+      <Animated.View style={{ transform: [{ translateX: tx }] }} {...swipePan.panHandlers}>
+        <GlassCard kind={kind} glow={live}>
+          <TouchableOpacity style={cardStyles.head} onPress={onToggle} activeOpacity={0.8}>
+            <CardBadge kind={kind} live={live} />
+            <View style={cardStyles.headTxt}>
+              <Text style={cardStyles.cardTitle} numberOfLines={2}>يوجد فترة فارغة</Text>
+              <Pill kind={kind} text={live ? 'جديد' : 'تمّ الاطّلاع'} />
+            </View>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(18)} color="#8B83A8" />
+          </TouchableOpacity>
+          {expanded && (
+            <View style={cardStyles.covBody}>
+              <Text style={{ fontSize: scale(12.5), color: '#C9C0E8', textAlign: 'right', lineHeight: scale(20) }}>{notif.body}</Text>
+              {live && (
+                <TouchableOpacity
+                  onPress={onAck}
+                  activeOpacity={0.85}
+                  style={{
+                    flexDirection: 'row-reverse', alignItems: 'center', alignSelf: 'flex-end',
+                    gap: scale(6), marginTop: scale(10), paddingVertical: scale(7), paddingHorizontal: scale(12),
+                    borderRadius: scale(10), backgroundColor: 'rgba(255,255,255,0.08)',
+                    borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.16)',
+                  }}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={scale(14)} color="#EDE8FF" />
+                  <Text style={{ fontSize: scale(12.5), color: '#F4F1FF', fontWeight: '700' }}>تمّ الاطّلاع</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </GlassCard>
+      </Animated.View>
+    </View>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // AICardsView — لوحةُ كروت الإبلاغ المشتركة (تغطية نقص / موافقات / نتائج)
 // ═══════════════════════════════════════════════════════════════
@@ -668,7 +772,9 @@ export function AICardsView({ user, clinicId }: {
         || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday)
         // كرت «طرأ تغييرٌ على جدولك»: يبقى ما دام غير مقروء أو فيه تاريخٌ ضمن الأسبوع الحاليّ فصاعدًا.
         || (n.type === 'seat_change' && (!n.is_read
-          || (Array.isArray(n.data?.changes) && n.data.changes.some((c: { week_start?: string }) => String(c.week_start || '') >= sunday)))));
+          || (Array.isArray(n.data?.changes) && n.data.changes.some((c: { week_start?: string }) => String(c.week_start || '') >= sunday))))
+        // كرت «يوجد فترة فارغة»: يظهر للقائد ما دام غير مقروء؛ يختفي بمجرّد الاطّلاع (لكلٍّ نسخته).
+        || (n.type === 'shortage_alert' && !n.is_read));
     // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
     setConvo(items);
     items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
@@ -714,6 +820,9 @@ export function AICardsView({ user, clinicId }: {
         }
         if (n.type === 'seat_change') {
           return <SeatChangeCard key={n.id} notif={n} onSeen={loadConvo} />;
+        }
+        if (n.type === 'shortage_alert') {
+          return <ShortageCard key={n.id} notif={n} onSeen={loadConvo} />;
         }
         if (isPending(n)) {
           const busy = busyId === n.id;

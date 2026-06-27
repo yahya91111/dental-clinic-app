@@ -45,6 +45,7 @@ export const NotifType = {
   REQUEST_RESULT: 'request_result',     // info: ردّ للطالب (تمّت الموافقة/الرفض)
   TRAINEE_ATTACHED: 'trainee_attached', // info: للمدرّب — أُلحق به متدرّب لهذا اليوم
   SEAT_CHANGE: 'seat_change',           // card: «طرأ تغييرٌ على جدولك» — للطبيب المتأثّر (قبل/بعد على الجدول)
+  SHORTAGE_ALERT: 'shortage_alert',     // card: «يوجد فترة فارغة» — للقائد: نقصٌ تعذّر ملؤه (لكلّ قائدٍ نسخته)
 } as const;
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -319,6 +320,63 @@ export async function notifySeatChangeCard(args: {
       is_read: false,
     });
     return error ? fail(error.message) : ok();
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
+  }
+}
+
+/**
+ * كرت «يوجد فترة فارغة» للقائد — نقصٌ تعذّر على المحرّك ملؤه (عيادةٌ بلا طبيبٍ في فترة).
+ * إعلاميّ، تَوقُّليّ، يُحذَف بالسحب، **ولكلّ قائدٍ نسخته** (يختفي عمّن اطّلع وحدَه — صفٌّ
+ * مستقلٌّ لكلّ مستلم). نُجمّع المواقع في كرتٍ واحدٍ لكلّ (قائد، أسبوع): كرتٌ غير مقروءٍ
+ * لنفسهما → نحدّثه بدمج المواقع؛ وإلّا كرتٌ جديد. لا إرسالَ بلا نقص.
+ */
+export async function notifyShortage(args: {
+  clinicId: string;
+  leaderId: string;
+  weekStart: string;
+  seats: { day: WeekDay; clinicNumber: number; period: number }[];
+  senderId?: string;
+  senderName?: string;
+}): Promise<NotifResult> {
+  try {
+    if (!args.seats.length) return ok();
+    const fmt = (day: WeekDay, clinic: number, period: number) =>
+      `${dayWithDate(args.weekStart, day)} — عيادة ${clinic} الفترة ${periodLabel(period)}`;
+    const dedupe = (rows: { day: WeekDay; clinic_number: number; period: number }[]) => {
+      const m = new Map<string, { day: WeekDay; clinic_number: number; period: number }>();
+      for (const s of rows) m.set(`${s.day}|${s.clinic_number}|${s.period}`, s);
+      return [...m.values()];
+    };
+    const bodyOf = (rows: { day: WeekDay; clinic_number: number; period: number }[]) =>
+      `فتراتٌ بلا تغطية: ${rows.map((s) => fmt(s.day, s.clinic_number, s.period)).join('، ')}.`;
+    const fresh = args.seats.map((s) => ({ day: s.day, clinic_number: s.clinicNumber, period: s.period }));
+
+    // كرتٌ غير مقروءٍ لنفس (القائد، الأسبوع)؟ ادمج المواقع فيه بدل كرتٍ جديد.
+    const { data: rows } = await supabase
+      .from('notifications')
+      .select('id, data, is_read')
+      .eq('clinic_id', args.clinicId)
+      .eq('recipient_id', args.leaderId)
+      .eq('type', NotifType.SHORTAGE_ALERT)
+      .eq('is_read', false);
+    const existing = ((rows || []) as { id: string; data: any; is_read: boolean }[])
+      .find((r) => String(r.data?.week_start || '') === args.weekStart);
+    if (existing) {
+      const prev = Array.isArray(existing.data?.seats) ? existing.data.seats : [];
+      const seats = dedupe([...prev, ...fresh]);
+      await supabase.from('notifications').update({
+        data: { ...existing.data, seats, batch_at: Date.now() }, body: bodyOf(seats), is_read: false,
+      }).eq('id', existing.id);
+      return ok();
+    }
+    const seats = dedupe(fresh);
+    return await sendInfo({
+      clinicId: args.clinicId, recipientId: args.leaderId,
+      senderId: args.senderId, senderName: args.senderName,
+      type: NotifType.SHORTAGE_ALERT, title: 'يوجد فترة فارغة', body: bodyOf(seats),
+      data: { v: 1, kind: 'shortage', week_start: args.weekStart, seats, batch_at: Date.now() },
+    });
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -1141,4 +1199,6 @@ export const notifications = {
   notifyLeaderReserveChoice, resolveReserveChoiceV2,
   // كرت «طرأ تغييرٌ على جدولك» (طبقة الفرق — أيّ تغيير)
   notifySeatChangeCard,
+  // كرت «يوجد فترة فارغة» (نقصٌ تعذّر ملؤه — للقائد، لكلٍّ نسخته)
+  notifyShortage,
 };
