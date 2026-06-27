@@ -16,6 +16,7 @@ import { ChatMessage } from '../../components/aiTypes';
 import { AISchedulePanel, PanelAction } from '../../components/AISchedulePanel';
 import { WizardResult } from '../../components/ScheduleWizard';
 import { sendMessageV2, type V2Message, type V2User, type SchedulePreview } from '../../lib/ai_v2';
+import type { AnnounceOffer, V2ToolContext } from '../../lib/ai_v2/tools';
 import { schedule, type AssignedSlot } from '../../lib/algorithms/schedule';
 import { useAuth } from '../../AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -213,6 +214,43 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   // تعديل رسالةٍ في المحادثة المشتركة (نتيجة خيارٍ نُفِّذ) — تتزامن بين المحادثتين
   const patchAiMessage = (id: string, patch: Partial<ChatMessage>) =>
     setAiMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+
+  // غيابٌ يدويّ من الجدول (طبيّة/تفرّغ/استئذان) → نُمرّره عبر **نفس** أداة الذكاء
+  // (set_schedule_status) فيجري التعويض والموازنة عبر الأيّام تمامًا كطلبٍ من الذكاء،
+  // ثمّ نعرض سؤال الإبلاغ في المحادثة. الفاعل = المستخدم الحاليّ.
+  const handleManualStatusRequest = async (req: {
+    doctorId: string; doctorName: string; day: string; status: string; shift: 'morning' | 'evening';
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (!clinicId || !user?.id) return { ok: false, error: 'لا مستخدم أو عيادة.' };
+    const ws = formatWeekStart(selectedWeekStart);
+    try {
+      const { dispatchRequestToolV2, FINAL_MARK } = await import('../../lib/ai_v2/tools_requests_v2');
+      // عرضُ الإبلاغ يقرّره المحرّكُ (يكتمه للظلّ/المُغطّى/المكرّر) — نلتقطه ولا نُعيد بناءه نصيًّا.
+      let announce: AnnounceOffer | undefined;
+      const ctx: V2ToolContext = {
+        clinicId,
+        user: { id: user.id, name: user.name, role: user.role, clinicId, clinicName: user.clinicName },
+        roster: [{ id: req.doctorId, name: req.doctorName }],
+        onAnnounceOffer: (o) => { announce = o; },
+      };
+      const out = await dispatchRequestToolV2('set_schedule_status', {
+        weekStart: ws, day: req.day, doctorIndex: 1, status: req.status, shift: req.shift,
+      }, ctx);
+      if (out.startsWith('Tool error')) return { ok: false, error: out.replace(/^Tool error:\s*/, '') };
+      const content = out.split(FINAL_MARK).join('');
+      const msg: ChatMessage = {
+        id: `m${Date.now()}`, role: 'assistant', content,
+        ...(announce ? { announceOffer: announce } : {}),
+        timestamp: Date.now(),
+      };
+      setAiMessages((prev) => [...prev, msg]);
+      aiHistoryRef.current.push({ role: 'assistant', content });
+      // تحديثُ الجدول يتولّاه onSaved في النافذة (لا تحميلٌ مزدوج).
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+    }
+  };
 
   // مسح محادثة الذكاء: فقاعات الذاكرة + كروت محادثة الذكاء من قاعدة البيانات
   const handleClearConversation = async () => {
@@ -762,6 +800,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         onSaved={() => {
           loadSchedule();
         }}
+        onStatusRequest={handleManualStatusRequest}
         onChangePeriod={(p) => {
           if (selectedCell) {
             setSelectedCell({ ...selectedCell, period: p });

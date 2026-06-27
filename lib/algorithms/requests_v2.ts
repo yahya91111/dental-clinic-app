@@ -889,6 +889,31 @@ async function autoResolvePermissionConflict(args: {
  * الملتصق بمدرّبه) يصبح احتياطيًّا تلقائيًّا عند غياب مدرّبه. الليدر لأيّ طبيب؛
  * الطبيب لنفسه فقط.
  */
+// ─── قيد الزمن: لا طلبَ لماضٍ ───────────────────────────────────
+// طلبُ غياب/استئذان/تفرّغ يُقدَّم لليوم أو المستقبل فقط — لا لماضٍ. نفسُ اليوم متاحٌ حتى
+// نهايته (11:59م) لأنّه ليس ماضيًا بعد. يُفرَض في setScheduleStatus فيشمل **مسارات الطلب**
+// كلَّها (اليدويّ من الجدول + الذكاء + أداة الليدر الشاملة). بناءُ الجدول/حفظُ المعاينة
+// (saveSlots) مسارٌ آخر لا يمرّ هنا (إنشاءُ أسبوعٍ لا تقديمُ طلب) فلا يقع تحت هذا القيد.
+const REQ_DAY_OFFSET: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+const pad2 = (n: number) => String(n).padStart(2, '0');
+/** تاريخ يومٍ من الأسبوع (ISO محليّ YYYY-MM-DD) — أو null إن تعذّر. */
+function isoOfDay(weekStart: string, day: string): string | null {
+  const off = REQ_DAY_OFFSET[day];
+  if (off == null || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return null;
+  const d = new Date(`${weekStart}T00:00:00`);
+  d.setDate(d.getDate() + off);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+/** تاريخ اليوم (ISO محليّ) — نفسُ مرجع isoOfDay كي تصحّ المقارنة المعجميّة. */
+function todayISOLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+/** أحوالُ الغياب/الاستئذان الممنوع تقديمُها لماضٍ (الاحتياط استثناء = ترتيبُ قائد). */
+const PAST_BLOCKED_STATUS: Record<string, true> = {
+  sick_leave: true, vacation: true, permission_start: true, permission_end: true,
+};
+
 export async function setScheduleStatus(
   actor: Actor,
   args: {
@@ -912,6 +937,14 @@ export async function setScheduleStatus(
   // الاحتياط صلاحيّة القائد فأعلى حصرًا — الطبيب لا يجعل نفسه (ولا غيره) احتياطًا.
   if (status === 'extra' && !isLeaderPlus(actor.role)) {
     return fail('جعل طبيبٍ احتياطًا صلاحيّة للقائد فأعلى فقط.');
+  }
+  // لا طلبَ لماضٍ: غياب/استئذان/تفرّغ لليوم أو المستقبل فقط (نفسُ اليوم متاحٌ حتى نهايته).
+  // يشمل اليدويّ والذكاء معًا — كلاهما يمرّ هنا. الاحتياط استثناءٌ (ترتيبُ قائد لا طلبُ غياب).
+  if (PAST_BLOCKED_STATUS[status]) {
+    const tISO = isoOfDay(weekStart, day);
+    if (tISO && tISO < todayISOLocal()) {
+      return fail('لا يمكن تقديم طلبٍ ليومٍ مضى — اليوم أو ما بعده فقط.');
+    }
   }
   let gaps: GapLocation[] = [];
   try {

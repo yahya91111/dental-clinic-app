@@ -20,6 +20,12 @@ interface CellDetailModalProps {
   onClose: () => void;
   onSaved: () => void;
   onChangePeriod?: (period: number) => void;
+  /** غيابٌ يدويّ (طبيّة/تفرّغ/استئذان) من الجدول → يُعالَج كطلبٍ من الذكاء تمامًا:
+   *  تغطية + موازنة عبر الأيّام + سؤال الإبلاغ في المحادثة. يُرجِع نجاحًا/خطأً للعرض. */
+  onStatusRequest?: (req: {
+    doctorId: string; doctorName: string; day: DayOfWeek;
+    status: DoctorStatus; shift: 'morning' | 'evening';
+  }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const GROUP_COLORS = [
@@ -47,7 +53,7 @@ interface PickerGroup {
   isExpanded: boolean;
 }
 
-export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, onClose, onSaved, onChangePeriod }: CellDetailModalProps) {
+export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, onClose, onSaved, onChangePeriod, onStatusRequest }: CellDetailModalProps) {
   const [selectingFor, setSelectingFor] = useState<{ role: 'clinic' | 'delegator'; clinicNumber: number } | null>(null);
   const [pickerGroups, setPickerGroups] = useState<PickerGroup[]>([]);
   const [unassignedDoctors, setUnassignedDoctors] = useState<DoctorOption[]>([]);
@@ -509,10 +515,29 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   const isExMode = period !== null && period <= 0;
   const exClinicNumber = period === -1 ? 1 : period === -2 ? 2 : 1;
   const handleExSelectStatus = async (status: DoctorStatus) => {
-    if (!exSelectedDoctor || !clinicId) return;
+    if (!exSelectedDoctor || !clinicId || !day) return;
 
-    // For SL, vacation, extra: remove doctor from all clinic slots on this day
-    if (status === 'sick_leave' || status === 'vacation' || status === 'extra') {
+    // طبيّة/تفرّغ/استئذان: حدثُ غيابٍ يُعالَج بنفس خطّ الذكاء (تغطية + موازنة عبر الأيّام +
+    // سؤال الإبلاغ في المحادثة) — لا كتابةٌ مباشرة ولا وسمُ يوم (حدثٌ لا ترتيبٌ يدويّ).
+    // هذه الحالات لا تُكتب أبدًا كتابةً مباشرة: إن غاب خطّ المعالجة نعتذر ولا نكتب
+    // (كي لا يتسرّب غيابٌ بلا تغطية/قيدِ ماضٍ).
+    const PIPELINE: DoctorStatus[] = ['sick_leave', 'vacation', 'permission_start', 'permission_end'];
+    if (PIPELINE.includes(status)) {
+      if (!onStatusRequest) { Alert.alert('تعذّر', 'تعذّر تسجيل الحالة الآن.'); return; }
+      const shift = exClinicNumber === 2 ? 'evening' : 'morning';
+      const res = await onStatusRequest({
+        doctorId: exSelectedDoctor.id, doctorName: exSelectedDoctor.name, day, status, shift,
+      });
+      setExSelectedDoctor(null);
+      setExMode('list');
+      if (!res.ok) { Alert.alert('تعذّر', res.error || 'تعذّر تسجيل الحالة.'); return; }
+      onSaved();
+      return;
+    }
+
+    // الاحتياط (extra) = ترتيبُ قائدٍ يدويّ: كتابةٌ مباشرة + وسمُ اليوم (حماية العدل — Card B).
+    // يُخرَج الطبيبُ من عيادته ثمّ يُكتب صفُّ الاحتياط.
+    if (status === 'extra') {
       const doctorDaySlots = slots.filter(
         s => s.day === day && s.period > 0 && s.doctorId === exSelectedDoctor.id
       );

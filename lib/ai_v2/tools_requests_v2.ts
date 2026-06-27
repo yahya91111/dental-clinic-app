@@ -841,8 +841,8 @@ export async function dispatchRequestToolV2(
           return 'Tool error: الحالة غير صالحة.';
         }
         const shift = r.shift === 'evening' ? 'evening' : 'morning';
-        // الطلب العامّ يعمل لهذا الأسبوع دائمًا ولو كان اليوم قد مضى — لا قيود على
-        // الماضي. الأسبوع القادم/الماضي فقط حين يسمّيه المستخدم صراحةً (يمرّره النموذج).
+        // قيدُ الزمن (يُفرَض في setScheduleStatus): غياب/استئذان/تفرّغ لليوم أو المستقبل فقط
+        // — لا لماضٍ. الأسبوع القادم حين يسمّيه المستخدم صراحةً (يمرّره النموذج).
         const wsEff = String(r.weekStart);
         const res = await requestsV2.setScheduleStatus(actor, {
           clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
@@ -1053,7 +1053,10 @@ export async function dispatchRequestToolV2(
           `${keptPermAr ? ` — وهو ${keptPermAr}` : ''}` +
           `${permSwapAr}` +
           `${backShadows?.length ? ` — وعاد معه ظلُّه ${backShadows.join(' و')}` : ''}.`;
-        if (actor.id === doc.id && ABSENCE.includes(status)) {
+        // عرضُ الإبلاغ يقرّره المحرّكُ هنا (مصدرٌ واحد): يُطلَق لأيّ غيابٍ/استئذانٍ بصرف النظر
+        // عن الفاعل (الطبيبُ لنفسه أو القائدُ عن غيره يدويًّا/ذكاءً) — والحالاتُ التي لا إبلاغ
+        // لها (ظلّ/مُغطًّى/مكرّر) رجعت مبكّرًا قبل هذه النقطة. الاحتياط (extra) لا إبلاغ له.
+        if (['sick_leave', 'vacation', 'permission_start', 'permission_end'].includes(status)) {
           ctx.onAnnounceOffer?.({
             weekStart: wsEff, day: r.day,
             message: `${doc.name} ${STATUS_AR[status]} يوم ${DAY_AR[r.day]}.`,
