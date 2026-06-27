@@ -117,7 +117,7 @@ export async function applyCoverage(
             const exRow = dayRows.find((s) => s.doctorId === docId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
             if (exRow) { await supabase.from('schedule_slots').delete().eq('id', exRow.id); return; }
             const delRows = dayRows.filter((s) => s.doctorId === docId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period));
-            for (const dr of delRows) await supabase.from('schedule_slots').delete().eq('id', dr.id);
+            if (delRows.length) await supabase.from('schedule_slots').delete().in('id', delRows.map((dr) => dr.id));
           };
           // يحلّ مجموعةَ مقاعدٍ ببدلاء، يكتب، ويُرجِع مقاعدَ مُلئت. لا يمسّ غيرها.
           const fillWith = async (avail: string[], seats: CoverageSeat[], tag: string): Promise<Set<string>> => {
@@ -320,12 +320,12 @@ export async function applyCoverage(
               const want = supNow.map((r) => `${r.period}|${r.clinicNumber}|${r.role}`).sort();
               const have = tNow.map((r) => `${r.period}|${r.clinicNumber}|${r.role}`).sort();
               if (want.length === have.length && want.every((k, i) => k === have[i])) continue; // مطابقٌ — لا شيء
-              for (const r of tNow) await supabase.from('schedule_slots').delete().eq('id', r.id);
-              for (const r of supNow) await supabase.from('schedule_slots').insert({
+              if (tNow.length) await supabase.from('schedule_slots').delete().in('id', tNow.map((r) => r.id));
+              if (supNow.length) await supabase.from('schedule_slots').insert(supNow.map((r) => ({
                 clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
                 period: r.period, clinic_number: r.clinicNumber,
                 doctor_id: tId, doctor_name: t.name, role: r.role, status: 'active', source: 'request',
-              });
+              })));
               // eslint-disable-next-line no-console
               console.log(`[NEW-HEART COVER·ظلّ-يحاذي · ${args.label}] ${t.name} يتبع ${doctors.find((d) => d.id === supId)?.name ?? supId} (${day}/${half === 0 ? 'ص' : 'م'})`);
             }
@@ -368,8 +368,9 @@ export async function placeReserveInSeat(args: {
     // أزِل صفّ احتياطه (extra) أو دوره دليقيترًا في هذا الشفت — أيّهما وُجد.
     const exRow = dayRows.find((s) => s.doctorId === args.doctorId && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
     if (exRow) await supabase.from('schedule_slots').delete().eq('id', exRow.id);
-    else for (const dr of dayRows.filter((s) => s.doctorId === args.doctorId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period))) {
-      await supabase.from('schedule_slots').delete().eq('id', dr.id);
+    else {
+      const delRows = dayRows.filter((s) => s.doctorId === args.doctorId && s.status === 'active' && s.role === 'delegator' && periods.includes(s.period));
+      if (delRows.length) await supabase.from('schedule_slots').delete().in('id', delRows.map((dr) => dr.id));
     }
     await supabase.from('schedule_slots').insert({
       clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: args.day,
@@ -458,8 +459,8 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       if (zRows.length === 0 || yRows.length === 0) continue; // ليست مبادلةً نظيفة → نتركها (أمان)
       const yName = doctors.find((d) => d.id === Y)?.name ?? Y;
       const zName = doctors.find((d) => d.id === Z)?.name ?? Z;
-      for (const r of zRows) await supabase.from('schedule_slots').update({ doctor_id: Y, doctor_name: yName }).eq('id', r.id);
-      for (const r of yRows) await supabase.from('schedule_slots').update({ doctor_id: Z, doctor_name: zName }).eq('id', r.id);
+      await supabase.from('schedule_slots').update({ doctor_id: Y, doctor_name: yName }).in('id', zRows.map((r) => r.id));
+      await supabase.from('schedule_slots').update({ doctor_id: Z, doctor_name: zName }).in('id', yRows.map((r) => r.id));
       touched.add(`${day}|${Z}`); touched.add(`${day}|${Y}`);
 
       applied++;
@@ -489,12 +490,12 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
           for (const t of shadows) {
             const supNow = after.existingSlots.filter((r) => r.doctorId === supId && r.dayOfWeek === dy && inScope(r));
             const tOld = after.existingSlots.filter((r) => r.doctorId === t.id && r.dayOfWeek === dy && inScope(r));
-            for (const o of tOld) await supabase.from('schedule_slots').delete().eq('id', o.id);
-            for (const r of supNow) await supabase.from('schedule_slots').insert({
+            if (tOld.length) await supabase.from('schedule_slots').delete().in('id', tOld.map((o) => o.id));
+            if (supNow.length) await supabase.from('schedule_slots').insert(supNow.map((r) => ({
               clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: dy,
               period: r.period, clinic_number: r.clinicNumber,
               doctor_id: t.id, doctor_name: t.name, role: r.role, status: 'active', source: 'request',
-            });
+            })));
           }
         }
       }
@@ -566,7 +567,7 @@ export async function applyThinReshape(args: { clinicId: string; weekStart: stri
           clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: day,
           period: p, clinic_number: 0, doctor_id: host, doctor_name: nameOf(host), role: 'delegator', status: 'active', source: 'request',
         });
-        for (const s of rows) await supabase.from('schedule_slots').delete().eq('id', s.id);
+        if (rows.length) await supabase.from('schedule_slots').delete().in('id', rows.map((s) => s.id));
         await supabase.from('schedule_slots').insert(inserts);
         reshaped++;
         // eslint-disable-next-line no-console
@@ -632,7 +633,7 @@ export async function applyReserveRepay(
         if (covererClinic.length === 0) continue;                 // R لا يعمل عيادةً هذا الشفت → لا مقعد يُعطى
         const ownerName = ownerEx.doctor_name; const covererName = covererClinic[0]!.doctor_name;
         // المبادلة: مقعدُ R → A، ودورُ احتياط A → R.
-        for (const r of covererClinic) await supabase.from('schedule_slots').update({ doctor_id: owner, doctor_name: ownerName }).eq('id', r.id);
+        await supabase.from('schedule_slots').update({ doctor_id: owner, doctor_name: ownerName }).in('id', covererClinic.map((r) => r.id));
         await supabase.from('schedule_slots').update({ doctor_id: coverer, doctor_name: covererName }).eq('id', ownerEx.id);
         repaid++; did = true; repaidAbsent.push(owner);
         const pre = di > DAY_IDX[d2]! ? 'قَبْليّ' : 'أماميّ';
@@ -715,8 +716,8 @@ export async function applyReturn(args: {
       if (here.length === 1 && here[0]!.doctorId === returnerId) continue; // العائدُ وحدَه أصلًا → لا لمس
       for (const r of here) {
         if (r.doctorId !== returnerId && !traineeIds.has(r.doctorId)) { displaced.add(r.doctorId); touchedSet.add(r.doctorId); }
-        await supabase.from('schedule_slots').delete().eq('id', r.id);
       }
+      if (here.length) await supabase.from('schedule_slots').delete().in('id', here.map((r) => r.id));
       await supabase.from('schedule_slots').insert({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: ps.period, clinic_number: ps.clinicNumber,
@@ -729,12 +730,11 @@ export async function applyReturn(args: {
 
     // ② إخلاءُ مقاعد العائد الأخرى في الشفت (نزولٌ سابق) → شاغرة.
     const vacated: { period: number; clinicNumber: number; role: string }[] = [];
-    for (const r of rowsNow().filter((s) => s.doctorId === returnerId && s.status === 'active'
+    const vacatedRows = rowsNow().filter((s) => s.doctorId === returnerId && s.status === 'active'
       && (s.role === 'clinic' || s.role === 'delegator') && periods.includes(s.period)
-      && !prevSeats.some((ps) => ps.period === s.period && ps.clinicNumber === s.clinicNumber))) {
-      vacated.push({ period: r.period, clinicNumber: r.clinicNumber, role: r.role });
-      await supabase.from('schedule_slots').delete().eq('id', r.id);
-    }
+      && !prevSeats.some((ps) => ps.period === s.period && ps.clinicNumber === s.clinicNumber));
+    for (const r of vacatedRows) vacated.push({ period: r.period, clinicNumber: r.clinicNumber, role: r.role });
+    if (vacatedRows.length) await supabase.from('schedule_slots').delete().in('id', vacatedRows.map((r) => r.id));
     data = await reload(); if (!data) return z;
 
     // ③ الأجسادُ الحرّة = المُزاحون بلا مقعدٍ نشطٍ آخر في الشفت.
@@ -763,15 +763,17 @@ export async function applyReturn(args: {
     }
 
     // ⑤ الأجسادُ الحرّةُ المتبقّية → احتياط (لا تُترك معلّقة).
+    const reserveInserts: Record<string, unknown>[] = [];
     for (const id of free) {
       if (hasSeatInShift(id) || rowsNow().some((s) => s.doctorId === id && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol)) continue;
-      await supabase.from('schedule_slots').insert({
+      reserveInserts.push({
         clinic_id: clinicId, week_start: weekStart, day_of_week: day,
         period: 0, clinic_number: exCol,
         doctor_id: id, doctor_name: nameOf(id), role: 'clinic', status: 'extra', source: 'request',
       });
       z.reserved++; touchedSet.add(id);
     }
+    if (reserveInserts.length) await supabase.from('schedule_slots').insert(reserveInserts);
     z.touched = [...touchedSet];
     // eslint-disable-next-line no-console
     console.log(`[NEW-HEART RETURN · ${args.label}] ${nameOf(returnerId)} استردّ ${z.reclaimed} · مُلئ ${z.refilled} · احتياط ${z.reserved}${z.shortages ? ' · نقص ' + z.shortages : ''}`);
