@@ -1,6 +1,7 @@
 // v1.0.6 - D.C.M (Dental Clinic Management)
 import React from 'react';
 import { View, ActivityIndicator } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   useFonts,
@@ -29,10 +30,12 @@ export default function App() {
   }
 
   return (
-    <AuthProvider>
-      <SafeAreaProvider>
-        <AppContent />
-      </SafeAreaProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <SafeAreaProvider>
+          <AppContent />
+        </SafeAreaProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }

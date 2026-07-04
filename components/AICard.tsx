@@ -40,18 +40,21 @@ export function Pill({ kind, text }: { kind: CardKind; text: string }) {
   );
 }
 
-// السطح الزجاجيّ + خطٌّ علويٌّ متلاشٍ بلون النوع + توهّجٌ للكروت الحيّة
+// سطحٌ زجاجيٌّ **شفّاف** (يُرى ماءُ المحادثةِ خلفَه) + حافّةٌ بلون النوع + خطٌّ علويٌّ متلاشٍ
+// + توهّجٌ محيطٌ للكروت الحيّة — أُبقيت الإضاءاتُ المحيطةُ وأُزيلَ اللونُ الغامق.
 export function GlassCard({ kind, glow, children, style }: {
   kind: CardKind; glow?: boolean; children: React.ReactNode; style?: any;
 }) {
   const k = KIND[kind];
   return (
-    <View style={[cardStyles.glass, glow && { shadowColor: k.accent, shadowOpacity: 0.30, shadowRadius: scale(18) }, style]}>
+    <View style={[cardStyles.glass, { borderColor: k.line }, glow && { shadowColor: k.accent, shadowOpacity: 0.45, shadowRadius: scale(22) }, style]}>
+      {/* لمعةٌ زجاجيّةٌ خفيفةٌ شفّافة (لا لونَ غامق) — الماءُ يظهرُ من خلفها */}
       <LinearGradient
-        colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
+        colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.03)']}
         start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
         style={cardStyles.glassFill}
       />
+      {/* خطٌّ علويٌّ مضيءٌ بلون النوع (من الإضاءاتِ المحيطة) */}
       <LinearGradient
         colors={['transparent', k.accent, 'transparent']}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -65,9 +68,9 @@ export function GlassCard({ kind, glow, children, style }: {
 export const cardStyles = StyleSheet.create({
   glass: {
     alignSelf: 'stretch', borderRadius: scale(22),
-    backgroundColor: 'rgba(38,33,82,0.94)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(22,16,48,0.26)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.18)',
     paddingHorizontal: scale(15), paddingTop: scale(15), paddingBottom: scale(14),
-    shadowColor: '#2A1A52', shadowOpacity: 0.35, shadowRadius: scale(16), shadowOffset: { width: 0, height: scale(8) }, elevation: 6,
+    shadowColor: '#1a1040', shadowOpacity: 0.30, shadowRadius: scale(14), shadowOffset: { width: 0, height: scale(6) }, elevation: 5,
   },
   glassFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: scale(22) },
   glassDim: { opacity: 0.6 },

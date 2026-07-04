@@ -11,8 +11,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, ScrollView, TextInput, TouchableOpacity,
+  Modal, View, Text, ScrollView, TextInput, TouchableOpacity, Pressable,
   ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, PanResponder, Animated,
+  Dimensions, Easing, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +25,10 @@ import { CardBadge, Pill, GlassCard, cardStyles, type CardKind } from './AICard'
 import { ChatMessage } from './aiTypes';
 import SeatChangeOverlay, { type SeatChangeUI } from './SeatChangeOverlay';
 import { scale } from '../lib/scale';
+import { GlassNavButton } from './GlassNavButton';
+import { ChatBody, ChatInputBar, OutlinedText } from './ChatChrome';
+import { ChatInkWater, FogHalo } from './ChatDissolve';
+import { useSharedValue } from 'react-native-reanimated';
 
 type Props = {
   visible: boolean;
@@ -57,20 +62,6 @@ const inAIChat = (n: { type: string; data?: any }) =>
 const isActionType = (t: string) => t === 'gap_alert' || t === 'rebalance_consent';
 const isPending = (n: { type: string; action_type?: string | null; action_status?: string | null }) =>
   isActionType(n.type) && n.action_type === 'accept_reject' && (!n.action_status || n.action_status === 'pending');
-
-/** يفصل خيارات [نعم] [لا] من نصّ رسالة الذكاء لعرضها كأزرار قابلة للنقر */
-// يلتقط كتلةً ختاميّةً من رموز [خيار] [خيار] في آخر رسالة الذكاء ويفصلها لعرضها أزرارًا.
-// **مطابقٌ حرفيًّا لنظيره في AISchedulePanel** — صفحةٌ واحدة، السلوك نفسه هنا وهناك.
-function parseChoices(content: string): { text: string; choices: string[] } {
-  const trimmed = content.trimEnd();
-  const tailMatch = trimmed.match(/((?:\[[^\[\]\n]+\][ \t]*\n?[ \t]*)+)\s*$/);
-  if (!tailMatch) return { text: content, choices: [] };
-  const tail = tailMatch[1];
-  const choices = Array.from(tail.matchAll(/\[([^\[\]\n]+)\]/g)).map((m) => m[1].trim());
-  if (choices.length < 2) return { text: content, choices: [] };
-  const text = trimmed.slice(0, trimmed.length - tailMatch[0].length).trimEnd();
-  return { text, choices };
-}
 
 /** عدد عناصر محادثة الذكاء التي تُبقي الأورب كهرمانيّاً: **كرتٌ لم يُحَلّ** (معلّق — يبقى
  *  محسوبًا ولو قُرئ، فلا يطفئه فتحُ الكرت بل حلُّه done/dismiss) **أو** رسالةٌ غير مقروءة. */
@@ -958,260 +949,160 @@ export function AICardsView({ user, clinicId }: {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// AIChatModal — محادثةُ الذكاء (الضغطةُ المطوّلة) — تصميمٌ مطابقٌ لصفحةِ الذكاء
+// ═══════════════════════════════════════════════════════════════
+// نفسُ خلفيّةِ صفحةِ الذكاء (ماءٌ حبريٌّ + إضاءاتٌ دخانيّة)، ونفسُ الرأس («DCM AI» + ترحيب)،
+// ونفسُ خانةِ الإدخالِ وزرِّ الإرسالِ والجرس — كلُّها مكوّناتٌ مشتركةٌ من ChatChrome، فلا
+// انحرافَ بين السطحين. التبويب (محادثة | كروت الإبلاغ) كما في صفحةِ الذكاء عبر زرِّ الجرس.
 export default function AIChatModal({ visible, onClose, user, clinicId, messages, onSend, onClearConversation, onPatchMessage, onAfterAction, isLoading }: Props) {
-  const [convo, setConvo] = useState<ConvoNotif[]>([]);
-  const [input, setInput] = useState('');
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [note, setNote] = useState('');
-  const [view, setView] = useState<'chat' | 'cards'>('chat'); // تبويبٌ مؤقّت: المحادثة / كروت الإبلاغ
-  const scrollRef = useRef<ScrollView>(null);
+  const [tab, setTab] = useState<'chat' | 'cards'>('chat'); // محادثة | كروت الإبلاغ
+  const [unread, setUnread] = useState(0);                  // عددُ الكروت غير المقروءة/غير المحلولة (بادجُ الجرس)
+  const waterProg = useSharedValue(1);                      // ماءٌ مستقرٌّ هادئ — نفسُ خلفيّةِ صفحةِ الذكاء عند الراحة
+  const slide = useRef(new Animated.Value(0)).current;      // 0 = محادثة، 1 = كروت — إزاحةٌ أفقيّةٌ كصفحةِ الذكاء
 
-  const loadConvo = useCallback(async () => {
-    if (!user?.id) return;
-    const { data } = await getNotifications(user.id, 50);
-    // الطلبات المعلّقة + النتائج الجديدة (تختفي الموافقة/الرفض بعد قراءتها).
-    const sunday = currentSunday();
-    const items = ((data || []) as ConvoNotif[])
-      .filter((n) =>
-        isPending(n)
-        || (n.type === 'request_result' && !n.data?.swap_v2 && !n.is_read)
-        || (n.type === 'gap_alert' && n.data?.v === 2 && String(n.data?.week_start || '') >= sunday));
-    // getNotifications يُرجِع الأحدث أوّلًا — فالطلب الجديد يظهر بالأعلى (بلا reverse)
-    setConvo(items);
-    // علّم النتائج المعروضة مقروءة (يُطفئ الأحمر وتختفي عند الفتح التالي)
-    items.filter((n) => n.type === 'request_result').forEach((n) => markAsRead(n.id));
+  // أبعادُ البطاقة (ثابتةٌ من مقاسِ الشاشة) — لحسابِ الإزاحةِ الأفقيّةِ وتصحيحِ مسافةِ الكيبورد
+  const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+  const CARD_H_FRAC = 0.80;
+  const CARD_W = Math.min(SCREEN_W - scale(30), scale(440));
+  const CARD_H = SCREEN_H * CARD_H_FRAC;                    // ارتفاعُ البطاقةِ بالبكسل — لهالاتِ الضبابِ المحيطة
+  const topGap = (SCREEN_H * (1 - CARD_H_FRAC)) / 2;        // فراغُ أعلى/أسفلَ البطاقةِ الموسَّطة
+  const kbInset = -topGap;                                  // تصحيح: تستقرُّ الخانةُ فوقَ الكيبورد لا فوقَ حافّةِ البطاقة
+
+  // بادجُ الجرس: نفسُ منطقِ صفحةِ الذكاء (countUnreadAIChat) — عند الفتح/التبويب وفوريًّا (Realtime)
+  const refreshUnread = useCallback(async () => {
+    if (!user?.id) { setUnread(0); return; }
+    try { setUnread(await countUnreadAIChat(user.id)); } catch { /* تجاهل */ }
   }, [user?.id]);
+  useEffect(() => { if (visible) refreshUnread(); }, [visible, tab, refreshUnread]);
+  useEffect(() => {
+    if (!visible || !user?.id) return;
+    const unsub = subscribeToNotifications(user.id, refreshUnread);
+    return unsub;
+  }, [visible, user?.id, refreshUnread]);
 
-  // كروت الإبلاغ (تغطية/موافقات/نتائج) انتقلت إلى لوحةٍ مشتركة (AICardsView) تُعرَض
-  // في تبويب «الكروت» — فلا تُحمَّل ولا تُدمَج هنا (المحادثة صارت رسائلَ فقط).
+  // عند فتحِ المنبثقة: ابدأ دائمًا على المحادثة (المسارُ عند 0)
+  useEffect(() => { if (visible) { setTab('chat'); slide.setValue(0); } }, [visible, slide]);
 
-  // إرسال إدخال المستخدم العاديّ (المحادثة المشتركة). كروت التغطية لها خيطها
-  // المستقلّ داخل الكرت (CoverageCard) فلا تمرّ من هنا.
-  const sendInput = useCallback((text: string) => {
-    onSend(text);
-  }, [onSend]);
+  // التبديلُ بين المحادثةِ والكروت — إزاحةٌ أفقيّةٌ ناعمةٌ (نفسُ انيميشنِ صفحةِ الذكاء)
+  const goTab = useCallback((next: 'chat' | 'cards') => {
+    setTab(next);
+    Keyboard.dismiss();
+    Animated.timing(slide, { toValue: next === 'cards' ? 1 : 0, duration: 380, easing: Easing.bezier(0.22, 1, 0.36, 1), useNativeDriver: true }).start();
+  }, [slide]);
 
-  async function handleDecision(n: ConvoNotif, decision: 'accept' | 'reject') {
-    if (!user?.id) return;
-    setBusyId(n.id);
-    try {
-      let msg = '';
-      const { updateNotificationAction } = await import('../lib/database');
-      await updateNotificationAction(n.id, decision === 'accept' ? 'accepted' : 'rejected');
-      msg = decision === 'accept' ? 'تمّ.' : 'رُفض.';
-      setNote(msg);
-      await loadConvo();
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  function handleSend() {
-    const text = input.trim();
-    if (!text || isLoading) return;
-    setInput('');
-    sendInput(text);
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
-  }
-
+  // مسحُ المحادثة — يكشفُه السحبُ للأسفل أعلى المحادثة (داخلَ ChatBody)
   async function handleClear() {
     try { await onClearConversation?.(); } catch { /* تجاهل */ }
-    setConvo([]); setNote('');
-    await loadConvo();
+    refreshUnread();
   }
 
-  // دمج الرسائل المشتركة مع طلبات/نتائج الذكاء وترتيبها زمنيًّا تصاعديًّا
-  type Merged =
-    | { kind: 'msg'; ts: number; m: ChatMessage }
-    | { kind: 'notif'; ts: number; n: ConvoNotif };
-  const mergedItems: Merged[] = [
-    ...messages.map((m): Merged => ({ kind: 'msg', ts: m.timestamp || 0, m })),
-  ].sort((a, b) => a.ts - b.ts);
+  const welcome = (() => {
+    const n = (user?.name || '').trim();
+    const drName = n ? (/^د\s*\./.test(n) ? n : `د. ${n}`) : '';
+    return drName ? `مرحبًا ${drName}` : 'مرحبًا بك';
+  })();
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.center}>
-          <View style={styles.card}>
-            <View style={styles.header}>
-              {/* زرٌّ مؤقّت: تبديلٌ بين المحادثة وكروت الإبلاغ (التصميم/الآليّة لاحقًا) */}
-              <TouchableOpacity
-                onPress={() => setView((v) => (v === 'chat' ? 'cards' : 'chat'))}
-                style={{ backgroundColor: '#EAF4F4', borderWidth: scale(1), borderColor: '#2D8C8C', borderRadius: scale(14), paddingHorizontal: scale(11), paddingVertical: scale(5) }}
-              >
-                <Text style={{ color: '#1F6B6B', fontSize: scale(13), fontWeight: '800' }}>{view === 'chat' ? 'الكروت' : 'المحادثة'}</Text>
-              </TouchableOpacity>
-              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(4) }}>
-                {!!onClearConversation && view === 'chat' && (
-                  <TouchableOpacity onPress={handleClear} style={styles.closeBtn}>
-                    <Text style={[styles.closeTxt, { color: '#C0493B' }]}>مسح المحادثة</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                  <Text style={styles.closeTxt}>إغلاق</Text>
-                </TouchableOpacity>
-              </View>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      {/* تعتيمٌ خفيفٌ تظهرُ الصفحةُ خلفَه — النقرُ خارجَ البطاقةِ يُغلق */}
+      <View style={{ flex: 1, backgroundColor: 'rgba(6,4,16,0.62)', justifyContent: 'center', alignItems: 'center' }}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+
+        {/* ضبابٌ أبيضُ كثيفٌ حولَ حدودِ النافذة (Skia — مطابقٌ على iOS وأندرويد): طبقتان مركزيّتان خلفَ
+            البطاقة — واسعةٌ ناعمةٌ + كثيفةٌ تعانقُ الحدودَ مباشرة — فيبدو المتنُ خارجًا من ضبابٍ أبيض. */}
+        {visible && (
+          <>
+            {/* الضبابُ (خلفيّةُ النافذة) يملأُ الصفحةَ كاملةً */}
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <FogHalo sigma={scale(58)} inset={scale(18)} color="rgba(210,185,255,0.50)" radius={scale(90)} />
             </View>
+            {/* تكثيفُ الضبابِ حولَ حدودِ النافذةِ مباشرة — طبقتانِ متراكمتانِ أعمقُ لونًا وأكثفُ */}
+            <View pointerEvents="none" style={{ position: 'absolute', width: CARD_W + scale(120), height: CARD_H + scale(120) }}>
+              <FogHalo sigma={scale(30)} inset={scale(58)} color="rgba(188,150,252,0.95)" radius={scale(50)} />
+            </View>
+            <View pointerEvents="none" style={{ position: 'absolute', width: CARD_W + scale(88), height: CARD_H + scale(88) }}>
+              <FogHalo sigma={scale(20)} inset={scale(40)} color="rgba(170,130,248,0.98)" radius={scale(46)} />
+            </View>
+          </>
+        )}
 
-            {view === 'cards' ? (
-              <AICardsView user={user} clinicId={clinicId ?? user.clinicId} />
-            ) : (
-            <>
-            <ScrollView
-              ref={scrollRef}
-              style={styles.body}
-              contentContainerStyle={{ padding: scale(12), paddingBottom: scale(16) }}
-              onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-            >
-              {/* المحادثة المشتركة + طلبات الذكاء ونتائجها، مدموجة ومرتّبة زمنيًّا
-                  (فالموافقة تظهر تحت الطلب لا فوقه) */}
-              {mergedItems.map((it) => {
-                if (it.kind === 'msg') {
-                  const m = it.m;
-                  const isLast = it === mergedItems[mergedItems.length - 1];
-                  // خيارات [..] تُفصَل فقط لآخر رسالة ذكاء (وليس أثناء التحميل) — مطابقٌ
-                  // لـAISchedulePanel: نفس البوّابة ونفس الـparseChoices في الصفحتين.
-                  const { text, choices } = (m.role === 'assistant' && isLast && !isLoading)
-                    ? parseChoices(m.content)
-                    : { text: m.content, choices: [] as string[] };
-                  // رسالةٌ تحمل عرضًا (إبلاغ/تبديل/تأكيد) → كرتٌ كامل يضمّ نصّها وأزرارها
-                  // (لا فقاعة منفصلة)، وتتزامن نتيجته بين المحادثتين عبر onPatchMessage.
-                  const hasOffer = m.role === 'assistant' && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
-                  if (hasOffer) {
-                    return (
-                      <AssistantOffers
-                        key={m.id}
-                        message={m}
-                        user={user}
-                        clinicId={clinicId ?? user.clinicId}
-                        onResolved={(rtext, done) => onPatchMessage?.(m.id, { offerResolved: { text: rtext, done } })}
-                        onDone={onAfterAction}
-                      />
-                    );
-                  }
-                  // سؤالٌ بخيارات (الذكاء كتبها `[..]`) → كرتٌ كامل بلغة Aurora (نوع decision)
-                  // مطابقٌ لكرت الإبلاغ/التبديل: شارة + عنوان + حبّة + نصّ السؤال + أزرار مكدّسة.
-                  // يظهر ما دام آخر رسالة (سؤالٌ حيّ)؛ بعد الإجابة يصير نصًّا عاديًّا.
-                  if (m.role === 'assistant' && choices.length > 0 && isLast) {
-                    return (
-                      <View key={m.id} style={styles.qWrap}>
-                        <GlassCard kind="decision" glow>
-                          <View style={cardStyles.head}>
-                            <CardBadge kind="decision" live />
-                            <View style={cardStyles.headTxt}>
-                              <Text style={cardStyles.cardTitle} numberOfLines={1}>سؤال</Text>
-                              <Pill kind="decision" text="يحتاج قرارك" />
-                            </View>
-                          </View>
-                          <View style={cardStyles.covBody}>
-                            {!!text && <Text style={styles.qBody}>{text}</Text>}
-                            {choices.map((c, i) => (
-                              <TouchableOpacity
-                                key={`${m.id}-${i}`}
-                                onPress={() => sendInput(c)}
-                                disabled={isLoading}
-                                activeOpacity={0.85}
-                                style={styles.qOpt}
-                              >
-                                <Text style={styles.qOptTxt} numberOfLines={2}>{c}</Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </GlassCard>
-                      </View>
-                    );
-                  }
-                  return (
-                    <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.msgUser : styles.msgAI]}>
-                      {!!text && (
-                        <Text style={[styles.msgTxt, m.role === 'user' && styles.msgTxtUser]}>{text}</Text>
-                      )}
-                    </View>
-                  );
-                }
-                const n = it.n;
-                // كرت التغطية (gap_alert v2): كرتٌ بعنوان ثابت من المحرّك؛ نقره يفتح
-                // خيطًا مستقلًّا يصوغ فيه الذكاء الحلول بسياق هذا النقص وحده. القديمة تُتجاهَل.
-                if (n.type === 'gap_alert') {
-                  if (n.data?.v !== 2) return null;
-                  if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.reserve_choice) return null;
-                  return (
-                    <CoverageCard
-                      key={n.id}
-                      notif={n}
-                      user={user}
-                      clinicId={clinicId ?? user.clinicId}
-                      onSeen={loadConvo}
-                    />
-                  );
-                }
-                // كرت «موازنةُ يومٍ عدّلتَه» (استئذانُ موازنة العدل ليومٍ عدّله القائد) — نعم/لا.
-                if (n.type === 'rebalance_consent') {
-                  return <RebalanceConsentCard key={n.id} notif={n} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />;
-                }
-                if (isPending(n)) {
-                  const busy = busyId === n.id;
-                  return (
-                    <View key={n.id} style={[styles.msg, styles.msgAI]}>
-                      <Text style={styles.msgTxt}>{n.body}</Text>
-                      <View style={styles.reqActions}>
-                        {busy ? (
-                          <ActivityIndicator color="#2D8C8C" />
-                        ) : (
-                          <>
-                            <TouchableOpacity style={[styles.actBtn, styles.accept]} onPress={() => handleDecision(n, 'accept')}>
-                              <Text style={styles.actTxt}>موافق</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.actBtn, styles.reject]} onPress={() => handleDecision(n, 'reject')}>
-                              <Text style={styles.actTxt}>رفض</Text>
-                            </TouchableOpacity>
-                          </>
-                        )}
-                      </View>
-                    </View>
-                  );
-                }
-                return (
-                  <View key={n.id} style={[styles.msg, styles.msgAI]}>
-                    <Text style={styles.msgTxt}>{n.body}</Text>
-                  </View>
-                );
-              })}
+        {/* البطاقةُ المنبثقةُ — بلا حدودٍ إطلاقًا؛ أطرافُ الماءِ نفسُها تتلاشى (تمويهُ Skia) وتذوبُ في الضبابِ المحيط */}
+        <View style={{ width: CARD_W, height: `${CARD_H_FRAC * 100}%`, borderRadius: scale(30), overflow: 'hidden' }}>
+          {/* خلفيّةُ المحادثة: ماءٌ حبريٌّ غامقٌ صلبُ المتن — **الحوافُّ الأربعُ** تتلاشى تدريجيًّا (feather)
+              بشريطٍ ضيّقٍ الآن فتذوبُ حدودُ النافذةِ في ضبابِ الصفحة */}
+          {visible && <ChatInkWater prog={waterProg} feather={scale(6)} />}
 
-              {mergedItems.length === 0 && (
-                <Text style={styles.empty}>لا توجد طلبات. اكتب طلبك بالأسفل.</Text>
-              )}
-
-              {/* نتيجة آخر قبول/رفض (تغذية فوريّة للطرف الذي اتّخذ القرار) */}
-              {!!note && (
-                <View style={[styles.msg, styles.msgAI]}>
-                  <Text style={styles.msgTxt}>{note}</Text>
-                </View>
-              )}
-              {isLoading && <ActivityIndicator color="#2D8C8C" style={{ marginTop: scale(8) }} />}
-            </ScrollView>
-
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.input}
-                value={input}
-                onChangeText={setInput}
-                placeholder="اكتب طلبك…"
-                placeholderTextColor="#9AA7A7"
-                multiline
-                textAlign="right"
-                onSubmitEditing={handleSend}
+          {/* المسارُ الأفقيّ [محادثة | كروت] — ينزلقُ بزرِّ الجرس (نفسُ إزاحةِ صفحةِ الذكاء) */}
+          <Animated.View
+            style={{
+              position: 'absolute', top: scale(78), left: 0, bottom: 0,
+              width: CARD_W * 2, flexDirection: 'row',
+              transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [0, -CARD_W] }) }],
+            }}
+          >
+            {/* صفحةُ المحادثة */}
+            <View style={{ width: CARD_W, height: '100%' }}>
+              <ChatBody
+                messages={messages}
+                isLoading={isLoading}
+                onSend={onSend}
+                user={user}
+                clinicId={clinicId ?? user.clinicId}
+                onPatchMessage={onPatchMessage}
+                onAfterAction={onAfterAction}
+                bottomInset={kbInset}
+                sideInset={scale(14)}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: scale(86) }}
               />
-              <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={isLoading}>
-                <Text style={styles.sendTxt}>إرسال</Text>
-              </TouchableOpacity>
+              <ChatInputBar onSend={onSend} bottomInset={kbInset} sideInset={scale(14)} />
             </View>
-            </>
+            {/* صفحةُ كروت الإبلاغ — نفسُ الخلفيّة */}
+            <View style={{ width: CARD_W, height: '100%' }}>
+              <AICardsView user={user} clinicId={clinicId ?? user.clinicId} />
+            </View>
+          </Animated.View>
+
+          {/* أعلى اليسار: X (إغلاق) في المحادثة ↔ Clear Chat في الكروت — عنصران مستقلّان (كي لا
+              يُقيَّدَ عرضُ Clear Chat بعرضِ X فيُلَفَّ نصُّه)، تلاشٍ متبادلٌ مع الإزاحة */}
+          <Animated.View
+            pointerEvents={tab === 'chat' ? 'auto' : 'none'}
+            style={{ position: 'absolute', top: scale(23), left: scale(21), zIndex: 9, opacity: slide.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }}
+          >
+            <GlassNavButton icon="close" idPrefix="navCloseModal" onPress={onClose} size={scale(38)} iconSize={scale(22)} />
+          </Animated.View>
+          <Animated.View
+            pointerEvents={tab === 'cards' ? 'auto' : 'none'}
+            style={{ position: 'absolute', top: scale(30), left: scale(21), zIndex: 9, opacity: slide.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }) }}
+          >
+            <TouchableOpacity onPress={handleClear} activeOpacity={0.85} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <View style={{ alignItems: 'center', justifyContent: 'center', height: scale(26), paddingHorizontal: scale(12), borderRadius: scale(13), backgroundColor: 'rgba(255,255,255,0.10)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.30)' }}>
+                <Text numberOfLines={1} style={{ color: '#FFE4E6', fontSize: scale(11), fontWeight: '600', letterSpacing: scale(0.3) }}>Clear Chat</Text>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+
+          {/* زرُّ الجرس (يمين): جرسٌ للكروت / فقاعةٌ للمحادثة — نقرُه يُزيحُ المسارَ أفقيًّا، ببادجٍ كهرمانيّ */}
+          <TouchableOpacity
+            onPress={() => goTab(tab === 'chat' ? 'cards' : 'chat')}
+            activeOpacity={0.8}
+            style={{ position: 'absolute', top: scale(25), right: scale(23), zIndex: 9, width: scale(38), height: scale(38), borderRadius: scale(19), alignItems: 'center', justifyContent: 'center' }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name={tab === 'chat' ? 'notifications' : 'chatbubble'} size={scale(24)} color="#EBDBFF" style={{ textShadowColor: 'rgba(168,85,247,0.95)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: scale(11) }} />
+            {tab === 'chat' && unread > 0 && (
+              <View style={{ position: 'absolute', top: -scale(3), right: -scale(3), minWidth: scale(18), height: scale(18), borderRadius: scale(9), backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(4), borderWidth: scale(1.5), borderColor: '#fff' }}>
+                <Text style={{ color: '#fff', fontSize: scale(10.5), fontWeight: '800' }}>{unread}</Text>
+              </View>
             )}
+          </TouchableOpacity>
+
+          {/* رأسُ البطاقة: «DCM AI» + الترحيب — مطابقٌ لصفحةِ الذكاء */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: scale(18), left: 0, right: 0, alignItems: 'center', zIndex: 8 }}>
+            <OutlinedText text="DCM AI" size={scale(20)} spacing={scale(1.2)} color="#F4ECFF" outline="rgba(138,99,230,0.85)" glow="rgba(168,85,247,0.95)" />
+            <Text style={{ marginTop: scale(2), color: 'rgba(222,208,255,0.92)', fontSize: scale(12), fontWeight: '800' }}>{welcome}</Text>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );
