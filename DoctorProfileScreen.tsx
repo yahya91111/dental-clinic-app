@@ -17,6 +17,46 @@ import { getPermissions } from './permissions';
 import { getUnreadCount, getNotifications as fetchNotifications, markAsRead, markAllAsRead, createNotification, subscribeToNotifications } from './lib/database';
 import { registerForPushNotifications, addNotificationResponseListener, addNotificationReceivedListener } from './lib/pushNotifications';
 
+// ═══ Notifications design helpers (light glass, per-type) ═══
+const NFY_INK = '#20233A';
+const NFY_SOFT = '#4C5069';
+const NFY_MUTED = '#7C8098';
+const NFY_FAINT = '#A9ADC4';
+const nfyClamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+const nfyParse = (hex: string): [number, number, number] => {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+};
+const nfyRgba = (hex: string, a: number) => { const [r, g, b] = nfyParse(hex); return `rgba(${r},${g},${b},${a})`; };
+const nfyLighten = (hex: string, amt: number) => { const [r, g, b] = nfyParse(hex); return `rgb(${nfyClamp(r + (255 - r) * amt)},${nfyClamp(g + (255 - g) * amt)},${nfyClamp(b + (255 - b) * amt)})`; };
+const nfyDarken = (hex: string, amt: number) => { const [r, g, b] = nfyParse(hex); return `rgb(${nfyClamp(r * (1 - amt))},${nfyClamp(g * (1 - amt))},${nfyClamp(b * (1 - amt))})`; };
+
+type NfyVisual = { c: string; icon: string; title: string };
+// نوعُ الإشعار → لونٌ دلاليّ + أيقونة + عنوانٌ إنجليزيٌّ واضح
+function notifVisual(notif: any): NfyVisual {
+  const t = notif?.type;
+  const blob = `${notif?.body || ''} ${notif?.title || ''}`;
+  switch (t) {
+    case 'swap_request': return { c: '#8B7CF0', icon: 'swap-horizontal', title: 'Swap Request' };
+    case 'coverage_request': return { c: '#4F9BF0', icon: 'shield-checkmark-outline', title: 'Coverage Needed' };
+    case 'request_result': return { c: '#2FBF8F', icon: 'checkmark-done-circle-outline', title: 'Swap Result' };
+    case 'schedule_created': return { c: '#8E93C8', icon: 'calendar-outline', title: 'Schedule Published' };
+    case 'trainee_attached': return { c: '#14B8A6', icon: 'school-outline', title: 'New Trainee' };
+    case 'seat_change': return { c: '#8B7CF0', icon: 'shuffle-outline', title: 'Schedule Changed' };
+    case 'shortage_alert': return { c: '#EF4E6B', icon: 'warning-outline', title: 'Empty Slot' };
+    case 'rebalance_consent': return { c: '#4F9BF0', icon: 'git-compare-outline', title: 'Balance This Day?' };
+    case 'broadcast':
+    case 'admin_message':
+    case 'general': return { c: '#38BDF8', icon: 'megaphone-outline', title: 'Announcement' };
+    case 'request_info':
+      if (/مرض|sick/i.test(blob)) return { c: '#EC6A6A', icon: 'medkit-outline', title: 'Sick Leave' };
+      if (/استئذان|تفرّغ|تفرغ|permission/i.test(blob)) return { c: '#F2A33D', icon: 'hourglass-outline', title: 'Permission' };
+      if (/إجاز|اجاز|vacation/i.test(blob)) return { c: '#45B6E8', icon: 'airplane-outline', title: 'Vacation' };
+      return { c: '#8E93C8', icon: 'document-text-outline', title: 'New Request' };
+    default: return { c: '#8E93C8', icon: 'notifications-outline', title: notif?.title || 'Notification' };
+  }
+}
+
 //  Simple Badge Component - Text Only (No Background)
 const SimpleBadge: React.FC<{ number: number | string; label: string }> = ({ number, label }) => {
   return (
@@ -76,6 +116,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifTab, setNotifTab] = useState<'unread' | 'read' | 'announcements'>('unread');
   const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [swapDetail, setSwapDetail] = useState<any | null>(null); // كرتُ التبديلِ المفتوحُ في صفحةِ القرار
+  const [showCompose, setShowCompose] = useState(false); // ورقةُ كتابةِ التعميم
+  const [composeText, setComposeText] = useState('');
+  const [sendingAnnounce, setSendingAnnounce] = useState(false);
   const notifFadeAnim = React.useRef(new Animated.Value(0)).current;
 
   // Real-time data from database
@@ -761,6 +805,99 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
     return date.toLocaleDateString();
+  };
+
+  // قبولُ إشعارٍ (تبديل → المحرّك الذرّيّ؛ غيره → updateNotificationAction). يُرجِع نجاحًا.
+  const acceptNotif = async (notif: any): Promise<boolean> => {
+    if (!user?.id) return false;
+    const { updateNotificationAction } = await import('./lib/database');
+    const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
+    try {
+      if (notif.type === 'swap_request') {
+        const res = await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role, targetName: user.name });
+        if (!res.success) {
+          Alert.alert('طلب التبديل', res.error || 'تعذّر تنفيذ التبديل.');
+          const { data } = await fetchNotifications(user.id);
+          setNotifications(data || []);
+          return false;
+        }
+      } else {
+        await updateNotificationAction(notif.id, 'accepted');
+      }
+    } catch (e) { /* أبقِ الواجهة متّسقة */ }
+    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
+    return true;
+  };
+
+  // رفضُ إشعارٍ (تبديل → رفضٌ صامت؛ غيره → updateNotificationAction)
+  const rejectNotif = async (notif: any) => {
+    const { updateNotificationAction } = await import('./lib/database');
+    const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
+    try {
+      if (notif.type === 'swap_request') {
+        await notifEngine.rejectSwap({ notificationId: notif.id, targetName: user?.name });
+      } else {
+        await updateNotificationAction(notif.id, 'rejected');
+      }
+    } catch (e) { /* أبقِ الواجهة متّسقة */ }
+    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
+  };
+
+  // تحديدُ الكلِّ كمقروء (ما عدا المعلّق) — نفسُ منطقِ الإغلاق
+  const markAllNotifsRead = () => {
+    if (!user?.id) return;
+    setNotifications(prev => {
+      const toMark = prev.filter(n => !n.is_read && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
+      toMark.forEach(n => markAsRead(n.id));
+      const pendingCount = prev.filter(n => n.action_type === 'accept_reject' && n.action_status === 'pending' && !n.is_read).length;
+      setUnreadNotifications(pendingCount);
+      return prev.map(n => (n.action_type === 'accept_reject' && n.action_status === 'pending') ? n : ({ ...n, is_read: true }));
+    });
+  };
+
+  // مَن يملكُ إرسالَ التعاميم: قائدُ فريقٍ/منسّق/مدير (لا الطبيب)
+  const canBroadcast = user ? getPermissions(user.role).canSendAnnouncement : false;
+  // المدير (super_admin/coordinator) يصلُ تعميمُه لكلِّ الأطباءِ والقادة؛ القائدُ لمركزه فقط
+  const isManagerRole = user?.role === 'super_admin' || user?.role === 'coordinator';
+
+  const sendAnnouncement = async () => {
+    if (!user?.id || !composeText.trim() || sendingAnnounce) return;
+    setSendingAnnounce(true);
+    try {
+      const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
+      const body = composeText.trim();
+      if (isManagerRole) {
+        // مدير → كلُّ الأطباءِ والقادة، مجمّعًا حسب المركز (كي يحملَ كلُّ إشعارٍ مركزَ مستلِمِه)
+        const { data } = await supabase.from('doctors').select('id, clinic_id').in('role', ['doctor', 'team_leader']).neq('id', user.id);
+        const rows = (data || []) as { id: string; clinic_id: string | null }[];
+        const byClinic = new Map<string, string[]>();
+        for (const r of rows) { if (!r.id || !r.clinic_id) continue; const arr = byClinic.get(r.clinic_id) || []; arr.push(r.id); byClinic.set(r.clinic_id, arr); }
+        let total = 0;
+        for (const [cid, ids] of Array.from(byClinic.entries())) {
+          if (!ids.length) continue;
+          total += ids.length;
+          await notifEngine.broadcast({ clinicId: cid, recipientIds: ids, senderId: user.id, senderName: user.name, title: 'تعميم', body });
+        }
+        setSendingAnnounce(false);
+        setComposeText(''); setShowCompose(false);
+        Alert.alert('تعميم', total ? `تمّ إرسالُ التعميمِ إلى ${total} عضوًا.` : 'لا يوجد مستلمون.');
+      } else if (user.clinicId) {
+        // قائدُ فريق → كلُّ أطباءِ وقادةِ مركزه
+        const { data } = await supabase.from('doctors').select('id').eq('clinic_id', user.clinicId).in('role', ['doctor', 'team_leader']).neq('id', user.id);
+        const ids = (data || []).map((d: any) => d.id).filter(Boolean);
+        if (!ids.length) { setSendingAnnounce(false); Alert.alert('تعميم', 'لا يوجد مستلمون في المركز.'); return; }
+        const res = await notifEngine.broadcast({ clinicId: user.clinicId, recipientIds: ids, senderId: user.id, senderName: user.name, title: 'تعميم', body });
+        setSendingAnnounce(false);
+        if (res.success) { setComposeText(''); setShowCompose(false); Alert.alert('تعميم', `تمّ إرسالُ التعميمِ إلى ${ids.length} عضوًا.`); }
+        else Alert.alert('تعميم', res.error || 'تعذّر الإرسال.');
+      } else {
+        setSendingAnnounce(false);
+        Alert.alert('تعميم', 'لا يمكنُ تحديدُ المستلمين.');
+      }
+    } catch (e) {
+      setSendingAnnounce(false);
+      Alert.alert('تعميم', 'تعذّر إرسالُ التعميم.');
+    }
   };
 
   // Open notifications with card exit animation
@@ -2384,47 +2521,57 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
               paddingHorizontal: scale(16),
               paddingTop: scale(8),
             }}>
-              {/* Tabs */}
-              <View style={{
-                flexDirection: 'row',
-                borderRadius: scale(14),
-                backgroundColor: 'rgba(255,255,255,0.5)',
-                padding: scale(3),
-                marginBottom: scale(12),
-              }}>
+              {/* Tabs — sliding pill */}
+              <View style={{ flexDirection: 'row', gap: scale(4), borderRadius: scale(16), backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.8)', padding: scale(5), marginBottom: scale(14) }}>
                 {([
-                  { key: 'unread' as const, label: 'Unread', icon: 'mail-unread-outline' },
-                  { key: 'read' as const, label: 'Read', icon: 'mail-open-outline' },
-                  { key: 'announcements' as const, label: 'Announcements', icon: 'megaphone-outline' },
-                ] as const).map(tab => (
-                  <TouchableOpacity
-                    key={tab.key}
-                    onPress={() => setNotifTab(tab.key)}
-                    activeOpacity={0.7}
-                    style={{
-                      flex: 1,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      paddingVertical: scale(10),
-                      borderRadius: scale(12),
-                      backgroundColor: notifTab === tab.key ? 'rgba(255,255,255,0.9)' : 'transparent',
-                      gap: scale(4),
-                    }}
-                  >
-                    <Ionicons
-                      name={tab.icon as any}
-                      size={scale(14)}
-                      color={notifTab === tab.key ? '#6366F1' : '#9CA3AF'}
-                    />
-                    <Text style={{
-                      fontSize: scale(11),
-                      fontWeight: '700',
-                      color: notifTab === tab.key ? '#6366F1' : '#9CA3AF',
-                    }}>{tab.label}</Text>
-                  </TouchableOpacity>
-                ))}
+                  { key: 'unread' as const, label: 'Unread' },
+                  { key: 'read' as const, label: 'Read' },
+                  { key: 'announcements' as const, label: 'Announcements' },
+                ] as const).map(tab => {
+                  const on = notifTab === tab.key;
+                  return (
+                    <TouchableOpacity
+                      key={tab.key}
+                      onPress={() => setNotifTab(tab.key)}
+                      activeOpacity={0.7}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: scale(6),
+                        paddingVertical: scale(10),
+                        borderRadius: scale(12),
+                        backgroundColor: on ? '#FFFFFF' : 'transparent',
+                        shadowColor: '#3C3278',
+                        shadowOffset: { width: 0, height: scale(4) },
+                        shadowOpacity: on ? 0.18 : 0,
+                        shadowRadius: scale(8),
+                        elevation: on ? 2 : 0,
+                      }}
+                    >
+                      <Text style={{ fontSize: scale(12.5), fontWeight: '800', color: on ? '#241d4d' : NFY_MUTED }}>{tab.label}</Text>
+                      {tab.key === 'unread' && unreadNotifications > 0 && (
+                        <View style={{ minWidth: scale(18), height: scale(18), paddingHorizontal: scale(5), borderRadius: scale(9), backgroundColor: '#8B7CF0', alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: scale(10), fontWeight: '800', color: '#fff' }}>{unreadNotifications > 99 ? '99+' : unreadNotifications}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
+
+              {/* Send Announcement — team leaders / managers only, on the Announcements tab */}
+              {notifTab === 'announcements' && canBroadcast && (
+                <TouchableOpacity
+                  onPress={() => setShowCompose(true)}
+                  activeOpacity={0.85}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(9), paddingVertical: scale(14), borderRadius: scale(16), marginBottom: scale(14), backgroundColor: '#38BDF8', shadowColor: '#38BDF8', shadowOffset: { width: 0, height: scale(10) }, shadowOpacity: 0.5, shadowRadius: scale(14), elevation: 5 }}
+                >
+                  <Ionicons name="megaphone" size={scale(20)} color="#fff" />
+                  <Text style={{ fontSize: scale(15), fontWeight: '800', color: '#fff' }}>Send Announcement</Text>
+                </TouchableOpacity>
+              )}
 
               {/* Notifications List */}
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(40) }}>
@@ -2441,137 +2588,142 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     if (AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2)) return false;
                     if (notifTab === 'unread') return !n.is_read;
                     if (notifTab === 'read') return n.is_read;
-                    if (notifTab === 'announcements') return n.type === 'admin_message' || n.type === 'general';
+                    if (notifTab === 'announcements') return n.type === 'broadcast' || n.type === 'admin_message' || n.type === 'general';
                     return true;
                   });
 
                   if (filtered.length === 0) {
                     return (
-                      <View style={{ alignItems: 'center', paddingTop: scale(60) }}>
-                        <Text style={{ fontSize: scale(14), color: '#9CA3AF', fontWeight: '600' }}>
-                          {notifTab === 'unread' ? 'لا توجد إشعارات جديدة' : notifTab === 'announcements' ? 'لا توجد تعاميم' : 'لا توجد إشعارات مقروءة'}
+                      <View style={{ alignItems: 'center', paddingTop: scale(70) }}>
+                        <View style={{ width: scale(60), height: scale(60), borderRadius: scale(20), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.8)', marginBottom: scale(14) }}>
+                          <Ionicons name={notifTab === 'announcements' ? 'megaphone-outline' : 'notifications-outline'} size={scale(26)} color={NFY_FAINT} />
+                        </View>
+                        <Text style={{ fontSize: scale(14), color: NFY_MUTED, fontWeight: '700' }}>
+                          {notifTab === 'unread' ? 'No new notifications' : notifTab === 'announcements' ? 'No announcements' : 'No read notifications'}
                         </Text>
                       </View>
                     );
                   }
 
                   return filtered.map((notif: any) => {
+                    const v = notifVisual(notif);
+                    const c = v.c;
+                    const unread = !notif.is_read;
+                    const isSwap = notif.type === 'swap_request';
+                    const pending = notif.action_type === 'accept_reject' && notif.action_status === 'pending';
                     const timeAgo = getTimeAgo(new Date(notif.created_at));
 
                     return (
                       <TouchableOpacity
                         key={notif.id}
-                        activeOpacity={0.7}
+                        activeOpacity={0.85}
                         onPress={async () => {
+                          if (isSwap && pending) { setSwapDetail(notif); return; }
                           // Don't mark as read if it has pending action
-                          if (!notif.is_read && !(notif.action_type === 'accept_reject' && notif.action_status === 'pending')) {
+                          if (!notif.is_read && !pending) {
                             await markAsRead(notif.id);
                             setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
                             setUnreadNotifications(prev => Math.max(0, prev - 1));
                           }
                         }}
                         style={{
-                          backgroundColor: 'rgba(30, 25, 50, 0.45)',
-                          borderRadius: scale(14),
+                          backgroundColor: 'rgba(255,255,255,0.66)',
+                          borderRadius: scale(20),
                           padding: scale(14),
-                          marginBottom: scale(8),
-                          borderWidth: scale(1.5),
-                          borderColor: notif.is_read ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.5)',
+                          marginBottom: scale(12),
+                          borderWidth: scale(1),
+                          borderColor: unread ? nfyRgba(c, 0.45) : 'rgba(255,255,255,0.75)',
+                          shadowColor: '#3C3278',
+                          shadowOffset: { width: 0, height: scale(10) },
+                          shadowOpacity: 0.1,
+                          shadowRadius: scale(18),
+                          elevation: 3,
                         }}
                       >
-                        {/* Title + Time */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: scale(6) }}>
-                          <Text style={{
-                            fontSize: scale(10),
-                            color: 'rgba(255,255,255,0.5)',
-                          }}>{timeAgo}</Text>
-                          <Text style={{
-                            flex: 1,
-                            fontSize: scale(14),
-                            fontWeight: '700',
-                            color: '#FFFFFF',
-                            textAlign: 'right',
-                            marginLeft: scale(8),
-                          }}>{notif.title}</Text>
+                        <View style={{ flexDirection: 'row-reverse', gap: scale(12), alignItems: 'flex-start' }}>
+                          {/* Medallion */}
+                          <LinearGradient
+                            colors={[c, nfyLighten(c, 0.5)]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={{ width: scale(44), height: scale(44), borderRadius: scale(14), alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Ionicons name={v.icon as any} size={scale(22)} color="#FFFFFF" />
+                          </LinearGradient>
+
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            {/* Title + time */}
+                            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', gap: scale(8) }}>
+                              <Text style={{ fontSize: scale(15), fontWeight: '800', color: NFY_INK, textAlign: 'right' }} numberOfLines={1}>{v.title}</Text>
+                              <Text style={{ fontSize: scale(10.5), fontWeight: '600', color: NFY_FAINT }}>{timeAgo}</Text>
+                            </View>
+                            {/* Body */}
+                            <Text style={{ fontSize: scale(12.5), lineHeight: scale(19), color: NFY_SOFT, textAlign: 'right', marginTop: scale(4) }} numberOfLines={4}>{notif.body}</Text>
+                            {/* Sender */}
+                            {notif.sender_name ? (
+                              <Text style={{ fontSize: scale(10.5), fontWeight: '600', color: NFY_MUTED, textAlign: 'right', marginTop: scale(5) }}>— {notif.sender_name}</Text>
+                            ) : null}
+
+                            {/* Swap: preview + Review */}
+                            {isSwap && pending && (
+                              <>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), marginTop: scale(10), paddingVertical: scale(9), paddingHorizontal: scale(10), borderRadius: scale(12), backgroundColor: nfyRgba(c, 0.08), borderWidth: scale(1), borderColor: nfyRgba(c, 0.18) }}>
+                                  <View style={{ flex: 1, paddingVertical: scale(6), borderRadius: scale(9), backgroundColor: c, alignItems: 'center' }}>
+                                    <Text style={{ fontSize: scale(12), fontWeight: '800', color: '#fff' }}>You</Text>
+                                  </View>
+                                  <Ionicons name="swap-horizontal" size={scale(18)} color={c} />
+                                  <View style={{ flex: 1, paddingVertical: scale(6), borderRadius: scale(9), backgroundColor: 'rgba(255,255,255,0.85)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.9)', alignItems: 'center' }}>
+                                    <Text style={{ fontSize: scale(12), fontWeight: '800', color: NFY_INK }} numberOfLines={1}>{notif.sender_name || notif.data?.requester_name || '—'}</Text>
+                                  </View>
+                                </View>
+                                <TouchableOpacity
+                                  onPress={() => setSwapDetail(notif)}
+                                  activeOpacity={0.85}
+                                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(7), marginTop: scale(11), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: c, shadowColor: c, shadowOffset: { width: 0, height: scale(8) }, shadowOpacity: 0.45, shadowRadius: scale(12), elevation: 4 }}
+                                >
+                                  <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#fff' }}>Review request</Text>
+                                  <Ionicons name="chevron-back" size={scale(17)} color="#fff" />
+                                </TouchableOpacity>
+                              </>
+                            )}
+
+                            {/* Non-swap decision: inline Accept / Decline */}
+                            {!isSwap && pending && (
+                              <View style={{ flexDirection: 'row', gap: scale(9), marginTop: scale(11) }}>
+                                <TouchableOpacity
+                                  onPress={() => acceptNotif(notif)}
+                                  activeOpacity={0.85}
+                                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(7), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: '#2FBF8F', shadowColor: '#2FBF8F', shadowOffset: { width: 0, height: scale(8) }, shadowOpacity: 0.5, shadowRadius: scale(12), elevation: 4 }}
+                                >
+                                  <Ionicons name="checkmark" size={scale(17)} color="#fff" />
+                                  <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#fff' }}>Accept</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => rejectNotif(notif)}
+                                  activeOpacity={0.85}
+                                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(7), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: 'rgba(240,98,122,0.11)', borderWidth: scale(1.5), borderColor: 'rgba(240,98,122,0.34)' }}
+                                >
+                                  <Ionicons name="close" size={scale(17)} color="#E0416A" />
+                                  <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#E0416A' }}>Decline</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+
+                            {/* Resolved state */}
+                            {notif.action_status === 'accepted' && (
+                              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(6), marginTop: scale(9), alignSelf: 'flex-end', paddingVertical: scale(6), paddingHorizontal: scale(11), borderRadius: scale(10), backgroundColor: 'rgba(47,191,143,0.13)' }}>
+                                <Ionicons name="checkmark-circle" size={scale(14)} color="#1E9E77" />
+                                <Text style={{ fontSize: scale(11), fontWeight: '800', color: '#1E9E77' }}>Accepted</Text>
+                              </View>
+                            )}
+                            {notif.action_status === 'rejected' && (
+                              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(6), marginTop: scale(9), alignSelf: 'flex-end', paddingVertical: scale(6), paddingHorizontal: scale(11), borderRadius: scale(10), backgroundColor: 'rgba(240,98,122,0.12)' }}>
+                                <Ionicons name="close-circle" size={scale(14)} color="#C0466A" />
+                                <Text style={{ fontSize: scale(11), fontWeight: '800', color: '#C0466A' }}>Declined</Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
-                        {/* Body */}
-                        <Text style={{
-                          fontSize: scale(12),
-                          color: 'rgba(255,255,255,0.85)',
-                          lineHeight: scale(18),
-                          textAlign: 'right',
-                        }} numberOfLines={3}>{notif.body}</Text>
-                        {/* Sender */}
-                        {notif.sender_name && (
-                          <Text style={{
-                            fontSize: scale(10),
-                            color: 'rgba(255,255,255,0.4)',
-                            textAlign: 'right',
-                            marginTop: scale(6),
-                          }}>— {notif.sender_name}</Text>
-                        )}
-                        {/* Action buttons */}
-                        {notif.action_type === 'accept_reject' && notif.action_status === 'pending' && (
-                          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: scale(8), marginTop: scale(10) }}>
-                            <TouchableOpacity
-                              onPress={async () => {
-                                if (!user?.id) return;
-                                const { updateNotificationAction } = await import('./lib/database');
-                                const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
-                                try {
-                                  // المحرّك يطبّق التبديل/التغطية ويُلغي الأشقّاء عند التغطية
-                                  if (notif.type === 'swap_request') {
-                                    // قبولٌ ذرّيّ: قد يفشل (سبقك زميل / انتهت المهلة / تغيّر
-                                    // الجدول) — أظهر السبب وأسقط الكرت بدل «تمت الموافقة» كاذبة.
-                                    const res = await notifEngine.acceptSwap({ notificationId: notif.id, targetId: user.id, targetRole: user.role, targetName: user.name });
-                                    if (!res.success) {
-                                      Alert.alert('طلب التبديل', res.error || 'تعذّر تنفيذ التبديل.');
-                                      const { data } = await fetchNotifications(user.id);
-                                      setNotifications(data || []);
-                                      return;
-                                    }
-                                  } else {
-                                    await updateNotificationAction(notif.id, 'accepted');
-                                  }
-                                } catch (e) { /* أبقِ الواجهة متّسقة */ }
-
-                                setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
-                              }}
-                              style={{ backgroundColor: 'rgba(16,185,129,0.2)', borderRadius: scale(10), paddingHorizontal: scale(18), paddingVertical: scale(9), borderWidth: scale(1.5), borderColor: 'rgba(16,185,129,0.5)' }}
-                            >
-                              <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#FFFFFF' }}>موافق</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={async () => {
-                                const { updateNotificationAction } = await import('./lib/database');
-                                const { notifications: notifEngine } = await import('./lib/algorithms/notifications');
-                                try {
-                                  if (notif.type === 'swap_request') {
-                                    // رفضٌ صامت للطالب؛ رفض آخر معلّقٍ يُطلق «لم يقبل أحد»
-                                    await notifEngine.rejectSwap({ notificationId: notif.id, targetName: user?.name });
-                                  } else {
-                                    await updateNotificationAction(notif.id, 'rejected');
-                                  }
-                                } catch (e) { /* أبقِ الواجهة متّسقة */ }
-
-                                setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
-                              }}
-                              style={{ backgroundColor: 'rgba(239,68,68,0.2)', borderRadius: scale(10), paddingHorizontal: scale(18), paddingVertical: scale(9), borderWidth: scale(1.5), borderColor: 'rgba(239,68,68,0.5)' }}
-                            >
-                              <Text style={{ fontSize: scale(12), fontWeight: '700', color: '#FFFFFF' }}>رفض</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                        {notif.action_status === 'accepted' && (
-                          <View style={{ alignItems: 'flex-end', marginTop: scale(8) }}>
-                            <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#10B981' }}>تمت الموافقة ✓</Text>
-                          </View>
-                        )}
-                        {notif.action_status === 'rejected' && (
-                          <View style={{ alignItems: 'flex-end', marginTop: scale(8) }}>
-                            <Text style={{ fontSize: scale(11), fontWeight: '700', color: '#EF4444' }}>تم الرفض ✗</Text>
-                          </View>
-                        )}
                       </TouchableOpacity>
                     );
                   });
@@ -2584,6 +2736,149 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         </View>
       </View>
 
+
+      {/* Swap Request — approve / reject page */}
+      <Modal transparent visible={!!swapDetail} animationType="slide" onRequestClose={() => setSwapDetail(null)}>
+        {swapDetail && (() => {
+          const c = '#8B7CF0';
+          const requester = swapDetail.sender_name || swapDetail.data?.requester_name || '—';
+          const dayKey = swapDetail.data?.day;
+          const DAY_LABEL: Record<string, string> = { sunday: 'Sunday', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday' };
+          const expiresAt = swapDetail.data?.expires_at;
+          let expiryTxt = '';
+          if (expiresAt) {
+            const ms = new Date(expiresAt).getTime() - Date.now();
+            if (ms > 0) { const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000); expiryTxt = h >= 1 ? `Expires in ${h}h` : `Expires in ${Math.max(1, m)}m`; }
+            else expiryTxt = 'Expired';
+          }
+          return (
+            <View style={{ flex: 1 }}>
+              <LinearGradient colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
+              <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+                <View style={{ flex: 1, paddingHorizontal: scale(18) }}>
+                  {/* Header */}
+                  <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(10), paddingVertical: scale(12) }}>
+                    <Text style={{ flex: 1, fontSize: scale(21), fontWeight: '800', color: '#1B1E33', textAlign: 'right' }}>Swap Request</Text>
+                    <View style={{ paddingVertical: scale(6), paddingHorizontal: scale(11), borderRadius: scale(999), backgroundColor: nfyRgba(c, 0.14) }}>
+                      <Text style={{ fontSize: scale(10.5), fontWeight: '800', color: nfyDarken(c, 0.1) }}>Needs your decision</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setSwapDetail(null)} style={{ width: scale(40), height: scale(40), borderRadius: scale(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.7)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.85)' }}>
+                      <Ionicons name="close" size={scale(20)} color={NFY_SOFT} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(20) }}>
+                    {/* Hero: You ⇄ requester */}
+                    <View style={{ alignItems: 'center', paddingVertical: scale(24) }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(16) }}>
+                        <View style={{ alignItems: 'center', gap: scale(9), width: scale(112) }}>
+                          <LinearGradient colors={[c, nfyLighten(c, 0.4)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: scale(70), height: scale(70), borderRadius: scale(35), alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="person" size={scale(34)} color="#fff" />
+                          </LinearGradient>
+                          <Text style={{ fontSize: scale(14), fontWeight: '800', color: NFY_INK }}>You</Text>
+                        </View>
+                        <View style={{ width: scale(50), height: scale(50), borderRadius: scale(16), alignItems: 'center', justifyContent: 'center', backgroundColor: c, shadowColor: c, shadowOffset: { width: 0, height: scale(10) }, shadowOpacity: 0.4, shadowRadius: scale(14), elevation: 5 }}>
+                          <Ionicons name="swap-horizontal" size={scale(26)} color="#fff" />
+                        </View>
+                        <View style={{ alignItems: 'center', gap: scale(9), width: scale(112) }}>
+                          <View style={{ width: scale(70), height: scale(70), borderRadius: scale(35), alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9ECF5', borderWidth: scale(1), borderColor: 'rgba(35,32,74,0.08)' }}>
+                            <Ionicons name="person" size={scale(34)} color="#7E86A2" />
+                          </View>
+                          <Text style={{ fontSize: scale(14), fontWeight: '800', color: NFY_INK }} numberOfLines={1}>{requester}</Text>
+                        </View>
+                      </View>
+                      {dayKey ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), marginTop: scale(18), paddingVertical: scale(8), paddingHorizontal: scale(14), borderRadius: scale(12), backgroundColor: 'rgba(255,255,255,0.65)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.85)' }}>
+                          <Ionicons name="calendar-outline" size={scale(15)} color={NFY_SOFT} />
+                          <Text style={{ fontSize: scale(12.5), fontWeight: '700', color: NFY_SOFT }}>{DAY_LABEL[dayKey] || dayKey}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {/* Details / message */}
+                    <View style={{ borderRadius: scale(18), padding: scale(16), backgroundColor: 'rgba(255,255,255,0.62)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.78)' }}>
+                      <Text style={{ fontSize: scale(11), fontWeight: '800', letterSpacing: 1, color: NFY_FAINT, marginBottom: scale(8), textAlign: 'right' }}>DETAILS</Text>
+                      <Text style={{ fontSize: scale(14), lineHeight: scale(22), color: NFY_SOFT, textAlign: 'right' }}>{swapDetail.body}</Text>
+                    </View>
+
+                    {expiryTxt ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), marginTop: scale(16) }}>
+                        <Ionicons name="time-outline" size={scale(15)} color="#C77" />
+                        <Text style={{ fontSize: scale(12.5), fontWeight: '700', color: '#C77' }}>{expiryTxt}</Text>
+                      </View>
+                    ) : null}
+                  </ScrollView>
+
+                  {/* Sticky actions */}
+                  <View style={{ flexDirection: 'row', gap: scale(12), paddingVertical: scale(14) }}>
+                    <TouchableOpacity
+                      onPress={async () => { const s = swapDetail; setSwapDetail(null); await acceptNotif(s); }}
+                      activeOpacity={0.85}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), paddingVertical: scale(15), borderRadius: scale(16), backgroundColor: '#2FBF8F', shadowColor: '#2FBF8F', shadowOffset: { width: 0, height: scale(10) }, shadowOpacity: 0.5, shadowRadius: scale(14), elevation: 5 }}
+                    >
+                      <Ionicons name="checkmark" size={scale(19)} color="#fff" />
+                      <Text style={{ fontSize: scale(15.5), fontWeight: '800', color: '#fff' }}>Accept swap</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={async () => { const s = swapDetail; setSwapDetail(null); await rejectNotif(s); }}
+                      activeOpacity={0.85}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), paddingVertical: scale(15), borderRadius: scale(16), backgroundColor: 'rgba(240,98,122,0.11)', borderWidth: scale(1.5), borderColor: 'rgba(240,98,122,0.34)' }}
+                    >
+                      <Ionicons name="close" size={scale(19)} color="#E0416A" />
+                      <Text style={{ fontSize: scale(15.5), fontWeight: '800', color: '#E0416A' }}>Decline</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </SafeAreaView>
+            </View>
+          );
+        })()}
+      </Modal>
+
+      {/* Compose Announcement — team leaders / managers */}
+      <Modal transparent visible={showCompose} animationType="slide" onRequestClose={() => setShowCompose(false)}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <TouchableOpacity activeOpacity={1} onPress={() => setShowCompose(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(40,42,70,0.30)' }} />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={{ backgroundColor: 'rgba(255,255,255,0.98)', borderTopLeftRadius: scale(30), borderTopRightRadius: scale(30), paddingTop: scale(10), paddingHorizontal: scale(20), paddingBottom: scale(28) }}>
+              <View style={{ width: scale(44), height: scale(5), borderRadius: scale(3), backgroundColor: 'rgba(35,32,74,0.18)', alignSelf: 'center', marginBottom: scale(16) }} />
+              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(12), marginBottom: scale(6) }}>
+                <View style={{ width: scale(38), height: scale(38), borderRadius: scale(12), alignItems: 'center', justifyContent: 'center', backgroundColor: '#38BDF8' }}>
+                  <Ionicons name="megaphone" size={scale(20)} color="#fff" />
+                </View>
+                <Text style={{ flex: 1, fontSize: scale(19), fontWeight: '800', color: NFY_INK, textAlign: 'right' }}>New Announcement</Text>
+              </View>
+              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(7), marginBottom: scale(12) }}>
+                <Ionicons name={isManagerRole ? 'people-outline' : 'business-outline'} size={scale(14)} color={NFY_MUTED} />
+                <Text style={{ fontSize: scale(12), fontWeight: '700', color: NFY_MUTED }}>{isManagerRole ? 'To: all doctors & team leaders' : 'To: your clinic'}</Text>
+              </View>
+              <TextInput
+                value={composeText}
+                onChangeText={setComposeText}
+                placeholder="اكتب محتوى التعميم…"
+                placeholderTextColor={NFY_FAINT}
+                multiline
+                textAlign="right"
+                style={{ minHeight: scale(120), borderRadius: scale(16), padding: scale(14), backgroundColor: 'rgba(255,255,255,0.9)', borderWidth: scale(1), borderColor: 'rgba(35,32,74,0.12)', fontSize: scale(14.5), lineHeight: scale(22), color: NFY_INK, textAlignVertical: 'top' }}
+              />
+              <View style={{ flexDirection: 'row', gap: scale(12), marginTop: scale(16) }}>
+                <TouchableOpacity onPress={() => setShowCompose(false)} activeOpacity={0.8} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: scale(14), borderRadius: scale(16), backgroundColor: 'rgba(255,255,255,0.7)', borderWidth: scale(1), borderColor: 'rgba(35,32,74,0.12)' }}>
+                  <Text style={{ fontSize: scale(15), fontWeight: '800', color: NFY_SOFT }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  disabled={!composeText.trim() || sendingAnnounce}
+                  onPress={sendAnnouncement}
+                  activeOpacity={0.85}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), paddingVertical: scale(14), borderRadius: scale(16), backgroundColor: '#38BDF8', opacity: (!composeText.trim() || sendingAnnounce) ? 0.5 : 1, shadowColor: '#38BDF8', shadowOffset: { width: 0, height: scale(8) }, shadowOpacity: 0.5, shadowRadius: scale(12), elevation: 4 }}
+                >
+                  <Ionicons name="send" size={scale(17)} color="#fff" />
+                  <Text style={{ fontSize: scale(15), fontWeight: '800', color: '#fff' }}>{sendingAnnounce ? 'Sending…' : 'Send'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       {/* Edit Profile Modal */}
       <Modal
