@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ScheduleSlot, DayOfWeek, DoctorStatus, DAYS, STATUS_CONFIG } from './types';
 import { supabase } from '../../lib/supabase';
-import { upsertScheduleSlot, deleteScheduleSlot, createNotification } from '../../lib/database';
+import { upsertScheduleSlot, deleteScheduleSlot } from '../../lib/database';
 import { getTemplateByName, sortByTemplateOrder } from '../../lib/algorithms/groupTemplates';
 
 interface CellDetailModalProps {
@@ -17,6 +17,9 @@ interface CellDetailModalProps {
   clinicId: string | null;
   weekStart: string;
   userId?: string;
+  /** القائد (قروب صلاحيّات القائد) يختارُ أيَّ طبيبٍ لخانةِ EX؛ الطبيبُ العاديّ يرى خيارات الحالة لنفسه مباشرةً. */
+  isLeader?: boolean;
+  userName?: string;
   onClose: () => void;
   onSaved: () => void;
   onChangePeriod?: (period: number) => void;
@@ -58,7 +61,7 @@ interface PickerGroup {
   isExpanded: boolean;
 }
 
-export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, onClose, onSaved, onChangePeriod, onStatusRequest, onStatusCancel }: CellDetailModalProps) {
+export function CellDetailModal({ visible, day, period, slots, clinicCount, clinicId, weekStart, userId, isLeader, userName, onClose, onSaved, onChangePeriod, onStatusRequest, onStatusCancel }: CellDetailModalProps) {
   const [selectingFor, setSelectingFor] = useState<{ role: 'clinic' | 'delegator'; clinicNumber: number } | null>(null);
   const [pickerGroups, setPickerGroups] = useState<PickerGroup[]>([]);
   const [unassignedDoctors, setUnassignedDoctors] = useState<DoctorOption[]>([]);
@@ -67,64 +70,6 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   // EX mode: select doctor → select status
   const [exMode, setExMode] = useState<'list' | 'doctor' | 'status'>('list');
   const [exSelectedDoctor, setExSelectedDoctor] = useState<DoctorOption | null>(null);
-
-  // Swap request
-  const handleSwapRequest = (targetSlot: ScheduleSlot) => {
-    if (!userId || !clinicId) return;
-    // Find current user's slot on the same day (clinic or delegator, not EX)
-    const mySlot = slots.find(s => s.day === day && s.doctorId === userId && s.period > 0);
-    const myName = mySlot?.doctorName || slots.find(s => s.doctorId === userId)?.doctorName || 'Doctor';
-
-    if (!mySlot) {
-      Alert.alert('Cannot Swap', 'You have no assignment on this day to swap.');
-      return;
-    }
-
-    Alert.alert(
-      'Swap Request',
-      `Do you want to swap your schedule with ${targetSlot.doctorName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send Request',
-          onPress: async () => {
-            await createNotification({
-              clinic_id: clinicId,
-              recipient_id: targetSlot.doctorId,
-              sender_id: userId,
-              sender_name: myName,
-              type: 'swap_request',
-              title: `${myName} wants to swap`,
-              body: `${myName} wants to swap with you on ${day} P${period}`,
-              data: {
-                // Requester's current position
-                from_doctor_id: userId,
-                from_doctor_name: myName,
-                from_period: mySlot.period,
-                from_clinic_number: mySlot.clinicNumber,
-                from_role: mySlot.role,
-                // Target's current position
-                to_doctor_id: targetSlot.doctorId,
-                to_doctor_name: targetSlot.doctorName,
-                to_period: targetSlot.period,
-                to_clinic_number: targetSlot.clinicNumber,
-                to_role: targetSlot.role,
-                // Common
-                day,
-                week_start: weekStart,
-                clinic_id: clinicId,
-              },
-              action_type: 'accept_reject',
-              action_status: 'pending',
-            });
-
-            // Push notification is sent automatically by database trigger
-            Alert.alert('Sent', `Swap request sent to ${targetSlot.doctorName}`);
-          },
-        },
-      ]
-    );
-  };
 
   if (!day || period === null || period === undefined) return null;
 
@@ -529,8 +474,13 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   // EX side: period -1 = right (clinicNumber 1), period -2 = left (clinicNumber 2)
   const isExMode = period !== null && period <= 0;
   const exClinicNumber = period === -1 ? 1 : period === -2 ? 2 : 1;
+  // الطبيبُ العاديّ في خانةِ EX: خياراتُ الحالةِ مباشرةً لنفسِه (بلا قائمةِ أطباء). القائدُ يبقى كما هو.
+  const isDoctorEx = isExMode && !isLeader && !!userId;
+  const resolvedExDoctor: DoctorOption | null = isDoctorEx
+    ? { id: userId!, name: userName || slots.find((s) => s.doctorId === userId)?.doctorName || 'Doctor' }
+    : exSelectedDoctor;
   const handleExSelectStatus = async (status: DoctorStatus) => {
-    if (!exSelectedDoctor || !clinicId || !day) return;
+    if (!resolvedExDoctor || !clinicId || !day) return;
 
     // طبيّة/تفرّغ/استئذان: حدثُ غيابٍ يُعالَج بنفس خطّ الذكاء (تغطية + موازنة عبر الأيّام +
     // سؤال الإبلاغ في المحادثة) — لا كتابةٌ مباشرة ولا وسمُ يوم (حدثٌ لا ترتيبٌ يدويّ).
@@ -540,7 +490,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
     if (PIPELINE.includes(status)) {
       if (!onStatusRequest) { Alert.alert('تعذّر', 'تعذّر تسجيل الحالة الآن.'); return; }
       const shift = exClinicNumber === 2 ? 'evening' : 'morning';
-      const doc = exSelectedDoctor;
+      const doc = resolvedExDoctor;
       // أغلِق المودال فورًا — التغطيةُ والموازنة تجريان في الخلفيّة، وتنعش الشاشةُ الجدولَ
       // عند الانتهاء وتعرض أيّ خطأ. (الخطّ ثقيلٌ بطبيعته فلا نُجمّد الواجهة بانتظاره.)
       setExSelectedDoctor(null);
@@ -554,7 +504,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
     // يُخرَج الطبيبُ من عيادته ثمّ يُكتب صفُّ الاحتياط.
     if (status === 'extra') {
       const doctorDaySlots = slots.filter(
-        s => s.day === day && s.period > 0 && s.doctorId === exSelectedDoctor.id
+        s => s.day === day && s.period > 0 && s.doctorId === resolvedExDoctor.id
       );
       for (const slot of doctorDaySlots) {
         await deleteScheduleSlot(slot.id);
@@ -563,7 +513,7 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
 
     await upsertScheduleSlot(
       clinicId, weekStart, day, 0, exClinicNumber,
-      exSelectedDoctor.id, exSelectedDoctor.name,
+      resolvedExDoctor.id, resolvedExDoctor.name,
       'clinic', status
     );
     setExSelectedDoctor(null);
@@ -576,10 +526,11 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
   if (isExMode) {
     const exSlots = slots.filter(s => s.day === day && s.period === 0 && s.clinicNumber === exClinicNumber);
 
-    // Status selection after choosing doctor
-    if (exMode === 'status' && exSelectedDoctor) {
+    // Status selection: للطبيبِ العاديّ مباشرةً (isDoctorEx)، أو للقائدِ بعد اختيارِ طبيب.
+    const goBackFromStatus = () => { if (isDoctorEx) { onClose(); } else { setExMode('doctor'); setExSelectedDoctor(null); } };
+    if (resolvedExDoctor && (isDoctorEx || exMode === 'status')) {
       return (
-        <Modal transparent visible={visible} animationType="fade" onRequestClose={() => { setExMode('doctor'); setExSelectedDoctor(null); }}>
+        <Modal transparent visible={visible} animationType="fade" onRequestClose={goBackFromStatus}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
             <View style={{
               width: '85%',
@@ -604,13 +555,13 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
                 borderBottomColor: 'rgba(255,255,255,0.15)',
               }}>
                 <TouchableOpacity
-                  onPress={() => { setExMode('doctor'); setExSelectedDoctor(null); }}
+                  onPress={goBackFromStatus}
                   style={{ position: 'absolute', left: 0, top: 0, padding: scale(4) }}
                 >
                   <Ionicons name="arrow-back" size={scale(20)} color="rgba(255,255,255,0.6)" />
                 </TouchableOpacity>
                 <Text style={{ fontSize: scale(15), fontWeight: '800', color: '#E8DEFF' }}>
-                  {exSelectedDoctor.name}
+                  {resolvedExDoctor.name}
                 </Text>
                 <Text style={{ fontSize: scale(11), fontWeight: '600', color: 'rgba(200,180,255,0.6)', marginTop: scale(2) }}>
                   Select Status
@@ -935,35 +886,9 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
             {Array.from({ length: clinicCount }, (_, i) => {
               const clinicNum = i + 1;
               const matchingSlots = clinicSlots.filter(s => s.clinicNumber === clinicNum);
-              const hasSwappable = userId && matchingSlots.some(s => s.doctorId !== userId);
               return (
                 <View key={`c${clinicNum}`} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(6) }}>
-                  {/* Swap icon - outside card */}
-                  {hasSwappable ? (
-                    <TouchableOpacity
-                      onPress={() => {
-                        const target = matchingSlots.find(s => s.doctorId !== userId);
-                        if (target) handleSwapRequest(target);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={{
-                        width: scale(28),
-                        height: scale(28),
-                        borderRadius: scale(14),
-                        backgroundColor: 'rgba(99,102,241,0.15)',
-                        borderWidth: scale(1),
-                        borderColor: 'rgba(99,102,241,0.3)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginRight: scale(6),
-                      }}
-                    >
-                      <Ionicons name="swap-horizontal" size={scale(16)} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={{ width: scale(34) }} />
-                  )}
-                  {/* Card */}
+                  {/* Card (زرُّ التبديلِ أُزيل — التبديلُ صار من درجِ الإعداداتِ «Swap») */}
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => openDoctorPicker('clinic', clinicNum)}
@@ -1026,32 +951,10 @@ export function CellDetailModal({ visible, day, period, slots, clinicCount, clin
             })}
 
             {/* Divider */}
-            <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(4), marginLeft: scale(34) }} />
+            <View style={{ height: scale(1), backgroundColor: 'rgba(255,255,255,0.5)', marginVertical: scale(4) }} />
 
-            {/* Delegator Slot - matching grid card style */}
+            {/* Delegator Slot - matching grid card style (زرُّ التبديلِ أُزيل) */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(6) }}>
-              {/* Swap icon - outside card */}
-              {userId && delegatorSlot && delegatorSlot.doctorId !== userId ? (
-                <TouchableOpacity
-                  onPress={() => handleSwapRequest(delegatorSlot)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={{
-                    width: scale(28),
-                    height: scale(28),
-                    borderRadius: scale(14),
-                    backgroundColor: 'rgba(99,102,241,0.35)',
-                    borderWidth: scale(1.5),
-                    borderColor: 'rgba(99,102,241,0.6)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginRight: scale(6),
-                  }}
-                >
-                  <Ionicons name="swap-horizontal" size={scale(16)} color="#FFFFFF" />
-                </TouchableOpacity>
-              ) : (
-                <View style={{ width: scale(34) }} />
-              )}
               {/* Card */}
               <TouchableOpacity
                 activeOpacity={0.7}

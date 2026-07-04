@@ -53,7 +53,7 @@ type Shape = {
   empty: number;
 };
 
-function computeShape(D: number, M: number, delegator: boolean): Shape {
+function computeShape(D: number, M: number, delegator: boolean, allowThin: boolean = true): Shape {
   const z: Shape = { hostClinics: 0, plainPairs: 0, solos: 0, soloDelegator: 0, ex: 0, empty: 0 };
   if (D <= 0) return { ...z, empty: M };
   if (D < M) return { ...z, solos: D, empty: M - D };
@@ -66,7 +66,9 @@ function computeShape(D: number, M: number, delegator: boolean): Shape {
   // بدل تقسيم عيادةٍ واحدةٍ بين طبيبين يتناوبان الاستضافة. الحِملُ متساوٍ في الحالتين
   // (الكلّ يعمل الفترتين) لكنّ هذا يحفظ استمراريّةَ الطبيب في عيادته. القاعدة: M منفرد + ١
   // منفرد-دليقيتر (تعمّمُ لكلّ M: ٣/٢، ٤/٣، ٥/٤، ٦/٥…).
-  if (D === M + 1) return { ...z, soloDelegator: 1, solos: M };
+  // allowThin=false يُطبَّق فقط على «الباقي» بعد اقتطاع عيادةِ تخفيفٍ/بورد من شفتٍ غيرِ شحيح
+  // (قرار المستخدم، الخيار أ): لا نُحوّل الباقيَ لدليقيترٍ مكرّس بل نُبقيه زوجًا مضيفًا.
+  if (allowThin && D === M + 1) return { ...z, soloDelegator: 1, solos: M };
   if (D <= 2 * M) {
     const k = D - M;
     return { ...z, hostClinics: 1, plainPairs: k - 1, solos: M - k };
@@ -232,26 +234,36 @@ function planDay(
   excludeEx: Set<string> = EMPTY_SET, excludeDel: Set<string> = EMPTY_SET,
 ): DayPlan {
   const plan: DayPlan = { hostPairs: [], soloDelegators: [], solos: [], plainPairs: [], ldClinics: [], ex: [] };
-  const ldSet = new Set(lds.map((d) => d.id));
   const total = regulars.length + lds.length;
-  const sAll = computeShape(total, M, delegatorEnabled);
+
+  // «الطاقمُ الرقيقُ الحقيقيّ» = الشفتُ كلُّه بعددٍ = العيادات + ١. عندئذٍ (قرار المستخدم، الخيار أ):
+  //   • التخفيفُ يعملُ الفترتين كطبيبٍ كامل (يُدمَجُ في العاديّين، فلا يُقتطَعُ بعيادةٍ مع شريك).
+  //   • تنطبقُ قاعدةُ «الكلُّ منفرد + دليقيتر مكرّس» (allowThin=true).
+  // أمّا الشفتُ غيرُ الشحيح (عددٌ ≥ العيادات+٢) الذي يقتطعُ فيه التخفيفُ عيادةً فيتبقّى «باقٍ»
+  // بحجمِ العيادات+١ — لا نُطبّقُ عليه الطاقمَ الرقيق، بل يبقى زوجًا مضيفًا (allowThin=false):
+  // منفرد + مزدوج + مزدوجٌ يتناوبُ الدليقيتر، بدلَ دليقيترٍ مكرّسٍ ومنفردَين.
+  const overallThin = total === M + 1;
+  const regs = overallThin ? [...regulars, ...lds] : regulars;   // التخفيفُ كاملٌ في الطاقم الرقيق
+  const ldList = overallThin ? [] : lds;
+  const ldSet = new Set(ldList.map((d) => d.id));
+  const sAll = computeShape(total, M, delegatorEnabled, overallThin);
 
   // العدد ≥ 2M+1 (لا منفرد ولا مضيف): التخفيف مشارك عاديّ في العجلات
   if (sAll.solos === 0 && sAll.hostClinics === 0) {
-    fillRegulars([...regulars, ...lds], sAll, plan, [], 0, w, ldSet, excludeEx, excludeDel);
+    fillRegulars([...regs, ...ldList], sAll, plan, [], 0, w, ldSet, excludeEx, excludeDel);
     return plan;
   }
 
   // العدد ≤ 2M: التخفيف يُفضّل الزوج؛ والفائض منه ينفرد عند الشحّ (تعدّد التخفيف)
-  const R = regulars.length;
+  const R = regs.length;
   const surplus = Math.max(0, total - M);
-  const Lc = Math.min(lds.length, surplus);
-  const ldSoloN = lds.length - Lc;
-  const ldSoloIds = new Set(spin(w.solo, new Set(lds.map((d) => d.id)), ldSoloN));
-  for (const d of lds) if (ldSoloIds.has(d.id)) plan.solos.push(d);
-  const ldPaired = lds.filter((d) => !ldSoloIds.has(d.id));
-  const s = computeShape(R - Lc, Math.max(0, M - lds.length), delegatorEnabled);
-  fillRegulars([...regulars], s, plan, ldPaired, Lc, w, ldSet, excludeEx, excludeDel);
+  const Lc = Math.min(ldList.length, surplus);
+  const ldSoloN = ldList.length - Lc;
+  const ldSoloIds = new Set(spin(w.solo, new Set(ldList.map((d) => d.id)), ldSoloN));
+  for (const d of ldList) if (ldSoloIds.has(d.id)) plan.solos.push(d);
+  const ldPaired = ldList.filter((d) => !ldSoloIds.has(d.id));
+  const s = computeShape(R - Lc, Math.max(0, M - ldList.length), delegatorEnabled, overallThin);
+  fillRegulars([...regs], s, plan, ldPaired, Lc, w, ldSet, excludeEx, excludeDel);
   return plan;
 }
 

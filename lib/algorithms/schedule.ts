@@ -147,6 +147,13 @@ export type ScheduleBuildInput = {
   delegatorEnabled?: boolean;
 
   /**
+   * الدليقيتر لكلِّ قروبٍ على حدة (مثال: «قروب A مع دليقيتر وقروب B بدونه»). كلُّ شفتٍ
+   * يعمله قروبٌ واحد؛ الفعّالُ لذلك الشفت = delegatorGroups[group] إن حُدِّد، وإلّا
+   * delegatorEnabled العامّ، وإلّا مُفعّل. يتجاوز delegatorGroups العامَّ للقروب المذكور فقط.
+   */
+  delegatorGroups?: { group_a?: boolean; group_b?: boolean };
+
+  /**
    * غيابات إضافية يدخلها التيم ليدر كاستثناءات (تفرّغ/مرضية/إجازة ليوم محدد)
    * تُعامَل كالغياب المُسجَّل في DB لكنها لا تُكتب — تؤثّر على التوزيع فقط.
    */
@@ -186,6 +193,7 @@ export type PreviewAbsence = {
   day: WeekDay;
   doctorName: string;
   label: string;   // كود الحالة (VC/SL/PS/PE) أو "متفرّغ" للاستثناء اليدويّ
+  shift?: Shift;   // شفتُ الطبيبِ ذلك اليوم — لوضعِ بطاقةِ الغيابِ في خانةِ الـ EX الصحيحة (صباح=يمين/مساء=يسار)
 };
 
 export type ScheduleBuildResult = {
@@ -1122,13 +1130,23 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     // مقدّمة طابور الاحتياط بداية اليوم — تُحمى من عقوبة الغياب ("في دوره")
     const exFrontToday = wheels.ex[0];
 
+    // الدليقيتر الفعّال لكلّ شفت حسب قروبه (قروب A يعمل aShift، والآخر group_b):
+    // delegatorGroups[group] إن حُدِّد، وإلّا delegatorEnabled العامّ.
+    const aShiftToday = input.aShiftPlan[day.day];
+    const delForShift = (shift: Shift): boolean | undefined => {
+      const grp: 'group_a' | 'group_b' = shift === aShiftToday ? 'group_a' : 'group_b';
+      const g = input.delegatorGroups;
+      if (g && typeof g[grp] === 'boolean') return g[grp];
+      return input.delegatorEnabled;
+    };
+
     if (day.morning) {
-      const res = distributeShiftWheel(day.day, data.clinicCount, day.morning, wheels, input.delegatorEnabled, excludeEx, excludeDel);
+      const res = distributeShiftWheel(day.day, data.clinicCount, day.morning, wheels, delForShift('morning'), excludeEx, excludeDel);
       allSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} صباح: ${w}`));
     }
     if (day.evening) {
-      const res = distributeShiftWheel(day.day, data.clinicCount, day.evening, wheels, input.delegatorEnabled, excludeEx, excludeDel);
+      const res = distributeShiftWheel(day.day, data.clinicCount, day.evening, wheels, delForShift('evening'), excludeEx, excludeDel);
       allSlots.push(...res.slots);
       warnings.push(...res.warnings.map((w) => `${day.day} مساء: ${w}`));
     }
@@ -1175,6 +1193,20 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   const STATUS_LABEL: Record<string, string> = {
     vacation: 'VC', sick_leave: 'SL', permission_start: 'PS', permission_end: 'PE', extra: 'EX',
   };
+  // شفتُ الطبيبِ ذلك اليوم (لتحديدِ خانةِ الـ EX الصحيحة: صباح/مساء): نقلُ الشفتِ ثمّ التفضيلُ
+  // ثمّ القروب (A=aShiftPlan، B=العكس؛ والبورد/الباقي = aShiftPlan افتراضاً).
+  const shiftOfDoctorDay = (docId: string, day: WeekDay): Shift => {
+    const ov = (input.extraShifts || []).find((o) => o.doctorId === docId && o.day === day);
+    if (ov) return ov.shift;
+    const pref = input.doctorPreferences?.[docId];
+    if (pref?.kind === 'always_morning') return 'morning';
+    if (pref?.kind === 'always_evening') return 'evening';
+    const aShift = input.aShiftPlan[day];
+    const doc = data.doctors.find((x) => x.id === docId);
+    if (doc?.groupTemplate.key === 'group_b') return aShift === 'morning' ? 'evening' : 'morning';
+    return aShift;
+  };
+
   const previewAbsences: PreviewAbsence[] = [];
   const seenAbs = new Set<string>();
   for (const s of data.existingSlots) {
@@ -1182,7 +1214,10 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     const key = `${s.dayOfWeek}|${s.doctorId}`;
     if (seenAbs.has(key)) continue;
     seenAbs.add(key);
-    previewAbsences.push({ day: s.dayOfWeek as WeekDay, doctorName: s.doctorName, label: STATUS_LABEL[s.status] ?? '' });
+    const day = s.dayOfWeek as WeekDay;
+    // خانةُ الغيابِ المسجَّلِ: نُفضّلُ الفترةَ المحفوظةَ (أدقّ للبورد)، وإلّا نستنتجُ من القروب.
+    const shift = (s.period >= 1 && s.period <= 4) ? shiftOfPeriod(s.period as Period) : shiftOfDoctorDay(s.doctorId, day);
+    previewAbsences.push({ day, doctorName: s.doctorName, label: STATUS_LABEL[s.status] ?? '', shift });
   }
   for (const e of input.extraAbsences || []) {
     const key = `${e.day}|${e.doctorId}`;
@@ -1190,7 +1225,7 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     const d = data.doctors.find((x) => x.id === e.doctorId);
     if (!d) continue;
     seenAbs.add(key);
-    previewAbsences.push({ day: e.day, doctorName: d.name, label: e.status === 'sick_leave' ? 'SL' : 'متفرّغ' });
+    previewAbsences.push({ day: e.day, doctorName: d.name, label: e.status === 'sick_leave' ? 'SL' : 'متفرّغ', shift: shiftOfDoctorDay(e.doctorId, e.day) });
   }
   for (const p of input.extraPermissions || []) {
     const key = `${p.day}|${p.doctorId}`;
@@ -1198,7 +1233,7 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     const d = data.doctors.find((x) => x.id === p.doctorId);
     if (!d) continue;
     seenAbs.add(key);
-    previewAbsences.push({ day: p.day, doctorName: d.name, label: p.kind === 'start' ? 'PS' : 'PE' });
+    previewAbsences.push({ day: p.day, doctorName: d.name, label: p.kind === 'start' ? 'PS' : 'PE', shift: shiftOfDoctorDay(p.doctorId, p.day) });
   }
 
   // 7. ملخّص
@@ -1413,7 +1448,12 @@ export async function redistributeShift(args: {
   if (!targetDay || targetDay.isHoliday) return { success: false, error: 'اليوم المستهدف عطلة أو غير موجود.' };
   const sp = shift === 'morning' ? targetDay.morning : targetDay.evening;
   if (!sp) return { success: false, error: 'تعذّر إنتاج بركة الشفت المطلوب.' };
-  const res = distributeShiftWheel(day, data.clinicCount, sp, wheels, input.delegatorEnabled, excludeEx, excludeDel);
+  // الدليقيتر الفعّال حسب قروب هذا الشفت (كالبناء): delegatorGroups[group] وإلّا العامّ.
+  const aShiftTgt = input.aShiftPlan[day];
+  const grpTgt: 'group_a' | 'group_b' = shift === aShiftTgt ? 'group_a' : 'group_b';
+  const delTgt = (input.delegatorGroups && typeof input.delegatorGroups[grpTgt] === 'boolean')
+    ? input.delegatorGroups[grpTgt] : input.delegatorEnabled;
+  const res = distributeShiftWheel(day, data.clinicCount, sp, wheels, delTgt, excludeEx, excludeDel);
   return { success: true, slots: res.slots, warnings: res.warnings, clinicCount: data.clinicCount };
 }
 

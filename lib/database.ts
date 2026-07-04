@@ -1482,6 +1482,57 @@ export async function getWeeklySchedule(
   }
 }
 
+// حفظٌ موضعيٌّ للتبديلِ اليدويّ: يستبدلُ خاناتِ العيادة/الدليقيتر **النشطةَ فقط** ليومٍ واحد
+// بالترتيبِ الجديد. لا يمسُّ الغيابَ (status≠active) ولا الاحتياطَ (EX/extra) ولا الصفوفَ
+// الداخليّةَ (prev_placement/xday) — فيبقى سجلُّ التغطية/الإلغاءِ سليمًا (خلافًا لإعادةِ
+// الكتابةِ الكاملةِ في saveSlots التي تحذفُ كلَّ النشط).
+export async function replaceDayClinicSlots(
+  clinicId: string,
+  weekStart: string,
+  dayOfWeek: string,
+  rows: Array<{
+    period: number;
+    clinic_number: number;
+    doctor_id: string;
+    doctor_name: string;
+    role: string;      // 'clinic' | 'delegator'
+    source: string;    // 'ai' | 'shadow'
+  }>,
+): Promise<{ error: Error | null }> {
+  try {
+    const { error: delErr } = await supabase
+      .from('schedule_slots')
+      .delete()
+      .eq('clinic_id', clinicId)
+      .eq('week_start', weekStart)
+      .eq('day_of_week', dayOfWeek)
+      .eq('status', 'active')
+      .in('role', ['clinic', 'delegator']);
+    if (delErr) throw delErr;
+
+    if (rows.length > 0) {
+      const insertRows = rows.map((r) => ({
+        clinic_id: clinicId,
+        week_start: weekStart,
+        day_of_week: dayOfWeek,
+        period: r.period,
+        clinic_number: r.clinic_number,
+        doctor_id: r.doctor_id,
+        doctor_name: r.doctor_name,
+        role: r.role,
+        status: 'active',
+        source: r.source,
+      }));
+      const { error: insErr } = await supabase.from('schedule_slots').insert(insertRows);
+      if (insErr) throw insErr;
+    }
+    return { error: null };
+  } catch (error) {
+    console.error('Error replacing day clinic slots:', error);
+    return { error: error as Error };
+  }
+}
+
 export async function upsertScheduleSlot(
   clinicId: string,
   weekStart: string,

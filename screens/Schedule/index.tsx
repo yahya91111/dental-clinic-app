@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StatusBar, Animated, Modal, TextInput, Keyboard, TouchableWithoutFeedback, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StatusBar, Animated, Modal, TextInput, Keyboard, TouchableWithoutFeedback, Alert, ActivityIndicator, Dimensions, Easing, Pressable, StyleSheet, RefreshControl } from 'react-native';
 import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { DayOfWeek, ScheduleSlot } from './types';
+import { DayOfWeek, ScheduleSlot, DAYS } from './types';
 import { ScheduleGrid } from './ScheduleGrid';
 import { CellDetailModal } from './CellDetailModal';
 import { WeekStrip } from './WeekStrip';
 import { DoctorsTab } from './DoctorsTab';
-import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings } from '../../lib/database';
+import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings, getAllGroupMembers, replaceDayClinicSlots } from '../../lib/database';
+import { supabase } from '../../lib/supabase';
+import { swapDoctorsInDaySlots, supervisorOfSlots, isShadowOnDay, affectedDays, type SupMap } from './swap';
 import { AIOrb, AIState } from '../../components/AIOrb';
 import AIButton from '../../components/AIButton';
 import { ChatMessage } from '../../components/aiTypes';
@@ -58,6 +60,7 @@ const TABS: { key: ScheduleTab; label: string; icon: string }[] = [
 
 export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScreenProps) {
   const { user } = useAuth();
+  const { width: SCREEN_W } = Dimensions.get('window');
 
   // Blob animations (matching DoctorProfileScreen)
   const blob1Anim = useRef(new Animated.Value(0)).current;
@@ -91,12 +94,180 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   // Cell detail modal
   const [selectedCell, setSelectedCell] = useState<{ day: DayOfWeek; period: number } | null>(null);
 
-  // Settings
-  const [showMenu, setShowMenu] = useState(false);
+  // Settings — درجٌ جانبيّ (تصميم القائمة الجانبية المحفوظ): الصفحة تنكمش إلى بطاقة يسارًا
+  const [menuMounted, setMenuMounted] = useState(false);
+  const menuAnim = useRef(new Animated.Value(0)).current;
+  const openMenu = () => {
+    setMenuMounted(true);
+    requestAnimationFrame(() =>
+      Animated.timing(menuAnim, { toValue: 1, duration: 340, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start()
+    );
+  };
+  const closeMenu = () => {
+    Animated.timing(menuAnim, { toValue: 0, duration: 300, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+      .start(({ finished }) => { if (finished) setMenuMounted(false); });
+  };
   const [showClinicInput, setShowClinicInput] = useState(false);
   const [clinicCount, setClinicCount] = useState(2);
   const [clinicInputValue, setClinicInputValue] = useState('');
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // تغييرٌ سريعٌ لعددِ العيادات من الدرج مباشرةً (بلا نافذةِ كتابة) — يُحفَظ فورًا
+  const changeClinics = async (delta: number) => {
+    const next = Math.min(10, Math.max(1, clinicCount + delta));
+    if (next === clinicCount) return;
+    setClinicCount(next);
+    if (clinicId) { try { await updateScheduleSettings(clinicId, next); } catch { /* تجاهل */ } }
+  };
+
+  // Schedule slots from Supabase (مُعرّفٌ مبكرًا كي يراه حسابُ swapDirty في وضعِ التبديل)
+  const [slots, setSlots] = useState<ScheduleSlot[]>([]);
+
+  // ─── وضعُ التبديل (سواب) — نفسُ تبديلِ جدولِ المعاينة، لكنْ على الجدولِ الحيّ ─────
+  // نقرُ طبيبٍ ثُمّ آخرَ في نفسِ اليوم → تبديلُ كاملِ خاناتِهما، والمتدرّبُ يتبعُ مدرّبه.
+  // القائدُ يبدّلُ أيَّ اثنين مباشرةً؛ الطبيبُ العاديُّ يبدّلُ نفسَه فقط عبر **طلبِ تبديل** (كالذكاء).
+  const isLeader = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+  const myDoctorId = userId ?? user?.id;
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapEdit, setSwapEdit] = useState<ScheduleSlot[]>([]);
+  const [swapSel, setSwapSel] = useState<{ day: string; id: string } | null>(null);
+  const [swapSup, setSwapSup] = useState<SupMap>(new Map());
+  const [swapSaving, setSwapSaving] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
+  // الطبيبُ العاديّ: الزميلُ المختارُ للتبديلِ معه (طلبٌ يُرسَل، لا تعديلٌ محلّيّ).
+  const [swapPartner, setSwapPartner] = useState<{ day: string; id: string; name: string } | null>(null);
+  const dayLabelOf = (d?: string) => DAYS.find((x) => x.key === d)?.label || '';
+
+  const enterSwap = () => {
+    setSwapEdit(slots);
+    setSwapSel(null);
+    setSwapError(null);
+    setSwapSup(new Map());
+    closeMenu();
+    setSwapMode(true);
+    // خريطةُ المدرّبِ (supervisor_doctor_id) لكشفِ ظلِّ المتدرّبِ المبتدئ — تُحمَّلُ بالخلفيّة
+    // (لا نُؤخّرُ دخولَ الوضع)؛ تجهزُ قبلَ أن يختارَ القائدُ طبيبَيه غالبًا.
+    if (clinicId) {
+      getAllGroupMembers(clinicId)
+        .then(({ data }) => {
+          const m: SupMap = new Map();
+          (data || []).forEach((r: any) => m.set(r.doctor_id, r.supervisor_doctor_id ?? null));
+          setSwapSup(m);
+        })
+        .catch(() => setSwapSup(new Map()));
+    }
+  };
+
+  const cancelSwap = () => { setSwapMode(false); setSwapSel(null); setSwapPartner(null); setSwapError(null); };
+
+  const onSwapDocTap = (day: DayOfWeek, rawId: string) => {
+    const id = supervisorOfSlots(swapEdit, day, rawId, swapSup);
+    if (isLeader) {
+      // القائد: يختارُ أيَّ اثنين → تبديلٌ محلّيٌّ مباشرٌ ثمّ حفظٌ موضعيّ.
+      if (!swapSel || swapSel.day !== day) { setSwapSel({ day, id }); return; }
+      if (swapSel.id === id) { setSwapSel(null); return; }
+      setSwapEdit((s) => swapDoctorsInDaySlots(s, day, swapSel.id, id, swapSup));
+      setSwapSel(null);
+      return;
+    }
+    // الطبيبُ العاديّ: يختارُ نفسَه أوّلًا (الظلُّ عليه)، ثمّ يختارُ الزميلَ → طلبُ تبديل.
+    if (!swapSel || swapSel.day !== day) {
+      if (id !== myDoctorId) { setSwapError('Select your own slot first, then choose who to swap with.'); return; }
+      setSwapError(null); setSwapPartner(null); setSwapSel({ day, id: myDoctorId });
+      return;
+    }
+    if (id === myDoctorId) { setSwapSel(null); setSwapPartner(null); return; }   // نقرُ نفسه ثانيةً = إلغاءُ الاختيار
+    const name = swapEdit.find((s) => s.day === day && s.doctorId === id)?.doctorName || '';
+    setSwapPartner({ day, id, name });
+    setSwapSel({ day, id });   // أبرِز الزميلَ المختار
+  };
+
+  // سؤالُ تأكيدٍ قبلَ الإرسال (بالإنقليزي) — «هل تريد إرسال طلب التبديل؟»
+  const sendSwapRequest = () => {
+    if (!swapPartner || swapSaving) return;
+    Alert.alert(
+      'Send swap request?',
+      `Send a swap request to ${swapPartner.name} for ${dayLabelOf(swapPartner.day)}? It completes as soon as they accept.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Send', onPress: () => { doSendSwapRequest(); } },
+      ],
+    );
+  };
+
+  // الطبيبُ العاديّ يُرسِلُ طلبَ تبديلٍ للزميل — نفسُ ما يفعله الذكاء (request_swap):
+  // listSwapTargets ثمّ openSwapGroup؛ يتمُّ التبديلُ فورَ موافقةِ الزميل.
+  const doSendSwapRequest = async () => {
+    if (!swapPartner || !clinicId || !user?.id || swapSaving) return;
+    setSwapSaving(true);
+    setSwapError(null);
+    const weekStr = formatWeekStart(selectedWeekStart);
+    try {
+      const { requestsV2 } = await import('../../lib/algorithms/requests_v2');
+      const { notifications } = await import('../../lib/algorithms/notifications');
+      const listed = await requestsV2.listSwapTargets({
+        clinicId, weekStart: weekStr, day: swapPartner.day as any,
+        requesterId: user.id, mode: { kind: 'doctor', doctorId: swapPartner.id },
+      });
+      if (!listed.success || !listed.targets) throw new Error(listed.error || 'تعذّر إرسال الطلب.');
+      const opened = await notifications.openSwapGroup({
+        clinicId, weekStart: weekStr, day: swapPartner.day as any,
+        requesterId: user.id, requesterName: user.name || '', targets: listed.targets,
+      });
+      if (!opened.success) throw new Error(opened.error || 'تعذّر إرسال الطلب.');
+      setSwapMode(false); setSwapSel(null); setSwapPartner(null);
+      Alert.alert('Swap request sent', `Sent to ${swapPartner.name} for ${dayLabelOf(swapPartner.day)}. It completes as soon as they accept.`);
+    } catch (e) {
+      setSwapError(e instanceof Error ? e.message : "Couldn't send the request.");
+    } finally {
+      setSwapSaving(false);
+    }
+  };
+
+  const swapDirty = affectedDays(slots, swapEdit).length > 0;
+  // نصُّ التعليماتِ وزرُّ الإجراءِ حسبَ الدور.
+  const swapInstruction = isLeader
+    ? (swapSel ? 'Pick another doctor on the same day to swap — or tap the same one to cancel' : 'To swap: tap a doctor, then another on the same day')
+    : (swapPartner
+        ? `Request a swap with ${swapPartner.name} — ${dayLabelOf(swapPartner.day)}`
+        : swapSel ? 'Now tap the colleague you want to swap with (same day)' : 'Tap your own slot on a day, then choose who to swap with');
+  const swapPrimaryLabel = isLeader ? 'Save Swap' : 'Send Request';
+  const swapPrimaryDisabled = swapSaving || (isLeader ? !swapDirty : !swapPartner);
+  const onSwapPrimary = () => { if (isLeader) saveSwap(); else sendSwapRequest(); };
+
+  // حفظٌ موضعيّ: فقط أيّامُ التبديل، وفقط خاناتُ العيادة/الدليقيتر النشطة (بلا لمسِ الغياب/الاحتياط/الداخليّ).
+  const saveSwap = async () => {
+    if (!clinicId || swapSaving) return;
+    const days = affectedDays(slots, swapEdit);
+    if (days.length === 0) { setSwapMode(false); return; }
+    setSwapSaving(true);
+    setSwapError(null);
+    const weekStr = formatWeekStart(selectedWeekStart);
+    try {
+      for (const day of days) {
+        const rows = swapEdit
+          .filter((s) => s.day === day && s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator'))
+          .map((s) => ({
+            period: s.period,
+            clinic_number: s.clinicNumber,
+            doctor_id: s.doctorId,
+            doctor_name: s.doctorName,
+            role: s.role,
+            // المتدرّبُ المبتدئ يُكتَبُ source='shadow' كي لا تعدَّه التغطيةُ طبيبًا (قاعدةُ عدمِ تغطيةِ المتدرّب).
+            source: isShadowOnDay(swapEdit, day, s.doctorId, swapSup) ? 'shadow' : 'ai',
+          }));
+        const { error } = await replaceDayClinicSlots(clinicId, weekStr, day, rows);
+        if (error) throw error;
+      }
+      setSwapMode(false);
+      setSwapSel(null);
+      loadSchedule();
+    } catch (e) {
+      setSwapError(e instanceof Error ? e.message : "Couldn't save the swap.");
+    } finally {
+      setSwapSaving(false);
+    }
+  };
 
   // Active tab
   const [activeTab, setActiveTab] = useState<ScheduleTab>('daily_duty');
@@ -114,6 +285,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
   const [aiPreview, setAiPreview] = useState<SchedulePreview | null>(null);
   const [aiPreviewSaving, setAiPreviewSaving] = useState(false);
   const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
+  const [openChatSignal, setOpenChatSignal] = useState(0); // bump → اللوحة تفتح المحادثة (لعرض سؤال الإبلاغ بعد حفظ الجدول)
   const aiLoadedRef = useRef(false);
 
   // استرجاع محادثة الذكاء المحفوظة محليّاً عند الدخول — تبقى بعد التنقّل/إعادة التشغيل
@@ -320,9 +492,33 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     } catch { /* المسح تنظيفٌ لا حرج في فشله */ }
   };
 
+  // بعد حفظ الجدول (المعالج أو معاينة الشات): يسأل القائدَ عن الإبلاغ **بنفس آليّة إبلاغ الغياب** —
+  // رسالةٌ تحمل announceOffer فتظهر بطاقةُ [الشفت][المركز][لا داعي] في المحادثة (AssistantOffers)،
+  // والاختيارُ يستدعي announceAbsence (broadcast الموجود). الإبلاغُ فعلُ قائد، وقروبُ «الشفت» = قروبُ القائد.
+  const offerScheduleAnnounce = (weekStart: string) => {
+    if (!user?.id || !clinicId) return;
+    if (!['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role)) return;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekStart || '');
+    const pretty = m ? ` ${Number(m[3])}/${Number(m[2])}` : '';
+    const announce: AnnounceOffer = {
+      weekStart, day: '',
+      message: `نُشِر جدولُ الأسبوع${pretty}.`,
+      subjectId: user.id, subjectName: user.name,   // قروبُ القائد للشفت، ويُستثنى هو من المستلمين
+    };
+    const msg: ChatMessage = {
+      id: `schedann${Date.now()}`, role: 'assistant',
+      content: `حُفِظ جدولُ الأسبوع${pretty}.`,
+      announceOffer: announce, timestamp: Date.now(),
+    };
+    setAiMessages((prev) => [...prev, msg]);
+    aiHistoryRef.current.push({ role: 'assistant', content: msg.content });
+    setOpenChatSignal((n) => n + 1);   // افتح المحادثةَ ليرى القائدُ سؤالَ الإبلاغ
+  };
+
   // حفظ معاينة الشات كما هي (بعد أيّ تبديل يدويّ) — يكتب الخانات + علامات الغياب/الاستئذان
   const handleSaveAiPreview = async (finalSlots: AssignedSlot[]) => {
     if (!aiPreview || !clinicId) return;
+    const ws = aiPreview.weekStart;
     setAiPreviewSaving(true);
     setAiPreviewError(null);
     try {
@@ -343,6 +539,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         }
         setAiPreview(null);
         loadSchedule();
+        offerScheduleAnnounce(ws);   // اسأل القائدَ عن الإبلاغ (نفس آليّة الغياب)
       } else {
         setAiPreviewError(res.error || 'تعذّر حفظ الجدول.');
       }
@@ -370,9 +567,6 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     }
     lastScrollY.current = currentY;
   };
-
-  // Schedule slots from Supabase
-  const [slots, setSlots] = useState<ScheduleSlot[]>([]);
 
   // Format date to YYYY-MM-DD for Supabase
   const formatWeekStart = (date: Date) => {
@@ -427,9 +621,113 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
     loadSchedule();
   }, [loadSchedule]);
 
+  // ── تحديثٌ فوريّ تلقائيّ (Realtime): أيُّ تغييرٍ في خانات هذا المركز يُنعش الجدولَ فورًا ──
+  // نُبقي القناةَ ثابتةً على المركز، ونستدعي أحدثَ loadSchedule عبر ref (كي لا نُعيدَ
+  // الاشتراكَ عند كلِّ تغييرِ أسبوع)، مع تجميعِ دفعةِ الكتابةِ الواحدة (debounce) لتفادي إنعاشاتٍ متعدّدة.
+  const loadScheduleRef = useRef(loadSchedule);
+  useEffect(() => { loadScheduleRef.current = loadSchedule; }, [loadSchedule]);
+  const rtTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!clinicId) return;
+    const channel = supabase
+      .channel(`schedule_rt_${clinicId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'schedule_slots', filter: `clinic_id=eq.${clinicId}` },
+        () => {
+          if (rtTimer.current) clearTimeout(rtTimer.current);
+          rtTimer.current = setTimeout(() => loadScheduleRef.current(), 250);
+        },
+      )
+      .subscribe((status) => {
+        // SUBSCRIBED يُطلَق عند الاتّصالِ الأوّلِ وبعدَ كلِّ إعادةِ اتّصال → مزامنةٌ تلتقطُ ما فات أثناءَ الانقطاع.
+        if (status === 'SUBSCRIBED') {
+          if (rtTimer.current) clearTimeout(rtTimer.current);
+          rtTimer.current = setTimeout(() => loadScheduleRef.current(), 250);
+        }
+      });
+    return () => {
+      if (rtTimer.current) clearTimeout(rtTimer.current);
+      supabase.removeChannel(channel);
+    };
+  }, [clinicId]);
+
+  // ── سحبٌ للأسفل = تحديثٌ يدويّ (Pull-to-refresh) ──
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await Promise.all([loadSchedule(), loadSettings()]); }
+    finally { setRefreshing(false); }
+  }, [loadSchedule, loadSettings]);
+
   return (
     <View style={{ flex: 1 }}>
       <StatusBar translucent={true} backgroundColor="transparent" barStyle="dark-content" />
+
+      {/* درجُ الإعدادات (خلفَ الصفحة) — خلفيّةٌ فاتحةٌ تعكسُ صفحةَ الجدول (تدرّج + بُقَعٌ ملوّنةٌ ناعمة) */}
+      {menuMounted && (
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: menuAnim }]}>
+          <LinearGradient colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          {/* بُقَعٌ ملوّنةٌ ناعمةٌ كصفحةِ الجدول */}
+          <View pointerEvents="none" style={{ position: 'absolute', width: scale(240), height: scale(240), borderRadius: scale(120), top: scale(-50), right: scale(-40), backgroundColor: 'rgba(167,139,250,0.20)' }} />
+          <View pointerEvents="none" style={{ position: 'absolute', width: scale(210), height: scale(210), borderRadius: scale(105), bottom: scale(60), right: scale(24), backgroundColor: 'rgba(125,211,252,0.16)' }} />
+          <View pointerEvents="none" style={{ position: 'absolute', width: scale(170), height: scale(170), borderRadius: scale(85), top: '46%', left: '34%', backgroundColor: 'rgba(240,98,146,0.10)' }} />
+          {/* النقرُ على أيِّ فراغٍ (وعلى بطاقةِ الصفحةِ عبرها) يُغلق الدرج ويعودُ للجدول */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
+          <SafeAreaView style={{ flex: 1 }} edges={['top']} pointerEvents="box-none">
+            {/* العنوان: أعلى الصفحة بالمنتصف */}
+            <Text style={{ textAlign: 'center', fontSize: scale(26), fontWeight: '800', color: '#3E4A63', letterSpacing: -0.5, marginTop: scale(14) }}>Settings</Text>
+            {/* الأزرار — أنزلُ أكثر، كروتٌ أنحفُ بلونٍ ناعمٍ بلا أيقونات */}
+            <View pointerEvents="box-none" style={{ paddingLeft: SCREEN_W * 0.34, paddingRight: scale(22), marginTop: scale(90), gap: scale(28), alignItems: 'center' }}>
+              {/* عددُ العيادات — النصُّ فوقُ والعدّادُ تحتَه، كلاهما بالوسط */}
+              <View style={{ alignItems: 'center', gap: scale(12) }}>
+                <Text style={{ color: '#3E4A63', fontSize: scale(14), fontWeight: '700', textAlign: 'center' }}>Number of Clinics</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(10) }}>
+                  <TouchableOpacity onPress={() => changeClinics(-1)} activeOpacity={0.7} style={{ width: scale(28), height: scale(28), borderRadius: scale(14), backgroundColor: 'rgba(255,255,255,0.35)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.65)', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#6B4C9A', fontSize: scale(19), fontWeight: '700', marginTop: -scale(2) }}>−</Text>
+                  </TouchableOpacity>
+                  <View style={{ minWidth: scale(34), height: scale(28), borderRadius: scale(9), backgroundColor: 'rgba(255,255,255,0.35)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.65)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(6) }}>
+                    <Text style={{ color: '#2D3748', fontSize: scale(15), fontWeight: '800' }}>{clinicCount}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => changeClinics(1)} activeOpacity={0.7} style={{ width: scale(28), height: scale(28), borderRadius: scale(14), backgroundColor: 'rgba(255,255,255,0.35)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.65)', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: '#6B4C9A', fontSize: scale(18), fontWeight: '700', marginTop: -scale(1) }}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {/* خطٌّ خفيفٌ فاصلٌ بين الزرّين */}
+              <View pointerEvents="none" style={{ width: scale(150), height: scale(1), backgroundColor: 'rgba(70,80,110,0.16)' }} />
+              {/* زرُّ Swap — يفتحُ وضعَ التبديلِ على الجدول (كتبديلِ جدولِ المعاينة) */}
+              <TouchableOpacity onPress={enterSwap} activeOpacity={0.6} style={{ justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ color: '#3E4A63', fontSize: scale(14), fontWeight: '700', textAlign: 'center' }}>Swap</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Animated.View>
+      )}
+
+      {/* الصفحةُ تنكمشُ إلى بطاقةٍ يسارًا عند فتحِ الدرج (تصميمُ القائمةِ الجانبيّةِ المحفوظ).
+          أثناءَ فتحِ الدرج: pointerEvents=none فتتجاهلُ البطاقةُ اللمسَ، ويمرُّ إلى مُغلِقِ الدرجِ خلفَها. */}
+      <Animated.View
+        pointerEvents={menuMounted ? 'none' : 'auto'}
+        style={[
+          { flex: 1 },
+          { transform: [
+            { translateX: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -SCREEN_W * 0.5] }) },
+            { scale: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.62] }) },
+          ] },
+        ]}
+      >
+      {/* «طبقةُ الطيران»: ٣ طبقاتٍ متدرّجةٌ أسفلَ البطاقةِ وخلفَها — لونٌ كحليٌّ باردٌ يظهرُ كالظلِّ
+          (لا رماديٌّ بحت)، كلّما بعُدتْ خفّتْ وازدادَ إزاحتُها = تدرّجُ ظلٍّ ناعم (يعملُ بنفسِه على iOS و Android). */}
+      {menuMounted && (
+        <>
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: scale(26), backgroundColor: 'rgba(40,50,78,0.10)', transform: [{ translateY: scale(26) }, { translateX: scale(8) }] }]} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: scale(26), backgroundColor: 'rgba(40,50,78,0.14)', transform: [{ translateY: scale(16) }, { translateX: scale(5) }] }]} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: scale(26), backgroundColor: 'rgba(40,50,78,0.20)', transform: [{ translateY: scale(8) }, { translateX: scale(3) }] }]} />
+        </>
+      )}
+      {/* بطاقةُ الصفحة: تقصُّ المحتوى للزوايا المستديرة — بلا borderWidth (كي لا يُزاحَ المحتوى عند العودة = لا لاق) */}
+      <View style={[{ flex: 1 }, menuMounted && { borderRadius: scale(26), overflow: 'hidden' }]}>
       {/* Gradient Mesh Background - matching DoctorProfileScreen */}
       <LinearGradient
         colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']}
@@ -519,7 +817,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
               textAlign: 'center',
             }}>Schedule</Text>
             <TouchableOpacity
-              onPress={() => setShowMenu(!showMenu)}
+              onPress={openMenu}
               style={{
                 width: scale(40),
                 height: scale(40),
@@ -533,71 +831,6 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
             >
               <Ionicons name="menu" size={scale(22)} color="#2D3748" />
             </TouchableOpacity>
-
-            {/* Side Menu */}
-            {showMenu && (
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={() => setShowMenu(false)}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  left: 0,
-                  zIndex: 100,
-                }}
-              >
-                <View style={{
-                  position: 'absolute',
-                  top: scale(50),
-                  right: scale(20),
-                  backgroundColor: 'rgba(30, 30, 40, 0.85)',
-                  borderRadius: scale(16),
-                  padding: scale(8),
-                  minWidth: scale(180),
-                  borderWidth: scale(1),
-                  borderColor: 'rgba(255,255,255,0.15)',
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: scale(8) },
-                  shadowOpacity: 0.3,
-                  shadowRadius: scale(12),
-                  elevation: 10,
-                  zIndex: 101,
-                }}>
-                  {/* Clinics Count Option */}
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      setShowMenu(false);
-                      setClinicInputValue(String(clinicCount));
-                      setShowClinicInput(true);
-                    }}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: scale(10),
-                      paddingVertical: scale(12),
-                      paddingHorizontal: scale(14),
-                      borderRadius: scale(10),
-                    }}
-                  >
-                    <Ionicons name="business-outline" size={scale(18)} color="#A5B4FC" />
-                    <Text style={{ fontSize: scale(14), fontWeight: '600', color: '#FFFFFF', flex: 1 }}>
-                      Number of Clinics
-                    </Text>
-                    <View style={{
-                      backgroundColor: 'rgba(165, 180, 252, 0.2)',
-                      borderRadius: scale(8),
-                      paddingHorizontal: scale(8),
-                      paddingVertical: scale(3),
-                    }}>
-                      <Text style={{ fontSize: scale(13), fontWeight: '700', color: '#A5B4FC' }}>{clinicCount}</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* Week Strip - only for Daily Duty */}
@@ -610,17 +843,29 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: scale(10), paddingTop: scale(12), paddingBottom: scale(80) }}
+            contentContainerStyle={{ paddingHorizontal: scale(10), paddingTop: scale(12), paddingBottom: scale(swapMode ? 190 : 80) }}
             showsVerticalScrollIndicator={false}
             onScroll={handleContentScroll}
             scrollEventThrottle={16}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                enabled={!swapMode}
+                tintColor="#6B4C9A"
+                colors={['#6B4C9A']}
+              />
+            }
           >
             {activeTab === 'daily_duty' && settingsLoaded && (
               <ScheduleGrid
-                slots={slots}
+                slots={swapMode ? swapEdit : slots}
                 clinicCount={clinicCount}
-                onCellPress={(day, period) => setSelectedCell({ day, period })}
-                userId={userId}
+                onCellPress={swapMode ? () => {} : (day, period) => setSelectedCell({ day, period })}
+                userId={swapMode ? undefined : userId}
+                onDoctorPress={swapMode ? onSwapDocTap : undefined}
+                selSwap={swapMode ? swapSel : null}
+                weekStartDate={selectedWeekStart}
               />
             )}
             {activeTab === 'doctors' && <DoctorsTab clinicId={clinicId || null} />}
@@ -640,7 +885,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
             )}
           </ScrollView>
 
-          {/* Bottom Tab Bar */}
+          {/* Bottom Tab Bar — مخفيٌّ في وضع التبديل (يظهرُ شريطُ الحفظ/الإلغاء بدلًا منه) */}
+          {!swapMode && (
           <Animated.View style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -710,8 +956,14 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
               );
             })}
           </Animated.View>
+          )}
         </View>
       </SafeAreaView>
+        {/* حدُّ البطاقة (طبقةٌ مطلقةٌ لا تُزيحُ المحتوى فلا لاقَ عند العودة) — حافّةٌ زجاجيّةٌ فاتحة */}
+        {menuMounted && <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: scale(26), borderWidth: scale(1.5), borderColor: 'rgba(255,255,255,0.85)' }]} />}
+      </View>
+
+      </Animated.View>
 
       {/* Clinic Count Input Modal */}
       <Modal transparent visible={showClinicInput} animationType="fade" onRequestClose={() => setShowClinicInput(false)}>
@@ -799,19 +1051,65 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       {/* AI Orb — زرّ الذكاء الموحّد: نقرة تفتح لوحة الجدول، ضغطة مطوّلة تفتح المحادثة.
           يبقى ظاهرًا دائمًا (حتّى أثناء فتح/إغلاق صفحة الذكاء) فلا فجوةٌ تُشعر باللاق:
           القطرة تنبثق من فوقه وتغطّيه، وعند الإغلاق تنكشف عنه مباشرةً. */}
-      {user && (
-        <AIButton
-          orbState={aiState}
-          onPress={() => setShowAIPanel(true)}
-          user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
-          clinicId={clinicId}
-          messages={aiMessages}
-          onSend={handleAISend}
-          onClearConversation={handleClearConversation}
-          onPatchMessage={patchAiMessage}
-          onAfterAction={loadSchedule}
-          isLoading={aiLoading}
-        />
+      {user && !swapMode && (
+        <Animated.View
+          pointerEvents={menuMounted ? 'none' : 'box-none'}
+          style={[StyleSheet.absoluteFill, { opacity: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
+        >
+          <AIButton
+            orbState={aiState}
+            onPress={() => setShowAIPanel(true)}
+            user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
+            clinicId={clinicId}
+            messages={aiMessages}
+            onSend={handleAISend}
+            onClearConversation={handleClearConversation}
+            onPatchMessage={patchAiMessage}
+            onAfterAction={loadSchedule}
+            isLoading={aiLoading}
+          />
+        </Animated.View>
+      )}
+
+      {/* شريطُ التبديل (سواب): تعليماتٌ + حفظ/إلغاء — يظهرُ أسفلَ الشاشةِ فوقَ الجدول.
+          box-none كي تبقى خاناتُ الجدولِ قابلةً للنقرِ (اختيارُ الطبيبِ ثُمّ الآخر). */}
+      {swapMode && (
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+          <View style={{
+            backgroundColor: 'rgba(255,255,255,0.94)',
+            borderTopLeftRadius: scale(22), borderTopRightRadius: scale(22),
+            paddingHorizontal: scale(18), paddingTop: scale(12), paddingBottom: scale(26),
+            borderTopWidth: scale(1), borderColor: 'rgba(124,108,180,0.22)',
+            shadowColor: '#28324A', shadowOpacity: 0.14, shadowRadius: scale(16), shadowOffset: { width: 0, height: -scale(3) }, elevation: 16,
+          }}>
+            <Text style={{ textAlign: 'center', fontSize: scale(12), fontWeight: '700', color: (swapSel || swapPartner) ? '#5B6575' : '#94A0B3', marginBottom: scale(10) }}>
+              {swapInstruction}
+            </Text>
+            {swapError && (
+              <Text style={{ textAlign: 'center', color: '#DC2626', fontSize: scale(11), fontWeight: '700', marginBottom: scale(8) }}>{swapError}</Text>
+            )}
+            <View style={{ flexDirection: 'row', gap: scale(11) }}>
+              <TouchableOpacity
+                onPress={onSwapPrimary}
+                disabled={swapPrimaryDisabled}
+                activeOpacity={0.85}
+                style={{ flex: 1, paddingVertical: scale(13), borderRadius: scale(14), alignItems: 'center', justifyContent: 'center', backgroundColor: swapPrimaryDisabled ? 'rgba(124,108,180,0.35)' : '#6D4FB8' }}
+              >
+                {swapSaving
+                  ? <ActivityIndicator color="#FFFFFF" />
+                  : <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#FFFFFF' }}>{swapPrimaryLabel}</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={cancelSwap}
+                disabled={swapSaving}
+                activeOpacity={0.85}
+                style={{ flex: 1, paddingVertical: scale(13), borderRadius: scale(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.05)', borderWidth: scale(1), borderColor: 'rgba(124,108,180,0.2)' }}
+              >
+                <Text style={{ fontSize: scale(14), fontWeight: '700', color: '#6B7280' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* AI hub: cinematic reveal + orbiting quick actions + in-page chat */}
@@ -832,9 +1130,10 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         user={user ? { id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName } : undefined}
         clinicId={clinicId}
         onCreateSchedule={(result: WizardResult) => {
-          // TODO: تمرير result إلى بناء الجدول لاحقًا
-          console.log('[Wizard] result:', JSON.stringify(result));
+          // المعالجُ يحفظ الجدولَ بنفسه (saveSlots داخله)؛ هنا نسألُ القائدَ عن الإبلاغ بعد الحفظ.
+          offerScheduleAnnounce(result.weekStart);
         }}
+        openChatSignal={openChatSignal}
         chatPreview={aiPreview}
         chatPreviewSaving={aiPreviewSaving}
         chatPreviewError={aiPreviewError}
@@ -852,6 +1151,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         clinicId={clinicId || null}
         weekStart={formatWeekStart(selectedWeekStart)}
         userId={userId}
+        isLeader={isLeader}
+        userName={user?.name}
         onClose={() => setSelectedCell(null)}
         onSaved={() => {
           loadSchedule();
