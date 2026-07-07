@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, Animated, Dimensions, InteractionManager } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, Animated, Dimensions, InteractionManager, AppState } from 'react-native';
 import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DentalDepartmentsScreen from './DentalDepartmentsScreen';
@@ -55,6 +55,64 @@ function notifVisual(notif: any): NfyVisual {
       return { c: '#8E93C8', icon: 'document-text-outline', title: 'New Request' };
     default: return { c: '#8E93C8', icon: 'notifications-outline', title: notif?.title || 'Notification' };
   }
+}
+
+// ─── مساعدات التبديل (متعدّد الأيّام + عام/خاصّ) ───
+const NFY_DAY_INDEX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
+const NFY_DAY_LABEL: Record<string, string> = { sunday: 'Sunday', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday' };
+const NFY_DAY_SHORT: Record<string, string> = { sunday: 'Sun', monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu' };
+const NFY_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const nfyDr = (name?: string) => { const n = (name || '').trim(); return !n ? 'زميلك' : (/^د\s*\./.test(n) ? n : `د.${n}`); };
+// التاريخُ الفعليّ لليومِ في أسبوعِ الطلب (week_start أحدٌ ISO) → «Jul 7»
+function swapDayDate(weekStart?: string, day?: string): string {
+  if (!weekStart || !day || !(day in NFY_DAY_INDEX)) return '';
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(weekStart) ? weekStart.slice(0, 10) : weekStart;
+  const base = new Date(`${iso}T00:00:00`);
+  if (isNaN(base.getTime())) return '';
+  base.setDate(base.getDate() + NFY_DAY_INDEX[day]);
+  return `${NFY_MON[base.getMonth()]} ${base.getDate()}`;
+}
+// مفتاحُ مجموعةِ الطلب (لتجميعِ صفوفِ الأيّام في كرتٍ واحد)
+const swapBatchKey = (n: any) => n?.data?.swap_batch || n?.id;
+// عدُّ الباج: كلُّ إشعارٍ غيرِ مقروءٍ = ١، وطلبُ التبديلِ متعدّدُ الأيّام = ١ لكلِّ مجموعة (لا لكلِّ يوم)
+// أنواعٌ مكانُها الأوربُ (المحادثة) لا صفحةُ الإشعارات: لا تُعرَض هنا، ولا تُعَدّ في بادجِ
+// الصفحة، ولا تُعلَّم مقروءةً بفتحِ/إغلاقِ الصفحة (وإلّا انطفأ توهّجُها في الأورب تلقائيًّا).
+// استثناء: request_result مع swap_v2 = نتيجةُ تبديلٍ تُعرَض هنا حصرًا فتُعامَل كإشعارِ صفحة.
+const AI_CHAT_TYPES = ['gap_alert', 'request_result', 'seat_change'];
+function isOrbOnlyNotif(n: any): boolean {
+  return AI_CHAT_TYPES.includes(n?.type) && !(n?.type === 'request_result' && n?.data?.swap_v2);
+}
+function countUnreadBadge(rows: any[]): number {
+  let n = 0; const seen = new Set<string>();
+  for (const r of rows) {
+    if (r.is_read || isOrbOnlyNotif(r)) continue;
+    if (r.type === 'swap_request') {
+      const k = swapBatchKey(r);
+      if (!seen.has(k)) { seen.add(k); n += 1; }
+    } else n += 1;
+  }
+  return n;
+}
+// نصُّ النطاق: خاصّ «التبديل (معك)» / عامّ «(تبديل عام مع الشفت/الفترة)» — القوسان بخطٍّ عريض
+function SwapScopeText({ notif, size = 12.5, color = NFY_SOFT }: { notif: any; size?: number; color?: string }) {
+  const d = notif?.data || {};
+  const scope: 'person' | 'period' | 'shift' = d.scope || 'person';
+  const reqName = nfyDr(notif?.sender_name || d.requester_name);
+  const boldStyle = { fontWeight: '800' as const, color: NFY_INK };
+  const base = { fontSize: scale(size), lineHeight: scale(size + 7), color, textAlign: 'right' as const };
+  if (scope === 'person') {
+    return (
+      <Text style={base}>
+        يطلب <Text style={boldStyle}>{reqName}</Text> التبديل <Text style={boldStyle}>(معك)</Text>
+      </Text>
+    );
+  }
+  const label = scope === 'shift' ? 'الشفت' : (d.scope_label || 'الفترة');
+  return (
+    <Text style={base}>
+      يرسل <Text style={boldStyle}>{reqName}</Text> طلب <Text style={boldStyle}>(تبديل عام مع {label})</Text>
+    </Text>
+  );
 }
 
 //  Simple Badge Component - Text Only (No Background)
@@ -117,6 +175,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   const [notifTab, setNotifTab] = useState<'unread' | 'read' | 'announcements'>('unread');
   const [loadingNotifs, setLoadingNotifs] = useState(false);
   const [swapDetail, setSwapDetail] = useState<any | null>(null); // كرتُ التبديلِ المفتوحُ في صفحةِ القرار
+  // الحوافُّ الآمنةُ تُقرَأ هنا (تحتَ مزوّدِ SafeArea)، لا داخلَ الـModal حيث تعودُ صفرًا — نطبّقُها يدويًّا هناك
+  const insets = useSafeAreaInsets();
   const [showCompose, setShowCompose] = useState(false); // ورقةُ كتابةِ التعميم
   const [composeText, setComposeText] = useState('');
   const [sendingAnnounce, setSendingAnnounce] = useState(false);
@@ -189,11 +249,18 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     // وصول فوريّ (Realtime): يحدّث العدّاد لحظة إنشاء أيّ إشعار للمستخدم،
     // والمزامنةُ-عند-الاتّصال تغطّي إعادةَ الاتّصال (لا فحص دوريّ يُثقل الشبكة).
     const unsub = subscribeToNotifications(user.id, fetchUnread);
+    // بدءٌ بارد: أوّلُ جلبٍ قد يسبق جهوزيّةَ الجلسة فيرجع صفرًا والباجزُ لا يظهر. أعِدِ الجلبَ
+    // (أ) حين تجهز المصادقةُ (استعادةُ الجلسة بعد الإقلاع)، (ب) حين يعودُ التطبيقُ للواجهة —
+    // فيظهرُ الباجزُ فورَ دخولِ التطبيقِ بعدَ ورودِ إشعارٍ والتطبيقُ مغلق.
+    const { data: authSub } = supabase.auth.onAuthStateChange((_e, session) => { if (session) fetchUnread(); });
+    const appStateSub = AppState.addEventListener('change', (s) => { if (s === 'active') fetchUnread(); });
 
     return () => {
       unsub();
       notifSub.remove();
       responseSub.remove();
+      authSub?.subscription?.unsubscribe();
+      appStateSub.remove();
     };
   }, [user?.id, user?.clinicId]);
 
@@ -825,7 +892,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         await updateNotificationAction(notif.id, 'accepted');
       }
     } catch (e) { /* أبقِ الواجهة متّسقة */ }
-    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n));
+    setNotifications(prev => { const next = prev.map(n => n.id === notif.id ? { ...n, action_status: 'accepted', is_read: true } : n); setUnreadNotifications(countUnreadBadge(next)); return next; });
     return true;
   };
 
@@ -840,18 +907,19 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         await updateNotificationAction(notif.id, 'rejected');
       }
     } catch (e) { /* أبقِ الواجهة متّسقة */ }
-    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n));
+    setNotifications(prev => { const next = prev.map(n => n.id === notif.id ? { ...n, action_status: 'rejected', is_read: true } : n); setUnreadNotifications(countUnreadBadge(next)); return next; });
   };
 
   // تحديدُ الكلِّ كمقروء (ما عدا المعلّق) — نفسُ منطقِ الإغلاق
   const markAllNotifsRead = () => {
     if (!user?.id) return;
     setNotifications(prev => {
-      const toMark = prev.filter(n => !n.is_read && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
+      // أنواعُ الأوربِ (seat_change/gap_alert…) لا تُعلَّم مقروءةً هنا — ليست معروضةً بالصفحة.
+      const toMark = prev.filter(n => !n.is_read && !isOrbOnlyNotif(n) && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
       toMark.forEach(n => markAsRead(n.id));
-      const pendingCount = prev.filter(n => n.action_type === 'accept_reject' && n.action_status === 'pending' && !n.is_read).length;
-      setUnreadNotifications(pendingCount);
-      return prev.map(n => (n.action_type === 'accept_reject' && n.action_status === 'pending') ? n : ({ ...n, is_read: true }));
+      const next = prev.map(n => ((n.action_type === 'accept_reject' && n.action_status === 'pending') || isOrbOnlyNotif(n)) ? n : ({ ...n, is_read: true }));
+      setUnreadNotifications(countUnreadBadge(next));
+      return next;
     });
   };
 
@@ -960,17 +1028,18 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
       )).start();
     });
 
-    // Mark all as read except pending action notifications
+    // Mark all as read except pending action + ORB-only notifs (seat_change/gap_alert…):
+    // those live in the chat/orb, not this page, so opening/closing must not read them.
     if (user?.id) {
       setNotifications(prev => {
-        const toMark = prev.filter(n => !n.is_read && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
+        const toMark = prev.filter(n => !n.is_read && !isOrbOnlyNotif(n) && !(n.action_type === 'accept_reject' && n.action_status === 'pending'));
         toMark.forEach(n => markAsRead(n.id));
-        const pendingCount = prev.filter(n => n.action_type === 'accept_reject' && n.action_status === 'pending' && !n.is_read).length;
-        setUnreadNotifications(pendingCount);
-        return prev.map(n => {
-          if (n.action_type === 'accept_reject' && n.action_status === 'pending') return n;
+        const next = prev.map(n => {
+          if ((n.action_type === 'accept_reject' && n.action_status === 'pending') || isOrbOnlyNotif(n)) return n;
           return { ...n, is_read: true };
         });
+        setUnreadNotifications(countUnreadBadge(next));
+        return next;
       });
     }
   }, [user?.id]);
@@ -2580,12 +2649,11 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     <Text style={{ fontSize: scale(13), color: '#9CA3AF' }}>Loading...</Text>
                   </View>
                 ) : (() => {
-                  // محادثة الذكاء (تغطية/نتائجها) لا تظهر هنا — مكانها الجات.
-                  // أمّا **طلبات التبديل** ونتائجها (request_result مع data.swap_v2)
-                  // فمكانها هنا حصرًا (موافق/رفض من الإشعارات، لا من الذكاء).
-                  const AI_CHAT_TYPES = ['gap_alert', 'request_result'];
+                  // محادثة الذكاء (تغطية/نتائجها/تغيّرُ الجدول) لا تظهر هنا — مكانها الجات (الأورب).
+                  // أمّا **طلبات التبديل** ونتائجها (request_result مع data.swap_v2) فمكانها هنا حصرًا.
+                  // (isOrbOnlyNotif = نفسُ منطقِ الاستثناء المستعمَلِ في العدّ وتحديدِ المقروء.)
                   const filtered = notifications.filter(n => {
-                    if (AI_CHAT_TYPES.includes(n.type) && !(n.type === 'request_result' && n.data?.swap_v2)) return false;
+                    if (isOrbOnlyNotif(n)) return false;
                     if (notifTab === 'unread') return !n.is_read;
                     if (notifTab === 'read') return n.is_read;
                     if (notifTab === 'announcements') return n.type === 'broadcast' || n.type === 'admin_message' || n.type === 'general';
@@ -2605,7 +2673,80 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                     );
                   }
 
-                  return filtered.map((notif: any) => {
+                  // اجمع صفوفَ التبديلِ حسبَ المجموعة: كرتٌ واحدٌ للطلبِ متعدّدِ الأيّام (باقي الأنواع كلٌّ على حدة)
+                  const swapGroups = new Map<string, any[]>();
+                  const feedItems: Array<{ kind: 'notif'; notif: any } | { kind: 'swap'; key: string; rows: any[] }> = [];
+                  for (const n of filtered) {
+                    if (n.type === 'swap_request') {
+                      const key = swapBatchKey(n);
+                      let g = swapGroups.get(key);
+                      if (!g) { g = []; swapGroups.set(key, g); feedItems.push({ kind: 'swap', key, rows: g }); }
+                      g.push(n);
+                    } else feedItems.push({ kind: 'notif', notif: n });
+                  }
+
+                  // كرتُ التبديلِ المجمَّع: عنوانٌ + نصُّ النطاق + رقائقُ (يوم·تاريخ) بحسبِ حالةِ كلِّ يوم + مراجعة
+                  const renderSwapBatch = (rows: any[], key: string) => {
+                    const sorted = [...rows].sort((a, b) => (NFY_DAY_INDEX[a.data?.day] ?? 9) - (NFY_DAY_INDEX[b.data?.day] ?? 9));
+                    const rep = sorted[0];
+                    const c = '#8B7CF0';
+                    const anyPending = sorted.some(r => r.action_type === 'accept_reject' && r.action_status === 'pending');
+                    const unread = sorted.some(r => !r.is_read);
+                    const timeAgo = getTimeAgo(new Date(rep.created_at));
+                    const accepted = sorted.filter(r => r.action_status === 'accepted').length;
+                    const rejected = sorted.filter(r => r.action_status === 'rejected').length;
+                    return (
+                      <TouchableOpacity
+                        key={`swap-${key}`}
+                        activeOpacity={0.85}
+                        onPress={() => setSwapDetail(rep)}
+                        style={{ backgroundColor: 'rgba(255,255,255,0.66)', borderRadius: scale(20), padding: scale(14), marginBottom: scale(12), borderWidth: scale(1), borderColor: unread ? nfyRgba(c, 0.45) : 'rgba(255,255,255,0.75)', shadowColor: '#3C3278', shadowOffset: { width: 0, height: scale(10) }, shadowOpacity: 0.1, shadowRadius: scale(18), elevation: 3 }}
+                      >
+                        <View style={{ flexDirection: 'row-reverse', gap: scale(12), alignItems: 'flex-start' }}>
+                          <LinearGradient colors={[c, nfyLighten(c, 0.5)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: scale(44), height: scale(44), borderRadius: scale(14), alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="swap-horizontal" size={scale(22)} color="#FFFFFF" />
+                          </LinearGradient>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', gap: scale(8) }}>
+                              <Text style={{ fontSize: scale(15), fontWeight: '800', color: NFY_INK, textAlign: 'right' }} numberOfLines={1}>Swap Request</Text>
+                              <Text style={{ fontSize: scale(10.5), fontWeight: '600', color: NFY_FAINT }}>{timeAgo}</Text>
+                            </View>
+                            <View style={{ marginTop: scale(5) }}><SwapScopeText notif={rep} /></View>
+                            {/* رقائقُ الأيّام: يوم · تاريخ، ملوّنةٌ بحسبِ حالةِ اليوم */}
+                            <View style={{ flexDirection: 'row-reverse', flexWrap: 'wrap', gap: scale(7), marginTop: scale(10) }}>
+                              {sorted.map((rw) => {
+                                const day = rw.data?.day;
+                                const st = rw.action_status;
+                                const tint = st === 'accepted' ? '#2FBF8F' : st === 'rejected' ? '#E0416A' : c;
+                                const bg = st === 'accepted' ? 'rgba(47,191,143,0.12)' : st === 'rejected' ? 'rgba(240,98,122,0.10)' : nfyRgba(c, 0.09);
+                                return (
+                                  <View key={rw.id} style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(5), paddingVertical: scale(6), paddingHorizontal: scale(10), borderRadius: scale(10), backgroundColor: bg, borderWidth: scale(1), borderColor: nfyRgba(tint, 0.25) }}>
+                                    <Text style={{ fontSize: scale(11.5), fontWeight: '800', color: nfyDarken(tint, 0.1) }}>{NFY_DAY_SHORT[day] || day}</Text>
+                                    <Text style={{ fontSize: scale(10.5), fontWeight: '600', color: NFY_MUTED }}>· {swapDayDate(rw.data?.week_start, day)}</Text>
+                                    {st === 'accepted' && <Ionicons name="checkmark" size={scale(12)} color="#1E9E77" />}
+                                    {st === 'rejected' && <Ionicons name="close" size={scale(12)} color="#C0466A" />}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                            {anyPending ? (
+                              <TouchableOpacity onPress={() => setSwapDetail(rep)} activeOpacity={0.85} style={{ alignItems: 'center', justifyContent: 'center', marginTop: scale(11), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: c, shadowColor: c, shadowOffset: { width: 0, height: scale(8) }, shadowOpacity: 0.45, shadowRadius: scale(12), elevation: 4 }}>
+                                <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#fff' }}>Review request</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <Text style={{ fontSize: scale(11), fontWeight: '700', color: NFY_MUTED, textAlign: 'right', marginTop: scale(9) }}>
+                                {accepted > 0 ? `${accepted} accepted` : ''}{accepted > 0 && rejected > 0 ? ' · ' : ''}{rejected > 0 ? `${rejected} declined` : ''}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  };
+
+                  return feedItems.map((item) => {
+                    if (item.kind === 'swap') return renderSwapBatch(item.rows, item.key);
+                    const notif = item.notif;
                     const v = notifVisual(notif);
                     const c = v.c;
                     const unread = !notif.is_read;
@@ -2658,7 +2799,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                               <Text style={{ fontSize: scale(10.5), fontWeight: '600', color: NFY_FAINT }}>{timeAgo}</Text>
                             </View>
                             {/* Body */}
-                            <Text style={{ fontSize: scale(12.5), lineHeight: scale(19), color: NFY_SOFT, textAlign: 'right', marginTop: scale(4) }} numberOfLines={4}>{notif.body}</Text>
+                            <Text style={{ fontSize: scale(12.5), lineHeight: scale(19), color: NFY_SOFT, textAlign: 'right', marginTop: scale(4) }} numberOfLines={6}>{notif.body}</Text>
                             {/* Sender */}
                             {notif.sender_name ? (
                               <Text style={{ fontSize: scale(10.5), fontWeight: '600', color: NFY_MUTED, textAlign: 'right', marginTop: scale(5) }}>— {notif.sender_name}</Text>
@@ -2679,10 +2820,9 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
                                 <TouchableOpacity
                                   onPress={() => setSwapDetail(notif)}
                                   activeOpacity={0.85}
-                                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(7), marginTop: scale(11), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: c, shadowColor: c, shadowOffset: { width: 0, height: scale(8) }, shadowOpacity: 0.45, shadowRadius: scale(12), elevation: 4 }}
+                                  style={{ alignItems: 'center', justifyContent: 'center', marginTop: scale(11), paddingVertical: scale(12), borderRadius: scale(14), backgroundColor: c, shadowColor: c, shadowOffset: { width: 0, height: scale(8) }, shadowOpacity: 0.45, shadowRadius: scale(12), elevation: 4 }}
                                 >
                                   <Text style={{ fontSize: scale(14), fontWeight: '800', color: '#fff' }}>Review request</Text>
-                                  <Ionicons name="chevron-back" size={scale(17)} color="#fff" />
                                 </TouchableOpacity>
                               </>
                             )}
@@ -2742,94 +2882,111 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         {swapDetail && (() => {
           const c = '#8B7CF0';
           const requester = swapDetail.sender_name || swapDetail.data?.requester_name || '—';
-          const dayKey = swapDetail.data?.day;
-          const DAY_LABEL: Record<string, string> = { sunday: 'Sunday', monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday' };
-          const expiresAt = swapDetail.data?.expires_at;
-          let expiryTxt = '';
-          if (expiresAt) {
-            const ms = new Date(expiresAt).getTime() - Date.now();
-            if (ms > 0) { const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000); expiryTxt = h >= 1 ? `Expires in ${h}h` : `Expires in ${Math.max(1, m)}m`; }
-            else expiryTxt = 'Expired';
-          }
+          // كلُّ أيّامِ هذا الطلب (نفسُ swap_batch) مرتّبةً — كرتٌ لكلِّ يوم مع موافق/رفضٍ مستقلّ
+          const batchKey = swapBatchKey(swapDetail);
+          const dayRows = notifications
+            .filter((n: any) => n.type === 'swap_request' && swapBatchKey(n) === batchKey)
+            .sort((a: any, b: any) => (NFY_DAY_INDEX[a.data?.day] ?? 9) - (NFY_DAY_INDEX[b.data?.day] ?? 9));
+          const rowsToShow = dayRows.length ? dayRows : [swapDetail];
+          const multi = rowsToShow.length > 1;
+          const fmtExpiry = (expAt?: string) => {
+            if (!expAt) return '';
+            const ms = new Date(expAt).getTime() - Date.now();
+            if (ms <= 0) return 'Expired';
+            const h = Math.floor(ms / 3600000); const m = Math.floor((ms % 3600000) / 60000);
+            return h >= 1 ? `Expires in ${h}h` : `Expires in ${Math.max(1, m)}m`;
+          };
           return (
             <View style={{ flex: 1 }}>
+              {/* خلفيّةٌ مطابقةٌ لصفحةِ الإشعارات: تدرّجٌ + فقاعاتٌ متحرّكة */}
               <LinearGradient colors={['#F0F4F8', '#E8EDF3', '#F5F0F8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFillObject} />
-              <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+              <Animated.View style={[styles.blob1, { transform: [
+                { translateX: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(30)] }) },
+                { translateY: blob1Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-40)] }) },
+              ] }]} />
+              <Animated.View style={[styles.blob2, { transform: [
+                { translateX: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(-50)] }) },
+                { translateY: blob2Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(30)] }) },
+              ] }]} />
+              <Animated.View style={[styles.blob3, { transform: [
+                { translateX: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(40)] }) },
+                { translateY: blob3Anim.interpolate({ inputRange: [0, 1], outputRange: [scale(0), scale(50)] }) },
+              ] }]} />
+              <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, scale(10)) }}>
                 <View style={{ flex: 1, paddingHorizontal: scale(18) }}>
-                  {/* Header */}
-                  <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(10), paddingVertical: scale(12) }}>
-                    <Text style={{ flex: 1, fontSize: scale(21), fontWeight: '800', color: '#1B1E33', textAlign: 'right' }}>Swap Request</Text>
-                    <View style={{ paddingVertical: scale(6), paddingHorizontal: scale(11), borderRadius: scale(999), backgroundColor: nfyRgba(c, 0.14) }}>
-                      <Text style={{ fontSize: scale(10.5), fontWeight: '800', color: nfyDarken(c, 0.1) }}>Needs your decision</Text>
-                    </View>
+                  {/* Header — العنوان في الوسط، الإكس على الجانب */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: scale(8), paddingBottom: scale(4) }}>
                     <TouchableOpacity onPress={() => setSwapDetail(null)} style={{ width: scale(40), height: scale(40), borderRadius: scale(14), alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.7)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.85)' }}>
                       <Ionicons name="close" size={scale(20)} color={NFY_SOFT} />
                     </TouchableOpacity>
+                    <Text style={{ flex: 1, fontSize: scale(21), fontWeight: '800', color: '#1B1E33', textAlign: 'center' }}>Swap Request</Text>
+                    <View style={{ width: scale(40) }} />
                   </View>
 
-                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: scale(20) }}>
-                    {/* Hero: You ⇄ requester */}
-                    <View style={{ alignItems: 'center', paddingVertical: scale(24) }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(16) }}>
-                        <View style={{ alignItems: 'center', gap: scale(9), width: scale(112) }}>
-                          <LinearGradient colors={[c, nfyLighten(c, 0.4)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: scale(70), height: scale(70), borderRadius: scale(35), alignItems: 'center', justifyContent: 'center' }}>
-                            <Ionicons name="person" size={scale(34)} color="#fff" />
-                          </LinearGradient>
-                          <Text style={{ fontSize: scale(14), fontWeight: '800', color: NFY_INK }}>You</Text>
-                        </View>
-                        <View style={{ width: scale(50), height: scale(50), borderRadius: scale(16), alignItems: 'center', justifyContent: 'center', backgroundColor: c, shadowColor: c, shadowOffset: { width: 0, height: scale(10) }, shadowOpacity: 0.4, shadowRadius: scale(14), elevation: 5 }}>
-                          <Ionicons name="swap-horizontal" size={scale(26)} color="#fff" />
-                        </View>
-                        <View style={{ alignItems: 'center', gap: scale(9), width: scale(112) }}>
-                          <View style={{ width: scale(70), height: scale(70), borderRadius: scale(35), alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9ECF5', borderWidth: scale(1), borderColor: 'rgba(35,32,74,0.08)' }}>
-                            <Ionicons name="person" size={scale(34)} color="#7E86A2" />
+                  <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: scale(10), paddingBottom: scale(16) }}>
+                    {/* سطرُ النطاق: مَن يطلب + خاصّ/عامّ (بخطٍّ عريضٍ بين القوسين) */}
+                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: scale(11), borderRadius: scale(16), paddingVertical: scale(13), paddingHorizontal: scale(15), backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.78)' }}>
+                      <View style={{ width: scale(40), height: scale(40), borderRadius: scale(13), alignItems: 'center', justifyContent: 'center', backgroundColor: nfyRgba(c, 0.13) }}>
+                        <Ionicons name="swap-horizontal" size={scale(20)} color={nfyDarken(c, 0.05)} />
+                      </View>
+                      <View style={{ flex: 1 }}><SwapScopeText notif={swapDetail} size={13} color={NFY_SOFT} /></View>
+                    </View>
+
+                    {/* Section label */}
+                    <Text style={{ fontSize: scale(11), fontWeight: '800', letterSpacing: 1, color: NFY_FAINT, marginTop: scale(18), marginBottom: scale(10), textAlign: 'center' }}>
+                      {multi ? 'CHOOSE THE DAYS TO SWAP' : 'SWAP DAY'}
+                    </Text>
+
+                    {/* كرتٌ لكلِّ يوم: يوم + تاريخ + موافقة/رفضٍ مستقلّ (أو حالتُه إن عولِج) */}
+                    {rowsToShow.map((row: any) => {
+                      const day = row.data?.day;
+                      const st = row.action_status;
+                      const pending = row.action_type === 'accept_reject' && st === 'pending';
+                      const dateTxt = swapDayDate(row.data?.week_start, day);
+                      const expTxt = pending ? fmtExpiry(row.data?.expires_at) : '';
+                      return (
+                        <View key={row.id} style={{ borderRadius: scale(18), paddingVertical: scale(15), paddingHorizontal: scale(14), marginBottom: scale(10), backgroundColor: 'rgba(255,255,255,0.62)', borderWidth: scale(1), borderColor: pending ? nfyRgba(c, 0.3) : 'rgba(255,255,255,0.82)', alignItems: 'center', shadowColor: '#3C3278', shadowOffset: { width: 0, height: scale(6) }, shadowOpacity: pending ? 0.07 : 0, shadowRadius: scale(12) }}>
+                          {/* اسمُ الطالبِ في الوسط + أيقونةُ التبديل */}
+                          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: scale(7) }}>
+                            <View style={{ width: scale(28), height: scale(28), borderRadius: scale(9), alignItems: 'center', justifyContent: 'center', backgroundColor: nfyRgba(c, 0.13) }}>
+                              <Ionicons name="swap-horizontal" size={scale(15)} color={nfyDarken(c, 0.05)} />
+                            </View>
+                            <Text style={{ fontSize: scale(15), fontWeight: '800', color: NFY_INK, textAlign: 'center' }} numberOfLines={1}>{nfyDr(requester === '—' ? '' : requester)}</Text>
                           </View>
-                          <Text style={{ fontSize: scale(14), fontWeight: '800', color: NFY_INK }} numberOfLines={1}>{requester}</Text>
+                          {/* اليومُ والتاريخُ في الوسط */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(6), marginTop: scale(9) }}>
+                            <Ionicons name="calendar-outline" size={scale(14)} color={NFY_MUTED} />
+                            <Text style={{ fontSize: scale(12.5), fontWeight: '700', color: NFY_SOFT }}>{NFY_DAY_LABEL[day] || day}{dateTxt ? `  ·  ${dateTxt}` : ''}</Text>
+                          </View>
+                          {expTxt ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(4), marginTop: scale(6) }}>
+                              <Ionicons name="time-outline" size={scale(12)} color="#C77" />
+                              <Text style={{ fontSize: scale(10.5), fontWeight: '700', color: '#C77' }}>{expTxt}</Text>
+                            </View>
+                          ) : null}
+                          {pending ? (
+                            <View style={{ flexDirection: 'row', gap: scale(9), marginTop: scale(13), alignSelf: 'stretch' }}>
+                              <TouchableOpacity onPress={() => acceptNotif(row)} activeOpacity={0.85} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(6), paddingVertical: scale(11), borderRadius: scale(12), backgroundColor: '#2FBF8F', shadowColor: '#2FBF8F', shadowOffset: { width: 0, height: scale(6) }, shadowOpacity: 0.4, shadowRadius: scale(10), elevation: 3 }}>
+                                <Ionicons name="checkmark" size={scale(16)} color="#fff" />
+                                <Text style={{ fontSize: scale(13.5), fontWeight: '800', color: '#fff' }}>Accept</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => rejectNotif(row)} activeOpacity={0.85} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(6), paddingVertical: scale(11), borderRadius: scale(12), backgroundColor: 'rgba(240,98,122,0.10)', borderWidth: scale(1.5), borderColor: 'rgba(240,98,122,0.32)' }}>
+                                <Ionicons name="close" size={scale(16)} color="#E0416A" />
+                                <Text style={{ fontSize: scale(13.5), fontWeight: '800', color: '#E0416A' }}>Decline</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'center', gap: scale(6), marginTop: scale(11), alignSelf: 'center', paddingVertical: scale(6), paddingHorizontal: scale(12), borderRadius: scale(10), backgroundColor: st === 'accepted' ? 'rgba(47,191,143,0.13)' : 'rgba(240,98,122,0.12)' }}>
+                              <Ionicons name={st === 'accepted' ? 'checkmark-circle' : 'close-circle'} size={scale(14)} color={st === 'accepted' ? '#1E9E77' : '#C0466A'} />
+                              <Text style={{ fontSize: scale(11), fontWeight: '800', color: st === 'accepted' ? '#1E9E77' : '#C0466A' }}>{st === 'accepted' ? 'Accepted' : 'Declined'}</Text>
+                            </View>
+                          )}
                         </View>
-                      </View>
-                      {dayKey ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: scale(8), marginTop: scale(18), paddingVertical: scale(8), paddingHorizontal: scale(14), borderRadius: scale(12), backgroundColor: 'rgba(255,255,255,0.65)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.85)' }}>
-                          <Ionicons name="calendar-outline" size={scale(15)} color={NFY_SOFT} />
-                          <Text style={{ fontSize: scale(12.5), fontWeight: '700', color: NFY_SOFT }}>{DAY_LABEL[dayKey] || dayKey}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    {/* Details / message */}
-                    <View style={{ borderRadius: scale(18), padding: scale(16), backgroundColor: 'rgba(255,255,255,0.62)', borderWidth: scale(1), borderColor: 'rgba(255,255,255,0.78)' }}>
-                      <Text style={{ fontSize: scale(11), fontWeight: '800', letterSpacing: 1, color: NFY_FAINT, marginBottom: scale(8), textAlign: 'right' }}>DETAILS</Text>
-                      <Text style={{ fontSize: scale(14), lineHeight: scale(22), color: NFY_SOFT, textAlign: 'right' }}>{swapDetail.body}</Text>
-                    </View>
-
-                    {expiryTxt ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), marginTop: scale(16) }}>
-                        <Ionicons name="time-outline" size={scale(15)} color="#C77" />
-                        <Text style={{ fontSize: scale(12.5), fontWeight: '700', color: '#C77' }}>{expiryTxt}</Text>
-                      </View>
-                    ) : null}
+                      );
+                    })}
                   </ScrollView>
-
-                  {/* Sticky actions */}
-                  <View style={{ flexDirection: 'row', gap: scale(12), paddingVertical: scale(14) }}>
-                    <TouchableOpacity
-                      onPress={async () => { const s = swapDetail; setSwapDetail(null); await acceptNotif(s); }}
-                      activeOpacity={0.85}
-                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), paddingVertical: scale(15), borderRadius: scale(16), backgroundColor: '#2FBF8F', shadowColor: '#2FBF8F', shadowOffset: { width: 0, height: scale(10) }, shadowOpacity: 0.5, shadowRadius: scale(14), elevation: 5 }}
-                    >
-                      <Ionicons name="checkmark" size={scale(19)} color="#fff" />
-                      <Text style={{ fontSize: scale(15.5), fontWeight: '800', color: '#fff' }}>Accept swap</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={async () => { const s = swapDetail; setSwapDetail(null); await rejectNotif(s); }}
-                      activeOpacity={0.85}
-                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(8), paddingVertical: scale(15), borderRadius: scale(16), backgroundColor: 'rgba(240,98,122,0.11)', borderWidth: scale(1.5), borderColor: 'rgba(240,98,122,0.34)' }}
-                    >
-                      <Ionicons name="close" size={scale(19)} color="#E0416A" />
-                      <Text style={{ fontSize: scale(15.5), fontWeight: '800', color: '#E0416A' }}>Decline</Text>
-                    </TouchableOpacity>
-                  </View>
                 </View>
-              </SafeAreaView>
+              </View>
             </View>
           );
         })()}

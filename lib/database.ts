@@ -1776,17 +1776,30 @@ export async function getUnreadCount(recipientId: string): Promise<number> {
   if (!recipientId) return 0; // أثناء تحميل المصادقة قد يكون المُعرّف فارغًا
   try {
     // استعلام select بسيط أوثق من head-count (الأخير يُرجِع خطأً فارغًا أحيانًا).
-    // نستثني أنواع محادثة الذكاء (مكانها الجات لا الجرس).
+    // نستثني أنواع محادثة الذكاء (مكانها الجات لا الجرس). أمّا طلبُ التبديل فيُعَدّ هنا:
+    // كرتُه في صفحة الإشعارات، ويبقى غيرَ مقروءٍ (is_read=false) حتى يُوافَق/يُرفَض
+    // (المحرّك يضبط is_read=true عند المعالجة)، فيظلّ الباجُ على الجرس حتى معالجةِ الطلب —
+    // ويصمد عبر إغلاقِ التطبيق وفتحِه لأنّ العدّ من قاعدةِ البيانات لا من الذاكرة.
+    // طلبُ التبديلِ متعدّدُ الأيّام = صفٌّ لكلِّ يوم، لكنّه **طلبٌ واحد**: نعُدُّه ١ لكلِّ مجموعة
+    // (swap_batch) لا لكلِّ يوم — يبقى ١ ما دام يومٌ واحدٌ معلّقًا، ويصفرُ حين تُعالَج كلُّ الأيّام.
     const { data, error } = await supabase
       .from('notifications')
-      .select('id')
+      .select('id, type, data')
       .eq('recipient_id', recipientId)
       .eq('is_read', false)
-      .not('type', 'in', '("swap_request","gap_alert","request_result")');
+      .not('type', 'in', '("gap_alert","request_result","seat_change")');
     if (error) throw error;
+    let count = 0;
+    const seenSwap = new Set<string>();
+    for (const row of (data || []) as any[]) {
+      if (row.type === 'swap_request') {
+        const key = row.data?.swap_batch || row.id;
+        if (!seenSwap.has(key)) { seenSwap.add(key); count += 1; }
+      } else count += 1;
+    }
     // eslint-disable-next-line no-console
-    console.log(`[bell-count] recipient=${recipientId.slice(0, 8)} unread=${data?.length ?? 0}`);
-    return data?.length ?? 0;
+    console.log(`[bell-count] recipient=${recipientId.slice(0, 8)} unread=${count}`);
+    return count;
   } catch (error: any) {
     // فشل الشبكة عابر (انقطاع/خمول) — لا نُزعج بـERROR، نُرجِع 0 بهدوء
     const msg = error?.message || error?.code || '';

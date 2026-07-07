@@ -384,6 +384,16 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
     } catch { /* يُعاد المحاولة بسحبٍ آخر */ }
   }, [notif.id, onSeen]);
 
+  // حذفُ الكرت (زرّ Delete في الدرج) — يُزيل الصفَّ نهائيًّا كبقيّة الكروت
+  const onDelete = useCallback(async () => {
+    closeSwipe();
+    try {
+      const { deleteNotification } = await import('../lib/database');
+      await deleteNotification(notif.id);
+      onSeen();
+    } catch { /* يُعاد المحاولة بسحبٍ آخر */ }
+  }, [notif.id, onSeen, closeSwipe]);
+
   // يحفظ الخيط في بيانات الإشعار (دمجٌ مع الحقائق) فلا يُعاد توليده عند كلّ فتح
   const persist = useCallback(async (h: V2Message[]) => {
     try {
@@ -455,19 +465,20 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
       {/* الدرج خلف الكرت بكامل عرضه ونفس استدارته وتدرّجه — فزوايا الكرت المستديرة
           تكشفه (لا الخلفيّة)، فيبدوان قطعةً واحدة متّصلة الحواف */}
       <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        <LinearGradient
-          colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
-          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.swActs}>
-          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('done'); }}>
-            <Ionicons name="checkmark" size={scale(21)} color="#34D399" />
-            <Text style={[styles.swTxt, { color: '#34D399' }]}>Done</Text>
+        {/* اللونُ خلفَ الأزرارِ فقط (شريطُ يسارِ الدرج)، لا خلفَ الكرتِ الشفّافِ كلِّه */}
+        <View style={[styles.swActs, { overflow: 'hidden' }]}>
+          <LinearGradient
+            colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
+            start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
+            <Ionicons name="trash" size={scale(21)} color="#FCA5A5" />
+            <Text style={[styles.swTxt, { color: '#FCA5A5' }]}>Delete</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={() => { closeSwipe(); mark('ignored'); }}>
-            <Ionicons name="close" size={scale(21)} color="#FB7185" />
-            <Text style={[styles.swTxt, { color: '#FB7185' }]}>Dismiss</Text>
+            <Ionicons name="close" size={scale(21)} color="#FDE68A" />
+            <Text style={[styles.swTxt, { color: '#FDE68A' }]}>Dismiss</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -579,14 +590,14 @@ function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => vo
 
   return (
     <View style={styles.swWrap}>
-      {/* درج «حذف» — يُكشَف بالسحب يمينًا (أحمر، خلف الكرت بنفس استدارته) */}
+      {/* درج «حذف» — اللونُ الأحمرُ في مكانِ الزرِّ فقط (يسار الدرج)، لا خلفَ الكرتِ الشفّافِ كلِّه */}
       <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        <LinearGradient
-          colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']}
-          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN }}>
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN, overflow: 'hidden' }}>
+          <LinearGradient
+            colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']}
+            start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
           <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
             <Ionicons name="trash" size={scale(21)} color="#FECDD3" />
             <Text style={[styles.swTxt, { color: '#FECDD3' }]}>حذف</Text>
@@ -694,8 +705,8 @@ function ShortageCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void
   return (
     <View style={styles.swWrap}>
       <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        <LinearGradient colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN }}>
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN, overflow: 'hidden' }}>
+          <LinearGradient colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
           <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
             <Ionicons name="trash" size={scale(21)} color="#FECDD3" />
             <Text style={[styles.swTxt, { color: '#FECDD3' }]}>حذف</Text>

@@ -29,7 +29,8 @@ function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** خانةٌ مرجعيّة → صفُّ جدولٍ صناعيّ بنبرة (منطفئ/مضيء). */
+/** خانةٌ مرجعيّة → صفُّ جدولٍ صناعيّ بنبرة: مكانُك القديمُ مشطوبٌ منطفئ (tone=old)،
+ *  ومكانُك الجديدُ مضيء (tone=new). باسمِك في الحالتَين — بكلِّ بساطة. */
 function seatToSlot(
   ch: SeatChangeUI, s: SeatRefUI, tone: 'old' | 'new', i: number,
   doctorId: string, doctorName: string,
@@ -82,9 +83,16 @@ export default function SeatChangeOverlay({
 
   const slots = useMemo<ScheduleSlot[]>(() => {
     const out: ScheduleSlot[] = [];
+    const sigOf = (s: SeatRefUI) => `${s.role}.${s.clinic}.${s.period}`;
     weekChanges.forEach((ch) => {
-      ch.old.forEach((s, i) => out.push(seatToSlot(ch, s, 'old', i, doctorId, doctorName)));
+      const newSigs = new Set(ch.new.map(sigOf));
+      // الحالةُ الجديدةُ **كاملةً** (مضيئةٌ باسمك) — تشملُ الفترةَ الباقيةَ والمُكتسَبة، فيظهرُ
+      // الانتقالُ فترة→فترتَين (تغطية) وفترتَان→فترة (تقلّص) بوضوحٍ وبلا تكرارِ اسم.
       ch.new.forEach((s, i) => out.push(seatToSlot(ch, s, 'new', i, doctorId, doctorName)));
+      // ما **غادرتَه فقط** (خانةٌ قديمةٌ ليست ضمن الجديد) — تُرسَمُ مشطوبةً منطفئةً باسمك.
+      // (الخانةُ الباقيةُ في الحالتَين لا تُرسَمُ مرّتَين فلا يتكرّرُ الاسمُ داخلها.)
+      ch.old.filter((s) => !newSigs.has(sigOf(s)))
+        .forEach((s, i) => out.push(seatToSlot(ch, s, 'old', i, doctorId, doctorName)));
     });
     return out;
   }, [weekChanges, doctorId, doctorName]);

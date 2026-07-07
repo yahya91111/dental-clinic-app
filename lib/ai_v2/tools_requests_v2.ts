@@ -386,17 +386,20 @@ export const REQUESTS_TOOLS_V2: V2Tool[] = [
       'إلى: طبيبٍ باسمه (target=doctor مع doctorIndex)، أو كلّ أطبّاء فترةٍ (target=period ' +
       'مع period)، أو كلّ الشفت الآخر (target=other_shift). يصل المستلمين إشعارٌ ' +
       'بموافق/رفض؛ أوّل موافقٍ يُنفَّذ معه فورًا وتُسحب البقيّة. الطالب هو المستخدم نفسه ' +
-      'دائمًا. الصلاحيّة ٢٤ ساعة أو دخول اليوم.',
+      'دائمًا. الصلاحيّة ٢٤ ساعة أو دخول اليوم. ' +
+      'لأكثرِ من يوم (مثلًا الثلاثاء والأربعاء والخميس) مرّر days بكلّ الأيّام — يصل كرتٌ ' +
+      'واحدٌ للمستلم يوافق/يرفض كلَّ يومٍ على حدة.',
     input_schema: {
       type: 'object',
       properties: {
         weekStart: { type: 'string' },
-        day: { type: 'string', enum: [...DAYS] },
+        day: { type: 'string', enum: [...DAYS], description: 'ليومٍ واحد (أو استعمل days لأكثرِ من يوم).' },
+        days: { type: 'array', items: { type: 'string', enum: [...DAYS] }, description: 'لأكثرِ من يوم: كلُّ الأيّام المطلوبة. يتقدّم على day.' },
         target: { type: 'string', enum: ['doctor', 'period', 'other_shift'] },
         doctorIndex: { type: 'integer', description: 'فقط لو target=doctor.' },
         period: { type: 'integer', enum: [1, 2, 3, 4], description: 'فقط لو target=period.' },
       },
-      required: ['weekStart', 'day', 'target'],
+      required: ['weekStart', 'target'],
     },
   },
   {
@@ -744,6 +747,66 @@ function resolveDoctor(ctx: V2ToolContext, n: unknown): Resolved | null {
 const isDay = (d: unknown): d is (typeof DAYS)[number] =>
   typeof d === 'string' && (DAYS as readonly string[]).includes(d);
 
+// ─── عزلُ أثرِ إضافةِ طبيبٍ/ترقيةِ متدرّبٍ على الشفتِ الذي لا يعملُه الوافد ───
+// إعادةُ البناءِ من يومٍ تُعيدُ توزيعَ **كلا الشفتين**، فتعجلاتُ العدلِ المشتركةُ قد تُزحزحُ
+// الشفتَ الآخرَ (غيرَ ذي الصلةِ بالوافد) بلا فائدة. الحلُّ: بعدَ البناءِ نُعيدُ خاناتِ ذلك
+// الشفتِ إلى أصلِها (لقطةٌ قبلَ البناء) — فلا يتغيّرُ ولا تصلُه إشعاراتُ «تغيّرَ جدولُك»
+// (تُحسَبُ من الحالةِ بعدَ exec داخلَ طبقةِ الفرق). شفتُ الوافدِ يبقى بترتيبِ البناءِ الجديد.
+type ShiftSnapRow = {
+  day_of_week: string; period: number; clinic_number: number;
+  doctor_id: string; doctor_name: string; role: string; status: string; source?: string | null;
+};
+// النصفُ: 0=صباح (ف١،٢) / 1=مساء (ف٣،٤). الاحتياطُ period=0 يُصنَّفُ بعمودِه (1=صباح، 2=مساء).
+const halfOfSlot = (period: number, clinicNumber: number): 0 | 1 =>
+  period === 0 ? (clinicNumber === 2 ? 1 : 0) : (period <= 2 ? 0 : 1);
+
+async function snapshotActiveExtra(clinicId: string, weekStart: string, days: readonly string[]): Promise<ShiftSnapRow[]> {
+  const { supabase } = await import('../supabase');
+  const { data } = await supabase
+    .from('schedule_slots')
+    .select('day_of_week, period, clinic_number, doctor_id, doctor_name, role, status, source')
+    .eq('clinic_id', clinicId).eq('week_start', weekStart)
+    .in('day_of_week', [...days]).in('status', ['active', 'extra']);
+  return (data || []) as ShiftSnapRow[];
+}
+
+async function preserveUnaffectedShift(
+  clinicId: string, weekStart: string, days: readonly string[],
+  newDoctorId: string, snap: ShiftSnapRow[],
+): Promise<void> {
+  const { supabase } = await import('../supabase');
+  const sig = (rows: ShiftSnapRow[]) =>
+    rows.map((s) => `${s.period}|${s.clinic_number}|${s.role}|${s.status}|${s.doctor_id}`).sort().join(',');
+  for (const day of days) {
+    const { data: buildRows } = await supabase
+      .from('schedule_slots')
+      .select('day_of_week, period, clinic_number, doctor_id, doctor_name, role, status, source')
+      .eq('clinic_id', clinicId).eq('week_start', weekStart)
+      .eq('day_of_week', day).in('status', ['active', 'extra']);
+    const build = (buildRows || []) as ShiftSnapRow[];
+    // نصفُ الوافدِ اليوم (من خاناتِه بعدَ البناء) — إن غابَ نُعيدُ اليومَ كاملًا لأصله.
+    const hisHalves = new Set(build.filter((s) => s.doctor_id === newDoctorId).map((s) => halfOfSlot(s.period, s.clinic_number)));
+    const snapDay = snap.filter((s) => s.day_of_week === day);
+    const snapOther = snapDay.filter((s) => !hisHalves.has(halfOfSlot(s.period, s.clinic_number)));
+    const otherDocs = new Set(snapOther.map((s) => s.doctor_id));
+    // نُبقي نصفَ الوافدِ من البناء، ونُسقِطُ منه أيَّ طبيبٍ من الشفتِ الآخرِ نُقِلَ إليه خطأً (تفادي التكرار).
+    const keepBuild = build.filter((s) => hisHalves.has(halfOfSlot(s.period, s.clinic_number)) && !otherDocs.has(s.doctor_id));
+    const desired = [...keepBuild, ...snapOther];
+    if (sig(build) === sig(desired)) continue; // البناءُ لم يمسَّ الشفتَ الآخرَ — لا كتابة.
+    await supabase.from('schedule_slots').delete()
+      .eq('clinic_id', clinicId).eq('week_start', weekStart)
+      .eq('day_of_week', day).in('status', ['active', 'extra']);
+    if (desired.length) {
+      await supabase.from('schedule_slots').insert(desired.map((s) => ({
+        clinic_id: clinicId, week_start: weekStart, day_of_week: s.day_of_week,
+        period: s.period, clinic_number: s.clinic_number,
+        doctor_id: s.doctor_id, doctor_name: s.doctor_name,
+        role: s.role, status: s.status, source: s.source ?? 'ai',
+      })));
+    }
+  }
+}
+
 function actorOf(ctx: V2ToolContext): { id: string; role: string } | null {
   return ctx.user ? { id: ctx.user.id, role: ctx.user.role } : null;
 }
@@ -1067,14 +1130,21 @@ export async function dispatchRequestToolV2(
       }
 
       case 'request_swap': {
-        if (!isDay(r.day)) return 'Tool error: اليوم غير صالح.';
         const wsEff = String(r.weekStart);
+        // يومٌ واحد (day) أو أكثر (days) — نوحّدها في قائمةٍ ونُسقط المكرّر وغير الصالح.
+        const rawDays: string[] = Array.isArray(r.days) && r.days.length ? r.days.map(String)
+          : (r.day ? [String(r.day)] : []);
+        const daysList = [...new Set(rawDays)].filter((d) => isDay(d)) as (typeof DAYS)[number][];
+        if (daysList.length === 0) return 'Tool error: لا يوم صالح للطلب.';
+
         let mode: { kind: 'doctor'; doctorId: string } | { kind: 'period'; period: number } | { kind: 'other_shift' };
+        let docName = '';
         if (r.target === 'doctor') {
           const doc = resolveDoctor(ctx, r.doctorIndex);
           if (!doc) return 'Tool error: رقم الطبيب غير صالح.';
           if (doc.id === actor.id) return 'Tool error: لا تبديل بين الطبيب ونفسه.';
           mode = { kind: 'doctor', doctorId: doc.id };
+          docName = doc.name;
         } else if (r.target === 'period') {
           const p = Number(r.period);
           if (![1, 2, 3, 4].includes(p)) return 'Tool error: الفترة غير صالحة.';
@@ -1082,24 +1152,44 @@ export async function dispatchRequestToolV2(
         } else {
           mode = { kind: 'other_shift' };
         }
-        const listed = await requestsV2.listSwapTargets({
-          clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
-          requesterId: actor.id, mode,
-        });
-        if (!listed.success || !listed.targets) return `Tool error: ${listed.error}`;
+        // نطاقُ الطلب + وسمُه للصياغة («تبديل عام مع الشفت/الفترة …»).
+        const scope: 'person' | 'period' | 'shift' =
+          r.target === 'doctor' ? 'person' : r.target === 'period' ? 'period' : 'shift';
+        const PERIOD_ORD: Record<number, string> = { 1: 'الأولى', 2: 'الثانية', 3: 'الثالثة', 4: 'الرابعة' };
+        const scopeLabel = scope === 'period' ? `الفترة ${PERIOD_ORD[Number(r.period)] || ''}`.trim() : undefined;
+
+        // الأهدافُ تُحسبُ لكلِّ يومٍ على حدة (التوفّر يختلفُ بحسبِ اليوم).
+        const targetsByDay: Partial<Record<(typeof DAYS)[number], { id: string; name: string }[]>> = {};
+        let lastErr = '';
+        for (const day of daysList) {
+          const listed = await requestsV2.listSwapTargets({
+            clinicId: ctx.clinicId, weekStart: wsEff, day, requesterId: actor.id, mode,
+          });
+          if (listed.success && listed.targets && listed.targets.length) targetsByDay[day] = listed.targets;
+          else if (listed.error) lastErr = listed.error;
+        }
+        if (Object.keys(targetsByDay).length === 0) {
+          return `Tool error: ${lastErr || 'لا زميل متاحٌ للتبديل في الأيّام المطلوبة.'}`;
+        }
+
         const { notifications } = await import('../algorithms/notifications');
         const opened = await notifications.openSwapGroup({
-          clinicId: ctx.clinicId, weekStart: wsEff, day: r.day,
+          clinicId: ctx.clinicId, weekStart: wsEff, days: daysList,
           requesterId: actor.id, requesterName: ctx.user?.name || '',
-          targets: listed.targets,
+          targets: [], targetsByDay, scope, scopeLabel,
         });
         if (!opened.success) return `Tool error: ${opened.error}`;
-        const n = opened.count || 0;
-        return final(
-          n === 1
-            ? `أُرسل طلب التبديل إلى ${listed.targets[0]!.name} ليوم ${DAY_AR[r.day]} — يتمّ فور موافقته وتصلك النتيجة.`
-            : `أُرسل طلب التبديل إلى ${n} من الأطبّاء ليوم ${DAY_AR[r.day]} — أوّل من يوافق يتمّ التبديل معه فورًا وتصلك النتيجة.`,
-        );
+
+        const sent = (opened.sentDays && opened.sentDays.length ? opened.sentDays : daysList);
+        const daysAr = sent.map((d) => DAY_AR[d]).join(' و');
+        const dayPhrase = sent.length === 1 ? `يوم ${daysAr}` : `أيّام ${daysAr}`;
+        const targetPhrase = scope === 'person'
+          ? `إلى ${docName}`
+          : `تبديلٍ عامٍّ (مع ${scope === 'shift' ? 'الشفت' : scopeLabel})`;
+        const tail = scope === 'person'
+          ? 'يتمّ فور موافقته وتصلك النتيجة.'
+          : 'أوّل من يوافق (لكلّ يوم) يتمّ التبديل معه فورًا وتصلك النتيجة.';
+        return final(`أُرسل طلب ${scope === 'person' ? 'التبديل' : ''} ${targetPhrase} ${dayPhrase} — ${tail}`.replace(/\s+/g, ' ').trim());
       }
 
       case 'swap_request_status': {
@@ -1218,9 +1308,9 @@ export async function dispatchRequestToolV2(
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
-                summary: `إلغاء ${statusAr} يوم ${DAY_AR[r.day]}`,
+                summary: `إلغاء ${statusAr} يوم ${dayWithDate(String(r.weekStart), r.day)}`,
                 weekStart: String(r.weekStart), day: r.day,
-                standalone: true, // الإلغاء حدثٌ مميَّز — لا يُدمَج في إشعار التسجيل فيختفي
+                kind: 'cancel', // إلغاءٌ — يُجمَع مع إلغاءٍ آخر فقط، ولا يمحو إشعارَ التسجيل
                 // الإلغاء أعاد ترتيب الجدول (عودة/رفع تغطية) → القائد يُطّلع عليه
                 scheduleChanged: !!((res as { covered?: boolean }).covered || (res as { restored?: boolean }).restored),
               });
@@ -1335,7 +1425,7 @@ export async function dispatchRequestToolV2(
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId, senderId: doc.id, senderName: doc.name,
                 summary: `نقل ${doc.name}: ${STATUS_AR[srcStatus]} ${DAY_AR[fromDay]} → ${STATUS_AR[toStatus]} يوم ${dayWithDate(wsEff, r.toDay)}`,
-                weekStart: wsEff, day: r.toDay, standalone: true, scheduleChanged: true,
+                weekStart: wsEff, day: r.toDay, kind: 'move', scheduleChanged: true,
               });
             }
           }
@@ -1470,12 +1560,18 @@ export async function dispatchRequestToolV2(
         const { schedule } = await import('../algorithms/schedule');
         const recipe = await schedule.loadBuildConfig(ctx.clinicId, ws2);
         if (!recipe) return 'Tool error: لا توجد وصفة بناءٍ محفوظة لهذا الأسبوع — أعِد بناء الجدول أوّلًا.';
+        const who = resolveDoctor(ctx, r.doctorIndex);
+        // لقطةٌ قبلَ البناء لاستعادةِ شفتِ من لا علاقةَ له بالوافد (عزلُ الأثر).
+        const orderA = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
+        const daysFromA = orderA.slice(orderA.indexOf(r.day));
+        const snapA = who ? await snapshotActiveExtra(ctx.clinicId, ws2, daysFromA) : [];
         const built = await schedule.build({
           ...recipe, clinicId: ctx.clinicId, weekStart: ws2, fromDay: r.day, dryRun: false,
         } as Parameters<typeof schedule.build>[0]);
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
-        const who = resolveDoctor(ctx, r.doctorIndex);
-        return final(`تمّ — أُعيد توزيعُ الجدول من يوم ${DAY_AR[r.day]} بإدخال ${who ? who.name : 'الطبيب الجديد'} بتوزيعٍ عادل (الأيّامُ السابقةُ كما هي).`);
+        // أعِد شفتَ من لم يُضَف إلى أصله: لا تغييرَ ولا إشعارَ لأطبائه.
+        if (who) await preserveUnaffectedShift(ctx.clinicId, ws2, daysFromA, who.id, snapA);
+        return final(`تمّ — أُدخِل ${who ? who.name : 'الطبيب الجديد'} من يوم ${DAY_AR[r.day]}، وأُعيد توزيعُ شفتِه بعدلٍ (الشفتُ الآخرُ والأيّامُ السابقةُ كما هي).`);
       }
 
       case 'replace_doctor_in_schedule': {
@@ -1543,9 +1639,14 @@ export async function dispatchRequestToolV2(
         const tm = { ...((recipe as { traineeModes?: Record<string, string> }).traineeModes || {}), [doc.id]: 'independent' as const };
         const newRecipe = { ...recipe, traineeModes: tm } as typeof recipe;
         await schedule.saveBuildConfig({ ...newRecipe, clinicId: ctx.clinicId, weekStart: ws2, dryRun: true } as Parameters<typeof schedule.saveBuildConfig>[0]);
+        // لقطةٌ قبلَ البناء لعزلِ الأثر عن شفتِ من لا علاقةَ له بالمُرقَّى.
+        const orderP = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
+        const daysFromP = orderP.slice(orderP.indexOf(day));
+        const snapP = await snapshotActiveExtra(ctx.clinicId, ws2, daysFromP);
         const built = await schedule.build({ ...newRecipe, clinicId: ctx.clinicId, weekStart: ws2, fromDay: day, dryRun: false } as Parameters<typeof schedule.build>[0]);
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
-        return final(`تمّ — ${doc.name} صار مستقلًّا وأُعيد توزيعُه من يوم ${DAY_AR[day]} كطبيبٍ عاديّ.`);
+        await preserveUnaffectedShift(ctx.clinicId, ws2, daysFromP, doc.id, snapP);
+        return final(`تمّ — ${doc.name} صار مستقلًّا وأُعيد توزيعُ شفتِه من يوم ${DAY_AR[day]} (الشفتُ الآخرُ كما هو).`);
       }
 
       case 'leader_apply': {

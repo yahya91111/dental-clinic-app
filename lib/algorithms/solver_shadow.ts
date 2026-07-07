@@ -401,6 +401,8 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
     if (!data) return { applied: 0, deferred: [] };
     const doctors = data.doctors;
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+    // قروبُ كلِّ طبيب (group_a/group_b/board) — لعزلِ موازنةِ الدليقيترِ داخلَ القروبِ الواحد.
+    const groupOf = new Map(doctors.map((d) => [d.id, d.groupTemplate.key]));
     // المتدرّبون (ظلال): قد يرثون صفَّ استضافةٍ من مدرّبٍ مُرقًّى. لا يُعَدُّ مقعدَ استضافةٍ
     // حقيقيًّا يُعاد إسنادُه — وإلّا رآه الحلّالُ «مفتوحًا» (المتدرّب خارج البِركة) فبادله
     // بطبيبٍ نشطٍ وأفسد الجدول. نُسقِط أيّ مقعدٍ شاغلُه متدرّبٌ من إعادة التوازن.
@@ -432,6 +434,11 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
           if (permBlocked.size) seat.eligible = seat.eligible.filter((id) => id === seat.current || !permBlocked.has(id));
           // أقصِ المتدرّبين (ظلال) والمنفردين (مشغولون الفترتين) من أهليّة الاستضافة.
           seat.eligible = seat.eligible.filter((id) => id === seat.current || (!traineeIds.has(id) && !soloDocs.has(id)));
+          // اعزلِ القروبات (قرارُ المستخدم): دورُ الدليقيترِ يدورُ داخلَ قروبِ شاغلِه فقط — إضافةُ
+          // طبيبٍ (أو ترقيةُ متدرّبٍ لمستقلّ) لقروبٍ لا تُحرّكُ أطباءَ القروبِ الآخرِ ولو عملوا نفسَ الشفت
+          // (تفضيلُ شفتٍ ثابت/نقلُ شفت). المقعدُ يبقى لشاغلِه إن لم يكن في قروبه بديلٌ مؤهَّل.
+          const curGroup = groupOf.get(seat.current);
+          seat.eligible = seat.eligible.filter((id) => id === seat.current || groupOf.get(id) === curGroup);
           delSeats.push(seat);
         }
       }

@@ -170,6 +170,12 @@ export async function resolveAudience(
  * التجميع بـ (القائد، الطبيب، الأسبوع) ما دام الإشعار غير مقروء. يحتاج day للتمييز.
  * ملاحظة: تبديل طبيبين متّفقين لا يُستدعى هنا (لا إزعاج للّيدر).
  */
+/** نصُّ إشعارِ القائد: بندٌ واحدٌ يبقى على سطرٍ واحد؛ طلبٌ مركّب (عدّةُ بنود) → اسمُ
+ *  الطبيب سطرًا، ثمّ كلُّ بندٍ في سطرٍ مستقلٍّ (لا حشرَها على سطرٍ واحد). */
+function leaderRequestBody(senderName: string, items: { day?: string; summary: string }[]): string {
+  if (items.length <= 1) return `${senderName}: ${items[0]?.summary ?? ''}`;
+  return `${senderName}:\n${items.map((x) => x.summary).join('\n')}`;
+}
 export async function notifyLeaderOfRequest(args: {
   clinicId: string;
   leaderId: string;
@@ -178,17 +184,49 @@ export async function notifyLeaderOfRequest(args: {
   summary: string;     // «مرضية يوم الأحد» — يصوغها المساعد
   weekStart?: string;  // للتجميع (طلبات نفس الأسبوع)
   day?: string;        // مفتاح التمييز (لا يتكرّر السطر لو أُعيد نفس اليوم)
-  standalone?: boolean; // حدثٌ مميَّز (إلغاء/إرجاع) لا يُدمَج في إشعار سابق — إشعار جديد دائمًا
+  /** نوعُ الحدث — يُجمَع مع مثيله فقط: تسجيلٌ مع تسجيل، إلغاءٌ مع إلغاء، نقلٌ مع نقل.
+   *  الافتراضيّ 'register'. هكذا يبقى الإلغاءُ لا يمحو إشعارَ التسجيل (نوعٌ مختلف). */
+  kind?: 'register' | 'cancel' | 'move';
   scheduleChanged?: boolean; // الطلب غيّر الجدول → وسمٌ في data (الأورب يتولّى عرضه لاحقًا)
 }): Promise<NotifResult> {
   try {
     const now = Date.now();
-    // الإلغاء/الإرجاع يصل **مستقلًّا** (standalone): حدثٌ مميَّز لا يُدمَج في إشعار
-    // التسجيل السابق — وإلّا اختفى خبرُه بإحلاله محلّ بند نفس اليوم (فيظنّ القائد
-    // أنّ شيئًا لم يصل). الطلبات العاديّة تُجمَّع كالمعتاد.
-    if (!args.standalone) {
-      // إشعار علمٍ غير مقروء لنفس (القائد، الطبيب، الأسبوع) **ومن نفس الجلسة**؟ أَلحِق به.
-      // خارج النافذة الزمنيّة = طلبٌ جديد منفصل → إشعار جديد.
+    const kind = args.kind ?? 'register';
+    const title = kind === 'cancel' ? 'إلغاء طلب' : kind === 'move' ? 'تعديل طلب' : 'طلب جديد';
+    // إلغاءٌ لطلبٍ ما زال القائدُ **لم يقرأْه**؟ أزِلْ بندَه من إشعارِ التسجيل غيرِ المقروء
+    // (يُحذَف الإشعارُ إن فرغ). فيصلُ القائدَ إشعارٌ واحدٌ (الإلغاء) كما وصلَه الطلبُ واحدًا،
+    // لا طلبٌ + إلغاء. المقروءُ يبقى — القائدُ رآه فعلًا فيَلزمه خبرُ الإلغاء منفصلًا.
+    if (kind === 'cancel' && args.day != null) {
+      const { data: regs } = await supabase
+        .from('notifications')
+        .select('id, data')
+        .eq('clinic_id', args.clinicId)
+        .eq('recipient_id', args.leaderId)
+        .eq('sender_id', args.senderId)
+        .eq('type', NotifType.REQUEST_INFO)
+        .eq('is_read', false);
+      for (const rr of ((regs || []) as { id: string; data: any }[])) {
+        if ((rr.data?.kind ?? 'register') !== 'register') continue;
+        if ((rr.data?.week_start ?? '') !== (args.weekStart ?? '')) continue;
+        const items: { day?: string; summary: string }[] = Array.isArray(rr.data?.items) ? rr.data.items : [];
+        const remaining = items.filter((it) => it.day !== args.day);
+        if (remaining.length === items.length) continue; // لا بندَ مطابقٌ لليوم المُلغى
+        if (remaining.length === 0) {
+          await supabase.from('notifications').delete().eq('id', rr.id);
+        } else {
+          await supabase
+            .from('notifications')
+            .update({ data: { ...rr.data, items: remaining }, body: leaderRequestBody(args.senderName, remaining) })
+            .eq('id', rr.id);
+        }
+      }
+    }
+    // تجميعٌ **حسب النوع**: كلُّ نوعٍ يندمج مع مثيله فقط ضمن (القائد، الطبيب، الأسبوع) ما
+    // دام غيرَ مقروءٍ وضمن النافذة الزمنيّة. فطلبان مركّبان (مرضيّة + استئذان) → إشعارٌ
+    // واحد، وإلغاءان معًا → إشعارٌ واحد؛ ولا يمحو الإلغاءُ إشعارَ التسجيل لأنّ نوعَه مختلف
+    // (فيبقى خبرُ التسجيل ظاهرًا). خارج النافذة أو نوعٌ مختلف = إشعارٌ جديد منفصل.
+    {
+      // إشعار علمٍ غير مقروء لنفس (القائد، الطبيب، الأسبوع، النوع) **ومن نفس الجلسة**؟ أَلحِق به.
       const { data: rows } = await supabase
         .from('notifications')
         .select('id, data, is_read')
@@ -199,6 +237,7 @@ export async function notifyLeaderOfRequest(args: {
         .eq('is_read', false);
       const existing = ((rows || []) as { id: string; data: any; is_read: boolean }[]).find(
         (r) =>
+          (r.data?.kind ?? 'register') === kind &&
           (r.data?.week_start ?? '') === (args.weekStart ?? '') &&
           now - (r.data?.batch_at ?? 0) < BATCH_WINDOW_MS,
       );
@@ -213,10 +252,10 @@ export async function notifyLeaderOfRequest(args: {
         const entry = { day: args.day, summary: args.summary };
         if (i >= 0) items[i] = entry; else items.push(entry);
         const changed = args.scheduleChanged || !!existing.data?.schedule_changed;
-        const body = `${args.senderName}: ${items.map((x) => x.summary).join('، ')}`;
+        const body = leaderRequestBody(args.senderName, items);
         await supabase
           .from('notifications')
-          .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now, schedule_changed: changed }, body, is_read: false })
+          .update({ data: { ...existing.data, items, week_start: args.weekStart, batch_at: now, schedule_changed: changed, kind }, body, is_read: false })
           .eq('id', existing.id);
         return ok();
       }
@@ -228,9 +267,9 @@ export async function notifyLeaderOfRequest(args: {
       senderId: args.senderId,
       senderName: args.senderName,
       type: NotifType.REQUEST_INFO,
-      title: 'طلب جديد',
-      body: `${args.senderName}: ${args.summary}`,
-      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now, schedule_changed: !!args.scheduleChanged },
+      title,
+      body: leaderRequestBody(args.senderName, [{ day: args.day, summary: args.summary }]),
+      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now, schedule_changed: !!args.scheduleChanged, kind },
     });
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
@@ -265,8 +304,9 @@ export async function broadcast(args: {
 // ═══════════════════════════════════════════════════════════════
 // يُنشئه طبقةُ الفرق (withSeatChangeDiff): تلتقط موضع الطبيب قبل/بعد أيّ عمليّة
 // (نقل القائد، تغطية، موازنة العدل الصامتة، تبديل) عبر كلّ الأيّام والأسابيع، فتُرسل
-// كرتًا واحدًا لكلّ حدثٍ يحمل تغييراته كلَّها. النقرُ يعرض الجدول الحقيقيّ معتمًا مع
-// مكانه القديم منطفئًا والجديد مضيئًا (الواجهة). كلُّ حدثٍ كرتٌ جديد (لا دمج).
+// كرتًا واحدًا يحمل تغييراته. النقرُ يعرض الجدول الحقيقيّ معتمًا مع مكانه القديم
+// منطفئًا مشطوبًا والجديد مضيئًا (الواجهة). الكرتُ **يُستبدَل** كلَّ مرّة (كرتٌ واحدٌ
+// للطبيب يعرض أحدثَ تغيير) — لا يتراكم كرتٌ جديدٌ لكلّ حدث.
 
 /** خانةٌ مرجعيّة في الكرت: عيادة/دليقيتر (period>0) أو احتياط (extra: clinic=0,period=0). */
 export type SeatRef = { clinic: number; period: number; role: 'clinic' | 'delegator' | 'extra' };
@@ -274,9 +314,9 @@ export type SeatRef = { clinic: number; period: number; role: 'clinic' | 'delega
 export type SeatChange = { weekStart: string; day: WeekDay; old: SeatRef[]; new: SeatRef[] };
 
 /**
- * كرت «طرأ تغييرٌ على جدولك» لطبيبٍ واحد — حدثٌ واحدٌ يجمع كلّ تغييراته (أيّام/أسابيع).
- * كرتٌ جديدٌ لكلّ حدث (لا دمج مع سابق) — تغييرٌ لاحقٌ ⇒ كرتٌ آخر. يصل صفحة الذكاء
- * (الأورب) ويُحمِّر الأيقونة، ويُدفَع عبر مُحفِّز قاعدة البيانات (حتى والتطبيق مغلق).
+ * كرت «طرأ تغييرٌ على جدولك» لطبيبٍ واحد — يحمل كلّ تغييراته (أيّام/أسابيع). **يُستبدَل**
+ * كلَّ مرّة: نحذف كرتَ الطبيب السابقَ ونُنشئ الأحدثَ، فيبقى كرتٌ واحدٌ يعرض آخرَ تغيير
+ * (لا تراكم). يصل صفحة الذكاء (الأورب) ويُحمِّر الأيقونة، ويُدفَع عبر مُحفِّز قاعدة البيانات.
  */
 export async function notifySeatChangeCard(args: {
   clinicId: string;
@@ -298,7 +338,12 @@ export async function notifySeatChangeCard(args: {
     const body = sup
       ? `طرأ تغييرٌ على جدولك — ${dayList.join('، ')} (تبِعتَ مدرّبك ${dr(sup.name)}).`
       : `طرأ تغييرٌ على جدولك — ${dayList.join('، ')}.`;
-    const { error } = await createNotification({
+    // كرتُ التغيير **يُستبدَل** لا يتراكم، لكن يجب أن **يتوهّجَ الأورب** ويعودَ الكرتُ أصفرَ
+    // (غير مقروء) عند كلّ تحديث. لذا نُدرِجُ الأحدثَ **أوّلًا** (إدراجٌ ⇒ يُطلِقُ الدفعَ +
+    // Realtime INSERT فيتوهّجُ الأورب فورًا، و is_read=false ⇒ الكرتُ أصفر)، **ثمّ** نحذفُ
+    // كروتَ الطبيب السابقةَ (عدا الجديد). بهذا الترتيب لا يهبطُ العدّادُ إلى صفرٍ لحظةَ الحذفِ
+    // فلا ينطفئُ الأورب — ويبقى كرتٌ واحدٌ يعرضُ آخرَ تغيير.
+    const { data: created, error } = await createNotification({
       clinic_id: args.clinicId,
       recipient_id: args.recipientId,
       sender_id: args.senderId,
@@ -320,7 +365,17 @@ export async function notifySeatChangeCard(args: {
       },
       is_read: false,
     });
-    return error ? fail(error.message) : ok();
+    if (error) return fail(error.message);
+    if (created?.id) {
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('clinic_id', args.clinicId)
+        .eq('recipient_id', args.recipientId)
+        .eq('type', NotifType.SEAT_CHANGE)
+        .neq('id', created.id);
+    }
+    return ok();
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
   }
@@ -490,6 +545,13 @@ type SwapDataV2 = {
   target_id: string; target_name: string;
   swap_group: string;
   expires_at: string; // ISO
+  /** مجموعةُ الطلبِ متعدّدِ الأيّام: تجمعُ كلَّ صفوفِ (اليوم×الهدف) في كرتٍ واحدٍ عند المستلم،
+   * وتُدفَع رنّةً واحدةً للطلبِ كلِّه. غيابُها = طلبُ يومٍ واحدٍ قديم (يُعامَل كمجموعةٍ من واحد). */
+  swap_batch?: string;
+  /** نطاقُ الطلب: person=تبديلٌ خاصٌّ مع زميلٍ باسمه، period=عامٌّ مع فترة، shift=عامٌّ مع الشفت الآخر. */
+  scope?: 'person' | 'period' | 'shift';
+  /** وسمُ النطاقِ للعرض (اسمُ الفترةِ مثلًا) — يُستعمَل في صياغةِ «تبديل عام مع …». */
+  scope_label?: string;
   /** وسم تبديل الاستئذان: لتصعيد الكرت للقائد فقط بعد رفض الشفتين، وإعادة العرض للطالب. */
   perm?: PermSwapTag;
 };
@@ -651,85 +713,142 @@ export async function notifyLeadersCrossShiftSwap(args: {
 export async function openSwapGroup(args: {
   clinicId: string;
   weekStart: string;
+  /** يومٌ واحد (توافقًا مع النداءات القديمة). للطلبِ متعدّدِ الأيّام استعمل days. */
+  day?: WeekDay;
+  /** أيّامُ الطلب (تبديلٌ لأكثرِ من يوم). إن غابت استُعمل day. */
+  days?: WeekDay[];
+  requesterId: string;
+  requesterName: string;
+  targets: { id: string; name: string }[];
+  /** أهدافٌ مختلفةٌ لكلِّ يوم (توفّرٌ يختلفُ بحسبِ اليوم). إن غابَ يومٌ استُعمل targets. */
+  targetsByDay?: Partial<Record<WeekDay, { id: string; name: string }[]>>;
+  /** نطاقُ الطلب: person (خاصٌّ مع زميل) / period (عامٌّ مع فترة) / shift (عامٌّ مع الشفت الآخر). */
+  scope?: 'person' | 'period' | 'shift';
+  scopeLabel?: string;
+  perm?: PermSwapTag;
+}): Promise<{ success: boolean; error?: string; count?: number; group?: string; batch?: string; sentDays?: WeekDay[] }> {
+  try {
+    const hasByDay = args.targetsByDay && Object.keys(args.targetsByDay).length > 0;
+    if (!hasByDay && args.targets.length === 0) return { success: false, error: 'لا مستلمين للطلب.' };
+    const daysList = args.days && args.days.length ? args.days : (args.day ? [args.day] : []);
+    if (daysList.length === 0) return { success: false, error: 'لا يوم للطلب.' };
+    const scope = args.scope || 'person';
+    // مجموعةُ الطلبِ الأمّ: تجمعُ كلَّ الأيّام×الأهداف في كرتٍ واحدٍ عند المستلم، ورنّةٍ واحدة.
+    const batch = `${args.requesterId}|${args.weekStart}|${[...daysList].sort().join(',')}|${Date.now()}`;
+    let total = 0;
+    const sentDays: WeekDay[] = [];
+    const errors: string[] = [];
+    for (const day of daysList) {
+      const dayTargets = args.targetsByDay?.[day] ?? args.targets;
+      if (!dayTargets || dayTargets.length === 0) { errors.push(`${DAY_AR[day]}: لا زميل متاحٌ للتبديل.`); continue; }
+      const r = await openSwapDay({
+        clinicId: args.clinicId, weekStart: args.weekStart, day,
+        requesterId: args.requesterId, requesterName: args.requesterName,
+        targets: dayTargets, scope, scopeLabel: args.scopeLabel, batch, perm: args.perm,
+      });
+      if (r.sent > 0) { total += r.sent; sentDays.push(day); }
+      else if (r.error) errors.push(`${DAY_AR[day]}: ${r.error}`);
+    }
+    if (total === 0) return { success: false, error: errors[0] || 'تعذّر إرسال الطلب.' };
+    return { success: true, count: total, group: batch, batch, sentDays };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+  }
+}
+
+// نصُّ جسمِ الطلب: خاصٌّ «التبديل (معك)» أو عامٌّ «(تبديل عام مع الشفت/الفترة)».
+// القوسان علامةٌ يُبرزُها العرضُ بخطٍّ عريض؛ والنصُّ صالحٌ كذلك كنصِّ الدفعِ العاديّ.
+function swapBody(requesterName: string, day: WeekDay, scope: 'person' | 'period' | 'shift', scopeLabel?: string): string {
+  const dayLabel = DAY_AR[day];
+  if (scope === 'person') {
+    return `يطلب ${dr(requesterName)} التبديل (معك) يوم ${dayLabel} — كلٌّ يستلم مكان الآخر كاملًا.`;
+  }
+  const label = scope === 'shift' ? 'الشفت' : (scopeLabel || 'الفترة');
+  return `يرسل ${dr(requesterName)} طلب (تبديل عام مع ${label}) يوم ${dayLabel} — أوّل من يوافق يتمّ التبديل معه.`;
+}
+
+// طلبُ تبديلٍ ليومٍ واحد (لبنةُ الطلبِ متعدّدِ الأيّام): كرتٌ (موافق/رفض) لكلِّ هدفٍ ضمنَ
+// مجموعةِ اليومِ الواحدة (قفلٌ ذرّيٌّ «أوّلُ موافقٍ يفوز»)، وكلُّها تحملُ مجموعةَ الطلبِ الأمّ batch.
+async function openSwapDay(args: {
+  clinicId: string;
+  weekStart: string;
   day: WeekDay;
   requesterId: string;
   requesterName: string;
   targets: { id: string; name: string }[];
+  scope: 'person' | 'period' | 'shift';
+  scopeLabel?: string;
+  batch: string;
   perm?: PermSwapTag;
-}): Promise<{ success: boolean; error?: string; count?: number; group?: string }> {
-  try {
-    if (args.targets.length === 0) return { success: false, error: 'لا مستلمين للطلب.' };
-    // يومٌ انقضى → الطلب يولد منتهيًا ويُحذف قبل أن يُرى — ارفض بصراحةٍ بدل موتٍ صامت
-    if (new Date(swapExpiry(args.weekStart, args.day)).getTime() <= Date.now()) {
-      return { success: false, error: `يوم ${DAY_AR[args.day]} انقضى — لا يُفتح طلب تبديلٍ ليومٍ مضى.` };
-    }
-    // منع الازدواج: طلب معلّق حيّ لنفس اليوم
-    const { data: existing } = await supabase
-      .from('notifications')
-      .select('id, data, action_status')
-      .eq('type', NotifType.SWAP_REQUEST)
-      .filter('data->>requester_id', 'eq', args.requesterId)
-      .filter('data->>week_start', 'eq', args.weekStart)
-      .filter('data->>day', 'eq', args.day);
-    for (const r of (existing || []) as { id: string; data: SwapDataV2; action_status: string | null }[]) {
-      if (!isPendingRow(r.action_status)) continue;
-      if (swapExpired(r.data)) {
-        await supabase.from('notifications').delete().eq('id', r.id);
-      } else {
-        return { success: false, error: 'لديك طلب تبديلٍ قائمٌ لهذا اليوم — ألغِه أوّلًا أو انتظر نتيجته.' };
-      }
-    }
-
-    // تقاطع: مستهدفٌ لديه هو طلبٌ معلّقٌ موجّهٌ إليك لنفس اليوم → لا كرت له
-    // (يُردّ على طلبه بدل طلبٍ مضادّ يلغيه التنفيذان معًا). بقي غيره؟ يُرسَل للبقيّة.
-    const { data: reverse } = await supabase
-      .from('notifications')
-      .select('id, data, action_status')
-      .eq('type', NotifType.SWAP_REQUEST)
-      .filter('data->>target_id', 'eq', args.requesterId)
-      .filter('data->>week_start', 'eq', args.weekStart)
-      .filter('data->>day', 'eq', args.day);
-    const crossing = new Set<string>();
-    for (const r of (reverse || []) as { data: SwapDataV2; action_status: string | null }[]) {
-      if (isPendingRow(r.action_status) && !swapExpired(r.data)) crossing.add(r.data.requester_id);
-    }
-    const targets = args.targets.filter((t) => !crossing.has(t.id));
-    if (targets.length === 0) {
-      return {
-        success: false,
-        error: args.targets.length === 1
-          ? 'لديه طلب تبديلٍ موجّهٌ إليك أصلًا لهذا اليوم — ردّ عليه من إشعاراتك بدل طلبٍ مضادّ.'
-          : 'لديهم طلبات تبديلٍ موجّهةٌ إليك أصلًا لهذا اليوم — ردّ عليها من إشعاراتك بدل طلبٍ مضادّ.',
-      };
-    }
-
-    const group = `${args.requesterId}|${args.weekStart}|${args.day}|${Date.now()}`;
-    const expiresAt = swapExpiry(args.weekStart, args.day);
-    let sent = 0;
-    for (const t of targets) {
-      const data: SwapDataV2 = {
-        v: 2,
-        clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
-        requester_id: args.requesterId, requester_name: args.requesterName,
-        target_id: t.id, target_name: t.name,
-        swap_group: group, expires_at: expiresAt,
-        ...(args.perm ? { perm: args.perm } : {}),
-      };
-      const { error } = await sendAction({
-        clinicId: args.clinicId, recipientId: t.id,
-        senderId: args.requesterId, senderName: args.requesterName,
-        type: NotifType.SWAP_REQUEST, title: 'طلب تبديل',
-        body: `يطلب ${dr(args.requesterName)} التبديل معك يوم ${DAY_AR[args.day]} — كلٌّ يستلم مكان الآخر كاملًا.`,
-        data,
-      });
-      if (!error) sent += 1;
-    }
-    return sent > 0
-      ? { success: true, count: sent, group }
-      : { success: false, error: 'تعذّر إرسال الطلب.' };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
+}): Promise<{ sent: number; error?: string }> {
+  // يومٌ انقضى → الطلب يولد منتهيًا ويُحذف قبل أن يُرى — ارفض بصراحةٍ بدل موتٍ صامت
+  if (new Date(swapExpiry(args.weekStart, args.day)).getTime() <= Date.now()) {
+    return { sent: 0, error: `يوم ${DAY_AR[args.day]} انقضى — لا يُفتح طلب تبديلٍ ليومٍ مضى.` };
   }
+  // منع الازدواج: طلب معلّق حيّ لنفس اليوم
+  const { data: existing } = await supabase
+    .from('notifications')
+    .select('id, data, action_status')
+    .eq('type', NotifType.SWAP_REQUEST)
+    .filter('data->>requester_id', 'eq', args.requesterId)
+    .filter('data->>week_start', 'eq', args.weekStart)
+    .filter('data->>day', 'eq', args.day);
+  for (const r of (existing || []) as { id: string; data: SwapDataV2; action_status: string | null }[]) {
+    if (!isPendingRow(r.action_status)) continue;
+    if (swapExpired(r.data)) {
+      await supabase.from('notifications').delete().eq('id', r.id);
+    } else {
+      return { sent: 0, error: 'لديك طلب تبديلٍ قائمٌ لهذا اليوم — ألغِه أوّلًا أو انتظر نتيجته.' };
+    }
+  }
+
+  // تقاطع: مستهدفٌ لديه هو طلبٌ معلّقٌ موجّهٌ إليك لنفس اليوم → لا كرت له
+  // (يُردّ على طلبه بدل طلبٍ مضادّ يلغيه التنفيذان معًا). بقي غيره؟ يُرسَل للبقيّة.
+  const { data: reverse } = await supabase
+    .from('notifications')
+    .select('id, data, action_status')
+    .eq('type', NotifType.SWAP_REQUEST)
+    .filter('data->>target_id', 'eq', args.requesterId)
+    .filter('data->>week_start', 'eq', args.weekStart)
+    .filter('data->>day', 'eq', args.day);
+  const crossing = new Set<string>();
+  for (const r of (reverse || []) as { data: SwapDataV2; action_status: string | null }[]) {
+    if (isPendingRow(r.action_status) && !swapExpired(r.data)) crossing.add(r.data.requester_id);
+  }
+  const targets = args.targets.filter((t) => !crossing.has(t.id));
+  if (targets.length === 0) {
+    return {
+      sent: 0,
+      error: args.targets.length === 1
+        ? 'لديه طلب تبديلٍ موجّهٌ إليك أصلًا لهذا اليوم — ردّ عليه من إشعاراتك بدل طلبٍ مضادّ.'
+        : 'لديهم طلبات تبديلٍ موجّهةٌ إليك أصلًا لهذا اليوم — ردّ عليها من إشعاراتك بدل طلبٍ مضادّ.',
+    };
+  }
+
+  const group = `${args.requesterId}|${args.weekStart}|${args.day}|${Date.now()}`;
+  const expiresAt = swapExpiry(args.weekStart, args.day);
+  const body = swapBody(args.requesterName, args.day, args.scope, args.scopeLabel);
+  let sent = 0;
+  for (const t of targets) {
+    const data: SwapDataV2 = {
+      v: 2,
+      clinic_id: args.clinicId, week_start: args.weekStart, day: args.day,
+      requester_id: args.requesterId, requester_name: args.requesterName,
+      target_id: t.id, target_name: t.name,
+      swap_group: group, swap_batch: args.batch,
+      scope: args.scope, ...(args.scopeLabel ? { scope_label: args.scopeLabel } : {}),
+      expires_at: expiresAt,
+      ...(args.perm ? { perm: args.perm } : {}),
+    };
+    const { error } = await sendAction({
+      clinicId: args.clinicId, recipientId: t.id,
+      senderId: args.requesterId, senderName: args.requesterName,
+      type: NotifType.SWAP_REQUEST, title: 'طلب تبديل',
+      body, data,
+    });
+    if (!error) sent += 1;
+  }
+  return { sent };
 }
 
 /**

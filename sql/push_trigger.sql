@@ -46,6 +46,19 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- طلبُ تبديلٍ متعدّدُ الأيّام: صفٌّ لكلِّ يوم (نفسُ swap_batch)، لكن رنّةٌ واحدةٌ للطلبِ كلِّه.
+  -- ادفع فقط لأوّلِ صفٍّ يصلُ المستلمَ من نفسِ المجموعة؛ صفوفُ الأيّامِ التالية صامتة (تظهر في
+  -- الكرت نفسِه داخلَ التطبيق). طلبُ اليومِ الواحدِ القديم (بلا swap_batch) يدفعُ كالمعتاد.
+  IF TG_OP = 'INSERT' AND NEW.type = 'swap_request' AND NEW.data ? 'swap_batch' AND EXISTS (
+    SELECT 1 FROM notifications n
+    WHERE n.recipient_id = NEW.recipient_id
+      AND n.type = 'swap_request'
+      AND n.id <> NEW.id
+      AND n.data->>'swap_batch' = NEW.data->>'swap_batch'
+  ) THEN
+    RETURN NEW;
+  END IF;
+
   -- طلبٌ متعدّد الأيّام: ادفع مرّةً واحدة عند الإنشاء فقط. إلحاق أيّامٍ لاحقة
   -- (UPDATE) يحدّث الكرت داخل التطبيق بلا رنّةٍ ثانية — رنّةٌ واحدةٌ لكلّ طلب.
   IF TG_OP = 'UPDATE' AND NEW.type = 'request_info' THEN

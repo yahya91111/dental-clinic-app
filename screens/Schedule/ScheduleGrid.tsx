@@ -196,7 +196,11 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId, onDoctor
                         const slotsB = getVisibleSlots(day.key, pB.id).filter(s => s.role === 'clinic' && s.clinicNumber === clinicNum);
                         const idsA = getDoctorIds(pA.id, clinicNum);
                         const idsB = getDoctorIds(pB.id, clinicNum);
-                        const isMerged = idsA.length > 0 && idsA === idsB;
+                        // نفسُ الطبيبِ في الفترتَين → خانةٌ مدمجةٌ ممتدّة. لكن في **المعاينة**
+                        // (طرأ تغيير) قد يكون في فترةٍ قديمًا (مشطوب) وفي الأخرى جديدًا (مضيء) —
+                        // فلا نَدمِج حينها كي تُشطَبَ القديمةُ وتُضيءَ الجديدةُ كلٌّ على حدة.
+                        // الجدولُ الحيُّ بلا نبرة (الاثنتان بلا tone فتتساويان) → يُدمَجُ كما كان.
+                        const isMerged = idsA.length > 0 && idsA === idsB && slotsTone(slotsA) === slotsTone(slotsB);
                         const userInA = !userId || showAllClinics || slotsA.some(s => s.doctorId === userId);
                         const userInB = !userId || showAllClinics || slotsB.some(s => s.doctorId === userId);
 
@@ -277,7 +281,9 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId, onDoctor
                         if (!expandAll && userId && dlgA.length === 0 && dlgB.length === 0) return null;
 
                         const isPersonal = !expandAll && userId;
-                        const dlgMerged = getDelegatorId(pA.id).length > 0 && getDelegatorId(pA.id) === getDelegatorId(pB.id);
+                        // كالعيادة: لا تُدمَجِ الفترتان إن اختلفت النبرة (معاينةُ نقلٍ: قديم مشطوب/جديد مضيء)
+                        const dlgMerged = getDelegatorId(pA.id).length > 0 && getDelegatorId(pA.id) === getDelegatorId(pB.id)
+                          && slotsTone(dlgA) === slotsTone(dlgB);
 
                         // Personal view: show like clinic cards - split with visible/invisible
                         if (isPersonal) {
