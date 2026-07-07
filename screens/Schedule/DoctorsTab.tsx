@@ -9,6 +9,7 @@ import {
   updateDoctorWorkStatus,
 } from '../../lib/database';
 import { TEMPLATE_NAMES, GROUP_TEMPLATES } from '../../lib/algorithms/groupTemplates';
+import { useAuth } from '../../AuthContext';
 
 const GROUP_COLORS = [
   { name: 'Blue', color: '#3B82F6', bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)' },
@@ -157,6 +158,11 @@ function StatusChip({ status }: { status: DoctorWorkStatus }) {
 }
 
 export function DoctorsTab({ clinicId }: DoctorsTabProps) {
+  // صلاحيّة: القائدُ فقط (لا الطبيبُ العادي) يُدير القروبات — تغييرُ الحالة والنقلُ بينها.
+  // للطبيبِ العادي الصفحةُ للاطّلاعِ فقط: لا تُفتَحُ ورقةُ الإجراءات، والدوالُّ محروسة.
+  const { user } = useAuth();
+  const isLeader = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+
   const [loading, setLoading] = useState(true);
   const [allDoctors, setAllDoctors] = useState<DoctorItem[]>([]);
   const [groups, setGroups] = useState<DoctorGroup[]>([]);
@@ -292,7 +298,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
   const closeSheet = () => { setSelectedDoctor(null); setDoctorActionMode('menu'); };
 
   const moveDoctor = async (toGroupId: string | null) => {
-    if (!selectedDoctor) return;
+    if (!selectedDoctor || !isLeader) return;
     const { doctor, fromGroupId } = selectedDoctor;
     await moveDoctorBetweenGroups(doctor.id, fromGroupId, toGroupId, doctor.name);
     closeSheet();
@@ -300,7 +306,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
   };
 
   const handleUpdateStatus = async (status: DoctorWorkStatus) => {
-    if (!selectedDoctor) return;
+    if (!selectedDoctor || !isLeader) return;
     // trainee يحتاج اختيار مدرّب أولاً
     if (status === 'trainee') {
       setDoctorActionMode('pick_supervisor');
@@ -315,7 +321,7 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
   };
 
   const handlePickSupervisor = async (supervisorDoctorId: string) => {
-    if (!selectedDoctor) return;
+    if (!selectedDoctor || !isLeader) return;
     const { doctor, fromGroupId } = selectedDoctor;
     if (fromGroupId) {
       await updateDoctorWorkStatus(fromGroupId, doctor.id, 'trainee', supervisorDoctorId);
@@ -521,7 +527,8 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                     return (
                       <TouchableOpacity
                         key={doctor.id}
-                        activeOpacity={0.7}
+                        activeOpacity={isLeader ? 0.7 : 1}
+                        disabled={!isLeader}
                         onPress={() => { setDoctorActionMode('menu'); setSelectedDoctor({ doctor, fromGroupId: group.id }); }}
                         style={{
                           flexDirection: 'row-reverse',
@@ -641,7 +648,8 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
                 unassignedDoctors.map((doctor, idx) => (
                   <TouchableOpacity
                     key={doctor.id}
-                    activeOpacity={0.7}
+                    activeOpacity={isLeader ? 0.7 : 1}
+                    disabled={!isLeader}
                     onPress={() => { setDoctorActionMode('menu'); setSelectedDoctor({ doctor, fromGroupId: null }); }}
                     style={{
                       flexDirection: 'row-reverse',
