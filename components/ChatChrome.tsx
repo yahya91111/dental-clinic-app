@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../lib/scale';
 import { GlassCard, CardBadge, Pill, cardStyles } from './AICard';
 import AssistantOffers from './AssistantOffers';
+import { ScheduleWizardCard } from './ScheduleWizardCard';
 import { ChatMessage } from './aiTypes';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -230,6 +231,19 @@ export function ChatBody({ messages, isLoading, onSend, style, light, header, us
         const isUser = m.role === 'user';
         const isLastAssistant = !isUser && mi === messages.length - 1;
         const { text, choices } = isLastAssistant && !isLoading ? parseChoices(m.content) : { text: m.content, choices: [] as string[] };
+        // طلبُ إنشاءِ جدول → كرتُ معالجٍ تفاعليٌّ خطوةً خطوة (يجمع المدخلات ثم يبني/يحفظ/يبلّغ)
+        if (!isUser && m.scheduleWizard && user) {
+          return (
+            <ScheduleWizardCard
+              key={m.id}
+              seed={m.scheduleWizard}
+              clinicId={clinicId}
+              user={user}
+              onAfterAction={onAfterAction}
+              onComplete={() => onPatchMessage?.(m.id, { scheduleWizard: { ...m.scheduleWizard, done: true } })}
+            />
+          );
+        }
         // رسالةٌ تحمل عرضًا → كرتٌ كامل (نصّها + أزرارها) بلا فقاعة منفصلة، يتزامن مع الضغطة المطوّلة
         const hasOffer = !isUser && (!!m.announceOffer || !!m.swapOffer || !!m.confirmOffer);
         if (hasOffer && user) {

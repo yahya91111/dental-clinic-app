@@ -371,6 +371,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         swapOffer: response.swapOffer,
         // طلب مسح الجدول؟ → أزرار تأكيد [نعم، امسح][تراجع] تُنفَّذ بالكود
         confirmOffer: response.confirmOffer,
+        // طلب إنشاء جدول (للقائد) → كرت معالج تفاعليّ خطوة خطوة
+        scheduleWizard: response.scheduleWizard,
       };
       setAiMessages(prev => [...prev, assistantMsg]);
       aiHistoryRef.current.push({ role: 'assistant', content: response.message });

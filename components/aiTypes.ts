@@ -23,4 +23,7 @@ export interface ChatMessage {
   confirmOffer?: ConfirmOffer;
   /** نتيجة الخيار بعد تنفيذه — تُخزَّن في الرسالة المشتركة فتتزامن بين المحادثتين */
   offerResolved?: { text: string; done: boolean };
+  /** طلبُ إنشاءِ جدول (للقائد) → كرتُ معالجٍ تفاعليّ خطوةً خطوة (يجمع المدخلات ثم يبني/يحفظ).
+   *  done=true بعد اكتمالِ الإنشاء → يُظهِرُ الكرتُ «تمّ» بدل استبيانٍ فارغ (يتزامن بين النسخ). */
+  scheduleWizard?: { weekStart?: string; done?: boolean };
 }

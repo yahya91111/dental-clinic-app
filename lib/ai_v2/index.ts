@@ -54,13 +54,25 @@ const REQUEST_HINTS = [
   'النقص يحتاج تغطية', 'تغطية', 'غطّي', 'غطي', 'يغطّي', 'يغطي', 'غطّها', 'غطها', 'تغطّي',
   'عيادة فاضية', 'عياده فاضيه', 'عيادة فارغة', 'عياده فارغه', 'فاضية', 'فارغة', 'نواقص', 'النواقص',
 ];
-const SCHEDULE_HINTS = ['ابن الجدول', 'ابنِ الجدول', 'انشئ جدول', 'أنشئ جدول', 'وزّع', 'وزع', 'بناء الجدول', 'اعمل جدول', 'سوّ الجدول'];
+const SCHEDULE_HINTS = [
+  'ابن الجدول', 'ابنِ الجدول', 'ابني جدول', 'ابني لي جدول', 'ابن لي جدول',
+  'انشئ جدول', 'أنشئ جدول', 'انشئ لي جدول', 'أنشئ لي جدول', 'انشئ لي جدول', 'انشاء جدول',
+  'وزّع جدول', 'وزع جدول', 'وزّع', 'وزع', 'بناء الجدول', 'اعمل جدول', 'اعمل لي جدول',
+  'سوّ الجدول', 'سوّي جدول', 'سوي جدول', 'سوّي لي جدول', 'سوي لي جدول', 'جدول الاسبوع القادم', 'جدول الأسبوع القادم',
+];
+
+// أفعالُ بناءِ الجدول — إن اجتمع أحدُها مع كلمة «جدول» في الرسالة الأخيرة فهي «إنشاء جدول»
+const BUILD_VERBS = ['ابن', 'ابني', 'انشئ', 'أنشئ', 'انشاء', 'إنشاء', 'اعمل', 'سوّ', 'سوّي', 'سوي', 'سولي', 'سو لي', 'وزّع', 'وزع', 'بناء', 'رتّب', 'رتب'];
 
 function classifyTask(messages: V2Message[]): V2Task {
+  const userMsgs = messages.filter((m) => m.role === 'user');
+  // إنشاءُ جدولٍ في **الرسالة الأخيرة** (فعلُ بناءٍ + «جدول») → جدول فورًا، فلا يختطفُه
+  // طلبٌ أقدم في السجلّ (كطبيّةٍ سابقة) عبر مسحِ التاريخ.
+  const last = userMsgs[userMsgs.length - 1]?.content ?? '';
+  if (last.includes('جدول') && BUILD_VERBS.some((v) => last.includes(v))) return 'schedule';
   // امسح رسائل المستخدم من الأحدث للأقدم؛ أوّل رسالة تحمل إشارة تحسم المهمّة.
   // هذا يُبقي المهمّة ثابتة عبر ردود التأكيد القصيرة («نعم/أكّد/تمام») التي لا
   // إشارة فيها — وإلّا عادت للافتراضيّ وضاع سياق الطلب عند التأكيد.
-  const userMsgs = messages.filter((m) => m.role === 'user');
   for (let i = userMsgs.length - 1; i >= 0; i--) {
     const t = userMsgs[i]?.content ?? '';
     if (SCHEDULE_HINTS.some((h) => t.includes(h))) return 'schedule';
@@ -123,6 +135,8 @@ export type SendMessageV2Result = {
   swapOffer?: SwapOffer;
   /** عرض تأكيدٍ قبل إجراءٍ خطير (مسح الجدول) — الواجهة تعرض [نعم][تراجع] وتنفّذ بالكود */
   confirmOffer?: ConfirmOffer;
+  /** طلبُ القائدِ إنشاءَ جدول → الواجهةُ تعرضُ كرتَ المعالجِ التفاعليّ (يجمع ثمّ يبني/يحفظ) */
+  scheduleWizard?: { weekStart?: string };
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -323,6 +337,7 @@ export async function sendMessageV2(
     // أزرار حسم الاستئذان المبهم (بداية/نهاية)
     let capturedSwap: SwapOffer | undefined;
     let capturedConfirm: ConfirmOffer | undefined;
+    let capturedScheduleWizard: { weekStart?: string } | undefined;
     const toolCtx: V2ToolContext = {
       clinicId: opts.clinicId || '',
       user: opts.user,
@@ -334,6 +349,7 @@ export async function sendMessageV2(
       },
       onSwapOffer: (o) => { capturedSwap = o; },
       onConfirmOffer: (o) => { capturedConfirm = o; },
+      onScheduleWizard: (s) => { capturedScheduleWizard = s; },
     };
 
     // مهمّة الطلبات: الأدوات حسب الدور (الليدر → الأداة الشاملة + الإداريّة؛ الطبيب → الخدمة الذاتيّة).
@@ -494,6 +510,7 @@ export async function sendMessageV2(
       announceOffers: capturedAnnounces.length ? capturedAnnounces : undefined,
       swapOffer: capturedSwap,
       confirmOffer: capturedConfirm,
+      scheduleWizard: capturedScheduleWizard,
       usage: {
         inputTokens: inputTokensTotal,
         outputTokens: outputTokensTotal,

@@ -81,6 +81,13 @@ export type SwapOffer =
     doctorId: string; doctorName: string; shift?: 'morning' | 'evening';
   };
 
+/**
+ * طلبُ القائدِ إنشاءَ جدولٍ أسبوعيّ → تفتحُ الواجهةُ **كرتَ معالجٍ تفاعليّ** خطوةً خطوة
+ * (يجمعُ التاريخ/الشفتات/البورد/المتدرّبين/الاستثناءات ثم يبني ويحفظ). النموذجُ يستدعي
+ * الأداةَ فقط (مع الأسبوع المُستنتَج)؛ التفاصيلُ تُجمَعُ في الكرتِ لا بالحوار.
+ */
+export type ScheduleWizardSeed = { weekStart?: string };
+
 export type V2Tool = {
   name: string;
   description: string;
@@ -111,6 +118,8 @@ export type V2ToolContext = {
   onSwapOffer?: (offer: SwapOffer) => void;
   /** تُستدعى حين يلزم تأكيدٌ قبل إجراءٍ خطير (مسح الجدول) — أزرارٌ تُنفَّذ بالكود */
   onConfirmOffer?: (offer: ConfirmOffer) => void;
+  /** تُستدعى حين يطلبُ القائدُ إنشاءَ جدول → الواجهةُ تعرضُ كرتَ المعالجِ التفاعليّ */
+  onScheduleWizard?: (seed: ScheduleWizardSeed) => void;
   /** يكتم إشعار العلم للقائد داخل إلغاء/تسجيل الحالة — يستعمله النقل (move) كي يُرسل
    *  إشعارًا **واحدًا** مجمّعًا بدل إشعارَي الإلغاء والتسجيل. الكروت الوظيفيّة تبقى. */
   suppressLeaderInfo?: boolean;
@@ -121,6 +130,21 @@ export type V2ToolContext = {
  * كل أداة wrapper حول خوارزمية في lib/algorithms/.
  */
 export const V2_TOOLS: V2Tool[] = [
+  {
+    name: 'open_schedule_wizard',
+    description:
+      'للقائد فقط: يفتح معالجًا تفاعليًّا لإنشاء جدول أسبوع (خطوة خطوة داخل المحادثة). ' +
+      'استدعِها فورًا حين يطلب القائد بناء/إنشاء/توزيع جدول أسبوع (سوّي/ابني/انشئ/وزّع جدول ...) — ' +
+      'لا تسأله عن التفاصيل، فالكرت يجمع التاريخ والشفتات والبورد والمتدرّبين والاستثناءات ثم يبني ويحفظ ويعرض سؤال الإبلاغ. ' +
+      'مرّر week من عبارة المستخدم: "current" للأسبوع الحالي، "next" للقادم، أو تاريخًا YYYY-MM-DD.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        week: { type: 'string', description: '"current" | "next" | تاريخ أحد YYYY-MM-DD (يُستنتَج من عبارة المستخدم؛ الافتراضيّ next)' },
+      },
+      required: [],
+    },
+  },
   {
     name: 'build_schedule',
     description:
@@ -513,6 +537,9 @@ export async function dispatchV2Tool(
   input: unknown,
   ctx: V2ToolContext,
 ): Promise<string> {
+  if (name === 'open_schedule_wizard') {
+    return await handleOpenScheduleWizard(input, ctx);
+  }
   if (name === 'build_schedule') {
     return await handleBuildSchedule(input, ctx);
   }
@@ -592,6 +619,48 @@ async function handleReadSchedule(rawInput: unknown, ctx: V2ToolContext): Promis
     }
   }
   return lines.join('\n');
+}
+
+// أدوارُ القائدِ فما فوق — إنشاءُ الجدولِ محصورٌ بها (حرّاسٌ صلبٌ لا يعتمدُ على المُوجِّه فقط)
+const LEADER_PLUS = new Set(['team_leader', 'coordinator', 'super_admin', 'manager']);
+
+// يوم الأحد الذي يبدأ به أسبوعُ التاريخِ المُعطى → YYYY-MM-DD
+function sundayOf(d: Date): string {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - x.getDay());
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return `${x.getFullYear()}-${m}-${day}`;
+}
+
+/**
+ * يفتحُ كرتَ معالجِ إنشاءِ الجدول (للقائد). يستنتجُ الأسبوعَ من العبارة (current/next/تاريخ)
+ * ويُطلقُ ctx.onScheduleWizard؛ لا يبني ولا يحفظُ هنا — الكرتُ يجمعُ التفاصيلَ ثمّ يبني/يحفظ.
+ */
+async function handleOpenScheduleWizard(rawInput: unknown, ctx: V2ToolContext): Promise<string> {
+  if (!ctx.user || !LEADER_PLUS.has(ctx.user.role)) {
+    return 'Tool error: إنشاء الجدول الأسبوعي من صلاحيات قائد الفريق فقط.';
+  }
+  const input = rawInput && typeof rawInput === 'object' ? (rawInput as Record<string, unknown>) : {};
+  const wk = typeof input.week === 'string' ? input.week.trim().toLowerCase() : '';
+  const today = new Date();
+  let weekStart: string | undefined;
+  if (wk === 'current' || wk === 'this') {
+    weekStart = sundayOf(today);
+  } else if (wk === 'next' || wk === '') {
+    const n = new Date(today); n.setDate(n.getDate() + 7); weekStart = sundayOf(n);
+  } else {
+    let d: Date | null = null;
+    let m = wk.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) d = new Date(+m[1], +m[2] - 1, +m[3]);
+    else if ((m = wk.match(/^(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?$/))) {
+      const yr = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : today.getFullYear();
+      d = new Date(yr, +m[2] - 1, +m[1]);
+    }
+    weekStart = d && !isNaN(d.getTime()) ? sundayOf(d) : undefined;
+  }
+  ctx.onScheduleWizard?.({ weekStart });
+  return 'تم فتح معالج إنشاء الجدول للقائد. ردَّ بجملةٍ قصيرةٍ واحدةٍ فقط تدعوه لإكمال الخطوات في الكرت — لا تسأل عن أيّ تفاصيل (التاريخ/الشفتات/البورد/المتدرّبين/الاستثناءات يجمعها الكرت).';
 }
 
 async function handleBuildSchedule(

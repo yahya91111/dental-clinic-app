@@ -19,6 +19,13 @@ import { ScheduleOrbit, type OrbitFacet } from './ScheduleOrbit';
 import { GlassNavButton } from './GlassNavButton';
 import { ScheduleGrid } from '../screens/Schedule/ScheduleGrid';
 import type { ScheduleSlot, DoctorRole, DoctorStatus, DayOfWeek } from '../screens/Schedule/types';
+// منطقُ الإنشاءِ المشترك (أنواع + تواريخ + تحويلُ المدخلات) — مصدرٌ واحدٌ مع كرتِ المحادثة
+import {
+  type DayKey, type ShiftValue, type TraineeMode, type TraineeConfig, type WizardResult,
+  ALL_MORNING, snapToSunday, nextWeekSunday, thisWeekSunday, formatYMD, applyResolved, resultToBuildInput,
+} from '../lib/algorithms/scheduleFlow';
+// إعادةُ تصدير الأنواع للتوافق (يستوردها AISchedulePanel وشاشةُ الجدول من هنا)
+export type { DayKey, ShiftValue, TraineeMode, TraineeConfig, WizardResult } from '../lib/algorithms/scheduleFlow';
 
 // ═══════════════════════════════════════════════════════════════
 // WizardContent — استبيان "إنشاء جدول" داخل صفحة الذكاء (لا Modal)
@@ -33,31 +40,8 @@ import type { ScheduleSlot, DoctorRole, DoctorStatus, DayOfWeek } from '../scree
 
 const { width: W } = Dimensions.get('window');
 
-export type DayKey = 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday';
-export type ShiftValue = 'morning' | 'evening';
-export type TraineeMode = 'beginner' | 'independent';
-
-export interface TraineeConfig {
-  id: string;
-  name: string;
-  mode: TraineeMode;       // مبتدئ (مع الطبيب) أو مستقل (وحده)
-  inDelegator: boolean;    // (للمستقلّ) يدخل توزيع الدليقيتر
-  inReserve: boolean;      // (للمستقلّ) يدخل توزيع الاحتياطي
-}
-
-export interface WizardResult {
-  weekStart: string;                       // YYYY-MM-DD (أحد)
-  aShiftPlan: Record<DayKey, ShiftValue>;  // فترة قروب A لكل يوم (B = العكس)
-  board: {
-    present: boolean;                      // هل البورد متواجدون هذا الأسبوع
-    shiftPlan: Record<DayKey, ShiftValue>; // فترة البورد لكل يوم (إن حضروا)
-    inExRotation: boolean;                 // هل يدخلون دورة الاحتياطي
-  };
-  trainees: TraineeConfig[];               // إعدادات كلّ متدرّب
-  exceptions?: string;                     // كل الاستثناءات (نصّ حرّ موحّد)
-  dateNotes?: string;                      // إجابة حرّة على خطوة التاريخ
-  groupNotes?: string;                     // إجابة حرّة على خطوة القروبات
-}
+// الأنواع (DayKey/ShiftValue/TraineeMode/TraineeConfig/WizardResult) نُقلت إلى
+// lib/algorithms/scheduleFlow — تُستورَد وتُعاد تصديرُها أعلاه.
 
 interface WizardContentProps {
   clinicId: string | null;
@@ -73,20 +57,6 @@ interface WizardContentProps {
 }
 
 /** يدمج حلول الغموض (المُختارة في الجات) كغيابات/استئذانات في المدخلات قبل البناء */
-function applyResolved(parsed: ParsedExceptions, resolved: ResolvedClarification[]): ParsedExceptions {
-  if (!resolved.length) return parsed;
-  const extraAbsences = [...parsed.extraAbsences];
-  const extraPermissions = [...parsed.extraPermissions];
-  for (const r of resolved) {
-    if (r.clar.kind === 'absence') {
-      extraAbsences.push({ doctorId: r.doctorId, day: r.day, scope: r.clar.scope ?? 'full', status: r.clar.status ?? 'vacation' });
-    } else {
-      extraPermissions.push({ doctorId: r.doctorId, day: r.day, kind: r.clar.permKind ?? 'end' });
-    }
-  }
-  return { ...parsed, extraAbsences, extraPermissions };
-}
-
 const DAYS: { key: DayKey; label: string; short: string }[] = [
   { key: 'sunday', label: 'الأحد', short: 'أحد' },
   { key: 'monday', label: 'الاثنين', short: 'اثنين' },
@@ -100,25 +70,7 @@ const EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July
 // رؤوس الأيام (إنجليزيّة) — بترتيب DAYS: الأحد ← الخميس
 const EN_DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU'];
 
-// ─── تواريخ ───────────────────────────────────────────────────
-function snapToSunday(d: Date): Date {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  x.setDate(x.getDate() - x.getDay()); // getDay: 0 = الأحد
-  return x;
-}
-function nextWeekSunday(): Date {
-  const s = snapToSunday(new Date());
-  s.setDate(s.getDate() + 7);
-  return s;
-}
-function thisWeekSunday(): Date {
-  return snapToSunday(new Date());
-}
-function formatYMD(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
+// ─── تواريخ (snapToSunday/nextWeekSunday/thisWeekSunday/formatYMD في scheduleFlow) ───
 function formatArabic(d: Date): string {
   return `الأحد ${d.getDate()} ${AR_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
@@ -167,7 +119,7 @@ function QuestionHeader({ step, total, text }: { step: number; total: number; te
 
 type StepId = 'date' | 'groups' | 'board' | 'trainees' | 'exceptions';
 const STEPS: StepId[] = ['date', 'groups', 'board', 'trainees', 'exceptions'];
-const ALL_MORNING: Record<DayKey, ShiftValue> = { sunday: 'morning', monday: 'morning', tuesday: 'morning', wednesday: 'morning', thursday: 'morning' };
+// ALL_MORNING مُستورَدٌ من scheduleFlow
 
 // أوجهُ «مُكوِّن المدار» — بؤرةٌ لكلّ خطوة (لونٌ + أيقونة + عنوان)
 const FACET_META: { key: StepId; label: string; sub: string; color: [number, number, number]; icon: OrbitFacet['icon']; title: string }[] = [
@@ -178,49 +130,7 @@ const FACET_META: { key: StepId; label: string; sub: string; color: [number, num
   { key: 'exceptions', label: 'الاستثناءات', sub: 'exceptions', color: [255, 150, 90], icon: 'document-text', title: 'Anything special this week?' },
 ];
 
-// يحوّل نتيجة الاستبيان إلى مدخل الخوارزمية. ملاحظة: الاستثناءات الحرّة
-// (تفرّغ/عطل/بدون دليقيتر) لا تُمرَّر هنا — تفسيرها لاحقًا. المعاينة تُبنى
-// من المدخلات المنظَّمة فقط.
-function resultToBuildInput(
-  r: WizardResult,
-  clinicId: string,
-  dryRun: boolean,
-  parsed?: ParsedExceptions,
-): ScheduleBuildInput {
-  const eveningDays = WEEK_DAYS.filter((d) => r.board.shiftPlan[d] === 'evening');
-  let scenario: ScheduleBuildInput['boardConfig']['scenario'];
-  if (!r.board.present) scenario = { kind: 'separate_schedule' };
-  else if (eveningDays.length === 0) scenario = { kind: 'all_morning' };
-  else if (eveningDays.length === WEEK_DAYS.length) scenario = { kind: 'all_evening' };
-  else scenario = { kind: 'hybrid_evening_days', eveningDays };
-
-  const traineeModes: Record<string, TraineeMode> = {};
-  const traineeOptions: Record<string, { inDelegator?: boolean; inReserve?: boolean }> = {};
-  for (const t of r.trainees) {
-    traineeModes[t.id] = t.mode;
-    // خيارات الدليقيتر/الاحتياطي للمستقلّ فقط
-    if (t.mode === 'independent') {
-      traineeOptions[t.id] = { inDelegator: t.inDelegator, inReserve: t.inReserve };
-    }
-  }
-
-  return {
-    weekStart: r.weekStart,
-    clinicId,
-    aShiftPlan: r.aShiftPlan,
-    boardConfig: { scenario, includeInExRotation: r.board.inExRotation },
-    traineeModes,
-    traineeOptions,
-    // استثناءات التيم ليدر بعد تفسيرها (إن وُجدت)
-    holidayDays: parsed?.holidayDays,
-    delegatorEnabled: parsed?.delegatorEnabled,
-    delegatorGroups: parsed?.delegatorGroups,   // الدليقيتر لقروبٍ دون الآخر (إن طُلب)
-    extraAbsences: parsed?.extraAbsences,
-    extraPermissions: parsed?.extraPermissions,
-    extraShifts: parsed?.extraShifts,
-    dryRun,
-  };
-}
+// resultToBuildInput مُستورَدٌ من scheduleFlow (منطقٌ مشتركٌ مع كرتِ المحادثة)
 
 export function WizardContent({ clinicId, onComplete, onBack, resolved = [], pendingClarifyCount = 0, onClarifications, onNeedClarify, onUnsupported, onPreviewChange }: WizardContentProps) {
   const [stepId, setStepId] = useState<StepId>('date');
