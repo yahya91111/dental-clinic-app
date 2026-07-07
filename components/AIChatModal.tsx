@@ -16,6 +16,7 @@ import {
   Dimensions, Easing, Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { getNotifications, markAsRead, subscribeToNotifications } from '../lib/database';
 import { notifications as notifEngine } from '../lib/algorithms/notifications';
@@ -320,6 +321,36 @@ function ReserveChoiceBody({ notif, clinicId, onSeen }: {
   );
 }
 
+// استدارةُ زاويةِ الكرت (نفسُ GlassCard) — تُستعمَل لملءِ زاويتَيه في درجِ السحب.
+const SW_CORNER = scale(22);
+
+// مسارُ رُبعِ الدائرةِ **المقعّرِ** الذي يطابقُ منحنى زاويةِ الكرتِ تمامًا (مركزُ القوسِ
+// عندَ مركزِ استدارةِ الكرت) فيملأُ الفجوةَ عندَ الزاويةِ دونَ نتوءٍ محدّبٍ داخلَ الكرت.
+const C = SW_CORNER;
+const NOTCH_TOP = `M0 0 L${C} 0 A${C} ${C} 0 0 0 0 ${C} Z`;
+const NOTCH_BOT = `M0 0 L0 ${C} L${C} ${C} A${C} ${C} 0 0 1 0 0 Z`;
+
+/**
+ * لونُ درجِ السحب: يملأُ **منطقةَ الكشفِ فقط** (بعرضِ `open`) فلا يمتدُّ خلفَ جسمِ الكرتِ
+ * الشفّاف — ثمّ رُبعا دائرةٍ **مقعّران** (بنفسِ منحنى الكرت) يملآن **زاويتَيه المستديرتَين**
+ * فقط، فتتّصلُ حدودُ اللونِ بحدودِ الكرتِ بلا فصلٍ وبلا نتوءٍ محدّبٍ داخلَ الكرت.
+ */
+function TrayColor({ colors, open }: { colors: [string, string]; open: number }) {
+  return (
+    <>
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: open }}>
+        <LinearGradient colors={colors} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+      </View>
+      <Svg width={C} height={C} style={{ position: 'absolute', top: 0, left: open }}>
+        <Path d={NOTCH_TOP} fill={colors[0]} />
+      </Svg>
+      <Svg width={C} height={C} style={{ position: 'absolute', bottom: 0, left: open }}>
+        <Path d={NOTCH_BOT} fill={colors[1]} />
+      </Svg>
+    </>
+  );
+}
+
 /**
  * كرت تغطية مستقلّ: عنوانٌ ثابت من المحرّك، ونقره يفتح **خيطًا خاصًّا** يصوغ فيه
  * الذكاء الحلول بسياق هذا النقص وحده (sendMessageV2 بحقائقه). يحلّ تشويش تعدّد
@@ -461,17 +492,11 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
 
   return (
     <View style={styles.swWrap}>
-      {/* درج Done / Dismiss — امتدادٌ زجاجيٌّ يُكشَف بالسحب يمينًا (لكلّ الحالات) */}
-      {/* الدرج خلف الكرت بكامل عرضه ونفس استدارته وتدرّجه — فزوايا الكرت المستديرة
-          تكشفه (لا الخلفيّة)، فيبدوان قطعةً واحدة متّصلة الحواف */}
+      {/* درج Delete / Dismiss يُكشَف بالسحب يمينًا — اللونُ في منطقةِ الكشفِ فقط
+          ورُبعا دائرةٍ يملآن زاويتَي الكرتِ فتتّصلُ الحدودُ دونَ لونٍ خلفَ جسمِ الكرت */}
       <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        {/* اللونُ خلفَ الأزرارِ فقط (شريطُ يسارِ الدرج)، لا خلفَ الكرتِ الشفّافِ كلِّه */}
-        <View style={[styles.swActs, { overflow: 'hidden' }]}>
-          <LinearGradient
-            colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']}
-            start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
+        <TrayColor colors={['rgba(86,78,150,0.92)', 'rgba(58,52,108,0.93)']} open={SW_OPEN} />
+        <View style={styles.swActs}>
           <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
             <Ionicons name="trash" size={scale(21)} color="#FCA5A5" />
             <Text style={[styles.swTxt, { color: '#FCA5A5' }]}>Delete</Text>
@@ -590,14 +615,11 @@ function SeatChangeCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => vo
 
   return (
     <View style={styles.swWrap}>
-      {/* درج «حذف» — اللونُ الأحمرُ في مكانِ الزرِّ فقط (يسار الدرج)، لا خلفَ الكرتِ الشفّافِ كلِّه */}
+      {/* درج «حذف» — اللونُ في منطقةِ الكشفِ فقط + رُبعا دائرةٍ يملآن زاويتَي الكرتِ المستديرتَين
+          فتتّصلُ الحدودُ بلا فصلٍ ودونَ أن يمتدَّ اللونُ خلفَ جسمِ الكرت. الزرُّ في منطقةِ الكشف. */}
       <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN, overflow: 'hidden' }}>
-          <LinearGradient
-            colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']}
-            start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
+        <TrayColor colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']} open={SW_OPEN} />
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN }}>
           <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
             <Ionicons name="trash" size={scale(21)} color="#FECDD3" />
             <Text style={[styles.swTxt, { color: '#FECDD3' }]}>حذف</Text>
@@ -705,8 +727,8 @@ function ShortageCard({ notif, onSeen }: { notif: ConvoNotif; onSeen: () => void
   return (
     <View style={styles.swWrap}>
       <Animated.View style={[styles.swTray, { opacity: tx.interpolate({ inputRange: [0, scale(16), SW_OPEN], outputRange: [0, 1, 1] }) }]}>
-        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN, overflow: 'hidden' }}>
-          <LinearGradient colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+        <TrayColor colors={['rgba(150,58,72,0.93)', 'rgba(110,40,54,0.94)']} open={SW_OPEN} />
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: SW_OPEN }}>
           <TouchableOpacity style={styles.swAct} activeOpacity={0.7} onPress={onDelete}>
             <Ionicons name="trash" size={scale(21)} color="#FECDD3" />
             <Text style={[styles.swTxt, { color: '#FECDD3' }]}>حذف</Text>
