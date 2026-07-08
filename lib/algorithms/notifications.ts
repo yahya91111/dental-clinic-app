@@ -1126,69 +1126,6 @@ function coverageBody(
 }
 
 /**
- * v2 — كرت «عودة تحتاج مكانًا»: طبيبٌ ألغى حالته بنفسه ومكانه السابق مُغطًّى فلا
- * يُعاد تلقائيًّا — كرتُ فعلٍ للقائد يفتح خيطًا يسأله فيه الذكاء أين يضع العائد
- * (بلا اقتراحات) وينفّذ أمره. يُرسَل بدل إشعار العلم (لا الاثنين معًا — إشعار واحد
- * لكلّ حدث). لا يُكرَّر: كرتٌ معلّق لنفس (القائد، الأسبوع، اليوم، الطبيب) يُكتفى به.
- */
-export async function alertLeaderPlacement(args: {
-  clinicId: string;
-  leaderId: string;
-  weekStart: string;
-  day: WeekDay;
-  doctorId: string;
-  doctorName: string;
-  canceledStatusAr?: string;  // «مرضية» — لصياغة العنوان فقط
-  customBody?: string;        // نصّ جسمٍ جاهز (تحويل مرضيّةٍ مُغطّاةٍ إلى استئذان ونحوه)
-  converted?: boolean;        // الحدث تحويل حالةٍ إلى استئذانٍ لا إلغاؤها — لصياغة البذرة
-  senderId?: string;
-  senderName?: string;
-}): Promise<{ success: boolean; error?: string; id?: string }> {
-  try {
-    const { data: rows } = await supabase
-      .from('notifications')
-      .select('id, data, action_status')
-      .eq('clinic_id', args.clinicId)
-      .eq('recipient_id', args.leaderId)
-      .eq('type', NotifType.GAP_ALERT);
-    const dup = ((rows || []) as { id: string; data: any; action_status: string | null }[]).find((r) => {
-      const d = r.data || {};
-      const pending = !r.action_status || r.action_status === 'pending';
-      return pending && d.v === 2 && d.placement
-        && d.week_start === args.weekStart
-        && d.placement.day === args.day
-        && d.placement.doctor_id === args.doctorId;
-    });
-    if (dup) return { success: true, id: dup.id };
-
-    const statusAr = args.canceledStatusAr || 'حالته';
-    // العائد قد يكون القائد المستلِم نفسه (ألغى حالته بنفسه) → خاطِبه مباشرة
-    const self = args.doctorId === args.leaderId;
-    const { id, error } = await sendAction({
-      clinicId: args.clinicId, recipientId: args.leaderId,
-      senderId: args.senderId, senderName: args.senderName,
-      type: NotifType.GAP_ALERT, title: 'عودة تحتاج مكانًا',
-      body: args.customBody
-        ?? (self
-          ? `ألغيتَ ${statusAr === 'حالته' ? 'حالتك' : 'ال' + statusAr} يوم ${DAY_AR[args.day]} ومكانك السابق مُغطًّى — حدّد أين تعود.`
-          : `أُلغيت ${statusAr === 'حالته' ? 'حالة' : statusAr} ${dr(args.doctorName)} يوم ${DAY_AR[args.day]} ومكانه مُغطًّى — حدّد أين يوضَع.`),
-      data: {
-        v: 2, clinic_id: args.clinicId, week_start: args.weekStart,
-        placement: {
-          day: args.day, doctor_id: args.doctorId,
-          doctor_name: args.doctorName, status_ar: statusAr,
-          ...(args.converted ? { converted: true } : {}),
-        },
-        batch_at: Date.now(),
-      },
-    });
-    return { success: !error, error, id };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };
-  }
-}
-
-/**
  * v2 — بعد وضع العائد فعليًّا في مكانٍ (place_in_clinic) تُغلَق كروت «عودة تحتاج
  * مكانًا» المطابقة عند **كلّ** القادة (قائدٌ يحلّ والبقيّة تُغلَق تلقائيًّا).
  * فشله لا يُفشل التنسيب.
@@ -1392,7 +1329,7 @@ export const notifications = {
   invalidateSwapsTouching,
   // تصعيد للّيدر + الافتتاحيّة الحتميّة + تجميع متعدّد الأيّام + إنهاء الكرت بعد التغطية
   resolveCoverageV2,
-  alertLeaderPlacement, resolvePlacementV2,
+  resolvePlacementV2,
   // كرت سؤال القائد عن استدعاء احتياطيّ خاصّ (بورد/متدرّب)
   notifyLeaderReserveChoice, resolveReserveChoiceV2,
   // كرت «طرأ تغييرٌ على جدولك» (طبقة الفرق — أيّ تغيير)
