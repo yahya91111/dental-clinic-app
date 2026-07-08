@@ -1061,6 +1061,13 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                               if (deleteDoctorError) throw deleteDoctorError;
                             }
 
+                            //  Step 1b: Remove from any schedule groups so the name
+                            //  disappears from القروبات (tied to the doctor's existence).
+                            await supabase
+                              .from('doctor_group_members')
+                              .delete()
+                              .eq('doctor_id', selectedDoctorId);
+
                             //  Step 2: Delete from Authentication (auth.users) using RPC
                             try {
                               await supabase.rpc('delete_user_completely', {
@@ -1211,11 +1218,18 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                       
                       if (updateError) throw updateError;
                     }
-                    
+
+                    //  Left the old center → remove from its schedule groups so the name
+                    //  disappears from القروبات هناك (unassigned in the new center until re-placed).
+                    await supabase
+                      .from('doctor_group_members')
+                      .delete()
+                      .eq('doctor_id', selectedDoctorId);
+
                     // Reload clinics and doctors
                     await loadClinics();
                     await loadDoctors();
-                    
+
                     Alert.alert('Success', 'Doctor transferred successfully!');
                     setShowTransferModal(false);
                     setSelectedTransferClinic(null);

@@ -47,6 +47,10 @@ interface ScheduleScreenProps {
   onBack: () => void;
   clinicId?: string | null;
   userId?: string;
+  /** معاينةُ مركزٍ آخر (المديرُ العام/المنسّق): اطّلاعٌ فقط — لا تعديلَ ولا ذكاءَ ولا إعدادات */
+  viewOnly?: boolean;
+  /** عنوانُ الترويسة (اسمُ المركزِ عند المعاينة) — الافتراضيّ "Schedule" */
+  headerTitle?: string;
 }
 
 type ScheduleTab = 'daily_duty' | 'doctors' | 'vacation' | 'weekend_duty';
@@ -58,7 +62,7 @@ const TABS: { key: ScheduleTab; label: string; icon: string }[] = [
   { key: 'weekend_duty', label: 'Weekend', icon: 'time-outline' },
 ];
 
-export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScreenProps) {
+export default function ScheduleScreen({ onBack, clinicId, userId, viewOnly, headerTitle }: ScheduleScreenProps) {
   const { user } = useAuth();
   const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -810,29 +814,37 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
             >
               <Ionicons name="arrow-back" size={scale(24)} color="#2D3748" />
             </TouchableOpacity>
-            <Text style={{
-              fontSize: scale(34),
-              fontWeight: '700',
-              color: '#4A5568',
-              letterSpacing: -0.5,
-              flex: 1,
-              textAlign: 'center',
-            }}>Schedule</Text>
-            <TouchableOpacity
-              onPress={openMenu}
+            <Text
+              numberOfLines={1}
               style={{
-                width: scale(40),
-                height: scale(40),
-                borderRadius: scale(20),
-                backgroundColor: 'rgba(255,255,255,0.25)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: scale(2),
-                borderColor: 'rgba(255,255,255,0.4)',
+                fontSize: scale(headerTitle ? 24 : 34),
+                fontWeight: '700',
+                color: '#4A5568',
+                letterSpacing: -0.5,
+                flex: 1,
+                textAlign: 'center',
               }}
-            >
-              <Ionicons name="menu" size={scale(22)} color="#2D3748" />
-            </TouchableOpacity>
+            >{headerTitle || 'Schedule'}</Text>
+            {/* الإعداداتُ (والتبديلُ من داخلها) مخفيّةٌ في وضعِ المعاينة — نُبقي فراغًا لتوسيطِ العنوان */}
+            {viewOnly ? (
+              <View style={{ width: scale(40) }} />
+            ) : (
+              <TouchableOpacity
+                onPress={openMenu}
+                style={{
+                  width: scale(40),
+                  height: scale(40),
+                  borderRadius: scale(20),
+                  backgroundColor: 'rgba(255,255,255,0.25)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: scale(2),
+                  borderColor: 'rgba(255,255,255,0.4)',
+                }}
+              >
+                <Ionicons name="menu" size={scale(22)} color="#2D3748" />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Week Strip - only for Daily Duty */}
@@ -863,14 +875,14 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
               <ScheduleGrid
                 slots={swapMode ? swapEdit : slots}
                 clinicCount={clinicCount}
-                onCellPress={swapMode ? () => {} : (day, period) => setSelectedCell({ day, period })}
+                onCellPress={(swapMode || viewOnly) ? () => {} : (day, period) => setSelectedCell({ day, period })}
                 userId={swapMode ? undefined : userId}
                 onDoctorPress={swapMode ? onSwapDocTap : undefined}
                 selSwap={swapMode ? swapSel : null}
                 weekStartDate={selectedWeekStart}
               />
             )}
-            {activeTab === 'doctors' && <DoctorsTab clinicId={clinicId || null} />}
+            {activeTab === 'doctors' && <DoctorsTab clinicId={clinicId || null} viewOnly={viewOnly} />}
             {activeTab === 'vacation' && (
               <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: scale(80) }}>
                 <Ionicons name="airplane-outline" size={scale(60)} color="rgba(107,114,128,0.3)" />
@@ -1053,7 +1065,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
       {/* AI Orb — زرّ الذكاء الموحّد: نقرة تفتح لوحة الجدول، ضغطة مطوّلة تفتح المحادثة.
           يبقى ظاهرًا دائمًا (حتّى أثناء فتح/إغلاق صفحة الذكاء) فلا فجوةٌ تُشعر باللاق:
           القطرة تنبثق من فوقه وتغطّيه، وعند الإغلاق تنكشف عنه مباشرةً. */}
-      {user && !swapMode && (
+      {user && !swapMode && !viewOnly && (
         <Animated.View
           pointerEvents={menuMounted ? 'none' : 'box-none'}
           style={[StyleSheet.absoluteFill, { opacity: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
@@ -1116,7 +1128,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         </View>
       )}
 
-      {/* AI hub: cinematic reveal + orbiting quick actions + in-page chat */}
+      {/* AI hub: cinematic reveal + orbiting quick actions + in-page chat — لا يُركَّبُ في وضعِ المعاينة */}
+      {!viewOnly && (
       <AISchedulePanel
         visible={showAIPanel}
         onClose={() => setShowAIPanel(false)}
@@ -1144,6 +1157,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
         onSaveChatPreview={handleSaveAiPreview}
         onDiscardChatPreview={() => setAiPreview(null)}
       />
+      )}
 
       {/* Cell Detail Modal */}
       <CellDetailModal

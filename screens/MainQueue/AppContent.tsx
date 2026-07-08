@@ -29,6 +29,7 @@ import ArchiveScreen from '../../ArchiveScreen';
 import MyStatisticsScreen from '../../MyStatisticsScreen';
 import DentalDepartmentsScreen from '../../DentalDepartmentsScreen';
 import ClinicDetailsScreen from '../../ClinicDetailsScreen';
+import ScheduleScreen from '../../screens/Schedule';
 import DoctorsScreen from '../../DoctorsScreen';
 import ComingSoonScreen from '../../ComingSoonScreen';
 import MyPracticeScreen from '../../MyPracticeScreen';
@@ -76,6 +77,7 @@ export function AppContent() {
   const [showDentalDepartments, setShowDentalDepartments] = useState(false);
   const [showClinicDetails, setShowClinicDetails] = useState(false);
   const [showDoctorsScreen, setShowDoctorsScreen] = useState(false);
+  const [showClinicSchedule, setShowClinicSchedule] = useState(false); // معاينةُ جدولِ المركزِ من صفحةِ التفاصيل
   
   // Navigation Stack: ØªØªØ¨Ø¹ Ø§Ù„Ù…Ø³ØªÙˆÙ‰ Ø§Ù„Ø­Ø§Ù„ÙŠ
   // Level 1: Doctor Profile
@@ -723,8 +725,23 @@ export function AppContent() {
     );
   }
 
+  // Show Clinic Schedule — جدولُ المركز من صفحةِ التفاصيل.
+  // القائد/المنسّق/المديرُ العام: تحكّمٌ كاملٌ (تبديل، نقلُ قروبات، تغييرُ حالات). الطبيبُ العاديّ: اطّلاعٌ فقط.
+  if (showClinicSchedule && showClinicDetails && !showDoctorProfile && !showDentalDepartments && selectedClinicId === null && !showDoctorsScreen) {
+    const canManage = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+    return (
+      <ScheduleScreen
+        onBack={() => setShowClinicSchedule(false)}
+        clinicId={savedClinicId}
+        userId={user?.id}
+        viewOnly={!canManage}
+        headerTitle={savedClinicName}
+      />
+    );
+  }
+
   // Show Clinic Details Screen
-  if (showClinicDetails && !showDoctorProfile && !showDentalDepartments && selectedClinicId === null && !showDoctorsScreen) {
+  if (showClinicDetails && !showDoctorProfile && !showDentalDepartments && selectedClinicId === null && !showDoctorsScreen && !showClinicSchedule) {
     return (
       <ClinicDetailsScreen
         clinicName={savedClinicName}
@@ -732,6 +749,7 @@ export function AppContent() {
         onBack={() => {
           setShowClinicDetails(false);
           setShowDentalDepartments(true);
+          setShowClinicSchedule(false);
           // Ù…Ø³Ø­ savedClinicId Ø¹Ù†Ø¯ Ø§Ù„Ø±Ø¬ÙˆØ¹
           setSavedClinicId(null);
           setSavedClinicName('');
@@ -741,6 +759,7 @@ export function AppContent() {
           setShowDoctorsScreen(true);
           setCurrentDoctorsScreen('list');
         }}
+        onSchedulePress={() => setShowClinicSchedule(true)}
         onTimelinePress={() => {
           // ÙØªØ­ Timeline Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… savedClinicId
           if (savedClinicId !== null) {

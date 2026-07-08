@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ClinicDetailsScreen from './ClinicDetailsScreen';
+import ScheduleScreen from './screens/Schedule';
 import DoctorsScreen from './DoctorsScreen';
 import MyStatisticsScreen from './MyStatisticsScreen';
 import { useAuth } from './AuthContext';
@@ -42,6 +43,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null);
+  const [showClinicSchedule, setShowClinicSchedule] = useState(false); // معاينةُ جدولِ المركز (اطّلاعٌ فقط)
   const [showDoctorsScreen, setShowDoctorsScreen] = useState(false);
   const [viewingDoctorData, setViewingDoctorData] = useState<{id: string, name: string, clinicId: string | null, role: string} | null>(null);
   const [currentDoctorsScreen, setCurrentDoctorsScreen] = useState<'list' | 'viewStats'>('list');
@@ -378,13 +380,27 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
     );
   }
 
+  // جدولُ المركز من صفحةِ التفاصيل — القائد/المنسّق/المديرُ العام: تحكّمٌ كامل؛ الطبيبُ العاديّ: اطّلاعٌ فقط
+  if (selectedClinic && showClinicSchedule) {
+    const canManage = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+    return (
+      <ScheduleScreen
+        onBack={() => setShowClinicSchedule(false)}
+        clinicId={selectedClinic.id}
+        userId={user?.id}
+        viewOnly={!canManage}
+        headerTitle={selectedClinic.name}
+      />
+    );
+  }
+
   // If a clinic is selected, show ClinicDetailsScreen
   if (selectedClinic) {
     return (
       <ClinicDetailsScreen
         clinicName={selectedClinic.name}
         clinicId={selectedClinic.id}
-        onBack={() => setSelectedClinic(null)}
+        onBack={() => { setShowClinicSchedule(false); setSelectedClinic(null); }}
         onDoctorsPress={() => {
           setShowDoctorsScreen(true);
         }}
@@ -393,6 +409,7 @@ export default function DentalDepartmentsScreen({ onBack, onOpenTimeline, onOpen
             onOpenTimeline(selectedClinic.id, selectedClinic.name);
           }
         }}
+        onSchedulePress={() => setShowClinicSchedule(true)}
       />
     );
   }

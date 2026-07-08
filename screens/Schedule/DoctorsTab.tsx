@@ -87,6 +87,8 @@ export interface DoctorGroup {
 
 interface DoctorsTabProps {
   clinicId: string | null;
+  /** معاينةُ مركزٍ آخر (المديرُ/المنسّق) — اطّلاعٌ فقط، لا تعديلَ على حالةِ الأطباءِ ولا نقلَهم */
+  viewOnly?: boolean;
 }
 
 // ─── صورةُ الطبيبِ: أيقونةُ شخصٍ احترافيّة + حلقةُ الحالة + نقطةُ الحضور ───
@@ -157,11 +159,12 @@ function StatusChip({ status }: { status: DoctorWorkStatus }) {
   );
 }
 
-export function DoctorsTab({ clinicId }: DoctorsTabProps) {
+export function DoctorsTab({ clinicId, viewOnly }: DoctorsTabProps) {
   // صلاحيّة: القائدُ فقط (لا الطبيبُ العادي) يُدير القروبات — تغييرُ الحالة والنقلُ بينها.
   // للطبيبِ العادي الصفحةُ للاطّلاعِ فقط: لا تُفتَحُ ورقةُ الإجراءات، والدوالُّ محروسة.
+  // viewOnly = معاينةُ مركزٍ آخر (المديرُ العام/المنسّق): اطّلاعٌ فقط حتّى لو كان قائدًا.
   const { user } = useAuth();
-  const isLeader = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+  const isLeader = !viewOnly && !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
 
   const [loading, setLoading] = useState(true);
   const [allDoctors, setAllDoctors] = useState<DoctorItem[]>([]);
@@ -244,16 +247,20 @@ export function DoctorsTab({ clinicId }: DoctorsTabProps) {
         })
         .map((g: any) => {
           const members = g.doctor_group_members || [];
-          const groupDoctors: DoctorItem[] = members.map((m: any) => {
-            const doc = doctors.find(d => d.id === m.doctor_id);
-            return {
-              id: m.doctor_id,
-              name: doc?.name || m.doctor_name,
-              role: doc?.role,
-              workStatus: m.work_status as DoctorWorkStatus,
-              supervisorDoctorId: m.supervisor_doctor_id ?? null,
-            };
-          });
+          // الاسمُ في القروب مرتبطٌ بوجودِ الطبيبِ في المركز (صفحة دكترز): إن حُذِفَ الطبيبُ
+          // أو نُقِلَ لمركزٍ آخر فلا يُقابِلُه سطرٌ في قائمةِ الأطباء ⇐ نُسقِطُه فلا يبقى اسمُه معلّقًا.
+          const groupDoctors: DoctorItem[] = members
+            .filter((m: any) => doctors.some(d => d.id === m.doctor_id))
+            .map((m: any) => {
+              const doc = doctors.find(d => d.id === m.doctor_id);
+              return {
+                id: m.doctor_id,
+                name: doc?.name || m.doctor_name,
+                role: doc?.role,
+                workStatus: m.work_status as DoctorWorkStatus,
+                supervisorDoctorId: m.supervisor_doctor_id ?? null,
+              };
+            });
           return {
             id: g.id,
             name: g.name,

@@ -17,6 +17,7 @@ interface ClinicDetailsScreenProps {
   onBack: () => void;
   onDoctorsPress: () => void;
   onTimelinePress: () => void;
+  onSchedulePress: () => void;
 }
 
 const { width } = Dimensions.get('window');
@@ -28,9 +29,10 @@ export default function ClinicDetailsScreen({
   currentDoctorsCount,
   currentTotalTreatments,
   onBadgesUpdate,
-  onBack, 
-  onDoctorsPress, 
-  onTimelinePress 
+  onBack,
+  onDoctorsPress,
+  onTimelinePress,
+  onSchedulePress
 }: ClinicDetailsScreenProps) {
   const { user } = useAuth();
   
@@ -592,9 +594,7 @@ export default function ClinicDetailsScreen({
                 <TouchableOpacity
                   style={[styles.floatingCard, styles.cardRight, { marginTop: scale(20) }]}
                   activeOpacity={0.85}
-                  onPress={() => {
-                    // TODO: Add schedules functionality
-                  }}
+                  onPress={onSchedulePress}
                 >
                   <LinearGradient
                     colors={['rgba(255, 212, 163, 0.6)', 'rgba(255, 199, 138, 0.5)']}
