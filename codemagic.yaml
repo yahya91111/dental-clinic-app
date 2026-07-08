@@ -12,6 +12,8 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.yahyasadeq.dentalclinic
+      integrations:
+        app_store_connect: dcm_appstore
     scripts:
       - name: Install dependencies
         script: |
@@ -66,7 +68,10 @@ workflows:
             -exportOptionsPlist $HOME/export_options.plist
     artifacts:
       - $HOME/build/*.ipa
-    publishing: {}
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
 
   android-workflow:
     name: Android Workflow
