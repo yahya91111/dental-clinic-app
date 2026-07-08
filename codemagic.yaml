@@ -13,7 +13,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.yahyasadeq.dentalclinic
       integrations:
-        app_store_connect: dcm_appstore
+        app_store_connect: Codemagic
     scripts:
       - name: Install dependencies
         script: |
