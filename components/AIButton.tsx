@@ -31,9 +31,13 @@ type Props = {
   /** بعد إجراءٍ غيّر الجدول (مسح) — لإنعاش الشبكة */
   onAfterAction?: () => void;
   isLoading?: boolean;
+  /** ارتفاعُ الأوربِّ عن الأسفل (افتراضيّ scale(100)) — لرفعِه في صفحاتٍ بعينها */
+  orbBottom?: number;
+  /** الأوربُ نفسُه شبهُ شفّافٍ (يطابقُ شفافيّةَ أزرارِ الصفحةِ الفاتحة) */
+  orbGlass?: boolean;
 };
 
-export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, onClearConversation, onPatchMessage, onAfterAction, isLoading }: Props) {
+export default function AIButton({ user, clinicId, orbState, onPress, messages, onSend, onClearConversation, onPatchMessage, onAfterAction, isLoading, orbBottom, orbGlass }: Props) {
   const [showChat, setShowChat] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const openChat = () => setShowChat(true);
@@ -74,6 +78,8 @@ export default function AIButton({ user, clinicId, orbState, onPress, messages, 
         onLongPress={openChat}
         delayLongPress={400}
         alert={pendingCount > 0 || hasPendingQuestion}
+        bottom={orbBottom}
+        glass={orbGlass}
       />
       <AIChatModal
         visible={showChat}

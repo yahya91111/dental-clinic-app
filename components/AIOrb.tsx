@@ -12,6 +12,10 @@ interface AIOrbProps {
   onLongPress?: () => void;
   delayLongPress?: number;
   alert?: boolean; // محادثة بانتظار الردّ → يتحوّل للأحمر
+  /** ارتفاعُ الزرِّ عن الأسفل (افتراضيّ scale(100)) — لرفعِه في صفحاتٍ بعينها */
+  bottom?: number;
+  /** الأوربُ نفسُه شبهُ شفّافٍ (يطابقُ شفافيّةَ أزرارِ الصفحةِ الفاتحة) */
+  glass?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -118,7 +122,7 @@ export function OrbGlyph({ size = 40, alert, tone = 'purple', idPrefix = 'orb' }
   );
 }
 
-export function AIOrb({ size = 40, onPress, onLongPress, delayLongPress = 400, alert }: AIOrbProps) {
+export function AIOrb({ size = 40, onPress, onLongPress, delayLongPress = 400, alert, bottom, glass }: AIOrbProps) {
   const spin = useRef(new Animated.Value(0)).current;     // دورانٌ بطيءٌ دائم
   const breathe = useRef(new Animated.Value(0)).current;  // تنفّسٌ هادئ
   const floatA = useRef(new Animated.Value(0)).current;   // طفوٌ خفيف لأعلى/أسفل
@@ -150,10 +154,10 @@ export function AIOrb({ size = 40, onPress, onLongPress, delayLongPress = 400, a
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={delayLongPress}
-      style={{ position: 'absolute', bottom: scale(100), right: scale(20), zIndex: 1000 }}
+      style={{ position: 'absolute', bottom: bottom ?? scale(100), right: scale(20), zIndex: 1000 }}
     >
-      {/* الطفو الخفيف (حركةٌ منفصلةٌ عن التنفّس/الدوران) */}
-      <Animated.View style={{ width: box, height: box, alignItems: 'center', justifyContent: 'center', transform: [{ translateY: floatY }] }}>
+      {/* الطفو الخفيف (حركةٌ منفصلةٌ عن التنفّس/الدوران). glass = الأوربُ نفسُه شبهُ شفّافٍ كبقيّةِ الأزرار */}
+      <Animated.View style={{ width: box, height: box, alignItems: 'center', justifyContent: 'center', opacity: glass ? 0.7 : 1, transform: [{ translateY: floatY }] }}>
         {/* التنفّس + الدوران على الشكل نفسه */}
         <Animated.View style={{ transform: [{ scale: scaleA }, { rotate }] }}>
           <OrbGlyph size={box} alert={alert} idPrefix="orbMain" />

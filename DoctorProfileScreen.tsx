@@ -16,6 +16,13 @@ import { supabase } from './lib/supabaseClient';
 import { getPermissions } from './permissions';
 import { getUnreadCount, getNotifications as fetchNotifications, markAsRead, markAllAsRead, createNotification, subscribeToNotifications } from './lib/database';
 import { registerForPushNotifications, addNotificationResponseListener, addNotificationReceivedListener } from './lib/pushNotifications';
+import AIButton from './components/AIButton';
+import { useAIChat } from './hooks/useAIChat';
+import { AISchedulePanel } from './components/AISchedulePanel';
+import { schedule, type AssignedSlot } from './lib/algorithms/schedule';
+import type { SchedulePreview, AnnounceOffer } from './lib/ai_v2';
+import { ChatMessage } from './components/aiTypes';
+import type { WizardResult } from './components/ScheduleWizard';
 
 // ═══ Notifications design helpers (light glass, per-type) ═══
 const NFY_INK = '#20233A';
@@ -140,6 +147,50 @@ type DoctorProfileScreenProps = {
 export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline, onOpenMyStatistics, onOpenClinicSelection, currentWaitingCount, currentDoctorsCount, currentTotalTreatments, myTotalTreatments }: DoctorProfileScreenProps) {
   const { user, logout, updateUser } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<'profile' | 'departments' | 'doctors' | 'viewDoctor' | 'viewDoctorStats' | 'schedule' | 'requests'>('profile');
+  // ── الذكاء في صفحةِ الملفّ: نفسُ صفحةِ الذكاءِ المتحرّكة (الأورب) كما في شاشةِ الجدول ──
+  const [showAIPanel, setShowAIPanel] = useState(false);
+  const [aiPreview, setAiPreview] = useState<SchedulePreview | null>(null);
+  const [aiPreviewSaving, setAiPreviewSaving] = useState(false);
+  const [aiPreviewError, setAiPreviewError] = useState<string | null>(null);
+  const [aiOpenChatSignal, setAiOpenChatSignal] = useState(0);
+  // خُطّافُ المحادثةِ المشترك — نفسُ المفتاحِ المحفوظ → محادثةٌ واحدةٌ متّسقة. نُمرّرُ user=null على
+  // الصفحاتِ الفرعيّة (كالجدول) كي لا يُزاحمَ متحكّمَ شاشةِ الجدولِ على المحادثةِ المحفوظة، ويُعيدُ
+  // التحميلَ عند العودةِ لصفحةِ الملفّ.
+  const aiChat = useAIChat({
+    user: (user && currentScreen === 'profile') ? user : null,
+    clinicId: user?.clinicId,
+    buildContextData: () => 'Currently viewing: Profile page',
+    onPreview: (p) => setAiPreview(p),
+  });
+  const showAIOrb = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+
+  // بعد حفظِ الجدول (المعالجُ أو معاينةُ الشات): يسألُ القائدَ عن الإبلاغ بنفسِ آليّةِ إبلاغِ الغياب
+  const offerScheduleAnnounce = (weekStart: string) => {
+    if (!user?.id || !user?.clinicId) return;
+    if (!['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role)) return;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekStart || '');
+    const pretty = m ? ` ${Number(m[3])}/${Number(m[2])}` : '';
+    const announce: AnnounceOffer = { weekStart, day: '', message: `نُشِر جدولُ الأسبوع${pretty}.`, subjectId: user.id, subjectName: user.name };
+    const msg: ChatMessage = { id: `schedann${Date.now()}`, role: 'assistant', content: `حُفِظ جدولُ الأسبوع${pretty}.`, announceOffer: announce, timestamp: Date.now() };
+    aiChat.pushAssistant(msg);
+    setAiOpenChatSignal((n) => n + 1);   // افتح المحادثةَ ليرى القائدُ سؤالَ الإبلاغ
+  };
+
+  // حفظُ معاينةِ الشات كما هي (بعد أيّ تبديلٍ يدويّ) — يكتبُ الخانات + علاماتِ الغياب/الاستئذان
+  const handleSaveAiPreview = async (finalSlots: AssignedSlot[]) => {
+    if (!aiPreview || !user?.clinicId) return;
+    const ws = aiPreview.weekStart;
+    setAiPreviewSaving(true); setAiPreviewError(null);
+    try {
+      const res = await schedule.saveSlots(user.clinicId, aiPreview.weekStart, finalSlots, aiPreview.permissions, aiPreview.absenceMarkers, aiPreview.buildInput?.aShiftPlan, aiPreview.buildInput?.boardConfig);
+      if (res.success) {
+        if (aiPreview.buildInput) { try { await schedule.saveBuildConfig(aiPreview.buildInput); } catch { /* تحسينٌ لا يُفشِل الحفظ */ } }
+        setAiPreview(null);
+        offerScheduleAnnounce(ws);
+      } else { setAiPreviewError(res.error || 'تعذّر حفظ الجدول.'); }
+    } catch (e) { setAiPreviewError(e instanceof Error ? e.message : 'خطأ غير متوقّع.'); }
+    finally { setAiPreviewSaving(false); }
+  };
   const [previousScreen, setPreviousScreen] = useState<'profile' | 'departments' | 'doctors' | 'viewDoctor' | 'viewDoctorStats' | 'schedule' | 'requests'>('profile');
   const [selectedClinicId, setSelectedClinicId] = useState<number | null>(null);
   const [viewingDoctorData, setViewingDoctorData] = useState<any>(null);
@@ -1596,6 +1647,47 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
+      {/* زرُّ الذكاء العائم — مرفوعٌ قليلًا ليقعَ بينَ زرَّي الجدولِ والطلبات. النقرُ يفتحُ
+          صفحةَ الذكاءِ المتحرّكة (كشاشةِ الجدول)، والضغطُ المطوّلُ يفتحُ المحادثة. للأدوارِ القياديّة. */}
+      {showAIOrb && user && (
+        <AIButton
+          user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
+          clinicId={user.clinicId}
+          orbState={aiChat.aiState}
+          onPress={() => setShowAIPanel(true)}
+          orbBottom={scale(152)}
+          orbGlass
+
+          messages={aiChat.messages}
+          onSend={aiChat.send}
+          onClearConversation={aiChat.clearConversation}
+          onPatchMessage={aiChat.patchMessage}
+          isLoading={aiChat.isLoading}
+        />
+      )}
+      {/* صفحةُ الذكاءِ المتحرّكة (الأورب) — نفسُها في شاشةِ الجدول؛ Modal لا يُكلِّفُ حين يكونُ مغلقًا */}
+      {showAIOrb && user && (
+        <AISchedulePanel
+          visible={showAIPanel}
+          onClose={() => setShowAIPanel(false)}
+          onAction={() => { /* الإنشاءُ يُدارُ داخلَ اللوحة */ }}
+          messages={aiChat.messages}
+          onSend={aiChat.send}
+          onPatchMessage={aiChat.patchMessage}
+          isLoading={aiChat.isLoading}
+          contextLabel="Profile"
+          userName={user.name}
+          user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
+          clinicId={user.clinicId}
+          onCreateSchedule={(result: WizardResult) => offerScheduleAnnounce(result.weekStart)}
+          openChatSignal={aiOpenChatSignal}
+          chatPreview={aiPreview}
+          chatPreviewSaving={aiPreviewSaving}
+          chatPreviewError={aiPreviewError}
+          onSaveChatPreview={handleSaveAiPreview}
+          onDiscardChatPreview={() => setAiPreview(null)}
+        />
+      )}
       <View style={styles.container}>
         <View style={styles.gradient}>
         

@@ -1061,6 +1061,8 @@ export default function ScheduleScreen({ onBack, clinicId, userId }: ScheduleScr
           <AIButton
             orbState={aiState}
             onPress={() => setShowAIPanel(true)}
+            orbBottom={scale(152)}
+            orbGlass
             user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
             clinicId={clinicId}
             messages={aiMessages}
