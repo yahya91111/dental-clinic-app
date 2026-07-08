@@ -3,6 +3,8 @@ workflows:
     name: iOS Workflow
     max_build_duration: 120
     instance_type: mac_mini_m1
+    integrations:
+      app_store_connect: Codemagic
     environment:
       node: latest
       xcode: latest
@@ -12,8 +14,6 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.yahyasadeq.dentalclinic
-      integrations:
-        app_store_connect: Codemagic
     scripts:
       - name: Install dependencies
         script: |
