@@ -1061,12 +1061,14 @@ export default function DoctorsScreen({ onBack, clinicId, onOpenDoctorProfile }:
                               if (deleteDoctorError) throw deleteDoctorError;
                             }
 
-                            //  Step 1b: Remove from any schedule groups so the name
-                            //  disappears from القروبات (tied to the doctor's existence).
-                            await supabase
-                              .from('doctor_group_members')
-                              .delete()
-                              .eq('doctor_id', selectedDoctorId);
+                            //  Step 1b: Wipe ALL of the doctor's remaining data so a deleted
+                            //  doctor leaves NO trace anywhere — schedule groups (so the name
+                            //  disappears from القروبات + the build), their schedule slots, and
+                            //  their notifications (received or sent). Keyed by the doctor's id.
+                            await supabase.from('doctor_group_members').delete().eq('doctor_id', selectedDoctorId);
+                            await supabase.from('schedule_slots').delete().eq('doctor_id', selectedDoctorId);
+                            await supabase.from('notifications').delete().eq('recipient_id', selectedDoctorId);
+                            await supabase.from('notifications').delete().eq('sender_id', selectedDoctorId);
 
                             //  Step 2: Delete from Authentication (auth.users) using RPC
                             try {

@@ -1650,14 +1650,14 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFillObject}
       />
-      {/* زرُّ الذكاء العائم — مرفوعٌ قليلًا ليقعَ بينَ زرَّي الجدولِ والطلبات. النقرُ يفتحُ
-          صفحةَ الذكاءِ المتحرّكة (كشاشةِ الجدول)، والضغطُ المطوّلُ يفتحُ المحادثة. للأدوارِ القياديّة. */}
+      {/* زرُّ الذكاء العائم — لكلِّ مستخدم. النقرُ يفتحُ صفحةَ الذكاءِ المتحرّكة (كشاشةِ الجدول)،
+          والضغطُ المطوّلُ يفتحُ المحادثة. الطبيبُ العاديُّ والقائدُ سواءٌ في الفتح؛ الأدواتُ محكومةٌ بالدور. */}
       {showAIOrb && user && (
         <AIButton
           user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
           clinicId={user.clinicId}
           orbState={aiChat.aiState}
-          onPress={isLeaderRole ? () => setShowAIPanel(true) : undefined}
+          onPress={() => setShowAIPanel(true)}
           orbBottom={isLeaderRole ? scale(152) : scale(100)}
           orbGlass
 
@@ -1668,8 +1668,9 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           isLoading={aiChat.isLoading}
         />
       )}
-      {/* لوحةُ الجدولِ المتحرّكة — للقادةِ فقط (بناء/إدارة الجدول)؛ الطبيبُ العاديُّ يستعملُ المحادثةَ */}
-      {isLeaderRole && user && (
+      {/* صفحةُ الذكاءِ المتحرّكة — لكلِّ مستخدم (النقرُ يفتحها). الأدواتُ داخلها محكومةٌ بالدور:
+          إنشاءُ الجدولِ للقادةِ فقط؛ الطبيبُ العاديُّ يستعملُ المحادثةَ والطلبات. */}
+      {showAIOrb && user && (
         <AISchedulePanel
           visible={showAIPanel}
           onClose={() => setShowAIPanel(false)}
