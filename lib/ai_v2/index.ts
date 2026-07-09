@@ -26,6 +26,7 @@ import {
 import { V2_TOOLS, dispatchV2Tool, type V2Tool, type V2ToolContext, type SchedulePreview, type AnnounceOffer, type SwapOffer, type ConfirmOffer } from './tools';
 import { REQUESTS_TOOLS_V2, dispatchRequestToolV2, FINAL_MARK, requestsToolsForRole } from './tools_requests_v2';
 export type { SchedulePreview, AnnounceOffer, SwapOffer, ConfirmOffer } from './tools';
+import { AI_PROXY_URL, aiProxyHeaders } from './proxy';
 
 // ─── التوجيه بين المساعدين (جدول / طلبات) ───────────────────────
 // مهمّة الإشعارات أُلغيت: التغطية والإشعارات صارت ضمن «الطلبات» (المحرّك يكتشف
@@ -87,9 +88,7 @@ function resolveTask(opts: SendMessageV2Options): V2Task {
   return classifyTask(opts.messages);
 }
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
-
+// نداء الذكاء يمرّ عبر وسيط Supabase (proxy.ts) — المفتاح على الخادم، لا في التطبيق.
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 // مهمّة الطلبات حسّاسة للأخطاء السلوكيّة → نموذج أقوى لها وحدها (الباقي على الافتراضيّ).
 // للرجوع لهايكو: اجعلها DEFAULT_MODEL.
@@ -249,12 +248,11 @@ function truncateConversation(messages: V2Message[]): V2Message[] {
 export async function sendMessageV2(
   opts: SendMessageV2Options,
 ): Promise<SendMessageV2Result> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
+  if (!AI_PROXY_URL) {
     return {
       success: false,
       message: '',
-      error: 'API key not configured.',
+      error: 'AI service not configured.',
     };
   }
 
@@ -375,14 +373,9 @@ export async function sendMessageV2(
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       roundsUsed = round + 1;
-      const res = await fetch(ANTHROPIC_API_URL, {
+      const res = await fetch(AI_PROXY_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'extended-cache-ttl-2025-04-11',
-        },
+        headers: aiProxyHeaders(),
         body: JSON.stringify({
           model: modelForTask(task),
           max_tokens: MAX_TOKENS,

@@ -10,9 +10,9 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { ExtraAbsence, ExtraPermission, ExtraShift, WeekDay } from '../algorithms/schedule';
+import { AI_PROXY_URL, aiProxyHeaders } from './proxy';
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const getApiKey = () => process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY || '';
+// نداء الذكاء يمرّ عبر وسيط Supabase (proxy.ts) — المفتاح على الخادم، لا في التطبيق.
 const MODEL = 'claude-haiku-4-5-20251001';
 
 export type RosterEntry = { id: string; name: string };
@@ -261,17 +261,12 @@ export async function parseExceptions(
   const trimmed = (text || '').trim();
   if (!trimmed) return { ...EMPTY };
 
-  const apiKey = getApiKey();
-  if (!apiKey) return { ...EMPTY, unresolved: [trimmed] };
+  if (!AI_PROXY_URL) return { ...EMPTY, unresolved: [trimmed] };
 
   try {
-    const res = await fetch(ANTHROPIC_API_URL, {
+    const res = await fetch(AI_PROXY_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: aiProxyHeaders(),
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 1024,
