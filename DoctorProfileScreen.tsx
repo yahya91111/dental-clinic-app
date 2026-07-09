@@ -162,7 +162,10 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     buildContextData: () => 'Currently viewing: Profile page',
     onPreview: (p) => setAiPreview(p),
   });
-  const showAIOrb = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+  // الأورب يظهرُ لكلِّ مستخدمٍ (الطبيبُ العاديّ أيضًا): القائدُ يفتحُ لوحةَ الجدول، والطبيبُ
+  // العاديُّ يفتحُ المحادثةَ مباشرةً (خدمةٌ ذاتيّة: طلباتٌ/تبديل). لوحةُ الجدولِ للقادةِ فقط.
+  const isLeaderRole = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
+  const showAIOrb = !!user;
 
   // بعد حفظِ الجدول (المعالجُ أو معاينةُ الشات): يسألُ القائدَ عن الإبلاغ بنفسِ آليّةِ إبلاغِ الغياب
   const offerScheduleAnnounce = (weekStart: string) => {
@@ -1654,8 +1657,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           user={{ id: user.id, name: user.name, role: user.role, clinicId: user.clinicId, clinicName: user.clinicName }}
           clinicId={user.clinicId}
           orbState={aiChat.aiState}
-          onPress={() => setShowAIPanel(true)}
-          orbBottom={scale(152)}
+          onPress={isLeaderRole ? () => setShowAIPanel(true) : undefined}
+          orbBottom={isLeaderRole ? scale(152) : scale(100)}
           orbGlass
 
           messages={aiChat.messages}
@@ -1665,8 +1668,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           isLoading={aiChat.isLoading}
         />
       )}
-      {/* صفحةُ الذكاءِ المتحرّكة (الأورب) — نفسُها في شاشةِ الجدول؛ Modal لا يُكلِّفُ حين يكونُ مغلقًا */}
-      {showAIOrb && user && (
+      {/* لوحةُ الجدولِ المتحرّكة — للقادةِ فقط (بناء/إدارة الجدول)؛ الطبيبُ العاديُّ يستعملُ المحادثةَ */}
+      {isLeaderRole && user && (
         <AISchedulePanel
           visible={showAIPanel}
           onClose={() => setShowAIPanel(false)}

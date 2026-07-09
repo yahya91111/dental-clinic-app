@@ -291,6 +291,20 @@ function beginnerShadowIds(input: ScheduleBuildInput): Set<string> {
   );
 }
 
+/** أرقامُ الأطباءِ الفعليّين للمركز (doctors ∪ pending_doctors) — لإسقاطِ عضوِ قروبٍ
+ *  «شبح»: طبيبٌ حُذف أو نُقل لمركزٍ آخر فبقيَ صفُّه في doctor_group_members. مجموعةٌ
+ *  فارغةٌ ⇒ لا نُفلتر (أمانٌ للاختبارات/الأخطاء: لا نُفرِّغ الروستر إن تعذّر التحميل). */
+async function loadClinicDoctorIds(clinicId: string): Promise<Set<string>> {
+  const [real, pend] = await Promise.all([
+    supabase.from('doctors').select('id').eq('clinic_id', clinicId),
+    supabase.from('pending_doctors').select('id').eq('clinic_id', clinicId),
+  ]);
+  const ids = new Set<string>();
+  for (const r of (real.data || []) as Array<{ id: string }>) ids.add(r.id);
+  for (const r of (pend.data || []) as Array<{ id: string }>) ids.add(r.id);
+  return ids;
+}
+
 export async function loadScheduleData(
   clinicId: string,
   weekStart: string,
@@ -299,11 +313,12 @@ export async function loadScheduleData(
   // **بالتوازي** (Promise.all) فتُختصر أربع جولاتِ شبكةٍ متتابعة إلى واحدة. loadScheduleData
   // يُنادى مرّاتٍ كثيرة في خطّ التفاعل، فهذا أكبرُ توفيرٍ آمنٍ للكمون (يفيد الذكاء واليدويّ معًا).
   const windowStart = shiftWeekStart(weekStart, 2);
-  const [settingsRes, groupsRes, existingRes, pastRes] = await Promise.all([
+  const [settingsRes, groupsRes, existingRes, pastRes, validIds] = await Promise.all([
     supabase.from('schedule_settings').select('clinic_count').eq('clinic_id', clinicId).maybeSingle(),
     supabase.from('doctor_groups').select('id, name, doctor_group_members(doctor_id, doctor_name, work_status, supervisor_doctor_id)').eq('clinic_id', clinicId),
     supabase.from('schedule_slots').select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status').eq('clinic_id', clinicId).eq('week_start', weekStart),
     supabase.from('schedule_slots').select('id, week_start, day_of_week, period, clinic_number, doctor_id, doctor_name, role, status').eq('clinic_id', clinicId).gte('week_start', windowStart).lt('week_start', weekStart),
+    loadClinicDoctorIds(clinicId),
   ]);
 
   // 1. عدد العيادات من schedule_settings
@@ -339,6 +354,8 @@ export async function loadScheduleData(
     if (template.key === 'agd') continue;
     const members = g.doctor_group_members || [];
     for (const m of members) {
+      // تخطّي عضوٍ «شبح»: طبيبٌ لم يعد في المركز (حُذف/نُقل) وبقيَ صفُّه في القروب.
+      if (validIds.size > 0 && !validIds.has(m.doctor_id)) continue;
       doctors.push({
         id: m.doctor_id,
         name: m.doctor_name,
@@ -440,10 +457,13 @@ export async function loadBuildConfig(
 export async function loadDoctorRoster(
   clinicId: string,
 ): Promise<{ doctors: LoadedDoctor[] | null; error: string | null }> {
-  const { data: groupsData, error: groupsErr } = await supabase
-    .from('doctor_groups')
-    .select('id, name, doctor_group_members(doctor_id, doctor_name, work_status, supervisor_doctor_id)')
-    .eq('clinic_id', clinicId);
+  const [{ data: groupsData, error: groupsErr }, validIds] = await Promise.all([
+    supabase
+      .from('doctor_groups')
+      .select('id, name, doctor_group_members(doctor_id, doctor_name, work_status, supervisor_doctor_id)')
+      .eq('clinic_id', clinicId),
+    loadClinicDoctorIds(clinicId),
+  ]);
   if (groupsErr) {
     return { doctors: null, error: `فشل تحميل الأطباء: ${groupsErr.message}` };
   }
@@ -463,6 +483,8 @@ export async function loadDoctorRoster(
     if (!template) continue;
     if (template.key === 'agd') continue;
     for (const m of g.doctor_group_members || []) {
+      // تخطّي عضوٍ «شبح»: طبيبٌ لم يعد في المركز (حُذف/نُقل) وبقيَ صفُّه في القروب.
+      if (validIds.size > 0 && !validIds.has(m.doctor_id)) continue;
       doctors.push({
         id: m.doctor_id,
         name: m.doctor_name,
