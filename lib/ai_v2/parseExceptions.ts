@@ -13,7 +13,7 @@ import type { ExtraAbsence, ExtraPermission, ExtraShift, WeekDay } from '../algo
 import { AI_PROXY_URL, aiProxyHeaders } from './proxy';
 
 // نداء الذكاء يمرّ عبر وسيط Supabase (proxy.ts) — المفتاح على الخادم، لا في التطبيق.
-const MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = 'claude-sonnet-5';
 
 export type RosterEntry = { id: string; name: string };
 

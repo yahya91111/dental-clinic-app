@@ -42,6 +42,9 @@ yarn-error.*
 /android
 .claude/
 
+# Supabase CLI local temp
+supabase/.temp/
+
 # Documentation files (internal use only)
 *.md
 !README.md

@@ -89,10 +89,10 @@ function resolveTask(opts: SendMessageV2Options): V2Task {
 }
 
 // نداء الذكاء يمرّ عبر وسيط Supabase (proxy.ts) — المفتاح على الخادم، لا في التطبيق.
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+const DEFAULT_MODEL = 'claude-sonnet-5';
 // مهمّة الطلبات حسّاسة للأخطاء السلوكيّة → نموذج أقوى لها وحدها (الباقي على الافتراضيّ).
 // للرجوع لهايكو: اجعلها DEFAULT_MODEL.
-const REQUESTS_MODEL = 'claude-sonnet-4-6';
+const REQUESTS_MODEL = 'claude-sonnet-5';
 const modelForTask = (task: V2Task) => (task === 'requests' ? REQUESTS_MODEL : DEFAULT_MODEL);
 const MAX_TOKENS = 4096;
 const MAX_TOOL_ROUNDS = 10;
