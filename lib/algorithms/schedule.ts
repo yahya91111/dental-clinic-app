@@ -10,6 +10,7 @@
 import { supabase } from '../supabase';
 import { getTemplateByName, type GroupTemplate } from './groupTemplates';
 import { createWheels, distributeShiftWheel, applyExAbsence } from './wheel';
+import { proposeRestSwaps } from './restFairness';
 
 // ─── الأنواع الأساسية ─────────────────────────────────────────
 
@@ -995,6 +996,60 @@ function isSundayUTC(dateStr: string): boolean {
   return dt.getUTCDay() === 0;
 }
 
+// موازنةُ «إجمالي الراحة» (احتياطيّ+غياب) على الجدولِ المبنيّ **في الذاكرة قبل الحفظ** —
+// فتظهرُ في المعاينةِ والحفظِ معًا. برصيدِ الأسبوع السابق (carryRest) تعمل **عبر الأسابيع**
+// لا داخلَ الأسبوعِ فقط. المبادلة = تبديلُ حقلِ doctor لخانتَي احتياطيٍّ↔عيادةٍ مبنيّتَين
+// (نفسُ اليوم/الشفت/القروب) → حفظٌ تامٌّ للشكل، لا يمسّ الانفراد/الدليقيتر/البورد. المُصحِّح
+// أعمى عنه المراقبُ القديم (يتخطّى status≠active، والاحتياطيّ status='extra').
+function balanceRestInPlace(allSlots: AssignedSlot[], data: LoadedData, weekStart: string, extraAbsences?: ExtraAbsence[]): void {
+  // ① رصيدٌ تاريخيٌّ من الأسبوع السابق: احتياطيّ + أيّام غياب (طبيّة/تفرّغ) — عدلٌ عبر الأسابيع.
+  const carry = new Map<string, number>();
+  const pastAbs = new Map<string, Set<string>>();
+  for (const s of data.pastSlots) {
+    if (s.status === 'extra') carry.set(s.doctorId, (carry.get(s.doctorId) ?? 0) + 1);
+    else if (s.status === 'sick_leave' || s.status === 'vacation') {
+      let set = pastAbs.get(s.doctorId); if (!set) { set = new Set(); pastAbs.set(s.doctorId, set); }
+      set.add(`${s.weekStart}#${s.dayOfWeek}`);
+    }
+  }
+  for (const [id, set] of pastAbs) carry.set(id, (carry.get(id) ?? 0) + set.size);
+
+  // ② حوّل الجدولَ المبنيَّ + غياباتِ هذا الأسبوع إلى LoadedSlot لمحرّك الراحة.
+  const asLoaded: LoadedSlot[] = allSlots.map((a, i) => ({
+    id: `b${i}`, weekStart, dayOfWeek: a.day, period: a.period, clinicNumber: a.clinicNumber,
+    doctorId: a.doctor.id, doctorName: a.doctor.name,
+    role: a.role === 'delegator' ? 'delegator' : 'clinic',
+    status: (a.role === 'ex' ? 'extra' : 'active') as SlotStatus,
+  }));
+  for (const s of data.existingSlots) if (s.status === 'sick_leave' || s.status === 'vacation') asLoaded.push(s);
+  // غيابات القائد المُدخَلة (لم تُكتَب في DB بعد) — يجب أن يراها محورُ الراحة.
+  const nameById = new Map(data.doctors.map((d) => [d.id, d.name]));
+  for (const e of extraAbsences ?? []) {
+    if (e.status !== 'sick_leave' && e.status !== 'vacation') continue;
+    asLoaded.push({ id: `xa-${e.doctorId}-${e.day}`, weekStart, dayOfWeek: e.day, period: 0, clinicNumber: 0, doctorId: e.doctorId, doctorName: nameById.get(e.doctorId) ?? '', role: 'clinic', status: e.status });
+  }
+
+  // ③ بركةُ العاديّين + عزلُ القروبات (كنظير موازنة الدليقيتر).
+  const poolIds = new Set(data.doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+  const groupOf = new Map(data.doctors.map((d) => [d.id, d.groupTemplate.key as string]));
+  const rec = proposeRestSwaps(data.doctors, asLoaded, { poolIds, groupOf, carryRest: carry });
+  if (!rec.swaps.length) return;
+
+  // ④ طبّق: بدّل حقلَ doctor لخانتَي الاحتياطيّ (H) والعيادة (L) بالترتيب.
+  const byId = new Map(data.doctors.map((d) => [d.id, d]));
+  for (const sw of rec.swaps) {
+    const exCol = sw.shift === 'morning' ? 1 : 2;
+    const rs = allSlots.find((a) => a.role === 'ex' && a.doctor.id === sw.from.id && a.day === sw.day && a.clinicNumber === exCol)
+      ?? allSlots.find((a) => a.role === 'ex' && a.doctor.id === sw.from.id && a.day === sw.day);
+    const cs = allSlots.find((a) => a.role === 'clinic' && a.doctor.id === sw.to.id && a.day === sw.day && a.clinicNumber === sw.clinicNumber && a.period === sw.period);
+    const H = byId.get(sw.from.id); const L = byId.get(sw.to.id);
+    if (!rs || !cs || !H || !L) continue;
+    rs.doctor = L; cs.doctor = H;
+    // eslint-disable-next-line no-console
+    console.log(`[REST BUILD] بادل ${sw.from.name} (احتياطيّ) ⇄ ${sw.to.name} (عيادة) ${sw.day}/${sw.shift === 'morning' ? 'ص' : 'م'}`);
+  }
+}
+
 async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -1183,6 +1238,10 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
   const absencesRespected = data.existingSlots.filter(
     (s) => s.status !== 'active',
   ).length;
+
+  // 5.9 موازنةُ الراحة على الجدولِ المبنيّ (في الذاكرة) — تظهرُ في المعاينةِ والحفظِ معًا،
+  //     وتعمل عبرَ الأسابيع. آمنة: لا ترمي (تحسينٌ اختياريّ).
+  try { balanceRestInPlace(allSlots, data, input.weekStart, input.extraAbsences); } catch { /* لا تُفشل البناء */ }
 
   // 6. كتابة في DB (إلا لو dryRun)
   if (!input.dryRun) {
