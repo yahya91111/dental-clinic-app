@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, KeyboardAvoidingView, Platform, Alert, Animated, Dimensions, InteractionManager, AppState } from 'react-native';
-import { scaledStyleSheet, scale } from './lib/scale';
+import { scaledStyleSheet, scale, SCREEN } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -166,6 +166,12 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
   // العاديُّ يفتحُ المحادثةَ مباشرةً (خدمةٌ ذاتيّة: طلباتٌ/تبديل). لوحةُ الجدولِ للقادةِ فقط.
   const isLeaderRole = !!user && ['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role);
   const showAIOrb = !!user;
+
+  // موضعُ الأوربِّ رأسيًّا (القائد): الكروتُ تُرصَفُ من **أعلى** الشاشةِ بمقياسِ العرض، فلو ثبّتنا
+  // الأوربَ بمسافةٍ من **الأسفل** (scale(152)) لالتقيا فقط على ارتفاعِ الشاشةِ المرجعِ (٩٣٢) وانجرفَ
+  // على غيرِها. نضعُه بدلًا من ذلك على نفسِ ارتفاعِه من **الأعلى** (٩٣٢−١٥٢=٧٨٠، مقيسًا بالعرض):
+  // على المرجعِ يبقى ١٥٢ تمامًا (لا تغيير)، وعلى بقيّةِ الأحجامِ يتتبّعُ الكروتَ فيثبتُ «بين آخرِ كرتين».
+  const leaderOrbBottom = Math.max(scale(80), Math.round(SCREEN.height - scale(780)));
 
   // بعد حفظِ الجدول (المعالجُ أو معاينةُ الشات): يسألُ القائدَ عن الإبلاغ بنفسِ آليّةِ إبلاغِ الغياب
   const offerScheduleAnnounce = (weekStart: string) => {
@@ -1658,7 +1664,7 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
           clinicId={user.clinicId}
           orbState={aiChat.aiState}
           onPress={() => setShowAIPanel(true)}
-          orbBottom={isLeaderRole ? scale(152) : scale(100)}
+          orbBottom={isLeaderRole ? leaderOrbBottom : scale(100)}
           orbGlass
 
           messages={aiChat.messages}
