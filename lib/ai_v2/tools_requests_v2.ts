@@ -958,6 +958,7 @@ export async function dispatchRequestToolV2(
                 await notifications.notifyLeaderOfRequest({
                   clinicId: ctx.clinicId, leaderId,
                   senderId: doc.id, senderName: doc.name,
+                  actorName: ctx.user?.name, // مَن نفّذَ فعلًا (يظهر أسفلَ الكرت)
                   summary: `${STATUS_AR[status]} يوم ${dayWithDate(wsEff, r.day)}`,
                   weekStart: wsEff, day: r.day,
                   // غيابٌ كامل (مرضية/تفرّغ) يُرتّب المحرّك تعويضه → القائد يُطّلع على الجدول
@@ -1308,6 +1309,7 @@ export async function dispatchRequestToolV2(
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId,
                 senderId: doc.id, senderName: doc.name,
+                actorName: ctx.user?.name, // مَن نفّذَ الإلغاء فعلًا (يظهر أسفلَ الكرت)
                 summary: `إلغاء ${statusAr} يوم ${dayWithDate(String(r.weekStart), r.day)}`,
                 weekStart: String(r.weekStart), day: r.day,
                 kind: 'cancel', // إلغاءٌ — يُجمَع مع إلغاءٍ آخر فقط، ولا يمحو إشعارَ التسجيل
@@ -1424,6 +1426,7 @@ export async function dispatchRequestToolV2(
             if (leaderId !== actor.id) {
               await notifications.notifyLeaderOfRequest({
                 clinicId: ctx.clinicId, leaderId, senderId: doc.id, senderName: doc.name,
+                actorName: ctx.user?.name, // مَن نفّذَ النقل فعلًا (يظهر أسفلَ الكرت)
                 summary: `نقل ${doc.name}: ${STATUS_AR[srcStatus]} ${DAY_AR[fromDay]} → ${STATUS_AR[toStatus]} يوم ${dayWithDate(wsEff, r.toDay)}`,
                 weekStart: wsEff, day: r.toDay, kind: 'move', scheduleChanged: true,
               });

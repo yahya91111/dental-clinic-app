@@ -179,8 +179,11 @@ function leaderRequestBody(senderName: string, items: { day?: string; summary: s
 export async function notifyLeaderOfRequest(args: {
   clinicId: string;
   leaderId: string;
-  senderId: string;
-  senderName: string;
+  senderId: string;    // صاحبُ الحالة (موضوعُ الغياب) — مفتاحُ التجميع وبادئةُ نصّ الإشعار
+  senderName: string;  // اسمُ صاحبِ الحالة (يظهر داخل النصّ: «فلان: مرضية…»)
+  /** مَن نفّذَ العمليّةَ فعلًا: قائدٌ سجّلَ نيابةً، أو الطبيبُ نفسُه. يُعرَض في **أسفلِ الكرت**
+   *  («— فلان») بوصفِه مصدرَ الإشعار. حين يُهمَل = صاحبُ الحالةِ نفسُه (طلبٌ ذاتيّ). */
+  actorName?: string;
   summary: string;     // «مرضية يوم الأحد» — يصوغها المساعد
   weekStart?: string;  // للتجميع (طلبات نفس الأسبوع)
   day?: string;        // مفتاح التمييز (لا يتكرّر السطر لو أُعيد نفس اليوم)
@@ -265,11 +268,13 @@ export async function notifyLeaderOfRequest(args: {
       clinicId: args.clinicId,
       recipientId: args.leaderId,
       senderId: args.senderId,
-      senderName: args.senderName,
+      // توقيعُ أسفلِ الكرت = المُنفِّذُ الفعليّ (قائدٌ سجّلَ نيابةً)، وإلّا صاحبُ الحالةِ نفسُه.
+      // النصُّ يبقى باسمِ صاحبِ الحالة (senderName) ليُعرَفَ الغائب؛ والتوقيعُ يُبيّنُ مَن أجراها.
+      senderName: args.actorName || args.senderName,
       type: NotifType.REQUEST_INFO,
       title,
       body: leaderRequestBody(args.senderName, [{ day: args.day, summary: args.summary }]),
-      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now, schedule_changed: !!args.scheduleChanged, kind },
+      data: { items: [{ day: args.day, summary: args.summary }], week_start: args.weekStart, batch_at: now, schedule_changed: !!args.scheduleChanged, kind, actor_name: args.actorName || null },
     });
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'خطأ غير متوقّع.');
