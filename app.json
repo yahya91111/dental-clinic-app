@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "versionCode": 3,
+      "versionCode": 2,
       "package": "com.yahyasadeq.dcm",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
