@@ -1560,16 +1560,26 @@ export async function dispatchRequestToolV2(
         if (!isLeaderPlusRole(actor.role)) return 'Tool error: إضافةُ طبيبٍ للجدول للقائد فأعلى.';
         if (!isDay(r.day)) return 'Tool error: حدّد يوم البداية (اليوم/الغد/يومًا محدّدًا).';
         const ws2 = String(r.weekStart);
-        const { schedule } = await import('../algorithms/schedule');
+        const { schedule, loadScheduleData } = await import('../algorithms/schedule');
         const recipe = await schedule.loadBuildConfig(ctx.clinicId, ws2);
         if (!recipe) return 'Tool error: لا توجد وصفة بناءٍ محفوظة لهذا الأسبوع — أعِد بناء الجدول أوّلًا.';
         const who = resolveDoctor(ctx, r.doctorIndex);
+        // متدرّبٌ جديدٌ ليس في الوصفةِ المحفوظة؟ لا نُفشِلُ البناءَ ولا نسألُ القائد: إن كان له
+        // **مُشرِفٌ مضبوطٌ** في قروبه فهو مبتدئ (ظلٌّ يتبعُ مدرّبَه)، وإلّا مستقلّ (يُوزَّع كطبيبٍ
+        // عاديّ). فيُدخِلُ القائدُ المتدرّبَ الجديدَ مباشرةً بلا إعادةِ تشغيلِ المعالج.
+        const traineeModes: Record<string, 'beginner' | 'independent'> = { ...(recipe.traineeModes || {}) };
+        const sdForModes = (await loadScheduleData(ctx.clinicId, ws2)).data;
+        for (const d of sdForModes?.doctors ?? []) {
+          if (d.workStatus === 'trainee' && !traineeModes[d.id]) {
+            traineeModes[d.id] = d.supervisorDoctorId ? 'beginner' : 'independent';
+          }
+        }
         // لقطةٌ قبلَ البناء لاستعادةِ شفتِ من لا علاقةَ له بالوافد (عزلُ الأثر).
         const orderA = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'] as const;
         const daysFromA = orderA.slice(orderA.indexOf(r.day));
         const snapA = who ? await snapshotActiveExtra(ctx.clinicId, ws2, daysFromA) : [];
         const built = await schedule.build({
-          ...recipe, clinicId: ctx.clinicId, weekStart: ws2, fromDay: r.day, dryRun: false,
+          ...recipe, traineeModes, clinicId: ctx.clinicId, weekStart: ws2, fromDay: r.day, dryRun: false,
         } as Parameters<typeof schedule.build>[0]);
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
         // أعِد شفتَ من لم يُضَف إلى أصله: لا تغييرَ ولا إشعارَ لأطبائه.
