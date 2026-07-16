@@ -12,6 +12,7 @@ import { supabase } from '../supabase';
 import type { WeekDay, LoadedSlot } from './schedule';
 import {
   extractHeavySeats, lastHeavyStamps, solveLookahead,
+  extractReserveSeats, lastRestStamps, solveHeavyRecency,
   extractCoverageSeats, solveCoverage, lastClinicStamps, lastBoardStamps,
 } from './solver';
 import type { HeavySeat, CoverageSeat } from './solver';
@@ -512,6 +513,97 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log('[NEW-HEART APPLY] تعذّر التطبيق:', e instanceof Error ? e.message : e);
+    return { applied: 0, deferred: [...deferred] };
+  }
+}
+
+// امتصاصُ الاحتياطيّ (راحة) — نظيرُ امتصاصِ الدليقيتر لكن على محورِ الراحة، بالحداثةِ
+// المحضة (الغياب = راحة عبر lastRestStamps). «تحسّنٌ صارمٌ فقط»: صفرُ عبثٍ على أسبوعٍ عادلٍ
+// أصلًا — العجلةُ توازنُه غالبًا فلا يتحرّك إلّا حين يوجد أحقُّ بالراحةِ فعلًا. التطبيق =
+// مبادلةُ (احتياطي↔عيادة): مَن حقُّه الراحةُ أكثرَ (أقدمُ راحةً) يأخذ الاحتياطيّ، والشاغلُ
+// الحاليُّ ينزلُ للعيادة. **حمايةُ الظلال**: نستثني مشرفي المتدرّبين من التحريك تمامًا
+// (متلقّيًا أو مُنازَلًا) كي لا نُيتّمَ ظلًّا بنقلِ عملِ مشرفِه — نُبقيهم مكانهم (تحفّظٌ آمن).
+export async function applyReserveAbsorption(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay> }): Promise<{ applied: number; deferred: WeekDay[] }> {
+  const deferred = new Set<WeekDay>();
+  try {
+    const { data } = await loadScheduleData(args.clinicId, args.weekStart);
+    if (!data) return { applied: 0, deferred: [] };
+    const doctors = data.doctors;
+    const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+    const groupOf = new Map(doctors.map((d) => [d.id, d.groupTemplate.key]));
+    const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
+    // مشرفو المتدرّبين (لهم ظلٌّ يتبعهم): يُستثنون من التحريك حمايةً للظلّ.
+    const supervisorIds = new Set(doctors.filter((d) => d.workStatus === 'trainee' && d.supervisorDoctorId).map((d) => d.supervisorDoctorId as string));
+    const all: LoadedSlot[] = [...data.pastSlots, ...data.existingSlots];
+    const restPrior = lastRestStamps(all.filter((s) => s.weekStart < args.weekStart));
+
+    // مقاعدُ الاحتياطِ لكلّ شفت (نصف): الحاضرون = عاملو الفترتين + محتاطو عمود الشفت.
+    const exSeats: HeavySeat[] = [];
+    for (const day of DAY_OF) {
+      const dayRows = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day]);
+      for (const half of [0, 1] as const) {
+        const periods = half === 0 ? [1, 2] : [3, 4];
+        const exCol = half === 0 ? 1 : 2;
+        const ss = dayRows.filter((s) => (s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol) || (s.status === 'active' && periods.includes(s.period)));
+        const seats = extractReserveSeats(ss, poolIds);
+        for (const seat of seats) {
+          if (traineeIds.has(seat.current)) continue; // ظلٌّ لا يحمل راحةً في العجلة
+          // اعزلِ القروبات + استثنِ المتدرّبين والمشرفين من أهليّة تلقّي الراحة.
+          const curGroup = groupOf.get(seat.current);
+          seat.eligible = seat.eligible.filter((id) => id === seat.current || (groupOf.get(id) === curGroup && !traineeIds.has(id) && !supervisorIds.has(id)));
+          exSeats.push(seat);
+        }
+      }
+    }
+    exSeats.sort((a, b) => a.stamp.localeCompare(b.stamp));
+    if (exSeats.length === 0) return { applied: 0, deferred: [] };
+    const rec = solveHeavyRecency(doctors, restPrior, exSeats);
+
+    // نُطبّق القرارَ **بفرقِ المجموعات لكلّ شفت** (لا مقعدًا مقعدًا): إعادةُ التعيينِ قد تكون
+    // سلسلةً (أ→مقعدِ ب، ب→مقعدِ جـ)، فنحسب لكلّ شفت مَن يجب أن يرتاح (NEW) ومَن يرتاح الآن
+    // (CUR)، ونُزاوج «صاعدًا للراحة» (كان يعمل) مع «نازلًا للعيادة» (كان يرتاح) → مبادلاتُ
+    // احتياطي↔عيادة نظيفةٌ تُحقّق التوزيعَ الكامل في تمريرةٍ واحدةٍ (idempotent).
+    const assignOf = new Map((rec.fullAssignment ?? []).map((fa) => [fa.seatId, fa.doctorId]));
+    const byShift = new Map<string, HeavySeat[]>();
+    for (const seat of exSeats) { const a = byShift.get(seat.stamp) ?? []; a.push(seat); byShift.set(seat.stamp, a); }
+    let applied = 0;
+    for (const [stamp, seats] of byShift) {
+      const CUR = seats.map((s) => s.current);
+      const NEW = seats.map((s) => assignOf.get(s.id) ?? s.current);
+      const curSet = new Set(CUR); const newSet = new Set(NEW);
+      const addRest = NEW.filter((id) => !curSet.has(id)); // يعملُ الآن ويجب أن يرتاح
+      const remRest = CUR.filter((id) => !newSet.has(id)); // يرتاحُ الآن ويجب أن يعمل
+      if (addRest.length === 0) continue;
+      const parts = stamp.split('#'); const dayIdx = Number(parts[1]); const half = Number(parts[2]);
+      const day = DAY_OF[dayIdx]; if (!day) continue;
+      if (args.protectedDays?.has(day)) { deferred.add(day); continue; } // يومٌ عدّله القائد — أجّلْ
+      const periods = half === 0 ? [1, 2] : [3, 4];
+      const exCol = half === 0 ? 1 : 2;
+      const n = Math.min(addRest.length, remRest.length);
+      for (let i = 0; i < n; i++) {
+        const Y = addRest[i]!; // يصعدُ للراحة (كان يعمل عيادة)
+        const Z = remRest[i]!; // ينزلُ للعيادة (كان يرتاح)
+        if (supervisorIds.has(Y) || supervisorIds.has(Z)) continue; // حمايةُ الظلّ — لا نُحرّك مشرفًا
+        // مبادلةٌ نظيفة فقط: Z محتاطٌ خالص (لا عيادةَ له)، وY يعملُ عيادةً نشطةً ولا احتياطَ له.
+        const zEx = data.existingSlots.filter((s) => s.doctorId === Z && DAY_IDX[s.dayOfWeek] === dayIdx && s.status === 'extra' && s.period === 0 && s.clinicNumber === exCol);
+        const zClinic = data.existingSlots.filter((s) => s.doctorId === Z && DAY_IDX[s.dayOfWeek] === dayIdx && s.status === 'active' && periods.includes(s.period));
+        const yClinic = data.existingSlots.filter((s) => s.doctorId === Y && DAY_IDX[s.dayOfWeek] === dayIdx && s.status === 'active' && s.role === 'clinic' && periods.includes(s.period));
+        const yEx = data.existingSlots.filter((s) => s.doctorId === Y && DAY_IDX[s.dayOfWeek] === dayIdx && s.status === 'extra' && s.period === 0);
+        if (zEx.length === 0 || zClinic.length > 0 || yClinic.length === 0 || yEx.length > 0) continue; // ليست نظيفة → اترك (أمان)
+        const yName = doctors.find((d) => d.id === Y)?.name ?? Y;
+        const zName = doctors.find((d) => d.id === Z)?.name ?? Z;
+        await supabase.from('schedule_slots').update({ doctor_id: Y, doctor_name: yName }).in('id', zEx.map((r) => r.id));
+        await supabase.from('schedule_slots').update({ doctor_id: Z, doctor_name: zName }).in('id', yClinic.map((r) => r.id));
+        applied++;
+        // eslint-disable-next-line no-console
+        console.log(`[RESERVE-ABSORB · ${args.label}] راحة→${yName} ⇄ عيادة→${zName} (${day}/${half === 0 ? 'ص' : 'م'})`);
+      }
+    }
+    if (applied === 0) console.log(`[RESERVE-ABSORB · ${args.label}] لا تحسينات — عادلٌ أصلًا.`);
+    return { applied, deferred: [...deferred] };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[RESERVE-ABSORB] تعذّر التطبيق:', e instanceof Error ? e.message : e);
     return { applied: 0, deferred: [...deferred] };
   }
 }

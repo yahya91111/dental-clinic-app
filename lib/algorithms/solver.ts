@@ -282,6 +282,7 @@ export type HeavySeat = {
 
 export type HeavyReceipt = {
   assignments: { seatId: string; from: string; to: string }[]; // التغييرات فقط
+  fullAssignment?: { seatId: string; doctorId: string }[];      // كلّ مقعد → شاغله النهائيّ (id) — للتطبيق الحيّ
   maxStaleBefore: number; // أقدم ختمٍ (رتبة) لطبيبٍ **مؤهَّلٍ** بقي بلا دور — قبل
   maxStaleAfter: number;  // وبعد (أصغر = أعدل: لم يُترَك الأكثر استحقاقاً)
   owedRespected: boolean; // لكلّ مقعد: الشاغل المختار ليس أحدثَ من مؤهَّلٍ تُرك
@@ -364,7 +365,8 @@ export function solveHeavyRecency(
   if (assignments.length === 0) notes.push('قسمة الأدوار الثقيلة عادلةٌ أصلاً — لا إعادة قسمة.');
   else notes.push(`${assignments.length} إعادة قسمة، أقصى بياتٍ ${staleBefore}→${staleAfter}.`);
 
-  return { assignments, maxStaleBefore: staleBefore, maxStaleAfter: staleAfter, owedRespected, notes };
+  const fullAssignment = seats.map((s) => ({ seatId: s.id, doctorId: chosenBy.get(s.id) ?? s.current }));
+  return { assignments, fullAssignment, maxStaleBefore: staleBefore, maxStaleAfter: staleAfter, owedRespected, notes };
 }
 
 // ─── استخراج المقاعد الثقيلة وأهليّتها من سجلٍّ **حقيقيّ** (لا مُصطنَع) ───

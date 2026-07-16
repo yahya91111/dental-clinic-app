@@ -1214,6 +1214,8 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
     try {
       const sh = await import('./solver_shadow');
       await sh.applyNewHeartRebalance({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
+      // امتصاصُ الاحتياطيّ أيضًا (نظير الدليقيتر على محور الراحة) — بعده كي يرى الحالة المستقرّة.
+      await sh.applyReserveAbsorption({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
     } catch { /* الامتصاص تحسينٌ اختياريّ — لا يُفشل البناء أبدًا */ }
   }
 
@@ -1689,7 +1691,9 @@ export async function rebalanceForward(args: {
     const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
     await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' }, sh.reservePairsFromMoves(cov.moves));
     const rb = await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays });
-    deferred = rb.deferred;
+    // امتصاصُ الاحتياطيّ الحيّ (نظير الدليقيتر) — بعد سداد الاحتياط وامتصاص الدليقيتر.
+    const ra = await sh.applyReserveAbsorption({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays });
+    deferred = [...new Set([...rb.deferred, ...ra.deferred])];
   } catch { /* القلبُ الجديد لا يُفشِل التسوية أبدًا */ }
 
   return { changedWeeks, deferred };
