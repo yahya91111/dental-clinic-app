@@ -1216,6 +1216,8 @@ async function build(input: ScheduleBuildInput): Promise<ScheduleBuildResult> {
       await sh.applyNewHeartRebalance({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
       // امتصاصُ الاحتياطيّ أيضًا (نظير الدليقيتر على محور الراحة) — بعده كي يرى الحالة المستقرّة.
       await sh.applyReserveAbsorption({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
+      // امتصاصُ الانفراد (محورٌ ثالثٌ مستقلّ) — آخِرًا كي يرى العياداتِ المستقرّةَ بعد التوازنين.
+      await sh.applySoloAbsorption({ clinicId: input.clinicId, weekStart: input.weekStart, label: 'بعد-البناء' });
     } catch { /* الامتصاص تحسينٌ اختياريّ — لا يُفشل البناء أبدًا */ }
   }
 
@@ -1693,7 +1695,9 @@ export async function rebalanceForward(args: {
     const rb = await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays, today: args.today });
     // امتصاصُ الاحتياطيّ الحيّ (نظير الدليقيتر) — بعد سداد الاحتياط وامتصاص الدليقيتر.
     const ra = await sh.applyReserveAbsorption({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays, today: args.today });
-    deferred = [...new Set([...rb.deferred, ...ra.deferred])];
+    // امتصاصُ الانفراد الحيّ (محورٌ ثالثٌ مستقلّ) — آخِرًا بعد التوازنين.
+    const sa = await sh.applySoloAbsorption({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays, today: args.today });
+    deferred = [...new Set([...rb.deferred, ...ra.deferred, ...sa.deferred])];
   } catch { /* القلبُ الجديد لا يُفشِل التسوية أبدًا */ }
 
   return { changedWeeks, deferred };

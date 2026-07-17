@@ -12,7 +12,7 @@ import { supabase } from '../supabase';
 import type { WeekDay, LoadedSlot } from './schedule';
 import {
   extractHeavySeats, lastHeavyStamps, solveLookahead,
-  extractReserveSeats, lastRestStamps, solveHeavyRecency,
+  extractReserveSeats, lastRestStamps, solveHeavyRecency, lastSoloStamps,
   extractCoverageSeats, solveCoverage, lastClinicStamps, lastBoardStamps,
 } from './solver';
 import type { HeavySeat, CoverageSeat } from './solver';
@@ -622,6 +622,132 @@ export async function applyReserveAbsorption(args: { clinicId: string; weekStart
   } catch (e) {
     // eslint-disable-next-line no-console
     console.log('[RESERVE-ABSORB] تعذّر التطبيق:', e instanceof Error ? e.message : e);
+    return { applied: 0, deferred: [...deferred] };
+  }
+}
+
+// امتصاصُ الانفراد — محورٌ مستقلٌّ (قرارُ المستخدم: للانفرادِ حسبتُه، لا يُدمَج مع الدليقيتر).
+// بالحداثةِ المحضة عبر lastSoloStamps، «تحسّنٌ صارمٌ فقط» (صفرُ عبثٍ على أسبوعٍ عادل أصلًا).
+// التطبيقُ **تسليمٌ غيرُ متناظر** (لا مبادلةَ هويّة): صفّا العيادةِ المنفردةِ (فترتان) ينتقلان
+// للأحقِّ بالانفرادِ Y، وصفُّ Y المقترِنُ الواحدُ ينتقلُ للمنفرِدِ الحاليِّ X — فيصيرُ X مقترنًا
+// (فترة) وY منفردًا (فترتان)، وهو عينُ نقلِ الحمل. **الظلُّ يتبعُ مشرفَه كأنّهما شخصٌ واحد**:
+// حين يتحرّكُ مشرفٌ (مانحًا أو متلقّيًا) يُعاد إلصاقُ ظلِّه بموضعِه النهائيّ (كامتصاصِ الدليقيتر
+// تمامًا)؛ ومقعدُ ظلٍّ متدرّبٍ نفسُه لا يُنقَل (يتبعُ مشرفَه لا العكس).
+export async function applySoloAbsorption(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay>; today?: string }): Promise<{ applied: number; deferred: WeekDay[] }> {
+  const deferred = new Set<WeekDay>();
+  try {
+    const { data } = await loadScheduleData(args.clinicId, args.weekStart);
+    if (!data) return { applied: 0, deferred: [] };
+    const doctors = data.doctors;
+    const todayIdx = todayIndexOf(args.weekStart, args.today); // قفلُ الماضي
+    const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
+    const groupOf = new Map(doctors.map((d) => [d.id, d.groupTemplate.key]));
+    const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
+    // مشرفو المتدرّبين يُحرَّكون عاديًّا ثمّ يُلصَقُ ظلُّهم بموضعهم النهائيّ (كتلةُ الظلّ أسفلَه).
+    const all: LoadedSlot[] = [...data.pastSlots, ...data.existingSlots];
+    const soloPrior = lastSoloStamps(all.filter((s) => s.weekStart < args.weekStart));
+
+    // مقاعدُ الانفرادِ لكلّ شفت (نصف). المؤهَّلون لتلقّي الانفراد = **المقترِنون** (يعملون
+    // صفَّ عيادةٍ واحدًا في النصف) فالتسليمُ نظيفٌ (منفرِدٌ فترتان ⇄ مقترِنٌ فترة).
+    const soloSeats: HeavySeat[] = [];
+    for (const day of DAY_OF) {
+      const dayRows = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day]);
+      const locked = todayIdx >= 0 && (DAY_IDX[day] ?? 99) < todayIdx; // يومٌ مضى وانتهى — مقفل
+      for (const half of [0, 1] as const) {
+        const periods = half === 0 ? [1, 2] : [3, 4];
+        const ss = dayRows.filter((s) => periods.includes(s.period));
+        const seats = extractHeavySeats(ss, poolIds).filter((s) => s.kind === 'solo');
+        if (seats.length === 0) continue;
+        // المقترِنون: أطبّاءُ عيادةٍ نشطون لهم **صفُّ عيادةٍ واحد** في هذا النصف.
+        const clinicRows = ss.filter((s) => s.status === 'active' && s.role === 'clinic' && s.clinicNumber > 0);
+        const rowCount = new Map<string, number>();
+        for (const r of clinicRows) rowCount.set(r.doctorId, (rowCount.get(r.doctorId) ?? 0) + 1);
+        const pairedDocs = [...rowCount].filter(([, n]) => n === 1).map(([id]) => id);
+        for (const seat of seats) {
+          if (traineeIds.has(seat.current)) continue; // مقعدُ ظلٍّ متدرّب — لا يُنقَل (يتبعُ مشرفَه)
+          if (locked) { seat.eligible = [seat.current]; soloSeats.push(seat); continue; } // يومٌ مضى — مقفلٌ (حداثةٌ فقط)
+          const curGroup = groupOf.get(seat.current);
+          // الأهليّة = المقترِنون في قروبِ الشاغلِ ضمن البِركة (يستثني البورد/المتدرّب/التخفيف).
+          // المشرفون مسموحون (يتلقّون الانفراد ويتبعُهم ظلُّهم).
+          seat.eligible = [seat.current, ...pairedDocs].filter((id, i, a) => a.indexOf(id) === i)
+            .filter((id) => id === seat.current || (groupOf.get(id) === curGroup && poolIds.has(id)));
+          soloSeats.push(seat);
+        }
+      }
+    }
+    soloSeats.sort((a, b) => a.stamp.localeCompare(b.stamp));
+    if (soloSeats.length === 0) return { applied: 0, deferred: [] };
+    const rec = solveHeavyRecency(doctors, soloPrior, soloSeats);
+    const assignOf = new Map((rec.fullAssignment ?? []).map((fa) => [fa.seatId, fa.doctorId]));
+
+    // تطبيقٌ مقعدًا مقعدًا (آمنٌ للتسليمِ غيرِ المتناظر): مجموعتا «المنفردون» و«المقترِنون»
+    // منفصلتان في الشفت الواحد (المنفرِدُ فترتان، المقترِنُ فترة) فلا يُلمَسُ صفٌّ مرّتين.
+    let applied = 0;
+    // المشرفون الذين مسّتهم مبادلةٌ (يوم|مُعرّف) — نُلصِقُ ظلالَهم بموضعهم النهائيّ بعد الكلّ.
+    const touched = new Set<string>();
+    for (const seat of soloSeats) {
+      const X = seat.current; const Y = assignOf.get(seat.id) ?? X;
+      if (X === Y) continue; // لا تغيير (عادلٌ أو مقفل)
+      const parts = seat.stamp.split('#'); const dayIdx = Number(parts[1]); const half = Number(parts[2]);
+      const day = DAY_OF[dayIdx]; if (!day) continue;
+      if (todayIdx >= 0 && dayIdx < todayIdx) continue; // دفاعٌ إضافيّ: يومٌ مضى وانتهى لا يُمَسّ
+      if (args.protectedDays?.has(day)) { deferred.add(day); continue; } // يومٌ عدّله القائد — أجّلْ
+      const periods = half === 0 ? [1, 2] : [3, 4];
+      // تسليمٌ نظيفٌ فقط: X منفرِدٌ (صفّا عيادةٍ نشطان في **عيادةٍ واحدة**)، وY مقترِنٌ (صفٌّ واحد).
+      // نطلبُ أيضًا ألّا يحملَ أيٌّ منهما دورًا آخرَ في النصف (دليقيتر/احتياط) كي لا يتكدّسَ دورانِ على واحد.
+      const xAll = data.existingSlots.filter((s) => s.doctorId === X && DAY_IDX[s.dayOfWeek] === dayIdx && ((s.status === 'active' && periods.includes(s.period)) || (s.status === 'extra' && s.period === 0 && s.clinicNumber === (half === 0 ? 1 : 2))));
+      const yAll = data.existingSlots.filter((s) => s.doctorId === Y && DAY_IDX[s.dayOfWeek] === dayIdx && ((s.status === 'active' && periods.includes(s.period)) || (s.status === 'extra' && s.period === 0 && s.clinicNumber === (half === 0 ? 1 : 2))));
+      const xRows = xAll.filter((s) => s.status === 'active' && s.role === 'clinic');
+      const yRows = yAll.filter((s) => s.status === 'active' && s.role === 'clinic');
+      if (xRows.length !== 2 || xAll.length !== 2 || yRows.length !== 1 || yAll.length !== 1) continue; // ليس تسليمًا نظيفًا → اترك (أمان)
+      if (new Set(xRows.map((r) => r.clinicNumber)).size !== 1) continue; // صفّا X ليسا عيادةً واحدة → ليس انفرادًا
+      const yName = doctors.find((d) => d.id === Y)?.name ?? Y;
+      const xName = doctors.find((d) => d.id === X)?.name ?? X;
+      await supabase.from('schedule_slots').update({ doctor_id: Y, doctor_name: yName }).in('id', xRows.map((r) => r.id)); // العيادةُ المنفردةُ (فترتان) ← Y
+      await supabase.from('schedule_slots').update({ doctor_id: X, doctor_name: xName }).in('id', yRows.map((r) => r.id)); // صفُّ Y المقترِنُ (فترة) ← X
+      touched.add(`${day}|${X}`); touched.add(`${day}|${Y}`);
+      applied++;
+      // eslint-disable-next-line no-console
+      console.log(`[SOLO-ABSORB · ${args.label}] انفراد→${yName} ⇄ اقتران→${xName} (${day}/${half === 0 ? 'ص' : 'م'})`);
+    }
+
+    // الظلُّ يتبعُ مشرفَه (كأنّهما شخصٌ واحد): بعد **كلّ** المبادلات نُعيد إلصاقَ ظلِّ كلِّ مشرفٍ
+    // مسّته مبادلةٌ بموضعِ مشرفِه **النهائيّ** (عيادة/فترة/دور). المحاذاةُ للحالة النهائيّة أمتنُ من
+    // تتبّعٍ جزئيّ. (منطقٌ مطابقٌ لامتصاصِ الدليقيتر applyNewHeartRebalance — مُجرَّب.)
+    if (touched.size) {
+      const inScope = (s: LoadedSlot) => s.period > 0 && s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator');
+      const keysIn = (rows: LoadedSlot[], id: string, dy: string) =>
+        rows.filter((r) => r.doctorId === id && r.dayOfWeek === dy && inScope(r)).map((r) => `${r.period}|${r.clinicNumber}|${r.role}`);
+      const { data: after } = await loadScheduleData(args.clinicId, args.weekStart);
+      if (after) {
+        for (const key of touched) {
+          const [dy, supId] = key.split('|');
+          if (!dy || !supId) continue;
+          // الظلّ: متدرّبٌ خاناتُه **قبل** المبادلات طابقت خانات مشرفه تمامًا (data قبل الكتابة).
+          const shadows = doctors.filter((d) => {
+            if (d.workStatus !== 'trainee' || d.supervisorDoctorId !== supId) return false;
+            const tk = keysIn(data.existingSlots, d.id, dy);
+            const sk = new Set(keysIn(data.existingSlots, supId, dy));
+            return tk.length > 0 && tk.length === sk.size && tk.every((k) => sk.has(k));
+          });
+          for (const t of shadows) {
+            const supNow = after.existingSlots.filter((r) => r.doctorId === supId && r.dayOfWeek === dy && inScope(r));
+            const tOld = after.existingSlots.filter((r) => r.doctorId === t.id && r.dayOfWeek === dy && inScope(r));
+            if (tOld.length) await supabase.from('schedule_slots').delete().in('id', tOld.map((o) => o.id));
+            if (supNow.length) await supabase.from('schedule_slots').insert(supNow.map((r) => ({
+              clinic_id: args.clinicId, week_start: args.weekStart, day_of_week: dy,
+              period: r.period, clinic_number: r.clinicNumber,
+              doctor_id: t.id, doctor_name: t.name, role: r.role, status: 'active', source: 'request',
+            })));
+          }
+        }
+      }
+    }
+    if (applied === 0) console.log(`[SOLO-ABSORB · ${args.label}] لا تحسينات — عادلٌ أصلًا.`);
+    return { applied, deferred: [...deferred] };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.log('[SOLO-ABSORB] تعذّر التطبيق:', e instanceof Error ? e.message : e);
     return { applied: 0, deferred: [...deferred] };
   }
 }

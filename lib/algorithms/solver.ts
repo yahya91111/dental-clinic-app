@@ -650,6 +650,23 @@ export function lastHeavyStamps(historySlots: LoadedSlot[]): Map<string, string>
   return last;
 }
 
+/** آخر ظهورٍ لكلّ طبيبٍ في دورِ **انفرادٍ** فقط (فترتا عيادةٍ واحدةٍ في شفت) — محورٌ
+ *  مستقلٌّ عن الدليقيتر (قرارُ المستخدم: للانفرادِ حسبتُه الخاصّة، كالاحتياطيّ). يُغذّي
+ *  priorLast لحلّالِ امتصاصِ الانفراد — نظيرُ lastRestStamps للاحتياط. */
+export function lastSoloStamps(historySlots: LoadedSlot[]): Map<string, string> {
+  const last = new Map<string, string>();
+  const seatCount = new Map<string, number>();
+  const bump = (id: string, st: string) => { if (st > (last.get(id) ?? '')) last.set(id, st); };
+  for (const s of historySlots) {
+    if (s.status !== 'active' || s.role !== 'clinic' || s.clinicNumber <= 0) continue;
+    const st = heavyStamp(s);
+    const k = `${s.doctorId}|${st}|${s.clinicNumber}`;
+    const n = (seatCount.get(k) ?? 0) + 1; seatCount.set(k, n);
+    if (n === 2) bump(s.doctorId, st); // انفراد: طبيبٌ ملأ فترتَي عيادةٍ واحدة
+  }
+  return last;
+}
+
 /** تقسيم سجلٍّ إلى (سياق، شفت مستهدف) بمفتاح أسبوع/يوم/شفت — أداةٌ للحلّال والاختبار. */
 export function splitTargetShift(
   slots: LoadedSlot[], weekStart: string, day: string, shift: 'morning' | 'evening',
