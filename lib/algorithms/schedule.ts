@@ -1688,11 +1688,11 @@ export async function rebalanceForward(args: {
   // الإشعارُ من حركاته. التراجعُ (لو لزم) عبر الإصدارات لا عبر مفتاح.
   try {
     const sh = await import('./solver_shadow');
-    const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' });
-    await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل' }, sh.reservePairsFromMoves(cov.moves));
-    const rb = await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays });
+    const cov = await sh.applyCoverage({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', today: args.today });
+    await sh.applyReserveRepay({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', today: args.today }, sh.reservePairsFromMoves(cov.moves));
+    const rb = await sh.applyNewHeartRebalance({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays, today: args.today });
     // امتصاصُ الاحتياطيّ الحيّ (نظير الدليقيتر) — بعد سداد الاحتياط وامتصاص الدليقيتر.
-    const ra = await sh.applyReserveAbsorption({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays });
+    const ra = await sh.applyReserveAbsorption({ clinicId: args.clinicId, weekStart: args.weekStart, label: 'تفاعل', protectedDays: args.protectedDays, today: args.today });
     deferred = [...new Set([...rb.deferred, ...ra.deferred])];
   } catch { /* القلبُ الجديد لا يُفشِل التسوية أبدًا */ }
 

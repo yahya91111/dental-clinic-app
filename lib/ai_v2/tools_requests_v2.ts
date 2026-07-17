@@ -175,11 +175,12 @@ export async function placeReserveByCode(params: {
  * رفيعة)، ملفوفةً بيوميّات الأثر كي يعكسها كنسلُ الغياب، ثمّ يُغلق الكرت.
  */
 export async function declineReserveChoiceByCode(params: {
-  clinicId: string; weekStart: string; day: string;
+  clinicId: string; weekStart: string; day: string; today?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const day = params.day as ReserveDay;
     const ws = params.weekStart;
+    const today = todayISOFrom(params); // قفلُ الماضي: لا مساسَ بيومٍ مضى وانتهى
     const { applyCoverage, applyReserveRepay, applyNewHeartRebalance, applyThinReshape, reservePairsFromMoves } = await import('../algorithms/solver_shadow');
     const { notifications } = await import('../algorithms/notifications');
     const { withXdayJournal } = await import('../algorithms/requests_v2');
@@ -189,10 +190,10 @@ export async function declineReserveChoiceByCode(params: {
       .eq('day_of_week', day).eq('role', 'prev_placement');
     const owners = [...new Set(((pp || []) as { doctor_id: string }[]).map((x) => x.doctor_id))];
     const runCov = async () => {
-      const c = await applyCoverage({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' }, { specialReserves: 'exclude' });
-      await applyReserveRepay({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' }, reservePairsFromMoves(c.moves));
-      await applyNewHeartRebalance({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' });
-      await applyThinReshape({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد' });
+      const c = await applyCoverage({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد', today }, { specialReserves: 'exclude' });
+      await applyReserveRepay({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد', today }, reservePairsFromMoves(c.moves));
+      await applyNewHeartRebalance({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد', today });
+      await applyThinReshape({ clinicId: params.clinicId, weekStart: ws, label: 'لا-أحد', today });
       return c;
     };
     if (owners.length === 1) await withXdayJournal(params.clinicId, ws, { day, doctorId: owners[0]! }, runCov);
@@ -211,10 +212,11 @@ export async function declineReserveChoiceByCode(params: {
 
 /** «نعم، وازِن»: طبّق موازنةَ العدل على اليوم الذي عدّله القائد (بعد إذنه). */
 export async function approveRebalance(params: {
-  clinicId: string; weekStart: string; day: string;
+  clinicId: string; weekStart: string; day: string; today?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const day = params.day as ReserveDay;
+    const today = todayISOFrom(params); // قفلُ الماضي
     const { applyNewHeartRebalance } = await import('../algorithms/solver_shadow');
     const { loadLeaderEditedDays, clearLeaderEditedDay } = await import('../algorithms/leader_marks');
     const { notifications } = await import('../algorithms/notifications');
@@ -223,7 +225,7 @@ export async function approveRebalance(params: {
     const allow = await loadLeaderEditedDays({ clinicId: params.clinicId, weekStart: params.weekStart });
     allow.delete(day);
     await withSeatChangeDiff({ clinicId: params.clinicId, weekStart: params.weekStart }, () =>
-      applyNewHeartRebalance({ clinicId: params.clinicId, weekStart: params.weekStart, label: 'موافقة-موازنة', protectedDays: allow }));
+      applyNewHeartRebalance({ clinicId: params.clinicId, weekStart: params.weekStart, label: 'موافقة-موازنة', protectedDays: allow, today }));
     await clearLeaderEditedDay({ clinicId: params.clinicId, weekStart: params.weekStart, day });
     await notifications.resolveRebalanceConsent({ clinicId: params.clinicId, weekStart: params.weekStart, day, decision: 'accepted' });
     return { success: true };
@@ -1015,17 +1017,18 @@ export async function dispatchRequestToolV2(
               // أيّامُ القائد المحميّة (عدّلها يدويًّا): التغطيةُ تلقائيّةٌ دائمًا (سلامةُ المرضى)،
               // لكنّ موازنةَ العدل لا تمسّها — تُؤجَّل وتُستأذَن (كرت «موازنةُ يومٍ عدّلتَه»).
               const protectedDays = await protectedDaysFor(ctx.clinicId, wsEff);
+              const today = todayISOFrom(r); // قفلُ الماضي: لا مساسَ بيومٍ مضى وانتهى
               let deferredRebal: string[] = [];
               // نلفّ التغطية+الامتصاص بيوميّات الأثر البعيد كي يعكسها كنسلُ الغياب بدقّة
               // (يومُ الغياب نفسه يملكه إرجاع المكان المحفوظ؛ اليوميّات للأيّام البعيدة).
               const cov = await withXdayJournal(ctx.clinicId, wsEff, { day: String(r.day), doctorId: doc.id }, async () => {
-                const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                const c = await applyCoverage({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية', today });
                 // سدادُ الاحتياط داخل الأسبوع (محور الاحتياط) قبل امتصاص الدليقيتر.
-                await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' }, reservePairsFromMoves(c.moves));
-                const rb = await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية', protectedDays });
+                await applyReserveRepay({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية', today }, reservePairsFromMoves(c.moves));
+                const rb = await applyNewHeartRebalance({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية', protectedDays, today });
                 deferredRebal = rb.deferred;
                 // الحالة الرفيعة (D=M+1): أعِد تشكيلَ الشفت إلى منفردين + مضيفٍ مكرّس (لا زوجَ استضافة).
-                await applyThinReshape({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية' });
+                await applyThinReshape({ clinicId: ctx.clinicId, weekStart: wsEff, label: 'مرضية', today });
                 return c;
               });
               // أيّامٌ أرادتِ الموازنةُ تعديلَها لكنّها محميّة → استأذِن القائدَ.

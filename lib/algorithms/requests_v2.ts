@@ -1345,6 +1345,11 @@ export async function cancelStatus(
 }> {
   const { clinicId, weekStart, day, doctorId, restoreToPrevPlace } = args;
   if (!canActOnDoctor(actor, doctorId)) return fail('لا تملك صلاحيّة إلغاء حالة هذا الطبيب.');
+  // قفلُ الماضي (قرارُ المستخدم أ): يومٌ مضى وانتهى للقراءةِ فقط — لا يُلغى ولا يُعدَّل حتّى للتصحيح.
+  {
+    const tISO = isoOfDay(weekStart, day);
+    if (tISO && tISO < todayISOLocal()) return fail('لا يمكن تعديلُ يومٍ مضى وانتهى — الأيّامُ المنتهيةُ للقراءةِ فقط.');
+  }
   try {
     let rows = await loadDay(clinicId, weekStart, day);
     const mine = rows.filter((r) => r.doctor_id === doctorId);

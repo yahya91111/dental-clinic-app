@@ -38,6 +38,10 @@ export type CoverageMove = {
 };
 const DAY_IDX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4 };
 const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+// مؤشّرُ «اليوم» داخلَ الأسبوع (0=الأحد) من فرقِ التاريخ ISO — لقفلِ الأيّامِ الماضية: أيُّ
+// يومٍ مؤشّرُه < todayIdx مضى وانتهى فلا يُحرَّك (يبقى تاريخًا للحداثةِ فقط). بلا today ⇒ -1 (بلا قفل).
+const todayIndexOf = (weekStart: string, today?: string): number =>
+  today ? Math.round((Date.parse(today) - Date.parse(weekStart)) / 86400000) : -1;
 
 /**
  * يطبّق تغطية الغياب (كتابة) لبِركتين: العاديّة (غير البورد) والبورد. لكلٍّ بِركتُه
@@ -46,7 +50,7 @@ const DAY_OF: WeekDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday
  * ويُزيل صفّ احتياطه. idempotent (المغطَّى لا يُكشف شاغرًا)، لا بديل؟ نقصٌ صريح، لا يرمي.
  */
 export async function applyCoverage(
-  args: { clinicId: string; weekStart: string; label: string },
+  args: { clinicId: string; weekStart: string; label: string; today?: string },
   opts?: { specialReserves?: 'ask' | 'use' | 'exclude' },
 ): Promise<{ filled: number; shortages: number; pending: PendingReserveChoice[]; moves: CoverageMove[]; shortageSeats: { day: WeekDay; clinicNumber: number; period: number }[] }> {
   // كيف نتعامل مع الاحتياطيّ **الخاصّ** (بورد/متدرّب) — ثلاث حالات:
@@ -58,6 +62,8 @@ export async function applyCoverage(
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { filled: 0, shortages: 0, pending: [], moves: [], shortageSeats: [] };
     const doctors = data.doctors;
+    const todayIdx = todayIndexOf(args.weekStart, args.today); // قفلُ الماضي: لا تغطيةَ على يومٍ مضى وانتهى
+    const isPast = (day: string) => todayIdx >= 0 && (DAY_IDX[day] ?? 99) < todayIdx;
     const history = [...data.pastSlots, ...data.existingSlots].filter((s) => s.weekStart < args.weekStart);
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
     const boardIds = new Set(doctors.filter((d) => d.groupTemplate.key === 'board').map((d) => d.id));
@@ -102,6 +108,7 @@ export async function applyCoverage(
 
     for (const sc of scopes) {
       for (const day of DAY_OF) {
+        if (isPast(day)) continue; // يومٌ مضى وانتهى — لا يُغطّى
         for (const half of [0, 1] as const) {
           const periods = half === 0 ? [1, 2] : [3, 4];
           const exCol = half === 0 ? 1 : 2;
@@ -238,6 +245,7 @@ export async function applyCoverage(
       if (d2) {
         const delRecency = lastHeavyStamps(history); // حداثة الدليقيتر (آخر دور) لاختيار البديل عدلًا
         for (const day of DAY_OF) {
+          if (isPast(day)) continue; // يومٌ مضى وانتهى — لا تُغطّى استضافتُه
           for (const half of [0, 1] as const) {
             const periods = half === 0 ? [1, 2] : [3, 4];
             const exCol = half === 0 ? 1 : 2;
@@ -310,6 +318,7 @@ export async function applyCoverage(
           const t = doctors.find((d) => d.id === tId)!;
           const supId = t.supervisorDoctorId!;
           for (const day of DAY_OF) {
+            if (isPast(day)) continue; // يومٌ مضى وانتهى — لا تُعاد محاذاةُ ظلّه
             for (const half of [0, 1] as const) {
               const periods = half === 0 ? [1, 2] : [3, 4];
               // ظلٌّ حقيقيّ لهذا الشفت قبل التغطية؟ (خاناتُه طابقت مشرفه) — وإلّا نتركه.
@@ -393,7 +402,7 @@ export async function placeReserveInSeat(args: {
  * طبيبين حاضرين في الشفت نفسه (الجديد يقول: مقعد الدليقيتر الأحقّ به Y لا Z → نبادل خانات
  * Z و Y في ذلك الشفت). آمن: لا يرمي أبدًا، ويُرجِع ما طبّقه.
  */
-export async function applyNewHeartRebalance(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay> }): Promise<{ applied: number; deferred: WeekDay[] }> {
+export async function applyNewHeartRebalance(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay>; today?: string }): Promise<{ applied: number; deferred: WeekDay[] }> {
   // أيّامٌ أرادتِ الموازنةُ تعديلَها لكنّها محميّةٌ (رتّبها القائدُ يدويًّا) — نؤجّلها
   // ونُرجِعها كي يُسأل القائدُ موافقتَه (كرت «موازنةُ يومٍ عدّلتَه») قبل المساس بترتيبه.
   const deferred = new Set<WeekDay>();
@@ -401,6 +410,8 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { applied: 0, deferred: [] };
     const doctors = data.doctors;
+    // قفلُ الماضي: أيُّ يومٍ مضى وانتهى يبقى تاريخًا للحداثةِ فقط — مقفلٌ (eligible=شاغلُه) فلا يتحرّك.
+    const todayIdx = todayIndexOf(args.weekStart, args.today);
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
     // قروبُ كلِّ طبيب (group_a/group_b/board) — لعزلِ موازنةِ الدليقيترِ داخلَ القروبِ الواحد.
     const groupOf = new Map(doctors.map((d) => [d.id, d.groupTemplate.key]));
@@ -413,6 +424,7 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
     const delSeats: HeavySeat[] = [];
     for (const day of DAY_OF) {
       const dayRows = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day]);
+      const locked = todayIdx >= 0 && (DAY_IDX[day] ?? 99) < todayIdx; // يومٌ مضى وانتهى — مقفل
       // **النصفان معًا** (صباح ف١،٢ ومساء ف٣،٤) — المساءُ كالصباح تمامًا. كلُّ نصفٍ بختمٍ مستقلّ.
       for (const half of [0, 1] as const) {
         const periods = half === 0 ? [1, 2] : [3, 4];
@@ -432,6 +444,7 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
         for (const seat of seats) {
           if (seat.kind !== 'delegator') continue; // المنفرِد محورٌ مستقلّ — لا يُوازَن مع الدليقيتر
           if (traineeIds.has(seat.current)) continue; // مقعدُ ظلٍّ متدرّب — لا يُعاد إسنادُه
+          if (locked) { seat.eligible = [seat.current]; delSeats.push(seat); continue; } // يومٌ مضى — مقفلٌ (حداثةٌ فقط)
           if (permBlocked.size) seat.eligible = seat.eligible.filter((id) => id === seat.current || !permBlocked.has(id));
           // أقصِ المتدرّبين (ظلال) والمنفردين (مشغولون الفترتين) من أهليّة الاستضافة.
           seat.eligible = seat.eligible.filter((id) => id === seat.current || (!traineeIds.has(id) && !soloDocs.has(id)));
@@ -458,6 +471,7 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
       // الشفت: من الختم week#dayIdx#half.
       const parts = seat.stamp.split('#'); const dayIdx = Number(parts[1]); const half = Number(parts[2]);
       const day = DAY_OF[dayIdx]; if (!day) continue;
+      if (todayIdx >= 0 && dayIdx < todayIdx) continue; // دفاعٌ إضافيّ: يومٌ مضى وانتهى لا يُمَسّ
       // يومٌ عدّله القائدُ يدويًّا: لا تمسّه موازنةُ العدل — أجِّلْه واسأل موافقتَه أولًا.
       if (args.protectedDays?.has(day)) { deferred.add(day); continue; }
       const periods = half === 0 ? [1, 2] : [3, 4];
@@ -523,12 +537,13 @@ export async function applyNewHeartRebalance(args: { clinicId: string; weekStart
 // مبادلةُ (احتياطي↔عيادة): مَن حقُّه الراحةُ أكثرَ (أقدمُ راحةً) يأخذ الاحتياطيّ، والشاغلُ
 // الحاليُّ ينزلُ للعيادة. **حمايةُ الظلال**: نستثني مشرفي المتدرّبين من التحريك تمامًا
 // (متلقّيًا أو مُنازَلًا) كي لا نُيتّمَ ظلًّا بنقلِ عملِ مشرفِه — نُبقيهم مكانهم (تحفّظٌ آمن).
-export async function applyReserveAbsorption(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay> }): Promise<{ applied: number; deferred: WeekDay[] }> {
+export async function applyReserveAbsorption(args: { clinicId: string; weekStart: string; label: string; protectedDays?: Set<WeekDay>; today?: string }): Promise<{ applied: number; deferred: WeekDay[] }> {
   const deferred = new Set<WeekDay>();
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { applied: 0, deferred: [] };
     const doctors = data.doctors;
+    const todayIdx = todayIndexOf(args.weekStart, args.today); // قفلُ الماضي
     const poolIds = new Set(doctors.filter((d) => d.groupTemplate.key !== 'board' && d.workStatus !== 'trainee' && d.workStatus !== 'light_duty').map((d) => d.id));
     const groupOf = new Map(doctors.map((d) => [d.id, d.groupTemplate.key]));
     const traineeIds = new Set(doctors.filter((d) => d.workStatus === 'trainee').map((d) => d.id));
@@ -541,6 +556,7 @@ export async function applyReserveAbsorption(args: { clinicId: string; weekStart
     const exSeats: HeavySeat[] = [];
     for (const day of DAY_OF) {
       const dayRows = data.existingSlots.filter((s) => DAY_IDX[s.dayOfWeek] === DAY_IDX[day]);
+      const locked = todayIdx >= 0 && (DAY_IDX[day] ?? 99) < todayIdx; // يومٌ مضى وانتهى — مقفل
       for (const half of [0, 1] as const) {
         const periods = half === 0 ? [1, 2] : [3, 4];
         const exCol = half === 0 ? 1 : 2;
@@ -548,6 +564,7 @@ export async function applyReserveAbsorption(args: { clinicId: string; weekStart
         const seats = extractReserveSeats(ss, poolIds);
         for (const seat of seats) {
           if (traineeIds.has(seat.current)) continue; // ظلٌّ لا يحمل راحةً في العجلة
+          if (locked) { seat.eligible = [seat.current]; exSeats.push(seat); continue; } // يومٌ مضى — مقفلٌ (حداثةٌ فقط)
           // اعزلِ القروبات + استثنِ المتدرّبين والمشرفين من أهليّة تلقّي الراحة.
           const curGroup = groupOf.get(seat.current);
           seat.eligible = seat.eligible.filter((id) => id === seat.current || (groupOf.get(id) === curGroup && !traineeIds.has(id) && !supervisorIds.has(id)));
@@ -576,6 +593,7 @@ export async function applyReserveAbsorption(args: { clinicId: string; weekStart
       if (addRest.length === 0) continue;
       const parts = stamp.split('#'); const dayIdx = Number(parts[1]); const half = Number(parts[2]);
       const day = DAY_OF[dayIdx]; if (!day) continue;
+      if (todayIdx >= 0 && dayIdx < todayIdx) continue; // دفاعٌ إضافيّ: يومٌ مضى وانتهى لا يُمَسّ
       if (args.protectedDays?.has(day)) { deferred.add(day); continue; } // يومٌ عدّله القائد — أجّلْ
       const periods = half === 0 ? [1, 2] : [3, 4];
       const exCol = half === 0 ? 1 : 2;
@@ -616,10 +634,11 @@ export async function applyReserveAbsorption(args: { clinicId: string; weekStart
  * بعدلِ حداثة الاستضافة (الأقدمُ عهدًا بها أحقُّ). تخفيفُ العمل يُعامَل عاديًّا هنا (الفترتان،
  * كقاعدة الحالة الرفيعة). آمنٌ: لا يرمي، يعمل فقط حين present == M+1 والشكلُ غيرُ مثاليّ.
  */
-export async function applyThinReshape(args: { clinicId: string; weekStart: string; label: string }): Promise<{ reshaped: number }> {
+export async function applyThinReshape(args: { clinicId: string; weekStart: string; label: string; today?: string }): Promise<{ reshaped: number }> {
   try {
     const { data } = await loadScheduleData(args.clinicId, args.weekStart);
     if (!data) return { reshaped: 0 };
+    const todayIdx = todayIndexOf(args.weekStart, args.today); // قفلُ الماضي
     const M = data.clinicCount;
     if (!M || M < 1) return { reshaped: 0 };
     const doctors = data.doctors;
@@ -631,6 +650,7 @@ export async function applyThinReshape(args: { clinicId: string; weekStart: stri
     const nameOf = (id: string) => doctors.find((d) => d.id === id)?.name ?? id;
     let reshaped = 0;
     for (const day of DAY_OF) {
+      if (todayIdx >= 0 && (DAY_IDX[day] ?? 99) < todayIdx) continue; // يومٌ مضى وانتهى — لا يُشكَّل
       for (const half of [0, 1] as const) {
         const periods = half === 0 ? [1, 2] : [3, 4];
         const rows = data.existingSlots.filter((s) => s.dayOfWeek === day && s.status === 'active'
@@ -699,7 +719,7 @@ async function loadRepayWeek(clinicId: string, weekStart: string): Promise<Repay
  * عجلة الاحتياط أيضًا (خيار أ — تفادي العقوبة المزدوجة).
  */
 export async function applyReserveRepay(
-  args: { clinicId: string; weekStart: string; label: string },
+  args: { clinicId: string; weekStart: string; label: string; today?: string },
   pairs: { coverer: string; owner: string; exCol: number; coverDay: string }[],
 ): Promise<{ repaid: number; accepted: number; repaidAbsent: string[] }> {
   const repaidAbsent: string[] = [];
@@ -711,13 +731,16 @@ export async function applyReserveRepay(
     const k = `${p.coverer}|${p.owner}|${p.exCol}`; if (seen.has(k)) return false; seen.add(k); return true;
   });
   let repaid = 0; let accepted = 0;
+  // قفلُ الماضي: البحثُ القَبْليّ لا ينزلُ تحتَ «اليوم» — لا نسدّدُ الراحةَ بيومٍ مضى وانتهى.
+  const todayIdx = todayIndexOf(args.weekStart, args.today);
+  const floorIdx = todayIdx >= 0 ? todayIdx : 0;
   try {
     for (const { coverer, owner, exCol, coverDay } of uniq) {
       const periods = exCol === 1 ? [1, 2] : [3, 4];
-      // ترتيب الأيّام: قَبْليّ (اليوم-١ → بداية الأسبوع) ثمّ أماميّ (اليوم+١ → نهايته).
+      // ترتيب الأيّام: قَبْليّ (اليوم-١ → «اليوم» فقط، لا أبعد) ثمّ أماميّ (اليوم+١ → نهايته).
       const di = DAY_IDX[coverDay] ?? 0;
       const order: string[] = [];
-      for (let i = di - 1; i >= 0; i--) order.push(DAY_OF[i]!);
+      for (let i = di - 1; i >= floorIdx; i--) order.push(DAY_OF[i]!);
       for (let i = di + 1; i < DAY_OF.length; i++) order.push(DAY_OF[i]!);
 
       const week = await loadRepayWeek(args.clinicId, args.weekStart);
@@ -779,10 +802,14 @@ export async function applyReturn(args: {
   clinicId: string; weekStart: string; day: WeekDay; label: string;
   returnerId: string;
   prevSeats: { period: number; clinicNumber: number }[];
+  today?: string;
 }): Promise<{ reclaimed: number; refilled: number; reserved: number; shortages: number; touched: string[] }> {
   const touchedSet = new Set<string>();
   const z = { reclaimed: 0, refilled: 0, reserved: 0, shortages: 0, touched: [] as string[] };
   if (!args.prevSeats.length) return z;
+  // قفلُ الماضي: يومٌ مضى وانتهى لا تُعادُ عليه العودةُ (لا نُعيدُ كتابةَ ما حدث فعلًا).
+  const rtIdx = todayIndexOf(args.weekStart, args.today);
+  if (rtIdx >= 0 && (DAY_IDX[args.day] ?? 99) < rtIdx) return z;
   try {
     const { clinicId, weekStart, day, returnerId, prevSeats } = args;
     const periods = prevSeats.some((s) => [1, 2].includes(s.period)) ? [1, 2] : [3, 4];
