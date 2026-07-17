@@ -11,7 +11,7 @@ import { WeekStrip } from './WeekStrip';
 import { DoctorsTab } from './DoctorsTab';
 import { getWeeklySchedule, getScheduleSettings, updateScheduleSettings, getAllGroupMembers, replaceDayClinicSlots } from '../../lib/database';
 import { supabase } from '../../lib/supabase';
-import { swapDoctorsInDaySlots, supervisorOfSlots, isShadowOnDay, affectedDays, type SupMap } from './swap';
+import { swapDoctorsInDaySlots, supervisorOfSlots, isShadowOnDay, affectedDays, isSwappable, shiftOfDoctor, isReserveDoctor, type SupMap } from './swap';
 import { AIOrb, AIState } from '../../components/AIOrb';
 import AIButton from '../../components/AIButton';
 import { ChatMessage } from '../../components/aiTypes';
@@ -170,6 +170,14 @@ export default function ScheduleScreen({ onBack, clinicId, userId, viewOnly, hea
       // القائد: يختارُ أيَّ اثنين → تبديلٌ محلّيٌّ مباشرٌ ثمّ حفظٌ موضعيّ.
       if (!swapSel || swapSel.day !== day) { setSwapSel({ day, id }); return; }
       if (swapSel.id === id) { setSwapSel(null); return; }
+      // أمانُ الاحتياطيّ: تبديلُ محتاطٍ مع عاملٍ يجبُ أن يكونَ في نفسِ الشفت (احتياطيُّ الصباحِ
+      // مع طبيبِ الصباح فقط) — كي لا نُبادلَ عبرَ الشفتين. لا يمسُّ تبديلَ العيادة/الدليقيتر العاديّ.
+      if (isReserveDoctor(swapEdit, day, swapSel.id) || isReserveDoctor(swapEdit, day, id)) {
+        const sa = shiftOfDoctor(swapEdit, day, swapSel.id);
+        const sb = shiftOfDoctor(swapEdit, day, id);
+        if (sa && sb && sa !== sb) { setSwapError('Reserve swaps must be within the same shift.'); setSwapSel(null); return; }
+      }
+      setSwapError(null);
       setSwapEdit((s) => swapDoctorsInDaySlots(s, day, swapSel.id, id, swapSup));
       setSwapSel(null);
       return;
@@ -250,13 +258,14 @@ export default function ScheduleScreen({ onBack, clinicId, userId, viewOnly, hea
     try {
       for (const day of days) {
         const rows = swapEdit
-          .filter((s) => s.day === day && s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator'))
+          .filter((s) => s.day === day && isSwappable(s))   // عيادة/دليقيتر نشطة + الاحتياطيّ (EX)
           .map((s) => ({
             period: s.period,
             clinic_number: s.clinicNumber,
             doctor_id: s.doctorId,
             doctor_name: s.doctorName,
             role: s.role,
+            status: s.status,   // 'active' للعيادة/الدليقيتر، 'extra' للاحتياطيّ — يُحفَظُ كما هو
             // المتدرّبُ المبتدئ يُكتَبُ source='shadow' كي لا تعدَّه التغطيةُ طبيبًا (قاعدةُ عدمِ تغطيةِ المتدرّب).
             source: isShadowOnDay(swapEdit, day, s.doctorId, swapSup) ? 'shadow' : 'ai',
           }));

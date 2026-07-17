@@ -268,11 +268,23 @@ export async function sendMessageV2(
     let rosterBlockText = '';
     if (opts.clinicId) {
       try {
-        const { loadDoctorRoster } = await import('../algorithms/schedule');
+        const { loadDoctorRoster, loadUngroupedDoctors } = await import('../algorithms/schedule');
         const { doctors } = await loadDoctorRoster(opts.clinicId);
         if (doctors && doctors.length > 0) {
           rosterForTools = doctors.map((d) => ({ id: d.id, name: d.name, groupKey: d.groupTemplate.key }));
           rosterBlockText = buildDoctorRosterBlock(doctors);
+          // أطبّاءُ المركزِ غيرُ المُسنَدين لأيِّ قروب — نُلحِقُهم بالقائمةِ (بأرقامٍ متتاليةٍ بعد المُسنَدين)
+          // كي يراهم الذكاءُ فيستطيعَ نقلَهم إلى قروب. لا يؤثّرُ على البناء (قائمةُ الذكاء فقط).
+          try {
+            const grouped = new Set(doctors.map((d) => d.id));
+            const ungrouped = await loadUngroupedDoctors(opts.clinicId, grouped);
+            if (ungrouped.length > 0) {
+              rosterForTools = [...rosterForTools, ...ungrouped.map((u) => ({ id: u.id, name: u.name }))];
+              rosterBlockText +=
+                `\nDoctors NOT yet in any group (use the NUMBER as doctorIndex to move them into a group):\n` +
+                ungrouped.map((u, i) => `${doctors.length + i + 1}. ${u.name} — no group`).join('\n') + '\n';
+            }
+          } catch { /* غيرُ المُسنَدين تحسينٌ لا يُفشِلُ الدفتر */ }
         }
       } catch {
         /* عند الفشل: لا دفتر، ولا حقن */

@@ -305,6 +305,19 @@ async function loadClinicDoctorIds(clinicId: string): Promise<Set<string>> {
   return ids;
 }
 
+/** أطبّاءُ المركزِ غيرُ المُسنَدين لأيِّ قروب (id+name فقط) — للذكاء كي يراهم فيستطيعَ نقلَهم
+ *  إلى قروب. groupedIds = معرّفاتُ أعضاءِ القروبات (من loadDoctorRoster). **لا يُستعمَلُ في
+ *  البناء إطلاقًا** — البناءُ يوزّعُ أعضاءَ القروباتِ فقط، فلا يدخلُ غيرُ المُسنَدِ الجدولَ. */
+export async function loadUngroupedDoctors(
+  clinicId: string,
+  groupedIds: Set<string>,
+): Promise<{ id: string; name: string }[]> {
+  const { data } = await supabase.from('doctors').select('id, name, role').eq('clinic_id', clinicId);
+  return ((data || []) as Array<{ id: string; name: string; role: string }>)
+    .filter((d) => (d.role === 'doctor' || d.role === 'team_leader') && !groupedIds.has(d.id))
+    .map((d) => ({ id: d.id, name: d.name }));
+}
+
 export async function loadScheduleData(
   clinicId: string,
   weekStart: string,

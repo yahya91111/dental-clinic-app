@@ -1497,9 +1497,13 @@ export async function replaceDayClinicSlots(
     doctor_name: string;
     role: string;      // 'clinic' | 'delegator'
     source: string;    // 'ai' | 'shadow'
+    status?: string;   // 'active' (افتراضيّ) | 'extra' للاحتياطيّ — يشملُه السواب
   }>,
 ): Promise<{ error: Error | null }> {
   try {
+    // احذفِ الخاناتِ القابلةَ للتبديل لهذا اليوم: العيادة/الدليقيتر النشطة **والاحتياطيّ** (extra,
+    // period=0). المتغيّبون (sick/vacation/permission) لا يُمَسّون. saveSwap يمرّرُ كلَّ هذه الخانات
+    // (من swapEdit كاملًا) فتُعادُ كتابتُها كلُّها — فالتبديلُ العاديُّ للعيادةِ يُعيدُ الاحتياطَ كما هو.
     const { error: delErr } = await supabase
       .from('schedule_slots')
       .delete()
@@ -1509,6 +1513,15 @@ export async function replaceDayClinicSlots(
       .eq('status', 'active')
       .in('role', ['clinic', 'delegator']);
     if (delErr) throw delErr;
+    const { error: delEx } = await supabase
+      .from('schedule_slots')
+      .delete()
+      .eq('clinic_id', clinicId)
+      .eq('week_start', weekStart)
+      .eq('day_of_week', dayOfWeek)
+      .eq('status', 'extra')
+      .eq('period', 0);
+    if (delEx) throw delEx;
 
     if (rows.length > 0) {
       const insertRows = rows.map((r) => ({
@@ -1520,7 +1533,7 @@ export async function replaceDayClinicSlots(
         doctor_id: r.doctor_id,
         doctor_name: r.doctor_name,
         role: r.role,
-        status: 'active',
+        status: r.status ?? 'active',
         source: r.source,
       }));
       const { error: insErr } = await supabase.from('schedule_slots').insert(insertRows);

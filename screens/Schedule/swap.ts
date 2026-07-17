@@ -7,9 +7,31 @@ import { ScheduleSlot } from './types';
 // معرّفُ الطبيب → معرّفُ مدرّبه (supervisor_doctor_id) — لكشفِ ظلِّ المتدرّبِ المبتدئ.
 export type SupMap = Map<string, string | null>;
 
-// نلمسُ فقط الخاناتِ القابلةَ للتبديل: نشطةٌ ودورُها عيادةٌ أو دليقيتر.
+// خاناتُ الظلال: نشطةٌ ودورُها عيادةٌ أو دليقيتر (الظلُّ يتبعُ مدرّبَه في هذه فقط).
 const isSwapRole = (s: ScheduleSlot) =>
   s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator');
+
+// الخاناتُ القابلةُ للتبديل: عيادة/دليقيتر نشطة، **أو الاحتياطيّ** (EX: extra + period 0).
+// أوسعُ من isSwapRole عمدًا — كي يشملَ السوابُ الاحتياطيَّ. الظلال تبقى على isSwapRole الضيّق.
+export const isSwappable = (s: ScheduleSlot) =>
+  (s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator')) ||
+  (s.status === 'extra' && s.period === 0);
+
+// شفتُ الطبيبِ ذلكَ اليوم من خاناته: عيادة/دليقيتر بالفترة (١،٢=صباح / ٣،٤=مساء)، أو
+// احتياطيّ بعموده (١=صباح / ٢=مساء). للتحقّقِ من تطابقِ الشفتِ عند تبديلِ الاحتياطيّ.
+export function shiftOfDoctor(slots: ScheduleSlot[], day: string, id: string): 'morning' | 'evening' | null {
+  for (const s of slots) {
+    if (s.day !== day || s.doctorId !== id) continue;
+    if (s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator')) return s.period <= 2 ? 'morning' : 'evening';
+    if (s.status === 'extra' && s.period === 0) return s.clinicNumber === 2 ? 'evening' : 'morning';
+  }
+  return null;
+}
+
+// هل هذا الطبيبُ محتاطٌ (له صفُّ EX) ذلكَ اليوم؟
+export function isReserveDoctor(slots: ScheduleSlot[], day: string, id: string): boolean {
+  return slots.some((s) => s.day === day && s.doctorId === id && s.status === 'extra' && s.period === 0);
+}
 
 // المتدرّبُ المبتدئ (الظلّ) نقرُه يُحسَبُ على مدرّبه إن كان حاضرًا في نفسِ اليوم — فالاختيارُ
 // والتبديلُ دائمًا على المدرّب.
@@ -37,12 +59,14 @@ export function swapDoctorsInDaySlots(
   const idB = supervisorOfSlots(slots, day, rawB, sup);
   if (idA === idB) return slots;
 
-  const dayActive = slots.filter((s) => s.day === day && isSwapRole(s));
-  const nameA = dayActive.find((s) => s.doctorId === idA)?.doctorName;
-  const nameB = dayActive.find((s) => s.doctorId === idB)?.doctorName;
+  // أسماءُ الطرفين من الخاناتِ القابلةِ للتبديل (تشملُ الاحتياطيّ) — كي يُتبادَلَ المحتاطُ أيضًا.
+  const daySwap = slots.filter((s) => s.day === day && isSwappable(s));
+  const nameA = daySwap.find((s) => s.doctorId === idA)?.doctorName;
+  const nameB = daySwap.find((s) => s.doctorId === idB)?.doctorName;
   if (nameA === undefined || nameB === undefined) return slots;
 
-  // مَن هو ظلٌّ ذلكَ اليوم: طبيبٌ مدرّبُه حاضرٌ نشطًا في نفسِ اليوم.
+  // مَن هو ظلٌّ ذلكَ اليوم: طبيبٌ مدرّبُه حاضرٌ نشطًا (عيادة/دليقيتر) في نفسِ اليوم. الاحتياطُ لا ظلَّ له.
+  const dayActive = slots.filter((s) => s.day === day && isSwapRole(s));
   const presentActive = new Set(dayActive.map((s) => s.doctorId));
   const shadowInfo = new Map<string, { name: string; supId: string }>();
   for (const s of dayActive) {
@@ -56,7 +80,7 @@ export function swapDoctorsInDaySlots(
   // ١) بدّل الطبيبين في كلِّ مقاعدِهما ذلكَ اليوم، واحذف كلَّ مقاعدِ الظلال (سنُعيدُ بناءَها).
   const base: ScheduleSlot[] = [];
   for (const s of slots) {
-    if (s.day !== day || !isSwapRole(s)) { base.push(s); continue; }   // يومٌ آخرُ/غيابٌ/EX/داخليّ — يبقى
+    if (s.day !== day || !isSwappable(s)) { base.push(s); continue; }  // يومٌ آخرُ/غيابٌ/داخليّ — يبقى
     if (shadowIds.has(s.doctorId)) continue;                            // ظلٌّ — يُعادُ بناؤه
     if (s.doctorId === idA) { base.push({ ...s, doctorId: idB, doctorName: nameB }); continue; }
     if (s.doctorId === idB) { base.push({ ...s, doctorId: idA, doctorName: nameA }); continue; }
@@ -84,8 +108,8 @@ export function swapDoctorsInDaySlots(
 export function affectedDays(orig: ScheduleSlot[], edited: ScheduleSlot[]): string[] {
   const sig = (arr: ScheduleSlot[], day: string) =>
     arr
-      .filter((s) => s.day === day && isSwapRole(s))
-      .map((s) => `${s.period}|${s.clinicNumber}|${s.role}|${s.doctorId}`)
+      .filter((s) => s.day === day && isSwappable(s))
+      .map((s) => `${s.period}|${s.clinicNumber}|${s.role}|${s.status}|${s.doctorId}`)
       .sort()
       .join(',');
   const days = new Set([...orig, ...edited].map((s) => s.day));
