@@ -75,6 +75,23 @@ export const CardHeader = ({
             />
           </TouchableOpacity>
         )}
+
+        {/* Expand/Collapse Button - Walk-in Patients (same expansion as permanent: reveals time & more) */}
+        {!isPermanentPatient && (
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              onTogglePermanentExpansion(patient);
+            }}
+          >
+            <Ionicons
+              name="chevron-down"
+              size={scale(18)}
+              color={menuIconColor}
+            />
+          </TouchableOpacity>
+        )}
       </View>
 
       {isPermanentPatient ? (

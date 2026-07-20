@@ -55,6 +55,12 @@ export const TREATMENT_COLORS: { [key: string]: string } = {
   'Cementation': '#A7F3D0',
 };
 
+// المدّة الافتراضيّة المقدَّرة لكلّ علاج (دقائق) — تُقترح عند تحديد الوقت على الكرت
+export const TREATMENT_DURATIONS: { [key: string]: number } = {
+  Examination: 15, Scaling: 20, Filling: 30, Extraction: 30, Pulpectomy: 40,
+  Medication: 10, 'Suture Removal': 10, Cementation: 20, Referral: 10,
+};
+
 export const REFERRAL_OPTIONS = [
   { key: 'endodontics', label: 'Endodontics' },
   { key: 'oralSurgery', label: 'Oral Surgery' },
@@ -86,6 +92,8 @@ export interface Patient {
   permanent_patient_id?: string;
   file_number?: string;
   patient_type?: 'walk-in' | 'permanent';
+  expected_minutes?: number; // المدّة المطلوبة في العيادة (يحدّدها الطبيب) — شرطُ الظهور في المخطّط
+  appointment_min?: number;  // موعدُ الدخول المحجوز (دقائقُ من منتصف الليل) — إن وُجد يظهر في هذا الوقت بالضبط
 }
 
 export type TimelineEvent = {

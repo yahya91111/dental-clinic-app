@@ -1643,6 +1643,42 @@ export async function getScheduleSettings(clinicId: string): Promise<DatabaseRes
   }
 }
 
+// المدّة المطلوبة للمريض في العيادة (دقائق) — يحدّدها الطبيب على الكرت. null = إلغاء.
+export async function updatePatientExpectedMinutes(
+  patientId: string,
+  minutes: number | null
+): Promise<{ error: Error | null }> {
+  try {
+    const { error } = await supabase
+      .from('patients')
+      .update({ expected_minutes: minutes })
+      .eq('id', patientId);
+    if (error) throw error;
+    return { error: null };
+  } catch (error) {
+    console.error('Error updating expected_minutes:', error);
+    return { error: error as Error };
+  }
+}
+
+// موعدُ الدخول المحجوز (دقائقُ من منتصف الليل)، أو null لإلغاءِ الحجزِ والعودةِ للدور.
+export async function updatePatientAppointment(
+  patientId: string,
+  appointmentMin: number | null
+): Promise<{ error: Error | null }> {
+  try {
+    const { error } = await supabase
+      .from('patients')
+      .update({ appointment_min: appointmentMin })
+      .eq('id', patientId);
+    if (error) throw error;
+    return { error: null };
+  } catch (error) {
+    console.error('Error updating appointment_min:', error);
+    return { error: error as Error };
+  }
+}
+
 export async function updateScheduleSettings(
   clinicId: string,
   clinicCount: number
@@ -1661,6 +1697,29 @@ export async function updateScheduleSettings(
     return { data, error: null };
   } catch (error) {
     console.error('Error updating schedule settings:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// أوقاتُ الاستراحة (بريك) لكلِّ العيادات — مصفوفة {start,end} بالدقائق من منتصف الليل. تُقرأ مع بقيّة الإعدادات.
+export async function updateScheduleBreaks(
+  clinicId: string,
+  breaks: { start: number; end: number }[]
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_settings')
+      .upsert(
+        { clinic_id: clinicId, breaks, updated_at: new Date().toISOString() },
+        { onConflict: 'clinic_id' }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error updating schedule breaks:', error);
     return { data: null, error: error as Error };
   }
 }

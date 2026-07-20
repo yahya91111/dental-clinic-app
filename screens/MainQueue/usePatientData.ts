@@ -78,6 +78,8 @@ export function usePatientData({ user, selectedClinicId, selectedPatient, loadTi
           completed_at: p.completed_at ? new Date(p.completed_at) : undefined,
           doctor_name: p.doctor_name || undefined,
           assigned_by_doctor_name: p.assigned_by_doctor_name || undefined,
+          expected_minutes: p.expected_minutes ?? undefined,
+          appointment_min: p.appointment_min ?? undefined,
         }));
 
       setPatients(formattedPatients);

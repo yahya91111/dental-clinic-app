@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -18,6 +18,7 @@ import { Referral, ToothNote, DentalSummary } from '../../types';
 import { styles } from './styles';
 import { AnimatedPatientCard } from './PatientCard';
 import { AppModals } from './AppModals';
+import { QueueTimelinePager, Lane } from './QueueTimeline';
 
 export interface MainQueueScreenProps {
   // Animated blob values
@@ -297,6 +298,27 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     setViewNoteContent,
   } = props;
 
+  // سياقُ حجزِ موعدِ الدخول: يأتي جاهزًا من مخطّطِ الدور (QueueTimelinePager عبرَ onSchedule) فيطابقُ
+  // تمامًا ما يظهرُ على المخطّطِ — محاكاةً كان أو وقتًا فعليًّا. يُخزَّنُ في مرجعٍ (ref) كي لا تُعادَ
+  // رسمُ قائمةِ الكروتِ مع كلِّ نبضةِ ساعةِ المحاكاة، ويُلتقَطُ لقطةً عندَ فتحِ كرتٍ للحجز.
+  const scheduleRef = useRef<{ lanes: Lane[]; chairCount: number; breaks: { start: number; end: number }[] }>({ lanes: [], chairCount: 0, breaks: [] });
+  const onSchedule = useCallback((lanes: Lane[], chairCount: number, breaks: { start: number; end: number }[]) => {
+    scheduleRef.current = { lanes, chairCount, breaks };
+  }, []);
+  const appointmentCtx = useMemo(() => scheduleRef.current, [expandedPermanentCardId, patients]);
+
+  // إجراءاتُ نافذةِ المريضِ على المخطّط = دوالُّ الكرتِ نفسُها، فالحدثُ واحدٌ أينما نُفِّذ:
+  // الإدخالُ يكتبُ العيادةَ ووقتَ الدخول، و«غيرُ متاح» يُبدّلُ الحالة، و«إنهاء» يفتحُ مسارَ Done ذاتَه.
+  const tlEnterClinic = useCallback((patientId: string, clinic: string) => {
+    props.handleUpdateField(patientId, 'clinic', clinic);
+  }, [props.handleUpdateField]);
+  const tlToggleNA = useCallback((patientId: string) => {
+    (props.handleMenuAction as unknown as (id: string, action: string) => void)(patientId, 'na');
+  }, [props.handleMenuAction]);
+  const tlDone = useCallback((patientId: string) => {
+    (props.handleMenuAction as unknown as (id: string, action: string) => void)(patientId, 'complete');
+  }, [props.handleMenuAction]);
+
   // Main Timeline Screen - Only shown when clinic is selected
   return (
     <View style={{ flex: 1 }}>
@@ -557,10 +579,10 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           <View style={{ width: scale(44) }} />
         </Animated.View>
 
-        {/* Statistics */}
+        {/* Statistics + horizontal timeline (swipe left/right) */}
         <Animated.View
           style={[
-            styles.statsContainer,
+            { marginBottom: scale(24) },
             {
               transform: [
                 { translateY: headerTranslateY },
@@ -572,47 +594,56 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           ]}
           pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
         >
-          {showTreatmentStats ? (
-            <TouchableOpacity
-              style={[styles.statCardExpanded, shadows.neumorphic]}
-              onPress={() => setShowTreatmentStats(false)}
-            >
-              <View style={styles.expandedHeader}>
-                <MaterialCommunityIcons name="chart-bar" size={scale(32)} color="#9CA3AF" />
-                <Text style={styles.expandedTitle}>Statistics</Text>
-              </View>
-              <View style={styles.treatmentStatsList}>
-                {Object.entries(treatmentStats)
-                  .filter(([_, count]) => count > 0)
-                  .sort(([_, a], [__, b]) => b - a)
-                  .map(([treatment, count]) => (
-                    <View key={treatment} style={styles.treatmentStatRow}>
-                      <Text style={styles.treatmentStatCount}>{count}</Text>
-                      <Text style={styles.treatmentStatName}>{treatment}</Text>
-                    </View>
-                  ))}
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <>
+          <QueueTimelinePager
+            patients={patients}
+            clinicId={selectedClinicId}
+            currentDoctorName={currentDoctorName}
+            onSchedule={onSchedule}
+            onEnterClinic={tlEnterClinic}
+            onToggleNA={tlToggleNA}
+            onDone={tlDone}
+            statsNode={showTreatmentStats ? (
               <TouchableOpacity
-                style={[styles.statCard, shadows.neumorphic]}
-                onPress={() => setShowTreatmentStats(true)}
+                style={[styles.statCardExpanded, shadows.neumorphic]}
+                onPress={() => setShowTreatmentStats(false)}
               >
-                <MaterialCommunityIcons name="tooth-outline" size={scale(48)} color="#9CA3AF" style={{ marginBottom: scale(8) }} />
-                <Text style={styles.statLabel}>Total Patients</Text>
-                <Text style={styles.statValue}>{totalPatients}</Text>
+                <View style={styles.expandedHeader}>
+                  <MaterialCommunityIcons name="chart-bar" size={scale(32)} color="#9CA3AF" />
+                  <Text style={styles.expandedTitle}>Statistics</Text>
+                </View>
+                <View style={styles.treatmentStatsList}>
+                  {Object.entries(treatmentStats)
+                    .filter(([_, count]) => count > 0)
+                    .sort(([_, a], [__, b]) => b - a)
+                    .map(([treatment, count]) => (
+                      <View key={treatment} style={styles.treatmentStatRow}>
+                        <Text style={styles.treatmentStatCount}>{count}</Text>
+                        <Text style={styles.treatmentStatName}>{treatment}</Text>
+                      </View>
+                    ))}
+                </View>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.statCard, shadows.neumorphic, filterWaitingOnly && styles.statCardActive]}
-                onPress={() => setFilterWaitingOnly(!filterWaitingOnly)}
-              >
-                <Ionicons name="person-outline" size={scale(48)} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: scale(8) }} />
-                <Text style={[styles.statLabel, filterWaitingOnly && styles.statLabelActive]}>Waiting</Text>
-                <Text style={[styles.statValue, filterWaitingOnly && styles.statValueActive]}>{waitingPatients}</Text>
-              </TouchableOpacity>
-            </>
-          )}
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.statCard, shadows.neumorphic]}
+                  onPress={() => setShowTreatmentStats(true)}
+                >
+                  <MaterialCommunityIcons name="tooth-outline" size={scale(48)} color="#9CA3AF" style={{ marginBottom: scale(8) }} />
+                  <Text style={styles.statLabel}>Total Patients</Text>
+                  <Text style={styles.statValue}>{totalPatients}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statCard, shadows.neumorphic, filterWaitingOnly && styles.statCardActive]}
+                  onPress={() => setFilterWaitingOnly(!filterWaitingOnly)}
+                >
+                  <Ionicons name="person-outline" size={scale(48)} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: scale(8) }} />
+                  <Text style={[styles.statLabel, filterWaitingOnly && styles.statLabelActive]}>Waiting</Text>
+                  <Text style={[styles.statValue, filterWaitingOnly && styles.statValueActive]}>{waitingPatients}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          />
         </Animated.View>
 
         {/* Queue Header */}
@@ -738,6 +769,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 setShowPatientFile(true);
               }}
               expandedPermanentCardId={expandedPermanentCardId}
+              appointmentCtx={appointmentCtx}
               onTogglePermanentExpansion={togglePermanentCardExpansion}
               activeDentalTab={activeDentalTab[patient.id] || 'treatment'}
               onDentalTabChange={(tab) => setActiveDentalTab(prev => ({ ...prev, [patient.id]: tab }))}

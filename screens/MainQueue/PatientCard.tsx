@@ -9,14 +9,19 @@ import {
 } from 'react-native';
 import { scale } from '../../lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Patient, TimelineEvent } from './constants';
+import { Patient, TimelineEvent, TREATMENT_DURATIONS } from './constants';
 import { styles } from './styles';
 import { DentalSummary, Referral, ToothNote } from '../../types';
 import { shadows } from '../../theme';
 import { CardHeader } from './CardHeader';
 import { TimelineInfo } from './TimelineInfo';
+import { WalkInExpanded } from './WalkInExpanded';
 import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
-import { getScalingRecords, createScalingRecord } from '../../lib/database';
+import { getScalingRecords, createScalingRecord, updatePatientExpectedMinutes, updatePatientAppointment } from '../../lib/database';
+import { Lane } from './QueueTimeline';
+
+// سياقُ توفّرِ المواعيد يمرُّ من الشاشةِ إلى كرت الووك-إن (عددُ الكراسي + البريك + الجدولُ المتوقَّع)
+type ApptCtx = { chairCount: number; breaks: { start: number; end: number }[]; lanes: Lane[] };
 
 export const CircularBadge = ({
   letter,
@@ -66,7 +71,7 @@ export const CircularBadge = ({
 };
 
 // Animated wrapper for PatientCard
-export function AnimatedPatientCard({ index, animKey, ...props }: { index: number; animKey: number; patient: Patient; showTimeline: boolean; onMenuPress: () => void; onNotePress: () => void; onCardPress: () => void; onEditField: (patientId: string, field: 'clinic' | 'condition' | 'treatment') => void; expandedCardId: string | null; onViewDetails: (patientId: string) => void; cardTimelines: { [key: string]: TimelineEvent[] }; showTimelineTab: { [key: string]: boolean }; onToggleTab: (patientId: string) => void; onPatientNamePress?: (patientId: string, fileNumber: string) => void; expandedPermanentCardId: string | null; onTogglePermanentExpansion: (patient: Patient) => void; activeDentalTab: 'treatment' | 'referrals' | 'notes'; onDentalTabChange: (tab: 'treatment' | 'referrals' | 'notes') => void; dentalSummary?: DentalSummary; loadingDentalData?: boolean; onToothEditPress: (permanentPatientId: string, tooth: string) => void; patientReferrals?: Referral[]; onLoadReferrals?: () => void; onUpdateReferralStatus?: (referralId: string, newStatus: 'not_given' | 'given') => void; patientToothNotes?: ToothNote[]; onLoadToothNotes?: () => void; lastScalingDates?: { [key: string]: string | null }; currentDoctorName?: string; onUpdateScalingDate?: (patientId: string, timestamp: string) => void; patientConsents?: { [key: string]: boolean }; onToggleConsent?: (patient: Patient) => void; onOpenDentalChartScreen?: (permanentPatientId: string) => void; }) {
+export function AnimatedPatientCard({ index, animKey, ...props }: { index: number; animKey: number; patient: Patient; showTimeline: boolean; onMenuPress: () => void; onNotePress: () => void; onCardPress: () => void; onEditField: (patientId: string, field: 'clinic' | 'condition' | 'treatment') => void; expandedCardId: string | null; onViewDetails: (patientId: string) => void; cardTimelines: { [key: string]: TimelineEvent[] }; showTimelineTab: { [key: string]: boolean }; onToggleTab: (patientId: string) => void; onPatientNamePress?: (patientId: string, fileNumber: string) => void; expandedPermanentCardId: string | null; onTogglePermanentExpansion: (patient: Patient) => void; activeDentalTab: 'treatment' | 'referrals' | 'notes'; onDentalTabChange: (tab: 'treatment' | 'referrals' | 'notes') => void; dentalSummary?: DentalSummary; loadingDentalData?: boolean; onToothEditPress: (permanentPatientId: string, tooth: string) => void; patientReferrals?: Referral[]; onLoadReferrals?: () => void; onUpdateReferralStatus?: (referralId: string, newStatus: 'not_given' | 'given') => void; patientToothNotes?: ToothNote[]; onLoadToothNotes?: () => void; lastScalingDates?: { [key: string]: string | null }; currentDoctorName?: string; onUpdateScalingDate?: (patientId: string, timestamp: string) => void; patientConsents?: { [key: string]: boolean }; onToggleConsent?: (patient: Patient) => void; onOpenDentalChartScreen?: (permanentPatientId: string) => void; appointmentCtx?: ApptCtx; }) {
   const slideAnim = React.useRef(new Animated.Value(0)).current;
   const expandAnim = React.useRef(new Animated.Value(0)).current;
 
@@ -83,20 +88,17 @@ export function AnimatedPatientCard({ index, animKey, ...props }: { index: numbe
 
   const isFromRight = index % 2 === 0;
 
-  const isPermanentPatient = props.patient.patient_type === 'permanent' || props.patient.permanent_patient_id != null;
   const isPermanentCardExpanded = props.expandedPermanentCardId === props.patient.id;
 
-  // Animate expansion
+  // Animate expansion (same for permanent & walk-in — one card expands at a time)
   React.useEffect(() => {
-    if (isPermanentPatient) {
-      Animated.spring(expandAnim, {
-        toValue: isPermanentCardExpanded ? 1 : 0,
-        useNativeDriver: false,
-        tension: 40,
-        friction: 8,
-      }).start();
-    }
-  }, [isPermanentCardExpanded, isPermanentPatient]);
+    Animated.spring(expandAnim, {
+      toValue: isPermanentCardExpanded ? 1 : 0,
+      useNativeDriver: false,
+      tension: 40,
+      friction: 8,
+    }).start();
+  }, [isPermanentCardExpanded]);
 
   const isExpanded = props.expandedPermanentCardId === props.patient.id;
 
@@ -128,7 +130,7 @@ export function AnimatedPatientCard({ index, animKey, ...props }: { index: numbe
   );
 }
 
-export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates, currentDoctorName, onUpdateScalingDate, patientConsents, onToggleConsent, onOpenDentalChartScreen }: {
+export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, onCardPress, onEditField, expandedCardId, onViewDetails, cardTimelines, showTimelineTab, onToggleTab, onPatientNamePress, expandedPermanentCardId, onTogglePermanentExpansion, activeDentalTab, onDentalTabChange, dentalSummary, loadingDentalData, expandAnim, onToothEditPress, patientReferrals, onLoadReferrals, onUpdateReferralStatus, patientToothNotes, onLoadToothNotes, lastScalingDates, currentDoctorName, onUpdateScalingDate, patientConsents, onToggleConsent, onOpenDentalChartScreen, appointmentCtx }: {
   patient: Patient;
   showTimeline: boolean;
   onMenuPress: () => void;
@@ -160,11 +162,24 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
   patientConsents?: { [key: string]: boolean };
   onToggleConsent?: (patient: Patient) => void;
   onOpenDentalChartScreen?: (permanentPatientId: string) => void;
+  appointmentCtx?: ApptCtx;
 }) {
   // تأثير زجاجي: نفس الألوان لكن شفافة (0.75 = واضح جداً)
   // إذا كان DONE: نفس تدرج الكرت الصلب (بدون شفافية)
   // المريض الدائم: لون أخضر فاتح
   const isPermanentPatient = patient.patient_type === 'permanent' || patient.permanent_patient_id != null;
+
+  // ضبطُ المدّة المطلوبة في العيادة (شرطُ ظهور المريض في المخطّط)
+  const handleSetDuration = async (min: number) => {
+    const { error } = await updatePatientExpectedMinutes(patient.id, min);
+    if (error) Alert.alert('Error', error.message);
+  };
+
+  // حجزُ موعدِ الدخول (أو null لإلغائه والعودةِ للدور)
+  const handleSetAppointment = async (min: number | null) => {
+    const { error } = await updatePatientAppointment(patient.id, min);
+    if (error) Alert.alert('Error', error.message);
+  };
 
   const gradientColors: [string, string] = isPermanentPatient
     ? (patient.status === 'complete'
@@ -321,6 +336,21 @@ export function PatientCard({ patient, showTimeline, onMenuPress, onNotePress, o
               onToothEditPress={(patientId: string, tooth: any) => onToothEditPress?.(patientId, String(tooth))}
               onPatientNamePress={onPatientNamePress}
               doctorName={currentDoctorName}
+            />
+          )}
+
+          {/* Walk-in expanded header - same style/animation as permanent (icon grid: Time + future) */}
+          {!isPermanentPatient && isPermanentCardExpanded && (
+            <WalkInExpanded
+              patientName={patient.name}
+              value={patient.expected_minutes}
+              suggested={TREATMENT_DURATIONS[patient.treatment || ''] ?? 20}
+              onSetDuration={handleSetDuration}
+              onClose={() => onTogglePermanentExpansion(patient)}
+              appointment={patient.appointment_min}
+              onSetAppointment={handleSetAppointment}
+              avail={appointmentCtx}
+              selfId={patient.id}
             />
           )}
 
