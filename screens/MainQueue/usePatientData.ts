@@ -76,6 +76,8 @@ export function usePatientData({ user, selectedClinicId, selectedPatient, loadTi
           registered_at: p.registered_at ? new Date(p.registered_at) : undefined,
           clinic_entry_at: p.clinic_entry_at ? new Date(p.clinic_entry_at) : undefined,
           completed_at: p.completed_at ? new Date(p.completed_at) : undefined,
+          na_at: p.na_at ? new Date(p.na_at) : undefined,   // وقتُ النداء (صار غيرَ متاح) — يظهرُ على الكرت
+
           doctor_name: p.doctor_name || undefined,
           assigned_by_doctor_name: p.assigned_by_doctor_name || undefined,
           expected_minutes: p.expected_minutes ?? undefined,

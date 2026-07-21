@@ -731,10 +731,18 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
       case 'na':
         try {
           const patient = patients.find(p => p.id === patientId);
-          const newStatus = patient?.status === 'na' ? 'normal' : 'na';
+          const turningOn = patient?.status !== 'na';
+          const newStatus = turningOn ? 'na' : 'normal';
+          // تبديلُ الحالةِ (حَرِج) أوّلًا — يعملُ دائمًا
           await supabase
             .from('patients')
             .update({ status: newStatus })
+            .eq('id', patientId);
+          // وقتُ النداءِ (na_at) تحديثٌ منفصلٌ أفضلُ جهد: يتطلّبُ عمودَ na_at (sql/add_na_at.sql)؛
+          // إن غابَ العمودُ يعودُ خطأً في .error دونَ أن يُعطِّلَ التبديل. تفعيل=الآن، إلغاء=مسح.
+          await supabase
+            .from('patients')
+            .update({ na_at: turningOn ? new Date().toISOString() : null })
             .eq('id', patientId);
           await loadPatients();
         } catch (error: any) {
