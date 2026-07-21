@@ -34,6 +34,13 @@ const fmtHM = (min: number): string => {
   const m = Math.round(min);
   return `${Math.floor(m / 60)}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
 };
+// مدّةُ الفراغِ المتاحِ (بين مريضَين أو قبلَ البريك): دقائقُ حتّى ٥٩ «10 min»، ثمّ ساعاتٌ «1hr» / «1hr 30min»
+const fmtGap = (min: number): string => {
+  const m = Math.round(min);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r === 0 ? `${h}hr` : `${h}hr ${r}min`;
+};
 
 type Kind = 'done' | 'cur' | 'over' | 'fut' | 'eld' | 'lateDone' | 'break' | 'na';
 // orig: وقتُ البريكِ الأصليُّ المحدَّد (كي نُظهِرَ «أُزيحَ · كان HH:MM» إن تحرّك) — للبريكِ فقط
@@ -812,11 +819,16 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                             const gx = prev.left + prev.width;
                             const gw = o.left - gx;
                             if (gw < scale(10)) return null;
-                            const n = Math.min(40, Math.max(2, Math.floor((gw - scale(8)) / scale(7))));
+                            const lineW = Math.max(scale(1), gw - scale(8));
                             return (
-                              <View key={'idle' + i} pointerEvents="none" style={{ position: 'absolute', left: gx + scale(4), width: gw - scale(8), top: laneH / 2 - scale(1), height: scale(2), flexDirection: 'row', alignItems: 'center', overflow: 'hidden' }}>
-                                {Array.from({ length: n }).map((_, d) => <View key={d} style={full.idleDot} />)}
-                              </View>
+                              <React.Fragment key={'idle' + i}>
+                                {/* الوقتُ الحقيقيُّ المتاحُ فوقَ الخيط (بين مريضَين، أو بين آخرِ مريضٍ والبريك) — يظهرُ دائمًا */}
+                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + gw / 2 - scale(30), width: scale(60), top: laneH / 2 - scale(13) }]}>{fmtGap(o.idle)}</Text>
+                                {/* خيطُ النقطِ المتّصلُ عبرَ كاملِ المسافة (svg — لا ينقطعُ مهما بَعُدت) */}
+                                <Svg pointerEvents="none" style={{ position: 'absolute', left: gx + scale(4), top: laneH / 2 - scale(1), width: lineW, height: scale(3) }} width={lineW} height={scale(3)}>
+                                  <SvgLine x1={0} y1={scale(1.5)} x2={lineW} y2={scale(1.5)} stroke="rgba(140,160,168,0.75)" strokeWidth={scale(2)} strokeDasharray={`${scale(2)} ${scale(5)}`} strokeLinecap="round" />
+                                </Svg>
+                              </React.Fragment>
                             );
                           })}
                           {/* الكتل: استراحةٌ كريميّةٌ أو كرتُ مريض */}
@@ -1180,6 +1192,8 @@ const full = scaledStyleSheet({
   vacantPill: { position: 'absolute', top: '50%', marginTop: -14, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
   vacantTxt: { fontSize: 10.5, fontWeight: '800', color: '#5A7079' },
   idleDot: { width: 2, height: 2, borderRadius: 1, marginRight: 5, backgroundColor: 'rgba(140,160,168,0.6)' },
+  // الوقتُ المتاحُ فوقَ نقاطِ الفراغ — رماديٌّ بسيطٌ في الوسط
+  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '800', letterSpacing: 0.2, color: '#8CA0A8' },
   // ── الاستراحة (كريميّة) ──
   brk: { position: 'absolute', top: 13, bottom: 13, borderRadius: 15, alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', backgroundColor: 'rgba(250,239,220,0.82)', borderWidth: 1, borderColor: 'rgba(212,186,148,0.5)' },
   brkChip: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.82)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
