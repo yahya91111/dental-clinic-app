@@ -44,10 +44,11 @@ const fmtGap = (min: number): string => {
 
 type Kind = 'done' | 'cur' | 'over' | 'fut' | 'eld' | 'lateDone' | 'break' | 'na';
 // orig: وقتُ البريكِ الأصليُّ المحدَّد (كي نُظهِرَ «أُزيحَ · كان HH:MM» إن تحرّك) — للبريكِ فقط
-type Blk = { start: number; end: number; kind: Kind; p: Patient; orig?: number };
+// fixed: بريكٌ ثابتٌ (تبديلُ شفت) لا يتحرّكُ مهما حصل؛ وإلّا متحرّكٌ يُدفَعُ بانشغالٍ حقيقيّ
+type Blk = { start: number; end: number; kind: Kind; p: Patient; orig?: number; fixed?: boolean };
 export type Lane = { clinic: string; short: string; blocks: Blk[] };
 export type TimelineData = { lanes: Lane[]; dayStart: number; dayEnd: number };
-export type Break = { start: number; end: number };   // فترةُ استراحةٍ لكلِّ العيادات (دقائقُ من منتصف الليل)
+export type Break = { start: number; end: number; fixed?: boolean };   // فترةُ استراحةٍ لكلِّ العيادات (دقائقُ من منتصف الليل)؛ fixed = ثابتٌ لا يتحرّك
 
 const isRealClinic = (c?: string): boolean => !!c && /^clinic\s*\d+/i.test(c);
 const clinicNum = (c: string): number => parseInt((c.match(/\d+/) || ['0'])[0], 10);
@@ -140,13 +141,16 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
     for (const br of brs) {
       const d = Math.max(1, br.end - br.start);            // مدّةٌ ثابتةٌ (تُعرَضُ داخلَ الكرت)
       let s = br.start;
-      // ادفعْه فقط بانشغالٍ حقيقيٍّ يغطّي وقتَه (مريضٌ دخلَ عندَ/قبلَه وما زالَ) — لا الخطُّ الزمنيُّ ولا المتوقَّعون
-      for (let g = 0; g < 8; g++) {
-        const cover = realBlocks.find((rb) => rb.start <= s && s < rb.end);
-        if (!cover) break;
-        s = cover.end;
+      // البريكُ **الثابت** (تبديلُ شفت) لا يتحرّكُ مهما حصل. أمّا **المتحرّك** فيُدفَعُ فقط بانشغالٍ حقيقيٍّ
+      // يغطّي وقتَه (مريضٌ دخلَ عندَ/قبلَه وما زالَ) — لا الخطُّ الزمنيُّ ولا المتوقَّعون.
+      if (!br.fixed) {
+        for (let g = 0; g < 8; g++) {
+          const cover = realBlocks.find((rb) => rb.start <= s && s < rb.end);
+          if (!cover) break;
+          s = cover.end;
+        }
       }
-      lanes[c].push({ start: s, end: s + d, kind: 'break', p: BREAK_P, orig: br.start });
+      lanes[c].push({ start: s, end: s + d, kind: 'break', p: BREAK_P, orig: br.start, fixed: br.fixed });
       breakIv[c].push({ start: s, end: s + d });
     }
   }
@@ -529,8 +533,21 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   const [actionId, setActionId] = useState<string | null>(null);   // المريضُ المفتوحةُ نافذتُه
   const [editingBreaks, setEditingBreaks] = useState(false);
   const [draft, setDraft] = useState<Break[]>([]);
+  const [breakActionOrig, setBreakActionOrig] = useState<number | null>(null);   // بدايةُ البريكِ الملموسِ (لنافذةِ ثابت/متحرّك)
   const openEditor = () => { setDraft(breaks.map((b) => ({ ...b }))); setEditingBreaks(true); };
   const saveEditor = () => { onSaveBreaks(draft.filter((b) => b.end > b.start).sort((a, b) => a.start - b.start)); setEditingBreaks(false); };
+  // البريكُ الملموس + ضبطُ نوعِه (ثابتٌ لا يتحرّك / متحرّكٌ يُدفَعُ بانشغالٍ حقيقيّ) — يُطابَقُ ببدايتِه الأصليّة
+  const actBreak = breakActionOrig != null ? breaks.find((b) => b.start === breakActionOrig) : null;
+  const setBreakFixed = (fixed: boolean) => {
+    if (breakActionOrig == null) return;
+    onSaveBreaks(breaks.map((b) => (b.start === breakActionOrig ? { ...b, fixed } : b)));
+    setBreakActionOrig(null);
+  };
+  const cancelBreak = () => {   // حذفُ البريكِ نهائيًّا من إعداداتِ المركز
+    if (breakActionOrig == null) return;
+    onSaveBreaks(breaks.filter((b) => b.start !== breakActionOrig));
+    setBreakActionOrig(null);
+  };
   const HOUR_W = scale(200);                        // اتّساعُ الساعةِ الواحدة — أوسعُ كي يقتربَ عرضُ الكرتِ من امتدادِه الزمنيِّ الحقيقيّ (فيبقى داخلَ نطاقِ ساعتِه)
   // topH = رأسُ الجدول: شريطٌ عريضٌ يحملُ محورَ الأوقاتِ الثابت (7:00 8:00 …) مرجعًا للكلِّ العيادات
   const laneH = scale(96), stripH = scale(17), topH = scale(38), labelW = scale(64);
@@ -613,12 +630,16 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // انزلاقُ نافذةِ الإجراءاتِ ومحرِّرِ البريك (دخولٌ فقط، native driver — لا يُثقِلُ الأداء)
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const editAnim = useRef(new Animated.Value(0)).current;
+  const brkAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (actionId) { sheetAnim.setValue(0); Animated.timing(sheetAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(); }
   }, [actionId, sheetAnim]);
   useEffect(() => {
     if (editingBreaks) { editAnim.setValue(0); Animated.timing(editAnim, { toValue: 1, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(); }
   }, [editingBreaks, editAnim]);
+  useEffect(() => {
+    if (breakActionOrig != null) { brkAnim.setValue(0); Animated.timing(brkAnim, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(); }
+  }, [breakActionOrig, brkAnim]);
   // نبضةُ نقطةِ «الحيّ» في الرأس (حلقةٌ واحدةٌ مشتركة، native driver)
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -638,7 +659,9 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
       const succ = l.blocks[i + 1];
       const rawW = Math.max(minWOf(b.kind), xAt(b.end) - left);
       const capW = succ ? (xAt(succ.start) - GAP - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
-      const width = Math.max(minWOf(b.kind), Math.min(rawW, capW));
+      let width = Math.max(minWOf(b.kind), Math.min(rawW, capW));
+      // البريكُ الثابتُ (تبديلُ شفت) حائطٌ صلب: الكرتُ الذي قبلَه **يتوقّفُ قبلَه فقط** ولا يتجاوزُه أبدًا (حتّى لو ضاقَ عرضُه دونَ الأدنى)
+      if (succ && succ.kind === 'break' && succ.fixed) width = Math.min(width, Math.max(scale(1), capW));
       const prev = i > 0 ? l.blocks[i - 1] : null;
       const prevEnd = prev ? ((prev.kind === 'cur' || prev.kind === 'over') ? Math.max(prev.end, prev.start + estMinutes(prev.p)) : prev.end) : -Infinity;
       const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لخيطِ الفراغِ المنقّط)
@@ -696,7 +719,11 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             <View style={full.headTop}>
               <Text style={full.eyebrow}>{fmtToday()}</Text>
               <View style={{ flex: 1 }} />
-              <TouchableOpacity style={[full.iconBtn, full.breakBtn]} onPress={openEditor}><Text style={full.breakBtnTxt}>☕ Break</Text></TouchableOpacity>
+              <TouchableOpacity style={[full.iconBtn, full.breakBtn]} activeOpacity={0.85} onPress={openEditor}>
+                <LinearGradient colors={['rgba(253,246,231,0.97)', 'rgba(243,223,183,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.breakBtnFill} />
+                <View style={full.breakBtnDot}><Text style={full.breakBtnIcon}>☕</Text></View>
+                <Text style={full.breakBtnTxt}>Break</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={full.iconBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Text style={full.closeTxt}>✕</Text></TouchableOpacity>
             </View>
             <View style={full.titleRow}>
@@ -842,11 +869,14 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                             if (b.kind === 'break') {
                               const moved = b.orig != null && b.orig !== b.start;
                               return (
-                                <View key={i} pointerEvents="none" style={[full.brk, { left, width }]}>
-                                  <View style={full.brkChip}><Text style={full.brkChipTxt}>☕</Text></View>
-                                  <Text style={full.brkS}>{fmtHM(b.start)} · {Math.round(b.end - b.start)} min</Text>
-                                  {moved ? <Text style={full.brkMoved}>was <Text style={full.brkMovedOld}>{fmtHM(b.orig!)}</Text></Text> : null}
-                                </View>
+                                <TouchableOpacity key={i} activeOpacity={0.8} style={[full.brk, b.fixed && full.brkFixed, { left, width }]}
+                                  onPress={() => setBreakActionOrig(b.orig ?? b.start)}>
+                                  <View style={[full.brkChip, b.fixed && full.brkChipFixed]}><Text style={full.brkChipTxt}>{b.fixed ? '🔒' : '☕'}</Text></View>
+                                  <Text style={[full.brkS, b.fixed && full.brkSFixed]}>{fmtHM(b.start)} · {Math.round(b.end - b.start)} min</Text>
+                                  {b.fixed
+                                    ? <Text style={full.brkFixedTag}>Fixed</Text>
+                                    : moved ? <Text style={full.brkMoved}>was <Text style={full.brkMovedOld}>{fmtHM(b.orig!)}</Text></Text> : null}
+                                </TouchableOpacity>
                               );
                             }
                             return <Card key={i} b={b} left={left} width={width} nowMin={nowMin} onPress={() => setActionId(b.p.id)} />;
@@ -876,6 +906,12 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               <View style={full.sheetScrim}>
               <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setActionId(null)} />
               <Animated.View style={[full.sheet, { opacity: sheetAnim, transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [scale(340), 0] }) }] }]}>
+                {/* طبقةُ الزجاجِ المقصوصة: تدرّجٌ لؤلؤيٌّ فوقَ ضبابِ الصفحةِ الخلفيّ + وهجٌ فيروزيٌّ علويٌّ خفيف */}
+                <View style={full.sheetGlass}>
+                  <LinearGradient colors={['rgba(255,255,255,0.82)', 'rgba(240,247,250,0.6)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <LinearGradient colors={['rgba(125,211,192,0.18)', 'rgba(125,211,192,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.55 }} style={StyleSheet.absoluteFill} />
+                </View>
+                <View pointerEvents="none" style={full.sheetTopHi} />
                 <View style={full.grab} />
                 <View style={full.shHead}>
                   <View style={[full.shBadge, !actEntered && full.shBadgeHollow, actNA && full.shBadgeNA]}>
@@ -891,7 +927,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     </View>
                   ) : null}
                 </View>
-                {sim.on && <Text style={full.actSimNote}>محاكاة — إجراءٌ افتراضيٌّ لا يُحفَظ</Text>}
+                <View style={full.shDivider} />
 
                 {/* ١ — إدخالُ العيادة: كلُّ كرسيٍّ يقولُ حالَه، والمشغولُ معطَّل */}
                 <Text style={full.shLabel}>Enter clinic</Text>
@@ -901,12 +937,17 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     const on = actEntered && actP.clinic === l.clinic;
                     const disabled = actNA || (!cst.free && !on);
                     return (
-                      <TouchableOpacity key={l.clinic} disabled={disabled}
+                      <TouchableOpacity key={l.clinic} disabled={disabled} activeOpacity={0.85}
                         style={[full.chair, on && full.chairOn, disabled && full.chairOff]}
                         onPress={() => { actions.onEnterClinic(actP.id, l.clinic); setActionId(null); }}>
-                        <Text style={[full.chairN, on && { color: '#05302A' }]}>{clinicNum(l.clinic) || (li + 1)}</Text>
-                        <Text style={[full.chairS, cst.free ? full.chairSfree : full.chairSbusy, on && { color: 'rgba(5,48,42,0.7)' }]}>{cst.free ? 'free' : 'busy'}</Text>
-                        <Text style={[full.chairT, on && { color: 'rgba(5,48,42,0.7)' }]}>{cst.free ? 'now' : (cst.till && cst.till > nowMin ? `till ${fmtHM(cst.till)}` : 'overdue')}</Text>
+                        {on ? <LinearGradient colors={['#8DE0CC', '#5FC0A9']} start={{ x: 0, y: 0 }} end={{ x: 0.4, y: 1 }} style={full.chairFill} /> : null}
+                        <Text style={[full.chairEyebrow, on && full.chairInkOn]}>CLINIC</Text>
+                        <Text style={[full.chairN, on && full.chairInkOnStrong]}>{clinicNum(l.clinic) || (li + 1)}</Text>
+                        <View style={full.chairStatusRow}>
+                          <View style={[full.chairDot, cst.free ? full.chairDotFree : full.chairDotBusy, on && full.chairDotOn]} />
+                          <Text style={[full.chairS, cst.free ? full.chairSfree : full.chairSbusy, on && full.chairInkOn]}>{cst.free ? 'free' : 'busy'}</Text>
+                        </View>
+                        <Text style={[full.chairT, on && full.chairInkOnDim]}>{cst.free ? 'now' : (cst.till && cst.till > nowMin ? `till ${fmtHM(cst.till)}` : 'overdue')}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -918,14 +959,68 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                 </TouchableOpacity>
 
                 {/* ٣ — إنهاء (نفسُ مسارِ زرِّ Done) */}
-                <TouchableOpacity style={[full.actDone, (!actEntered || actNA) && full.actDoneOff]} disabled={!actEntered || actNA}
+                <TouchableOpacity style={[full.actDone, (!actEntered || actNA) && full.actDoneOff]} activeOpacity={0.9} disabled={!actEntered || actNA}
                   onPress={() => { setActionId(null); actions.onDone(actP.id); }}>
+                  {!(!actEntered || actNA) ? <LinearGradient colors={['#12B58C', '#0B7A5E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={full.actDoneFill} /> : null}
                   <Text style={full.actDoneTxt}>Done</Text>
                 </TouchableOpacity>
                 {!actEntered && !actNA ? <Text style={full.hint}>اختَرْ عيادةً لإدخالِ المريضِ أوّلًا</Text> : null}
                 {actNA ? <Text style={full.hint}>المريضُ خارجَ الدورِ الآن</Text> : null}
 
-                <TouchableOpacity style={full.actClose} onPress={() => setActionId(null)}><Text style={full.actCloseTxt}>إغلاق</Text></TouchableOpacity>
+                <TouchableOpacity style={full.actClose} onPress={() => setActionId(null)}><Text style={full.actCloseTxt}>Close</Text></TouchableOpacity>
+              </Animated.View>
+              </View>
+            </View>
+          )}
+
+          {/* نافذةُ نوعِ البريكِ (عند النقرِ على كرتِ بريك): ثابتٌ لا يتحرّك / متحرّكٌ يُدفَعُ بانشغالٍ حقيقيّ */}
+          {actBreak && (
+            <View style={StyleSheet.absoluteFill}>
+              <BlurView intensity={24} tint="light" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
+              <View style={full.sheetScrim}>
+              <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setBreakActionOrig(null)} />
+              <Animated.View style={[full.sheet, { opacity: brkAnim, transform: [{ translateY: brkAnim.interpolate({ inputRange: [0, 1], outputRange: [scale(320), 0] }) }] }]}>
+                <View style={full.sheetGlass}>
+                  <LinearGradient colors={['rgba(255,255,255,0.82)', 'rgba(240,247,250,0.6)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <LinearGradient colors={['rgba(212,186,148,0.16)', 'rgba(212,186,148,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.55 }} style={StyleSheet.absoluteFill} />
+                </View>
+                <View pointerEvents="none" style={full.sheetTopHi} />
+                <View style={full.grab} />
+                <View style={full.shHead}>
+                  <View style={full.brkHeadChip}><Text style={{ fontSize: scale(15) }}>☕</Text></View>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={full.shName} numberOfLines={1}>Break · {fmtHM(actBreak.start)}</Text>
+                    <Text style={full.shMeta} numberOfLines={1}>{Math.round(actBreak.end - actBreak.start)} min · applies to all clinics</Text>
+                  </View>
+                </View>
+                <View style={full.shDivider} />
+                <Text style={full.shLabel}>Break type</Text>
+
+                {/* متحرّك */}
+                <TouchableOpacity activeOpacity={0.85} style={[full.brkOpt, !actBreak.fixed && full.brkOptOn]} onPress={() => setBreakFixed(false)}>
+                  <View style={[full.brkOptIcon, !actBreak.fixed && full.brkOptIconOn]}><Text style={{ fontSize: scale(17) }}>🔄</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[full.brkOptTitle, !actBreak.fixed && full.brkOptTitleOn]}>Moving break</Text>
+                    <Text style={full.brkOptDesc}>Shifts forward while a chair is still busy — the normal rest.</Text>
+                  </View>
+                  {!actBreak.fixed ? <View style={full.brkOptTick}><Text style={full.brkOptTickTxt}>✓</Text></View> : <View style={full.brkOptRing} />}
+                </TouchableOpacity>
+
+                {/* ثابت */}
+                <TouchableOpacity activeOpacity={0.85} style={[full.brkOpt, full.brkOptFixed, actBreak.fixed && full.brkOptFixedOn]} onPress={() => setBreakFixed(true)}>
+                  <View style={[full.brkOptIcon, actBreak.fixed && full.brkOptIconFixedOn]}><Text style={{ fontSize: scale(16) }}>🔒</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[full.brkOptTitle, actBreak.fixed && full.brkOptTitleFixedOn]}>Fixed break</Text>
+                    <Text style={full.brkOptDesc}>Never moves — marks a shift change / new shift.</Text>
+                  </View>
+                  {actBreak.fixed ? <View style={[full.brkOptTick, full.brkOptTickFixed]}><Text style={full.brkOptTickTxt}>✓</Text></View> : <View style={full.brkOptRing} />}
+                </TouchableOpacity>
+
+                {/* إلغاءُ البريكِ نهائيًّا */}
+                <TouchableOpacity style={full.brkCancel} activeOpacity={0.85} onPress={cancelBreak}>
+                  <Text style={full.brkCancelTxt}>Cancel break</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={full.actClose} onPress={() => setBreakActionOrig(null)}><Text style={full.actCloseTxt}>Close</Text></TouchableOpacity>
               </Animated.View>
               </View>
             </View>
@@ -1144,8 +1239,11 @@ const full = scaledStyleSheet({
   headTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.6, color: '#8CA0A8' },
   iconBtn: { height: 34, minWidth: 34, paddingHorizontal: 12, borderRadius: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
-  breakBtn: { backgroundColor: 'rgba(248,236,214,0.72)', borderColor: 'rgba(212,186,148,0.6)' },
-  breakBtnTxt: { fontSize: 12, fontWeight: '800', color: '#7A6446' },
+  breakBtn: { paddingHorizontal: 11, gap: 5, backgroundColor: 'rgba(248,236,214,0.9)', borderColor: 'rgba(206,178,132,0.75)', shadowColor: '#B98A3E', shadowOpacity: 0.22, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  breakBtnFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 17 },
+  breakBtnDot: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.9)' },
+  breakBtnIcon: { fontSize: 10.5 },
+  breakBtnTxt: { fontSize: 12, fontWeight: '800', color: '#7A5A2E', letterSpacing: 0.2 },
   closeTxt: { fontSize: 15, fontWeight: '800', color: '#4A5568' },
   titleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginTop: 8 },
   title: { fontSize: 28, fontWeight: '800', letterSpacing: -1, color: '#12232A' },
@@ -1209,46 +1307,82 @@ const full = scaledStyleSheet({
   brkS: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#7A6446' },
   brkMoved: { fontSize: 7.5, fontWeight: '800', color: '#6B3E0B', backgroundColor: 'rgba(251,191,36,0.34)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   brkMovedOld: { textDecorationLine: 'line-through', color: '#8A6A2E' },
+  // البريكُ الثابت (تبديلُ شفت): مظهرٌ فولاذيٌّ مميّزٌ عن العسليِّ المتحرّك
+  brkFixed: { backgroundColor: 'rgba(228,233,242,0.9)', borderColor: 'rgba(99,116,152,0.55)' },
+  brkChipFixed: { backgroundColor: 'rgba(255,255,255,0.9)', borderColor: 'rgba(255,255,255,0.95)' },
+  brkSFixed: { color: '#4A5570' },
+  brkFixedTag: { fontSize: 7.5, fontWeight: '800', letterSpacing: 0.5, color: '#3E4763', backgroundColor: 'rgba(99,116,152,0.24)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   // ── خطُّ الآن ──
   nowPill: { position: 'absolute', top: 4, borderRadius: 9, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: '#0E7C66' },
   nowPillTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
   // ── نافذةُ الإجراءات (لوحٌ سفليّ) ──
-  sheetScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'rgba(10,32,38,0.26)' },
-  sheet: { paddingHorizontal: 16, paddingTop: 15, paddingBottom: 22, marginHorizontal: 11, marginBottom: 11, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.94)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)' },
-  grab: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(90,112,121,0.32)', alignSelf: 'center', marginBottom: 13 },
-  shHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  shBadge: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#7DD3C0' },
-  shBadgeHollow: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: 'rgba(14,124,102,0.5)', borderStyle: 'dashed' },
+  sheetScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'rgba(10,32,38,0.24)' },
+  sheet: { paddingHorizontal: 17, paddingTop: 13, paddingBottom: 20, marginHorizontal: 11, marginBottom: 11, borderRadius: 32, borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)', shadowColor: '#0A2834', shadowOpacity: 0.24, shadowRadius: 30, shadowOffset: { width: 0, height: 18 }, elevation: 18 },
+  sheetGlass: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 32, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.5)' },
+  sheetTopHi: { position: 'absolute', top: 0, left: 26, right: 26, height: 1.5, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.95)' },
+  grab: { width: 40, height: 4.5, borderRadius: 3, backgroundColor: 'rgba(90,112,121,0.26)', alignSelf: 'center', marginBottom: 14 },
+  shHead: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  shBadge: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#7DD3C0', shadowColor: '#09705C', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  shBadgeHollow: { backgroundColor: 'rgba(255,255,255,0.4)', borderWidth: 1.5, borderColor: 'rgba(14,124,102,0.5)', borderStyle: 'dashed', shadowOpacity: 0, elevation: 0 },
   shBadgeNA: { borderColor: 'rgba(120,124,160,0.6)' },
-  shBadgeTxt: { fontSize: 14, fontWeight: '800' },
-  shName: { fontSize: 16, fontWeight: '800', color: '#12232A' },
+  shBadgeTxt: { fontSize: 15, fontWeight: '800' },
+  shName: { fontSize: 16.5, fontWeight: '800', color: '#12232A', letterSpacing: -0.3 },
   shMeta: { marginTop: 2, fontSize: 10.5, fontWeight: '600', color: '#5A7079' },
-  shState: { marginLeft: 'auto', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(140,160,168,0.16)' },
+  shState: { marginLeft: 'auto', paddingHorizontal: 10, paddingVertical: 5.5, borderRadius: 9, backgroundColor: 'rgba(140,160,168,0.16)' },
   shStateLive: { backgroundColor: 'rgba(125,211,192,0.28)' },
   shStateLate: { backgroundColor: 'rgba(239,68,68,0.16)' },
   shStateTxt: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
-  actSimNote: { marginTop: 11, textAlign: 'center', fontSize: 10.5, fontWeight: '800', color: '#0E7C66', backgroundColor: 'rgba(125,211,192,0.2)', borderRadius: 9, paddingVertical: 7, overflow: 'hidden' },
-  shLabel: { marginTop: 15, marginBottom: 8, fontSize: 9.5, fontWeight: '800', letterSpacing: 1.4, color: '#8CA0A8' },
-  chairRow: { flexDirection: 'row', gap: 6 },
-  chair: { flex: 1, paddingVertical: 9, borderRadius: 14, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.7)', borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.32)' },
-  chairOn: { backgroundColor: '#7DD3C0', borderColor: '#0E7C66' },
-  chairOff: { opacity: 0.42 },
-  chairN: { fontSize: 15, fontWeight: '800', color: '#31454D' },
-  chairS: { marginTop: 4, fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
-  chairSfree: { color: '#0E7C66' },
+  shDivider: { height: 1, marginTop: 14, marginHorizontal: 2, backgroundColor: 'rgba(140,160,168,0.18)' },
+  shLabel: { marginTop: 13, marginBottom: 9, fontSize: 9.5, fontWeight: '800', letterSpacing: 1.4, color: '#8CA0A8' },
+  chairRow: { flexDirection: 'row', gap: 7 },
+  chair: { flex: 1, paddingVertical: 10, borderRadius: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.3)' },
+  chairOn: { borderColor: 'rgba(14,124,102,0.9)' },
+  chairFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 15 },
+  chairOff: { opacity: 0.4 },
+  chairEyebrow: { fontSize: 7.5, fontWeight: '800', letterSpacing: 1, color: '#9AACB3' },
+  chairN: { marginTop: 1, fontSize: 20, fontWeight: '800', color: '#31454D', letterSpacing: -0.5 },
+  chairStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 },
+  chairDot: { width: 5, height: 5, borderRadius: 3 },
+  chairDotFree: { backgroundColor: '#34D399' },
+  chairDotBusy: { backgroundColor: '#B6C2C8' },
+  chairDotOn: { backgroundColor: '#05302A' },
+  chairS: { fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
+  chairSfree: { color: '#0E9E78' },
   chairSbusy: { color: '#8CA0A8' },
-  chairT: { marginTop: 1, fontSize: 8, fontWeight: '700', color: '#8CA0A8' },
-  actBtn: { marginTop: 15, paddingVertical: 12, borderRadius: 15, alignItems: 'center', backgroundColor: 'rgba(140,160,168,0.13)', borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.36)' },
+  chairT: { marginTop: 2, fontSize: 8, fontWeight: '700', color: '#8CA0A8' },
+  chairInkOn: { color: 'rgba(5,48,42,0.78)' },
+  chairInkOnStrong: { color: '#05302A' },
+  chairInkOnDim: { color: 'rgba(5,48,42,0.6)' },
+  actBtn: { marginTop: 14, paddingVertical: 12.5, borderRadius: 16, alignItems: 'center', backgroundColor: 'rgba(140,160,168,0.12)', borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.34)' },
   actBtnTxt: { fontSize: 13.5, fontWeight: '800', color: '#31454D' },
   actBtnNAOn: { backgroundColor: '#5A7079', borderColor: '#31454D' },
   actBtnNAOnTxt: { color: '#fff' },
-  actDone: { marginTop: 9, paddingVertical: 13, borderRadius: 15, alignItems: 'center', backgroundColor: '#0E7C66' },
-  actDoneOff: { backgroundColor: 'rgba(140,160,168,0.35)' },
-  actDoneTxt: { fontSize: 15, fontWeight: '800', color: '#fff' },
-  hint: { marginTop: 7, fontSize: 10, fontWeight: '700', textAlign: 'center', color: '#8CA0A8' },
-  // إزالةٌ من المخطّطِ فقط (لغيرِ المتاح)
-  actClose: { marginTop: 10, paddingVertical: 8, alignItems: 'center' },
-  actCloseTxt: { fontSize: 13.5, fontWeight: '700', color: '#6B7280' },
+  actDone: { marginTop: 9, paddingVertical: 14, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0E7C66', shadowColor: '#0B7A5E', shadowOpacity: 0.32, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 5 },
+  actDoneFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16 },
+  actDoneOff: { backgroundColor: 'rgba(140,160,168,0.32)', shadowOpacity: 0, elevation: 0 },
+  actDoneTxt: { fontSize: 15, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
+  hint: { marginTop: 8, fontSize: 10, fontWeight: '700', textAlign: 'center', color: '#8CA0A8' },
+  actClose: { marginTop: 11, paddingVertical: 9, alignItems: 'center' },
+  actCloseTxt: { fontSize: 13.5, fontWeight: '800', color: '#6B7280', letterSpacing: 0.3 },
+  // ── نافذةُ نوعِ البريك (ثابت/متحرّك) ──
+  brkHeadChip: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(248,236,214,0.95)', borderWidth: 1, borderColor: 'rgba(212,186,148,0.6)' },
+  brkOpt: { flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 9, padding: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.28)' },
+  brkOptOn: { backgroundColor: 'rgba(125,211,192,0.2)', borderColor: 'rgba(14,124,102,0.75)' },
+  brkOptFixed: { backgroundColor: 'rgba(99,116,152,0.06)' },
+  brkOptFixedOn: { backgroundColor: 'rgba(99,116,152,0.18)', borderColor: 'rgba(71,88,122,0.8)' },
+  brkOptIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.7)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)' },
+  brkOptIconOn: { backgroundColor: 'rgba(125,211,192,0.4)' },
+  brkOptIconFixedOn: { backgroundColor: 'rgba(99,116,152,0.32)' },
+  brkOptTitle: { fontSize: 14, fontWeight: '800', color: '#31454D' },
+  brkOptTitleOn: { color: '#05302A' },
+  brkOptTitleFixedOn: { color: '#2E3654' },
+  brkOptDesc: { marginTop: 2, fontSize: 10, fontWeight: '600', color: '#7C8A92', lineHeight: 13 },
+  brkOptTick: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0E7C66' },
+  brkOptTickFixed: { backgroundColor: '#47587A' },
+  brkOptTickTxt: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  brkOptRing: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.4)' },
+  brkCancel: { marginTop: 13, paddingVertical: 12, borderRadius: 15, alignItems: 'center', backgroundColor: 'rgba(220,38,38,0.09)', borderWidth: 1.5, borderColor: 'rgba(220,38,38,0.34)' },
+  brkCancelTxt: { fontSize: 13, fontWeight: '800', color: '#DC2626', letterSpacing: 0.2 },
   // ── محرِّرُ البريك (كريميّ في القلب) ──
   editScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(10,32,38,0.26)' },
   editCard: { width: '100%', maxWidth: 360, padding: 17, borderRadius: 26, backgroundColor: 'rgba(253,247,238,0.97)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)' },

@@ -1704,7 +1704,7 @@ export async function updateScheduleSettings(
 // أوقاتُ الاستراحة (بريك) لكلِّ العيادات — مصفوفة {start,end} بالدقائق من منتصف الليل. تُقرأ مع بقيّة الإعدادات.
 export async function updateScheduleBreaks(
   clinicId: string,
-  breaks: { start: number; end: number }[]
+  breaks: { start: number; end: number; fixed?: boolean }[]
 ): Promise<DatabaseResponse<any>> {
   try {
     const { data, error } = await supabase
