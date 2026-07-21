@@ -128,36 +128,36 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
     }
   }
 
-  // ── البريك لكلِّ عيادةٍ على حدة، يُعامَلُ كمريضٍ في الطابور ──
-  //   • يبدأُ في وقتِه المحدَّد إن كان الكرسيُّ فارغًا له.
-  //   • إن كان الكرسيُّ مشغولًا وقتَها — بمريضٍ جارٍ، أو بصاحبِ الدورِ الذي تأخّرَ وما زالَ يُعالَج —
-  //     يُرحَّلُ البريكُ إلى ما بعدِ فراغِ الكرسيّ («يتحرّكُ مع الوقت»: ١٠:٣٠ ← ١٠:٣٥ ← …).
-  //   • مَن يأتي دورُه بعدَ وقتِ البريك ينتظرُ إلى ما بعدَه.
+  // ── البريك لكلِّ عيادةٍ على حدة: كتلةٌ **ثابتةٌ في وقتِها المحدَّد** ──
+  //   • الخطُّ الزمنيُّ لا يحرّكُه، والمنتظِرون المتوقَّعون لا يحرّكونَه، و«غيرُ المتاح» لا يحرّكُه.
+  //   • يحرّكُه شيءٌ واحدٌ فقط: انشغالٌ **حقيقيٌّ** — مريضٌ دخلَ فعلًا (سُجِّل) عندَ/قبلَ وقتِ البريكِ وما زالَ
+  //     يُعالَجُ خلالَه → يُرحَّلُ البريكُ إلى ما بعدِ انتهائِه. المتوقَّعون/غيرُ المتاحِ يلتفّونَ حولَه (يأتون بعدَه إن بلغوه).
   const brs = [...breaks].sort((a, b) => a.start - b.start);
-  const bp: { [c: string]: number } = {};           // مؤشِّرُ البريكِ التالي لكلِّ عيادة
-  const firstWait: { [c: string]: boolean } = {};   // ما زلنا ننتظرُ أوّلَ منتظِرٍ في العيادة؟
-  const realSpan: { [c: string]: number } = {};     // نهايةُ الانشغالِ الحقيقيّ (يتخطّى وقتَ البريك؟)
-  chairs.forEach((c) => { bp[c] = 0; firstWait[c] = true; realSpan[c] = hasReal[c] ? free[c] : -Infinity; });
-
-  // يضعُ البريكاتِ التي حانَ وقتُها والكرسيُّ فارغٌ لها، قبلَ المريضِ التالي؛ ويتوقّفُ إن كان
-  // التالي هو صاحبَ الدورِ الحاليَّ (تأخّرَ فيُعالَجُ أوّلًا فيُرحَّلُ البريكُ إلى ما بعدَه).
-  const flushBreaks = (c: string) => {
-    while (bp[c] < brs.length) {
-      const br = brs[bp[c]];
-      if (br.start > free[c]) break;                       // لم يحِنْ وقتُه بعد
-      if (firstWait[c] && realSpan[c] <= br.start) break;  // صاحبُ الدورِ الحاليُّ يُعالَجُ أوّلًا
-      const s = Math.max(br.start, free[c]);
+  const breakIv: { [c: string]: { start: number; end: number }[] } = {};   // فتراتُ البريكِ الفعليّةُ (لالتفافِ المنتظِرين)
+  chairs.forEach((c) => { breakIv[c] = []; });
+  for (const c of chairs) {
+    const realBlocks = lanes[c].slice();   // في هذه المرحلةِ كلُّ كتلِ العيادةِ حقيقيّةٌ (منجَز/جارٍ) — لم يُوضَعْ منتظِرٌ بعد
+    for (const br of brs) {
       const d = Math.max(1, br.end - br.start);            // مدّةٌ ثابتةٌ (تُعرَضُ داخلَ الكرت)
+      let s = br.start;
+      // ادفعْه فقط بانشغالٍ حقيقيٍّ يغطّي وقتَه (مريضٌ دخلَ عندَ/قبلَه وما زالَ) — لا الخطُّ الزمنيُّ ولا المتوقَّعون
+      for (let g = 0; g < 8; g++) {
+        const cover = realBlocks.find((rb) => rb.start <= s && s < rb.end);
+        if (!cover) break;
+        s = cover.end;
+      }
       lanes[c].push({ start: s, end: s + d, kind: 'break', p: BREAK_P, orig: br.start });
-      free[c] = s + d; bp[c]++;
+      breakIv[c].push({ start: s, end: s + d });
     }
-  };
+  }
 
   // ── المواعيدُ المحجوزة (appointment_min): تُوضَعُ في وقتِها الثابتِ على كرسيٍّ متاحٍ لها ──
-  //   يُحجَزُ ذو الموعدِ سلَفًا، والمنتظِرون العاديّون (حسبَ الدور) يلتفّون حولَ الحجز فلا يتداخلان.
-  const apptWaiting = waiting.filter((p) => p.appointment_min != null)
+  //   يُحجَزُ ذو الموعدِ سلَفًا، والمنتظِرون العاديّون (حسبَ الدور) يلتفّون حولَ الحجزِ والبريكِ فلا يتداخلان.
+  // «غيرُ المتاح» يُعزَلُ عن الدورِ تمامًا (يُوضَعُ في المؤخّرةِ لاحقًا)، فلا يدخلُ حسابَ المواعيدِ ولا الطابور
+  const naWaiting = waiting.filter((p) => p.status === 'na');
+  const apptWaiting = waiting.filter((p) => p.status !== 'na' && p.appointment_min != null)
     .sort((a, b) => (a.appointment_min! - b.appointment_min!) || a.queue_number - b.queue_number);
-  const flowWaiting = waiting.filter((p) => p.appointment_min == null);
+  const flowWaiting = waiting.filter((p) => p.status !== 'na' && p.appointment_min == null);
 
   const apptIv: { [c: string]: { start: number; end: number }[] } = {};
   chairs.forEach((c) => { apptIv[c] = []; });
@@ -165,21 +165,20 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
     const est = estMinutes(p);
     const t = p.appointment_min!;
     const e = t + est;
-    const brkHit = brs.some((b) => t < b.end && e > b.start);   // البريك يمنعُ كلَّ الكراسي
-    // اختَرْ عيادةً بلا موعدٍ متداخلٍ ولا انشغالٍ حقيقيٍّ يتجاوزُ وقتَ الموعد
+    // اختَرْ عيادةً بلا موعدٍ متداخلٍ ولا بريكٍ متداخلٍ ولا انشغالٍ حقيقيٍّ يتجاوزُ وقتَ الموعد
     let chosen: string | null = null;
     for (const c of chairs) {
       const realBusy = hasReal[c] && free[c] > t;
-      const clash = apptIv[c].some((x) => t < x.end && e > x.start);
-      if (!realBusy && !clash && !brkHit) { chosen = c; break; }
+      const clash = apptIv[c].concat(breakIv[c]).some((x) => t < x.end && e > x.start);
+      if (!realBusy && !clash) { chosen = c; break; }
     }
     if (chosen == null) chosen = earliestFree();               // احتياطًا: أقربُ كرسيٍّ (قد يتأخّر)
     const s = Math.max(t, hasReal[chosen] ? free[chosen] : t);
-    lanes[chosen].push({ start: s, end: s + est, kind: p.status === 'na' ? 'na' : 'fut', p });
+    lanes[chosen].push({ start: s, end: s + est, kind: 'fut', p });
     apptIv[chosen].push({ start: s, end: s + est });
   }
-  // يدفعُ بدايةَ المنتظِرِ العاديِّ إلى ما بعدِ أيِّ موعدٍ محجوزٍ يتداخلُ معه
-  const avoidAppts = (s: number, est: number, ivs: { start: number; end: number }[]): number => {
+  // يدفعُ بدايةَ المنتظِرِ العاديِّ إلى ما بعدِ أيِّ فترةٍ محجوزةٍ (موعدٍ أو بريك) يتداخلُ معها
+  const avoidIv = (s: number, est: number, ivs: { start: number; end: number }[]): number => {
     let x = s;
     for (let g = 0; g < 16; g++) {
       let moved = false;
@@ -193,25 +192,25 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
   flowWaiting.sort((a, b) => (isPriority(b) ? 1 : 0) - (isPriority(a) ? 1 : 0) || a.queue_number - b.queue_number);
   for (const p of flowWaiting) {
     const est = estMinutes(p);
-    const na = p.status === 'na';
-    const pri = !na && isPriority(p);                      // غيرُ المتاحِ لا أولويّةَ له — يبقى في ترتيبِ دورِه
+    const pri = isPriority(p);
     const lane = pri ? earliestFree()
       : (isRealClinic(p.clinic) && lanes[p.clinic!] ? p.clinic! : earliestFree());
-    flushBreaks(lane);                                     // بريكاتٌ مستحقّةٌ قبلَ هذا المريض
-    const s = avoidAppts(free[lane], est, apptIv[lane]);   // تجنَّبِ المواعيدَ المحجوزة
-    lanes[lane].push({ start: s, end: s + est, kind: na ? 'na' : (pri ? 'eld' : 'fut'), p });
-    free[lane] = s + est; firstWait[lane] = false;         // يحجزُ دورَه فلا يقفزُ ولا يتراكبُ مع مَن بعده
+    // بدايةُ المنتظِرِ = بعدَ فراغِ الكرسيِّ الفعليِّ (إنجازُ سابقِه المبكرُ أو المتأخّر)، ولا تسبقُ الآنَ أبدًا،
+    // ويلتفُّ حولَ المواعيدِ **والبريك** (فلا يدفعُ البريكَ بل يأتي بعدَه إن بلغَه).
+    const s = avoidIv(Math.max(free[lane], nowMin), est, apptIv[lane].concat(breakIv[lane]));
+    lanes[lane].push({ start: s, end: s + est, kind: pri ? 'eld' : 'fut', p });
+    free[lane] = s + est;                                   // يحجزُ دورَه فلا يقفزُ ولا يتراكبُ مع مَن بعده
   }
 
-  // بريكاتٌ متبقّيةٌ بعدَ آخرِ مريضٍ في كلِّ عيادة (أو عياداتٌ بلا منتظِرين)
-  for (const c of chairs) {
-    while (bp[c] < brs.length) {
-      const br = brs[bp[c]];
-      const s = Math.max(br.start, free[c]);
-      const d = Math.max(1, br.end - br.start);
-      lanes[c].push({ start: s, end: s + d, kind: 'break', p: BREAK_P, orig: br.start });
-      free[c] = s + d; bp[c]++;
-    }
+  // ── «غيرُ المتاح»: يُنقَلُ دائمًا إلى **مؤخّرةِ** الكروت (بعدَ كلِّ المنتظِرين) فلا يحجزُ وقتًا ولا يشوّشُ الدور ──
+  //   نُودِعُه آخرَ العيادةِ (بعدَ آخرِ كرت، ملتفًّا حولَ البريك)، ويُظهِرُ وقتَ ندائِه — لا وقتَ انتهاء. إن عادَ متاحًا
+  //   فُقِدَ وسمُ 'na' فيعودُ تلقائيًّا إلى ترتيبِ دورِه (flowWaiting حسبَ queue_number؛ إن كان دورُه أوّلَ فمقدّمة).
+  for (const p of naWaiting) {
+    const est = estMinutes(p);
+    const lane = (isRealClinic(p.clinic) && lanes[p.clinic!]) ? p.clinic! : earliestFree();
+    const s = avoidIv(Math.max(free[lane], nowMin), est, breakIv[lane]);
+    lanes[lane].push({ start: s, end: s + est, kind: 'na', p });
+    free[lane] = s + est;                                   // ركمُ عدّةِ «غير متاح» دونَ تراكب (لا شيءَ يُوضَعُ بعدَها)
   }
 
   const laneList: Lane[] = chairs.map((c) => ({
@@ -245,7 +244,7 @@ const BG_COLORS: [string, string, string] = ['#F0F4F8', '#E8EDF3', '#F5F0F8'];
 // عالَمٌ افتراضيٌّ قائمٌ بذاته يأخذُ مرضاك **الحقيقيّين** (أسماؤهم/علاجُهم/مدّتُهم) ويتجاهلُ
 // أوقاتَهم الحقيقيّةَ تمامًا. **لا شيءَ تلقائيّ**: المريضُ يبقى منتظِرًا حتّى تُدخِلَه أنتَ للعيادةِ
 // (بنقرِه على المخطّط) ثمّ تُنهيه — كالعملِ الحقيقيّ لكن بساعةٍ مسرَّعة. (الربطُ الحيُّ لاحقًا، بنفسِ المنطق.)
-export type SimAct = { enter?: number; chair?: number; done?: number; na?: boolean };
+export type SimAct = { enter?: number; chair?: number; done?: number; na?: boolean; naAt?: number };
 
 // نأخذُ تاريخَ اليومِ فقط لبناءِ Date؛ الساعةُ/الدقيقةُ افتراضيّةٌ بالكامل (buildLanes يقرأُ الدقائقَ فقط).
 const dateAtMin = (min: number): Date => {
@@ -259,7 +258,9 @@ function applySimActs(patients: Patient[], acts: { [id: string]: SimAct }, docto
     const a = acts[p.id];
     // «غيرُ متاح»: إجراؤُك في المحاكاةِ يَجُبُّ الحالةَ الحقيقيّةَ (وإلّا فالحالةُ الحقيقيّة)
     const naEff = a?.na !== undefined ? a.na : p.status === 'na';
-    if (naEff) return { ...p, status: 'na', clinic_entry_at: undefined, completed_at: undefined } as Patient;
+    // نسجّلُ لحظةَ النداءِ (متى صارَ غيرَ متاح) لتُعرَضَ على الكرت — من الإجراءِ إن وُجدَ وإلّا نُبقي الحقيقيّ
+    if (naEff) return { ...p, status: 'na', clinic_entry_at: undefined, completed_at: undefined,
+      na_at: a?.naAt != null ? dateAtMin(a.naAt) : p.na_at } as Patient;
     if (!a || a.enter == null) {
       // لم تُدخِلْه بعد → منتظِرٌ بلا أختامٍ ولا طبيبٍ معالِج؛ الحسّابُ يتوقّعُ مكانَه أمامَ الخطّ
       return { ...p, clinic: 'Clinic', status: p.isElderly ? 'elderly' : 'normal', clinic_entry_at: undefined, completed_at: undefined, doctor_name: undefined } as Patient;
@@ -282,7 +283,7 @@ function firstFreeChair(acts: { [id: string]: SimAct }, chairCount: number): num
   return 1;
 }
 
-const SIM_SPEEDS = [3, 10, 30, 90]; // دقائقُ افتراضيّةٌ لكلِّ ثانيةٍ حقيقيّة (3 = أبطأ)
+const SIM_SPEEDS = [1, 3, 10, 30, 90]; // دقائقُ افتراضيّةٌ لكلِّ ثانيةٍ حقيقيّة (1 = أبطأ، الافتراضيّ — دقيقةٌ لكلِّ ثانية)
 
 // ═══════════════ المصغّر (في موضع الإحصاء) ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
@@ -445,19 +446,20 @@ function BlobField() {
 function Card({ b, left, width, nowMin, onPress }:
   { b: Blk; left: number; width: number; nowMin: number; onPress: () => void }) {
   const v = CARD[b.kind]!;
-  const naFlag = b.kind === 'na';
-  const pending = b.kind === 'fut' || b.kind === 'eld';   // شارةٌ مجوّفةٌ للمنتظِر (غيرُ المتاحِ يبقى بشارةٍ مصمتةٍ فلا يبدو خافتًا)
+  const pending = b.kind === 'fut' || b.kind === 'eld';   // شارةٌ مجوّفةٌ للمنتظِر
   const est = estMinutes(b.p);
-  // وقتُ الحالةِ المحدَّدُ (الدخول + المدّةُ المقدَّرة) ثابتٌ لا يتغيّرُ حتّى لو أنهى الطبيبُ أبكرَ — يُعرَضُ كما حُدِّد
   const dur = est;
-  const endMin = b.start + est;
   const caseType = (b.p.treatment && b.p.treatment !== 'Treatment') ? b.p.treatment : 'Treatment';
   // حاويةُ الوقتِ أمامَ الحالة: المدّةُ المحدَّدةُ للحالة، وتُستبدَلُ بالمتبقّي أثناءَ العلاج (والتأخيرِ إن زاد)
   const pillText = (b.kind === 'cur' || b.kind === 'over') ? chipOf(b, nowMin) : `${dur} min`;
-  // بعدَ الإنجاز: وسمٌ أعلى يمينِ الكرتِ بجانبِ الاسم يوضّحُ الوقتَ الفعليَّ (دونَ المساسِ بالوقتِ المحدَّد) — بلا وحدةِ min
+  // بعدَ الإنجاز: وسمٌ أعلى يمينِ الكرتِ بجانبِ الاسم يوضّحُ الوقتَ الفعليَّ المستغرَق — بلا وحدةِ min
   const actualMin = Math.round(b.end - b.start);
   const showActual = (b.kind === 'done' || b.kind === 'lateDone');
   const actualTagText = b.kind === 'lateDone' ? `+${Math.max(0, actualMin - est)}` : `${actualMin}`;   // متأخّرٌ «+N» أو الوقتُ المستغرَقُ فقط «N»
+  // سطرُ «End time»: المنجَزُ يُظهِرُ وقتَ الانتهاءِ الحقيقيَّ (b.end) كي يكملَ الخطُّ الزمنيُّ سيرَه واقعيًّا؛ وغيرُه الوقتَ المحدَّد/المتوقَّع
+  const endMin = showActual ? b.end : b.start + est;
+  // «غيرُ المتاح»: بدلَ وقتِ الانتهاء نعرضُ وقتَ ندائِه (لحظةَ صيرورتِه غيرَ متاح) — نُودِيَ ولم يكنْ حاضرًا
+  const naMin = b.kind === 'na' ? minutesOfDay(b.p.na_at) : null;
   const bar = barInfo(b, nowMin);
   return (
     <TouchableOpacity activeOpacity={0.75} onPress={onPress}
@@ -487,31 +489,28 @@ function Card({ b, left, width, nowMin, onPress }:
           <View style={[cs.tPill, b.kind === 'lateDone' ? cs.actualLate : cs.actualEarly]}>
             <Text style={[cs.tPillTxt, { color: '#FFFFFF' }]} numberOfLines={1}>{actualTagText}</Text>
           </View>
-        ) : (b.kind === 'eld' || b.kind === 'na') ? (
+        ) : (b.kind === 'eld') ? (
           <View style={cs.chip}>
             <Text style={[cs.chipTxt, { color: v.ink }]} numberOfLines={1}>{chipOf(b, nowMin)}</Text>
           </View>
         ) : null}
       </View>
-      {/* تحتَ الاسم: حاويةُ الوقتِ أمامَ نوعِ الحالة (Filling / Extraction …) — وسطرُ End time يبقى مكانَه بالأسفل */}
-      {naFlag ? (
-        <Text style={[cs.meta, { color: v.ink }]} numberOfLines={1}>patient away</Text>
-      ) : (
-        <View style={cs.metaRow}>
-          <Text style={[cs.mCase, { color: v.ink }]} numberOfLines={1}>{caseType}</Text>
-          <View style={[cs.tPill, { backgroundColor: v.trk }]}>
-            <Text style={[cs.tPillTxt, { color: v.ink }]} numberOfLines={1}>{pillText}</Text>
-          </View>
+      {/* تحتَ الاسم: حاويةُ الوقتِ أمامَ نوعِ الحالة (Filling / Extraction …) — وسطرُ End time يبقى مكانَه بالأسفل.
+          «غيرُ المتاح» يعرضُ نفسَ معلوماتِ المنتظِر — يتغيّرُ لونُ الكرتِ فقط. */}
+      <View style={cs.metaRow}>
+        <Text style={[cs.mCase, { color: v.ink }]} numberOfLines={1}>{caseType}</Text>
+        <View style={[cs.tPill, { backgroundColor: v.trk }]}>
+          <Text style={[cs.tPillTxt, { color: v.ink }]} numberOfLines={1}>{pillText}</Text>
         </View>
-      )}
+      </View>
       <View style={[cs.bar, { backgroundColor: v.trk }]}>
         {!bar.empty ? <View style={[cs.barFill, { width: `${bar.fill}%` as any, backgroundColor: v.fil }]} /> : null}
         {!bar.empty && bar.tick >= 0 && bar.tick < 99.5 ? <View style={[cs.barTick, { left: `${bar.tick}%` as any, backgroundColor: v.ink }]} /> : null}
       </View>
-      {!naFlag ? (
-        <Text style={[cs.time, { color: v.ink }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}End time {fmtHM(endMin)}</Text>
-      ) : null}
-      {b.p.doctor_name && !naFlag ? (
+      {b.kind === 'na'
+        ? <Text style={[cs.time, { color: v.ink }]} numberOfLines={1}>{naMin != null ? `Called ${fmtHM(naMin)}` : 'Not available'}</Text>
+        : <Text style={[cs.time, { color: v.ink }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}End time {fmtHM(endMin)}</Text>}
+      {b.p.doctor_name ? (
         <View style={cs.docRow}>
           <Ionicons name="person" size={scale(9)} color={v.ink} />
           <Text style={[cs.doc, { color: v.ink }]} numberOfLines={1}>{b.p.doctor_name}</Text>
@@ -537,7 +536,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   const laneH = scale(96), stripH = scale(17), topH = scale(38), labelW = scale(64);
   const unitH = stripH + laneH;                    // شريطُ الأوقات + كروتُ العيادة = وحدةٌ واحدة
   const GAP = scale(8);                             // فجوةٌ دنيا بين كلِّ كرتَين متجاورَين (كي لا تلتصقَ الكروت)
-  const IDLE_GAP = scale(30);                       // مسافةٌ محجوزةٌ بعدَ كلِّ فراغٍ زمنيٍّ (≥5د) كي يظهرَ خيطُ الفراغِ المنقّطُ بوضوح
+  const MIN_IDLE = scale(12);                       // حدٌّ أدنى مرئيٌّ لخيطِ الفراغِ (للفجواتِ الصغيرةِ جدًّا فقط) — لا يُضافُ فوقَ المتناسبِ، فتبقى المسافةُ دقيقةً للأكبر
   const minWOf = (k: Kind): number => (k === 'cur' || k === 'over') ? scale(120) : scale(132);   // الجاري صارَ كرتًا كاملًا (يمشي عليه الخطُّ) فيحتاجُ عرضًا مقروءًا
   const hours: number[] = [];
   for (let h = dayStart / 60; h <= dayEnd / 60; h++) hours.push(h);
@@ -568,12 +567,19 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
         const p = predOf.get(b); if (!p) continue;
         const xpS = xm.get(p.start) as number;
         // الكرتُ يبدأُ بعدَ سابقِه في عيادتِه: عرضُه الأدنى المقروء (أو امتدادُه الزمنيّ) + فجوة.
-        // وإن سبقَه فراغٌ زمنيٌّ حقيقيٌّ (≥5د — كأن ينتهيَ مريضٌ ثمّ يتأخّرَ دخولُ التالي) نحجزُ مسافةً إضافيّةً
-        // كي لا يلتصقَ الكرتان ويظهرَ خيطُ الفراغِ المنقّطُ الدالُّ على المدّةِ الضائعة.
-        const idleRoom = (p.end < t && t - p.end >= 5) ? IDLE_GAP : 0;
+        // الفراغُ الزمنيُّ الحقيقيُّ (≥١د — ينتهي مريضٌ ثمّ يتأخّرُ دخولُ التالي) مسافتُه **دقيقةٌ متناسبةٌ مع الدقائق**
+        // (تأتي طبيعيًّا من xx)؛ نضمنُ فقط حدًّا أدنى مرئيًّا للخيطِ (MIN_IDLE) بلا إضافةٍ فوقَ المتناسبِ — فلا يتشوّهُ الأكبر.
+        // المنجَزُ (done/lateDone) يُثبَّتُ يمينُه على وقتِ إنجازِه ويمتدُّ يسارًا (قاعدةُ الاقتراض) — فلا نحجزُ عرضَه الأدنى
+        // إلى يمينِه (وإلّا ظهرَ فراغٌ زائفٌ = فائضُ عرضِه)، بل تُدارُ مسافتُه من نهايتِه فقط فتصيرُ الفجوةُ دقيقةً حقًّا.
+        const pDone = p.kind === 'done' || p.kind === 'lateDone';
+        const idleFloor = (p.end < t && t - p.end >= 1) ? MIN_IDLE : 0;
         const cand = p.end < t
-          ? Math.max(xpS + minWOf(p.kind) + GAP + idleRoom, (xm.get(p.end) as number) + GAP + idleRoom)
-          : Math.max(xpS + minWOf(p.kind) + GAP, xpS + ((p.end - p.start) / 60) * HOUR_W + GAP);
+          ? (pDone
+              ? (xm.get(p.end) as number) + Math.max(GAP, idleFloor)
+              : Math.max(xpS + minWOf(p.kind) + GAP, (xm.get(p.end) as number) + Math.max(GAP, idleFloor)))
+          : (pDone
+              ? xpS                                          // منجَزٌ متتالٍ بلا فراغ — لا قيدَ يمينَه، والفجوةُ الدنيا (GAP) تُدارُ في الرسمِ (rightBound)
+              : Math.max(xpS + minWOf(p.kind) + GAP, xpS + ((p.end - p.start) / 60) * HOUR_W + GAP));
         if (cand > xx) xx = cand;
       }
       xm.set(t, xx);
@@ -812,18 +818,18 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                               </View>
                             </View>
                           ) : null}
-                          {/* خيوطُ الفراغِ الصامتةُ بين مريضَين — نقاطٌ صغيرةٌ لا خطّ (البورد المتقطّعُ يُرسَمُ صلبًا في RN) */}
+                          {/* خيوطُ الفراغِ الصامتةُ بين مريضَين — تظهرُ لأيِّ فراغٍ ≥ دقيقةٍ واحدة، وطولُها متناسبٌ مع الوقتِ الحقيقيّ */}
                           {laid.map((o, i) => {
-                            if (i === 0 || o.idle < 5) return null;
+                            if (i === 0 || o.idle < 1) return null;
                             const prev = laid[i - 1];
                             const gx = prev.left + prev.width;
                             const gw = o.left - gx;
-                            if (gw < scale(10)) return null;
+                            if (gw < scale(5)) return null;
                             const lineW = Math.max(scale(1), gw - scale(8));
                             return (
                               <React.Fragment key={'idle' + i}>
-                                {/* الوقتُ الحقيقيُّ المتاحُ فوقَ الخيط (بين مريضَين، أو بين آخرِ مريضٍ والبريك) — يظهرُ دائمًا */}
-                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + gw / 2 - scale(30), width: scale(60), top: laneH / 2 - scale(13) }]}>{fmtGap(o.idle)}</Text>
+                                {/* الوقتُ الحقيقيُّ المتاحُ فوقَ الخيط (بين مريضَين، أو بين آخرِ مريضٍ والبريك) — يظهرُ دائمًا ولو دقيقة */}
+                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + gw / 2 - scale(28), width: scale(56), top: laneH / 2 - scale(15) }]}>{fmtGap(o.idle)}</Text>
                                 {/* خيطُ النقطِ المتّصلُ عبرَ كاملِ المسافة (svg — لا ينقطعُ مهما بَعُدت) */}
                                 <Svg pointerEvents="none" style={{ position: 'absolute', left: gx + scale(4), top: laneH / 2 - scale(1), width: lineW, height: scale(3) }} width={lineW} height={scale(3)}>
                                   <SvgLine x1={0} y1={scale(1.5)} x2={lineW} y2={scale(1.5)} stroke="rgba(140,160,168,0.75)" strokeWidth={scale(2)} strokeDasharray={`${scale(2)} ${scale(5)}`} strokeLinecap="round" />
@@ -1062,7 +1068,9 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
         const cur = patients.find((p) => p.id === id);
         setSimActs((prev) => {
           const nowNA = prev[id]?.na !== undefined ? prev[id]!.na : cur?.status === 'na';
-          return { ...prev, [id]: { ...prev[id], na: !nowNA } };
+          const turningOn = !nowNA;   // عندَ التفعيل نُثبّتُ وقتَ النداء (لحظةَ المحاكاةِ الآن)؛ وعندَ الإلغاء نمحوه
+          // نمحو الدخول/الإنجاز في الحالتين: التفعيل يُخرِجُه من الكرسيّ، والإلغاءُ يُعيدُه إلى الطابورِ حسبَ رقمِ الدور (لا يستأنفُ علاجًا)
+          return { ...prev, [id]: { ...prev[id], na: turningOn, naAt: turningOn ? Math.round(simNowMin) : undefined, enter: undefined, done: undefined } };
         });
       } else onToggleNA?.(id);
     },
@@ -1193,7 +1201,7 @@ const full = scaledStyleSheet({
   vacantTxt: { fontSize: 10.5, fontWeight: '800', color: '#5A7079' },
   idleDot: { width: 2, height: 2, borderRadius: 1, marginRight: 5, backgroundColor: 'rgba(140,160,168,0.6)' },
   // الوقتُ المتاحُ فوقَ نقاطِ الفراغ — رماديٌّ بسيطٌ في الوسط
-  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '800', letterSpacing: 0.2, color: '#8CA0A8' },
+  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2, color: '#9AA8AF' },
   // ── الاستراحة (كريميّة) ──
   brk: { position: 'absolute', top: 13, bottom: 13, borderRadius: 15, alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', backgroundColor: 'rgba(250,239,220,0.82)', borderWidth: 1, borderColor: 'rgba(212,186,148,0.5)' },
   brkChip: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.82)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
@@ -1238,6 +1246,7 @@ const full = scaledStyleSheet({
   actDoneOff: { backgroundColor: 'rgba(140,160,168,0.35)' },
   actDoneTxt: { fontSize: 15, fontWeight: '800', color: '#fff' },
   hint: { marginTop: 7, fontSize: 10, fontWeight: '700', textAlign: 'center', color: '#8CA0A8' },
+  // إزالةٌ من المخطّطِ فقط (لغيرِ المتاح)
   actClose: { marginTop: 10, paddingVertical: 8, alignItems: 'center' },
   actCloseTxt: { fontSize: 13.5, fontWeight: '700', color: '#6B7280' },
   // ── محرِّرُ البريك (كريميّ في القلب) ──

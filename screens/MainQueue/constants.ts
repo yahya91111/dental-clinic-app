@@ -87,6 +87,7 @@ export interface Patient {
   registered_at?: Date;
   clinic_entry_at?: Date;
   completed_at?: Date;
+  na_at?: Date;              // لحظةُ صيرورتِه «غيرَ متاح» (وقتُ النداء) — تُعرَضُ على كرتِه بدلَ وقتِ الانتهاء
   doctor_name?: string;
   assigned_by_doctor_name?: string;
   permanent_patient_id?: string;
