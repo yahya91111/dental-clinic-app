@@ -1384,8 +1384,9 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
       const updateData: any = {};
       if (field === 'clinic') {
         updateData.clinic = value; // Update clinic name only
-        // Record clinic entry time
-        updateData.clinic_entry_at = new Date().toISOString();
+        // عيادةٌ حقيقيّة (Clinic N) → نختمُ وقتَ الدخول؛ أمّا إزالةُ العيادة (Clinic بلا رقم/فارغ) فنمحو الختمَ —
+        // فالتراجعُ عن إدخالٍ خاطئٍ يُرجِعُ المريضَ إلى الانتظارِ في المخطّطِ والبطاقةِ المصغّرة بدلَ بقائِه «داخلَ العيادة».
+        updateData.clinic_entry_at = /^clinic\s*\d+/i.test(value) ? new Date().toISOString() : null;
       } else {
         updateData[field] = value;
       }

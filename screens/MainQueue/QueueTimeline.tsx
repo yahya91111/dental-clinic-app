@@ -230,17 +230,6 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
   return { lanes: laneList, dayStart: Math.min(7 * 60, Math.floor(minS / 60) * 60), dayEnd: Math.max(21 * 60, Math.ceil(maxE / 60) * 60) };
 }
 
-// ── ألوانُ الحالات ──
-const VIS: { [k in Kind]: { bg: string; ink: string; border?: string; dashed?: boolean } } = {
-  done: { bg: 'rgba(148,163,184,0.30)', ink: '#475569' },                          // منجَزٌ في وقته — رماديّ
-  cur: { bg: '#7DD3C0', ink: '#08312a' },                                          // جارٍ ضمن المدّة — أخضر
-  over: { bg: '#EF4444', ink: '#FFFFFF', border: '#DC2626' },                      // الطبيبُ متأخّر — أحمرُ كامل
-  lateDone: { bg: 'rgba(239,68,68,0.55)', ink: '#7F1D1D', border: '#EF4444' },     // أُنجزَ متأخّرًا — يبقى أحمر
-  fut: { bg: 'rgba(125,211,192,0.30)', ink: '#0E7C66', border: 'rgba(13,124,102,0.55)', dashed: true }, // منتظِرٌ — تنبّؤٌ أمامَ الخطّ
-  eld: { bg: '#FBBF24', ink: '#7c2d12' },                                          // كبيرُ سنٍّ منتظِر
-  break: { bg: 'rgba(100,116,139,0.16)', ink: '#475569', border: 'rgba(100,116,139,0.5)', dashed: true }, // استراحةٌ — كتلةٌ لكلِّ عيادة
-  na: { bg: 'rgba(148,163,184,0.20)', ink: '#94a3b8', border: 'rgba(148,163,184,0.45)', dashed: true },  // غيرُ متاحٍ — باهتٌ ولا يحجزُ وقتًا
-};
 const TEAL_INK = '#0E7C66';
 const BG_COLORS: [string, string, string] = ['#F0F4F8', '#E8EDF3', '#F5F0F8'];
 
@@ -289,57 +278,63 @@ function firstFreeChair(acts: { [id: string]: SimAct }, chairCount: number): num
 
 const SIM_SPEEDS = [1, 3, 10, 30, 90]; // دقائقُ افتراضيّةٌ لكلِّ ثانيةٍ حقيقيّة (1 = أبطأ، الافتراضيّ — دقيقةٌ لكلِّ ثانية)
 
-// ═══════════════ المصغّر (في موضع الإحصاء) ═══════════════
+// ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
-  const { lanes, dayStart, dayEnd } = data;
-  const span = Math.max(1, dayEnd - dayStart);
-  const pct = (m: number) => `${Math.max(0, Math.min(100, ((m - dayStart) / span) * 100))}%`;
-  const wpct = (a: number, b: number) =>
-    `${Math.max(2, ((Math.min(b, dayEnd) - Math.max(a, dayStart)) / span) * 100)}%`;
-  const total = lanes.reduce((n, l) => n + l.blocks.length, 0);
+  const { lanes } = data;
+  const flat = lanes.flatMap((l) => l.blocks.map((b) => ({ b, clinic: l.short })));
+  const serving = flat.filter((x) => x.b.kind === 'cur' || x.b.kind === 'over');
+  const upcoming = flat.filter((x) => x.b.kind === 'fut' || x.b.kind === 'eld').sort((a, b) => a.b.start - b.b.start);
+  const naCount = flat.filter((x) => x.b.kind === 'na').length;
+  const next = upcoming[0] ?? null;                 // التاليَ في الدور (أبكرُ منتظِرٍ متوقَّع)
+  const then = upcoming.slice(1, 3);                // الذين بعده (اثنان)
+  const nextBreak = flat.filter((x) => x.b.kind === 'break' && x.b.end > nowMin).sort((a, b) => a.b.start - b.b.start)[0]?.b ?? null;
+  const caseOf = (p: Patient) => (p.treatment && p.treatment !== 'Treatment') ? p.treatment : 'Treatment';
 
   return (
     <View style={mini.card}>
       <View style={mini.expIcon}><Text style={mini.expTxt}>⤢</Text></View>
       {simOn && <View style={mini.simBadge}><Text style={mini.simBadgeTxt}>SIM {fmtHM(nowMin)}</Text></View>}
-      <View style={mini.body}>
-        <View style={mini.labels}>
-          {lanes.map((l) => (
-            <View key={l.clinic} style={mini.labelCell}><Text style={mini.lbl}>{l.short}</Text></View>
-          ))}
-        </View>
-        <View style={mini.tracks}>
-          {lanes.map((l) => (
-            <View key={l.clinic} style={mini.trackRow}>
-              {l.blocks.map((b, i) => {
-                if (b.kind === 'break') {
-                  return (
-                    <View key={i} style={[mini.blk, { backgroundColor: VIS.break.bg, left: pct(b.start) as any, width: wpct(b.start, b.end) as any, minWidth: scale(8), borderWidth: scale(1), borderColor: VIS.break.border!, borderStyle: 'dashed' }]} />
-                  );
-                }
-                const digits = String(b.p.queue_number).length;
-                return (
-                  <View key={i} style={[mini.blk, { backgroundColor: VIS[b.kind].bg, left: pct(b.start) as any, width: wpct(b.start, b.end) as any, minWidth: scale(14 + digits * 9) },
-                    VIS[b.kind].border ? { borderWidth: scale(1), borderColor: VIS[b.kind].border!, borderStyle: VIS[b.kind].dashed ? 'dashed' : 'solid' } : null]}>
-                    <Text style={[mini.q, { color: VIS[b.kind].ink }]} numberOfLines={1}>{b.p.queue_number}</Text>
-                  </View>
-                );
-              })}
+
+      {next ? (
+        <>
+          <Text style={mini.eyebrow}>UP NEXT</Text>
+          <View style={mini.nextRow}>
+            <View style={[mini.badge, next.b.kind === 'eld' && mini.badgeEld]}>
+              <Text style={[mini.badgeTxt, next.b.kind === 'eld' && { color: '#7c2d12' }]}>{next.b.p.queue_number}</Text>
             </View>
-          ))}
-          <View pointerEvents="none" style={[mini.nowLine, { left: pct(nowMin) as any }]}>
-            <View style={mini.nowDot} />
+            <View style={{ flex: 1 }}>
+              <Text style={mini.name} numberOfLines={1}>{next.b.p.name}</Text>
+              <Text style={mini.sub} numberOfLines={1}>{caseOf(next.b.p)} · {estMinutes(next.b.p)} min</Text>
+            </View>
+            <View style={mini.timeCol}>
+              <Text style={mini.timeBig}>{fmtHM(next.b.start)}</Text>
+              <Text style={mini.timeSub}>{next.clinic}</Text>
+            </View>
           </View>
-          {total === 0 && <Text style={mini.empty}>لا مرضى بعد</Text>}
-        </View>
-      </View>
-      <View style={mini.ruler}>
-        <View style={{ width: scale(30) }} />
-        <View style={mini.rulerTicks}>
-          <Text style={mini.tick}>{fmtHM(dayStart)}</Text>
-          <Text style={mini.tick}>{fmtHM((dayStart + dayEnd) / 2)}</Text>
-          <Text style={mini.tick}>{fmtHM(dayEnd)}</Text>
-        </View>
+
+          {then.length ? (
+            <View style={mini.thenRow}>
+              <Text style={mini.thenLbl}>THEN</Text>
+              {then.map((x, i) => (
+                <View key={i} style={mini.thenChip}>
+                  <Text style={mini.thenNum}>{x.b.p.queue_number}</Text>
+                  <Text style={mini.thenName} numberOfLines={1}>{x.b.p.name}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </>
+      ) : serving.length ? (
+        <><Text style={mini.eyebrow}>QUEUE</Text><Text style={mini.emptyBig}>No one waiting</Text><Text style={mini.emptySub}>{serving.length} patient{serving.length > 1 ? 's' : ''} in clinic now</Text></>
+      ) : (
+        <><Text style={mini.eyebrow}>QUEUE</Text><Text style={mini.emptyBig}>No patients yet</Text><Text style={mini.emptySub}>Add patients to see who's next</Text></>
+      )}
+
+      <View style={mini.statsRow}>
+        <View style={mini.stat}><View style={[mini.dot, mini.dotServing]} /><Text style={mini.statTxt}>{serving.length} in clinic</Text></View>
+        <View style={mini.stat}><View style={[mini.dot, mini.dotWait]} /><Text style={mini.statTxt}>{upcoming.length} waiting</Text></View>
+        {nextBreak ? <View style={mini.stat}><Text style={mini.statIcon}>☕</Text><Text style={mini.statTxt}>{fmtHM(nextBreak.start)}</Text></View> : null}
+        {naCount ? <View style={mini.stat}><Text style={mini.statIcon}>🚫</Text><Text style={mini.statTxt}>{naCount} away</Text></View> : null}
       </View>
     </View>
   );
@@ -1212,25 +1207,35 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 }
 
 const mini = scaledStyleSheet({
-  card: { minHeight: 150, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', paddingVertical: 12, paddingHorizontal: 14, justifyContent: 'center' },
-  expIcon: { position: 'absolute', top: 8, right: 12, zIndex: 3 },
-  expTxt: { fontSize: 15, color: '#64748b' },
-  body: { flexDirection: 'row', flex: 1, alignItems: 'center' },
-  labels: { justifyContent: 'center' },
-  labelCell: { width: 34, height: 27, marginBottom: 6, alignItems: 'center', justifyContent: 'center' },
-  lbl: { fontSize: 12, fontWeight: '800', color: '#334155' },
-  tracks: { flex: 1, position: 'relative', paddingLeft: 6 },
-  trackRow: { height: 27, marginBottom: 6, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 8, position: 'relative', overflow: 'hidden' },
-  blk: { position: 'absolute', top: 3, bottom: 3, paddingHorizontal: 4, borderRadius: 5, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)' },
-  q: { fontSize: 13, fontWeight: '800' },
-  nowLine: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: '#0E7C66' },
-  nowDot: { position: 'absolute', top: -3, left: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: '#0E7C66' },
-  empty: { position: 'absolute', alignSelf: 'center', top: '42%', fontSize: 13, fontWeight: '600', color: '#94a3b8' },
-  ruler: { flexDirection: 'row', marginTop: 5 },
-  rulerTicks: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 6 },
-  tick: { fontSize: 10, color: '#94a3b8', fontWeight: '600' },
-  simBadge: { position: 'absolute', top: 8, left: 12, zIndex: 3, backgroundColor: '#0E7C66', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2 },
+  card: { minHeight: 150, backgroundColor: 'rgba(255,255,255,0.42)', borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', paddingVertical: 13, paddingHorizontal: 15, justifyContent: 'center' },
+  expIcon: { position: 'absolute', top: 9, right: 12, zIndex: 3 },
+  expTxt: { fontSize: 14, color: '#94a3b8' },
+  simBadge: { position: 'absolute', top: 9, left: 13, zIndex: 3, backgroundColor: '#0E7C66', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2 },
   simBadgeTxt: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  eyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.4, color: '#8CA0A8', marginBottom: 9 },
+  nextRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  badge: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#7DD3C0', shadowColor: '#09705C', shadowOpacity: 0.28, shadowRadius: 7, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  badgeEld: { backgroundColor: '#FBBF24' },
+  badgeTxt: { fontSize: 17, fontWeight: '800', color: '#05302A' },
+  name: { fontSize: 16, fontWeight: '800', color: '#12232A', letterSpacing: -0.3 },
+  sub: { marginTop: 2, fontSize: 11, fontWeight: '600', color: '#5A7079' },
+  timeCol: { alignItems: 'flex-end' },
+  timeBig: { fontSize: 15, fontWeight: '800', color: '#0E7C66' },
+  timeSub: { marginTop: 1, fontSize: 9.5, fontWeight: '700', color: '#8CA0A8' },
+  thenRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 11 },
+  thenLbl: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.8, color: '#9AACB3' },
+  thenChip: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(140,160,168,0.24)' },
+  thenNum: { fontSize: 10.5, fontWeight: '800', color: '#0E7C66' },
+  thenName: { flex: 1, fontSize: 10.5, fontWeight: '700', color: '#31454D' },
+  emptyBig: { fontSize: 16, fontWeight: '800', color: '#31454D' },
+  emptySub: { marginTop: 3, fontSize: 11, fontWeight: '600', color: '#8CA0A8' },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(140,160,168,0.18)' },
+  stat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  dotServing: { backgroundColor: '#34D399' },
+  dotWait: { backgroundColor: '#B6C2C8' },
+  statIcon: { fontSize: 10 },
+  statTxt: { fontSize: 10, fontWeight: '700', color: '#5A7079' },
 }) as any;
 
 const full = scaledStyleSheet({
