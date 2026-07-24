@@ -1760,6 +1760,18 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     if (error) Alert.alert('Error', error.message);
   };
 
+  // note written on the back of the card (PatientCardV2's flip) — self-contained, optimistic.
+  // null clears it. Distinct from the modal flow, which keeps its own notePatientId/currentNote state.
+  const handleWriteNote = async (patientId: string, note: string | null) => {
+    setPatients(prev => prev.map(p => (p.id === patientId ? { ...p, note: note ?? undefined } : p)));
+    try {
+      const { error } = await supabase.from('patients').update({ note }).eq('id', patientId);
+      if (error) throw error;
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
   // same-day appointment (entry time): optimistic so the card row + timeline reflect it at once, then persist.
   const handleSetAppointment = async (patientId: string, min: number | null) => {
     setPatients(prev => prev.map(p => (p.id === patientId ? { ...p, appointment_min: min ?? undefined } : p)));
@@ -1780,6 +1792,7 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     handleUpdateField,
     handleSetExpectedMinutes,
     handleSetAppointment,
+    handleWriteNote,
     handleDeleteNote,
     loadCardTimeline,
     handleViewDetails,

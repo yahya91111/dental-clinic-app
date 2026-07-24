@@ -2,8 +2,10 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   Animated,
+  Easing,
   LayoutAnimation,
   Platform,
   UIManager,
@@ -54,7 +56,11 @@ const G = {
   teal: ['#0EA5A0', '#0A7A76'] as [string, string],
   done: ['#10B981', '#0B8F63'] as [string, string],
   away: ['#7C8798', '#4B5563'] as [string, string],
+  keep: ['#5B7CD8', '#9B6FD4'] as [string, string],
 };
+
+// the reverse of the card: the same wash, lit from the other side
+const BACK_TINT: [string, string] = ['rgba(212,184,232,0.30)', 'rgba(184,212,241,0.28)'];
 
 const ACCENT = { clinic: C.blue, cond: '#EA8A0C', tx: C.teal };
 const ACCENT_G = { clinic: G.blue, cond: G.amber, tx: G.teal };
@@ -131,7 +137,20 @@ const fmtClock = (min: number) => {
   return `${hh}:${m < 10 ? '0' + m : m} ${h < 12 ? 'AM' : 'PM'}`;
 };
 
-type FieldKey = 'clinic' | 'cond' | 'tx' | 'dur';
+type FieldKey = 'clinic' | 'cond' | 'tx' | 'dur' | 'flags';
+
+// ── the note lives on the BACK of the card: it turns over, it doesn't open a window ──
+const FLIP_MS = 460;
+const NOTE_H = scale(322);       // height the card holds while turned over
+const NOTE_MAX = 280;
+
+// full-word badge pills (left edge) — [light, base] gradient + glyph
+const BADGE_G: Record<string, [string, string]> = {
+  na: ['#8C99AC', C.away],
+  elderly: ['#FFB05C', C.elderly],
+  special: ['#A78BFA', C.special],
+  note: ['#6D9BFF', '#3B82F6'],
+};
 
 // ── one segmented control (equal segments, selected one filled with the accent) ──
 function Segmented({
@@ -425,6 +444,7 @@ export interface PatientCardV2Props {
   onUpdateField: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
   onSetDuration: (patientId: string, minutes: number | null) => void;
   onSetAppointment: (patientId: string, min: number | null) => void;
+  onWriteNote: (patientId: string, note: string | null) => void;
   onMenuAction: (patientId: string, action: string) => void;
   onProfilePress: (patient: Patient) => void;
   onToggleExpand: () => void;
@@ -438,6 +458,7 @@ export function PatientCardV2({
   onUpdateField,
   onSetDuration,
   onSetAppointment,
+  onWriteNote,
   onMenuAction,
   onProfilePress,
   onToggleExpand,
@@ -446,8 +467,56 @@ export function PatientCardV2({
   // (the header collapses with the same animation the old card used).
   const open = isExpanded;
   const [row, setRow] = useState<FieldKey | null>(null);
+  // the visit timeline is reference info — folded away until asked for
+  const [showVisit, setShowVisit] = useState(false);
   // collapse any open selector when the card is closed from the outside
-  useEffect(() => { if (!isExpanded) setRow(null); }, [isExpanded]);
+  useEffect(() => { if (!isExpanded) { setRow(null); setShowVisit(false); } }, [isExpanded]);
+
+  // ── the turn: one object, two sides. Rotation runs on the native driver; the height
+  // change rides LayoutAnimation (also native) at the same duration, and the faces swap
+  // exactly at the half-way point where both are edge-on and invisible. ──
+  const spin = useRef(new Animated.Value(0)).current;
+  const [turned, setTurned] = useState(false);   // drives height + hides the drawer
+  const [backUp, setBackUp] = useState(false);   // keeps the back mounted through the turn
+  const [draft, setDraft] = useState('');
+  const noteRef = useRef<TextInput>(null);
+
+  const layout = (d = FLIP_MS) =>
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(d, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity),
+    );
+
+  const turnToNote = () => {
+    setDraft(patient.note || '');
+    setBackUp(true);
+    setRow(null);
+    setShowVisit(false);
+    layout();
+    setTurned(true);
+    // no auto-focus: the keyboard comes up only when the doctor taps the field
+    Animated.timing(spin, {
+      toValue: 1, duration: FLIP_MS, easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+    }).start();
+  };
+
+  const turnBack = () => {
+    noteRef.current?.blur();
+    layout();
+    setTurned(false);
+    Animated.timing(spin, {
+      toValue: 0, duration: FLIP_MS, easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+    }).start(() => setBackUp(false));
+  };
+
+  const keepNote = () => { onWriteNote(patient.id, draft.trim() || null); turnBack(); };
+  const dropNote = () => { setDraft(''); onWriteNote(patient.id, null); turnBack(); };
+
+  // faces: front turns 0→180, back 180→360; opacity flips hard at the edge-on midpoint
+  // so the wrong face can never show even where backfaceVisibility is unreliable
+  const frontSpin = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+  const backSpin = spin.interpolate({ inputRange: [0, 1], outputRange: ['-180deg', '0deg'] });
+  const frontFade = spin.interpolate({ inputRange: [0, 0.5, 0.501, 1], outputRange: [1, 1, 0, 0] });
+  const backFade = spin.interpolate({ inputRange: [0, 0.499, 0.5, 1], outputRange: [0, 0, 1, 1] });
 
   // ── swipe-to-reveal via gesture-handler Swipeable (coordinates cleanly with the scroll view) ──
   const swipeRef = useRef<Swipeable>(null);
@@ -490,6 +559,7 @@ export function PatientCardV2({
   const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.teal : kind === 'na' ? C.away : C.blue;
   const durLabel = needsDuration(patient.treatment) ? `${durOf(patient)}min` : '';
   const caseText = [patient.condition, patient.treatment, durLabel].filter((x) => x && x !== 'Condition' && x !== 'Treatment').join(' · ');
+  const flagList = [patient.isElderly ? 'Elderly' : null, patient.isSpecialNeeds ? 'Special' : null].filter(Boolean) as string[];
 
   const animate = (d = 200) =>
     LayoutAnimation.configureNext(
@@ -519,13 +589,13 @@ export function PatientCardV2({
     setTimeout(() => { animate(180); setRow(null); }, 260);
   };
 
-  // floating status micro-badges (top edge)
-  const badges: { t: string; c: string }[] = [];
-  if (kind === 'done') badges.push({ t: 'D', c: C.done });
-  if (patient.isElderly) badges.push({ t: 'E', c: C.elderly });
-  if (patient.isSpecialNeeds) badges.push({ t: 'S', c: C.special });
-  if (kind === 'na') badges.push({ t: 'X', c: C.away });
-  if (patient.note) badges.push({ t: 'N', c: '#3B82F6' });
+  // floating badges (top-LEFT edge) — full words, not codes. No "Done": the card already
+  // turns green and its status line says so. The Note badge is a shortcut to the note.
+  const badges: { t: string; g: [string, string]; ic: keyof typeof Ionicons.glyphMap; tap?: boolean }[] = [];
+  if (kind === 'na') badges.push({ t: 'NA', g: BADGE_G.na, ic: 'close' });
+  if (patient.isElderly) badges.push({ t: 'Elderly', g: BADGE_G.elderly, ic: 'walk' });
+  if (patient.isSpecialNeeds) badges.push({ t: 'Special needs', g: BADGE_G.special, ic: 'accessibility' });
+  if (patient.note) badges.push({ t: 'Note', g: BADGE_G.note, ic: 'document-text', tap: true });
 
   return (
     <Animated.View
@@ -536,16 +606,33 @@ export function PatientCardV2({
         marginBottom: scale(15),
       }}
     >
-      {badges.length > 0 && (
-        <View style={s.badges} pointerEvents="none">
-          {badges.map((b, i) => (
-            <View key={i} style={[s.badge, { backgroundColor: b.c }]}>
-              <Text style={s.badgeTxt}>{b.t}</Text>
-            </View>
-          ))}
+      {/* `backUp` outlives the turn in both directions, so badges leave as the card turns
+          away and only come back once it has fully settled on its front again */}
+      {badges.length > 0 && !backUp && (
+        <View style={s.badges}>
+          {badges.map((b, i) => {
+            const inner = (
+              <LinearGradient colors={b.g} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.badgeFill}>
+                <Ionicons name={b.ic} size={scale(11)} color="#fff" />
+                <Text style={s.badgeTxt}>{b.t}</Text>
+              </LinearGradient>
+            );
+            return b.tap ? (
+              <TouchableOpacity key={i} activeOpacity={0.8} onPress={turnToNote} style={s.badge}>
+                {inner}
+              </TouchableOpacity>
+            ) : (
+              <View key={i} style={s.badge} pointerEvents="none">{inner}</View>
+            );
+          })}
         </View>
       )}
 
+      <View style={[s.flipWrap, turned && { height: NOTE_H }]}>
+      <Animated.View
+        style={[s.face, { opacity: frontFade, transform: [{ perspective: 1000 }, { rotateY: frontSpin }] }]}
+        pointerEvents={turned ? 'none' : 'auto'}
+      >
       <View style={s.shadowWrap}>
       <View style={s.card}>
         <Swipeable
@@ -580,8 +667,8 @@ export function PatientCardV2({
               </TouchableOpacity>
             </View>
 
-            {/* drawer */}
-            {open && (
+            {/* drawer — folded away while the card is turned over */}
+            {open && !turned && (
               <View style={s.drawer}>
                 <View style={s.triad}>
                   <ConsoleRow
@@ -653,35 +740,64 @@ export function PatientCardV2({
                       </View>
                     </>
                   )}
+                  {/* flags live in the console too — it holds everything you SET */}
+                  <View style={s.rowSep} />
+                  <View>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => toggleRow('flags')} style={s.rowHead}>
+                      <View style={[s.rowIc, { backgroundColor: C.elderly + '26' }]}>
+                        <Ionicons name="star-outline" size={scale(15)} color={C.elderly} />
+                      </View>
+                      <Text style={s.rowLabel}>FLAGS</Text>
+                      <Text style={[s.rowVal, { color: flagList.length ? C.elderly : C.muted }]} numberOfLines={1}>
+                        {flagList.length ? flagList.join(', ') : '—'}
+                      </Text>
+                      <Ionicons name={row === 'flags' ? 'chevron-up' : 'chevron-down'} size={scale(15)} color={C.muted} />
+                    </TouchableOpacity>
+                    {row === 'flags' && (
+                      <View style={s.rowBody}>
+                        <View style={s.toggles}>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => onMenuAction(patient.id, 'elderly')}
+                            style={[s.tgl, patient.isElderly && { backgroundColor: C.elderly, borderColor: 'transparent' }]}
+                          >
+                            <View style={[s.pip, patient.isElderly && s.pipOn]} />
+                            <Text style={[s.tglTxt, patient.isElderly && s.tglTxtOn]}>Elderly</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => onMenuAction(patient.id, 'special_needs')}
+                            style={[s.tgl, patient.isSpecialNeeds && { backgroundColor: C.special, borderColor: 'transparent' }]}
+                          >
+                            <View style={[s.pip, patient.isSpecialNeeds && s.pipOn]} />
+                            <Text style={[s.tglTxt, patient.isSpecialNeeds && s.tglTxtOn]}>Special needs</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 <View style={s.acts}>
-                  <ActBtn icon="document-text-outline" label="Notes" kind="note" onPress={() => onMenuAction(patient.id, 'note')} />
+                  <ActBtn icon="document-text-outline" label="Notes" kind="note" onPress={turnToNote} />
                   <ActBtn icon="create-outline" label="Edit" kind="edit" onPress={() => onMenuAction(patient.id, 'edit')} />
                   <ActBtn icon="trash-outline" label="Delete" kind="danger" onPress={() => onMenuAction(patient.id, 'delete')} />
                 </View>
 
-                <View style={s.toggles}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => onMenuAction(patient.id, 'elderly')}
-                    style={[s.tgl, patient.isElderly && { backgroundColor: C.elderly, borderColor: 'transparent' }]}
-                  >
-                    <View style={[s.pip, patient.isElderly && s.pipOn]} />
-                    <Text style={[s.tglTxt, patient.isElderly && s.tglTxtOn]}>Elderly</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => onMenuAction(patient.id, 'special_needs')}
-                    style={[s.tgl, patient.isSpecialNeeds && { backgroundColor: C.special, borderColor: 'transparent' }]}
-                  >
-                    <View style={[s.pip, patient.isSpecialNeeds && s.pipOn]} />
-                    <Text style={[s.tglTxt, patient.isSpecialNeeds && s.tglTxtOn]}>Special needs</Text>
-                  </TouchableOpacity>
-                </View>
-
                 <View style={s.hr} />
-                <VisitTimeline patient={patient} />
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => { animate(200); setShowVisit((v) => !v); }}
+                  style={s.visitHead}
+                >
+                  <Text style={s.visitLabel}>DETAILS</Text>
+                  <Ionicons name={showVisit ? 'chevron-up' : 'chevron-down'} size={scale(15)} color={C.muted} />
+                </TouchableOpacity>
+                {showVisit && (
+                  <View style={s.visitBody}>
+                    <VisitTimeline patient={patient} />
+                  </View>
+                )}
               </View>
             )}
           </LinearGradient>
@@ -690,17 +806,92 @@ export function PatientCardV2({
         <View style={s.border} pointerEvents="none" />
       </View>
       </View>
+      </Animated.View>
+
+      {/* ── the reverse: the note, written straight onto the material ── */}
+      {backUp && (
+        <Animated.View
+          style={[s.face, s.backFace, { opacity: backFade, transform: [{ perspective: 1000 }, { rotateY: backSpin }] }]}
+          pointerEvents={turned ? 'auto' : 'none'}
+        >
+          {/* flex:1 must run the whole chain — the absolute face is the only definite height */}
+          <View style={[s.shadowWrap, s.fill]}>
+            <View style={[s.card, s.fill]}>
+              <LinearGradient colors={BACK_TINT} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={s.backInner}>
+                {/* the queue number, stamped into the material behind the writing */}
+                <Text style={s.emboss} pointerEvents="none" numberOfLines={1}>{qn}</Text>
+
+                <View style={s.backHead}>
+                  <TouchableOpacity activeOpacity={0.7} onPress={turnBack} style={s.backTurn}>
+                    <Ionicons name="arrow-undo-outline" size={scale(17)} color={C.inkStrong} />
+                  </TouchableOpacity>
+                  <View style={s.backTitle}>
+                    <Text style={s.backKicker}>NOTE</Text>
+                    <Text style={s.backName} numberOfLines={1}>{patient.name}</Text>
+                  </View>
+                </View>
+
+                <View style={s.backWrite}>
+                  {/* the ink rail fills as the note grows — a counter you feel, not read */}
+                  <View style={s.rail}>
+                    <View style={[s.railFill, { height: `${Math.min(100, (draft.length / NOTE_MAX) * 100)}%` }]} />
+                  </View>
+                  <TextInput
+                    ref={noteRef}
+                    style={s.noteInput}
+                    value={draft}
+                    onChangeText={setDraft}
+                    placeholder="What should the next doctor know?"
+                    placeholderTextColor={C.muted}
+                    multiline
+                    maxLength={NOTE_MAX}
+                    textAlignVertical="top"
+                    selectionColor={C.blue}
+                  />
+                </View>
+
+                <View style={s.backFoot}>
+                  {patient.note ? (
+                    <TouchableOpacity activeOpacity={0.8} onPress={dropNote} style={s.kill}>
+                      <Ionicons name="trash-outline" size={scale(17)} color={C.danger} />
+                    </TouchableOpacity>
+                  ) : null}
+                  <Text style={[s.count, draft.length > NOTE_MAX - 30 && { color: C.elderly }]}>
+                    {draft.length}/{NOTE_MAX}
+                  </Text>
+                  <TouchableOpacity activeOpacity={0.85} onPress={keepNote} style={s.keep}>
+                    <LinearGradient colors={G.keep} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.keepFill}>
+                      <Ionicons name="checkmark-sharp" size={scale(20)} color="#fff" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
+              <View style={s.border} pointerEvents="none" />
+            </View>
+          </View>
+        </Animated.View>
+      )}
+      </View>
     </Animated.View>
   );
 }
 
 const s = StyleSheet.create({
+  // the turn: a relative box both faces live in; height is fixed only while turned
+  flipWrap: { position: 'relative' },
+  face: { backfaceVisibility: 'hidden' },
+  backFace: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  fill: { flex: 1 },
+
+  // full-word badges, top-LEFT edge
   badges: {
     position: 'absolute',
-    top: scale(-9),
-    right: scale(20),
+    top: scale(-11),
+    left: scale(18),
     flexDirection: 'row',
-    gap: scale(4),
+    flexWrap: 'wrap',
+    gap: scale(5),
+    maxWidth: '88%',
     zIndex: 8,
     elevation: 10,
   },
@@ -717,15 +908,20 @@ const s = StyleSheet.create({
     elevation: 6,
   },
   badge: {
-    width: scale(19),
-    height: scale(19),
-    borderRadius: scale(7),
-    alignItems: 'center',
-    justifyContent: 'center',
+    height: scale(22),
+    borderRadius: scale(11),
+    overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.92)',
   },
-  badgeTxt: { fontSize: scale(10), fontWeight: '800', color: '#fff' },
+  badgeFill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(4),
+    paddingHorizontal: scale(8),
+  },
+  badgeTxt: { fontSize: scale(10.5), fontWeight: '800', color: '#fff' },
 
   card: {
     borderRadius: scale(22),
@@ -851,8 +1047,8 @@ const s = StyleSheet.create({
   actGlyph: { textShadowColor: 'rgba(0,0,0,0.22)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1.5 },
   actLabel: { fontSize: scale(11.5), fontWeight: '600', color: C.muted },
 
-  // toggles
-  toggles: { flexDirection: 'row', gap: scale(8), marginTop: scale(9) },
+  // toggles (inside the console's FLAGS row body — the body already supplies the spacing)
+  toggles: { flexDirection: 'row', gap: scale(8) },
   tgl: {
     flex: 1,
     flexDirection: 'row',
@@ -870,8 +1066,11 @@ const s = StyleSheet.create({
   tglTxt: { fontSize: scale(12), fontWeight: '800', color: C.muted },
   tglTxtOn: { color: '#fff' },
 
-  // read-only visit timeline (drawer, below the toggles) — faint divider then vertical steps
-  hr: { height: 1, backgroundColor: C.hair, marginTop: scale(14), marginBottom: scale(13) },
+  // read-only visit timeline (drawer, last) — faint divider, a foldaway header, then the steps
+  hr: { height: 1, backgroundColor: C.hair, marginTop: scale(14), marginBottom: scale(4) },
+  visitHead: { flexDirection: 'row', alignItems: 'center', gap: scale(8), paddingVertical: scale(9) },
+  visitLabel: { flex: 1, fontSize: scale(10.5), fontWeight: '800', letterSpacing: 1, color: C.muted },
+  visitBody: { paddingTop: scale(4) },
   tlStep: { flexDirection: 'row' },
   tlRail: { width: scale(18), alignItems: 'center' },
   tlDot: { width: scale(9), height: scale(9), borderRadius: scale(5), marginTop: scale(4) },
@@ -923,4 +1122,74 @@ const s = StyleSheet.create({
     borderRadius: scale(13), backgroundColor: C.glass2, borderWidth: 1, borderColor: C.brd,
   },
   apptClearTxt: { fontSize: scale(13), fontWeight: '800', color: C.muted },
+
+  // ── the reverse: writing on the material, no framed field ──
+  backInner: { flex: 1, backgroundColor: '#F7F9FC' },
+  // the queue number stamped into the card behind the writing
+  emboss: {
+    position: 'absolute',
+    right: scale(12),
+    bottom: -scale(26),
+    fontSize: scale(128),
+    fontWeight: '800',
+    letterSpacing: -scale(6),
+    color: C.inkStrong,
+    opacity: 0.055,
+  },
+  backHead: { flexDirection: 'row', alignItems: 'center', gap: scale(10), paddingHorizontal: scale(13), paddingTop: scale(13), paddingBottom: scale(9) },
+  backTurn: {
+    width: scale(32), height: scale(32), borderRadius: scale(11),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.glass2, borderWidth: 1, borderColor: C.brd,
+  },
+  backTitle: { flex: 1, minWidth: 0 },
+  backKicker: { fontSize: scale(9.5), fontWeight: '800', letterSpacing: 1.6, color: '#3B82F6' },
+  backName: { fontSize: scale(15), fontWeight: '800', color: C.inkStrong, marginTop: scale(1) },
+
+  // a distinct recessed panel: the writing sits IN something, lifted off the card material
+  backWrite: {
+    flex: 1,
+    flexDirection: 'row',
+    marginHorizontal: scale(13),
+    padding: scale(13),
+    borderRadius: scale(16),
+    backgroundColor: 'rgba(255,255,255,0.50)',
+    borderWidth: 1,
+    borderColor: C.brd,
+    shadowColor: '#1E2D4B',
+    shadowOffset: { width: 0, height: scale(6) },
+    shadowOpacity: 0.10,
+    shadowRadius: scale(12),
+    elevation: 2,
+  },
+  rail: {
+    width: scale(3), borderRadius: scale(2), marginRight: scale(11),
+    backgroundColor: 'rgba(91,124,216,0.16)', overflow: 'hidden',
+    justifyContent: 'flex-start',
+  },
+  railFill: { width: '100%', borderRadius: scale(2), backgroundColor: C.blue },
+  noteInput: {
+    flex: 1,
+    padding: 0,
+    fontSize: scale(15.5),
+    lineHeight: scale(26),
+    fontWeight: '500',
+    color: C.inkStrong,
+  },
+
+  backFoot: { flexDirection: 'row', alignItems: 'center', gap: scale(10), paddingHorizontal: scale(13), paddingVertical: scale(12) },
+  count: { flex: 1, fontSize: scale(11), fontWeight: '700', color: C.muted },
+  kill: {
+    width: scale(38), height: scale(38), borderRadius: scale(13),
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: 'rgba(226,59,66,0.24)', backgroundColor: 'rgba(226,59,66,0.08)',
+  },
+  // no overflow:'hidden' here — it would clip the coloured shadow on iOS; the gradient rounds itself
+  // icon only — no overflow:'hidden', it would clip the coloured shadow on iOS
+  keep: {
+    width: scale(56), height: scale(38), borderRadius: scale(13), backgroundColor: '#7C4FBF',
+    shadowColor: '#7C4FBF', shadowOffset: { width: 0, height: scale(8) },
+    shadowOpacity: 0.4, shadowRadius: scale(10), elevation: 5,
+  },
+  keepFill: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: scale(13) },
 });

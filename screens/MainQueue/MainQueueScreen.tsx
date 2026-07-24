@@ -201,6 +201,7 @@ export interface MainQueueScreenProps {
   handleUpdateField: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
   handleSetExpectedMinutes: (patientId: string, minutes: number | null) => void;
   handleSetAppointment: (patientId: string, min: number | null) => void;
+  handleWriteNote: (patientId: string, note: string | null) => void;
   showTimelineModal: boolean;
   setShowTimelineModal: (val: boolean) => void;
   selectedPatient: Patient | null;
@@ -749,6 +750,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               onUpdateField={props.handleUpdateField}
               onSetDuration={props.handleSetExpectedMinutes}
               onSetAppointment={props.handleSetAppointment}
+              onWriteNote={props.handleWriteNote}
               onMenuAction={(id, action) => (props.handleMenuAction as unknown as (id: string, action: string) => void)(id, action)}
               onProfilePress={(pp) => {
                 setSelectedPatientForProfile({ id: pp.permanent_patient_id || pp.id, fileNumber: pp.file_number || '' });

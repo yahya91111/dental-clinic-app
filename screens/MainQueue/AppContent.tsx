@@ -265,6 +265,7 @@ export function AppContent() {
     handleUpdateField,
     handleSetExpectedMinutes,
     handleSetAppointment,
+    handleWriteNote,
     handleDeleteNote,
     loadCardTimeline,
     handleViewDetails,
@@ -981,6 +982,7 @@ export function AppContent() {
       handleUpdateField={handleUpdateField}
       handleSetExpectedMinutes={handleSetExpectedMinutes}
       handleSetAppointment={handleSetAppointment}
+      handleWriteNote={handleWriteNote}
       showTimelineModal={showTimelineModal}
       setShowTimelineModal={setShowTimelineModal}
       selectedPatient={selectedPatient}
