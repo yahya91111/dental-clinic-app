@@ -59,7 +59,9 @@ export function AppContent() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTreatmentStats, setShowTreatmentStats] = useState(false);
   const [filterWaitingOnly, setFilterWaitingOnly] = useState(false);
-  const [showNAPatients, setShowNAPatients] = useState(false);
+  // NA patients stay visible by default — marking someone NA recolors the card in place
+  // (grey) instead of hiding it. The header toggle can still hide them on demand.
+  const [showNAPatients, setShowNAPatients] = useState(true);
   
   // Navigation states
   const [showDoctorProfile, setShowDoctorProfile] = useState(false);
@@ -261,6 +263,8 @@ export function AppContent() {
     loadClinicDoctors,
     handleTreatmentDoneByDoctor,
     handleUpdateField,
+    handleSetExpectedMinutes,
+    handleSetAppointment,
     handleDeleteNote,
     loadCardTimeline,
     handleViewDetails,
@@ -433,45 +437,20 @@ export function AppContent() {
   // Filter patients based on filters
   let filteredPatients = displayedPatients;
   
-  // Sort by queue number for gap detection
+  // Sort by queue number
   filteredPatients = filteredPatients.sort((a, b) => a.queue_number - b.queue_number);
-  
-  // Add missing queue number cards ("ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯") - BEFORE any filters
-  // Start from first real patient number, not from 1
-  if (filteredPatients.length > 0) {
-    const minQueueNumber = Math.min(...filteredPatients.map(p => p.queue_number));
-    const maxQueueNumber = Math.max(...filteredPatients.map(p => p.queue_number));
-    const existingNumbers = new Set(filteredPatients.map(p => p.queue_number));
-    const missingPatients: Patient[] = [];
-    
-    // Fill gaps only BETWEEN real patients, not before first patient
-    for (let i = minQueueNumber; i <= maxQueueNumber; i++) {
-      if (!existingNumbers.has(i)) {
-        missingPatients.push({
-          id: `missing-${i}`,
-          queue_number: i,
-          name: 'ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯',
-          age: 0,
-          timestamp: new Date(),
-          status: 'na',
-          clinic: 'Clinic',
-          condition: 'Condition',
-          treatment: 'Treatment',
-        });
-      }
-    }
-    
-    filteredPatients = [...filteredPatients, ...missingPatients]
-      .sort((a, b) => a.queue_number - b.queue_number);
-  }
-  
+
+  // Gaps in the queue stay gaps. We never fabricate "not-found" NA cards for skipped
+  // numbers (registering #5 then #7 must NOT synthesize a phantom #6). Only real
+  // patient rows render; a real no-show keeps its own number and is greyed in place.
+
   // Apply filters independently
   // 1. Waiting filter: hide Done patients only
   if (filterWaitingOnly) {
     filteredPatients = filteredPatients.filter(p => p.status !== 'complete');
   }
   
-  // 2. NA filter: hide NA patients (including "ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯") when disabled
+  // 2. NA toggle (optional): NA patients show by default; the header button can hide them.
   if (!showNAPatients) {
     filteredPatients = filteredPatients.filter(p => p.status !== 'na');
   }
@@ -1000,6 +979,8 @@ export function AppContent() {
       showTreatmentDropdown={showTreatmentDropdown}
       editingPatientId={editingPatientId}
       handleUpdateField={handleUpdateField}
+      handleSetExpectedMinutes={handleSetExpectedMinutes}
+      handleSetAppointment={handleSetAppointment}
       showTimelineModal={showTimelineModal}
       setShowTimelineModal={setShowTimelineModal}
       selectedPatient={selectedPatient}

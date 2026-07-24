@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Alert } from 'react-native';
-import { supabase, Patient, TimelineEvent, arabicToEnglish } from './constants';
+import { supabase, Patient, TimelineEvent, arabicToEnglish, TREATMENT_DURATIONS, treatmentNeedsDuration } from './constants';
 import { generateDentalSummary, calculateDentalChartTreatments, calculateGivenReferrals, checkScalingDoneToday, getTreatmentFromBadge } from './dentalHelpers';
 import { DentalSummary, Referral, ToothNote } from '../../types';
 import {
@@ -21,6 +21,8 @@ import {
   getPermanentPatientById,
   createPermanentPatient,
   saveToothSurfaceCondition,
+  updatePatientExpectedMinutes,
+  updatePatientAppointment,
 } from '../../lib/database';
 
 interface UsePatientHandlersParams {
@@ -1034,6 +1036,9 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
         break;
       case 'delete':
         try {
+          // if the deleted card is the one expanded/isolated on the page, collapse first
+          // so the filter doesn't narrow to a now-missing id and blank the page
+          setExpandedPermanentCardId(prev => (prev === patientId ? null : prev));
           await supabase
             .from('patients')
             .delete()
@@ -1387,6 +1392,14 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
         // عيادةٌ حقيقيّة (Clinic N) → نختمُ وقتَ الدخول؛ أمّا إزالةُ العيادة (Clinic بلا رقم/فارغ) فنمحو الختمَ —
         // فالتراجعُ عن إدخالٍ خاطئٍ يُرجِعُ المريضَ إلى الانتظارِ في المخطّطِ والبطاقةِ المصغّرة بدلَ بقائِه «داخلَ العيادة».
         updateData.clinic_entry_at = /^clinic\s*\d+/i.test(value) ? new Date().toISOString() : null;
+      } else if (field === 'treatment') {
+        updateData.treatment = value;
+        // a NEW treatment carries its default duration onto the timeline (or clears it for no-duration
+        // ones); re-selecting the same treatment leaves the doctor's adjusted time alone
+        const cur = patients.find(p => p.id === patientId);
+        if (cur?.treatment !== value) {
+          updateData.expected_minutes = treatmentNeedsDuration(value) ? (TREATMENT_DURATIONS[value] ?? 30) : null;
+        }
       } else {
         updateData[field] = value;
       }
@@ -1739,6 +1752,21 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     }
   };
 
+  // used by the card's duration dial: optimistic so the card AND the horizontal timeline
+  // (both read `patients`) reflect the new minutes instantly, then persist.
+  const handleSetExpectedMinutes = async (patientId: string, minutes: number | null) => {
+    setPatients(prev => prev.map(p => (p.id === patientId ? { ...p, expected_minutes: minutes ?? undefined } : p)));
+    const { error } = await updatePatientExpectedMinutes(patientId, minutes);
+    if (error) Alert.alert('Error', error.message);
+  };
+
+  // same-day appointment (entry time): optimistic so the card row + timeline reflect it at once, then persist.
+  const handleSetAppointment = async (patientId: string, min: number | null) => {
+    setPatients(prev => prev.map(p => (p.id === patientId ? { ...p, appointment_min: min ?? undefined } : p)));
+    const { error } = await updatePatientAppointment(patientId, min);
+    if (error) Alert.alert('Error', error.message);
+  };
+
   return {
     handleFileNumberSearch,
     handlePatientNameSearch,
@@ -1750,6 +1778,8 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     loadClinicDoctors,
     handleTreatmentDoneByDoctor,
     handleUpdateField,
+    handleSetExpectedMinutes,
+    handleSetAppointment,
     handleDeleteNote,
     loadCardTimeline,
     handleViewDetails,

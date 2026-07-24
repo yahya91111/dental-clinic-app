@@ -17,6 +17,10 @@ import { Patient, TimelineEvent } from './constants';
 import { Referral, ToothNote, DentalSummary } from '../../types';
 import { styles } from './styles';
 import { AnimatedPatientCard } from './PatientCard';
+import { PatientCardV2 } from './PatientCardV2';
+
+// Design toggle — flip to false to instantly restore the classic patient card.
+const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane } from './QueueTimeline';
 
@@ -195,6 +199,8 @@ export interface MainQueueScreenProps {
   showTreatmentDropdown: boolean;
   editingPatientId: string | null;
   handleUpdateField: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
+  handleSetExpectedMinutes: (patientId: string, minutes: number | null) => void;
+  handleSetAppointment: (patientId: string, min: number | null) => void;
   showTimelineModal: boolean;
   setShowTimelineModal: (val: boolean) => void;
   selectedPatient: Patient | null;
@@ -681,14 +687,6 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.viewDetailsHeaderButton, shadows.card]}
-            onPress={() => setExpandedCardId(expandedCardId ? null : 'header')}
-          >
-            <Text style={styles.viewDetailsHeaderText}>
-              {expandedCardId === 'header' ? '▲ Hide Details' : '▼ View Details'}
-            </Text>
-          </TouchableOpacity>
         </Animated.View>
 
         {/* Expandable Options */}
@@ -741,6 +739,24 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           {filteredPatients
             .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
             .map((patient, index) => (
+            USE_V2_CARD ? (
+            <PatientCardV2
+              key={`${patient.id}-${animKey}`}
+              patient={patient}
+              index={index}
+              animKey={animKey}
+              isExpanded={expandedPermanentCardId === patient.id}
+              onUpdateField={props.handleUpdateField}
+              onSetDuration={props.handleSetExpectedMinutes}
+              onSetAppointment={props.handleSetAppointment}
+              onMenuAction={(id, action) => (props.handleMenuAction as unknown as (id: string, action: string) => void)(id, action)}
+              onProfilePress={(pp) => {
+                setSelectedPatientForProfile({ id: pp.permanent_patient_id || pp.id, fileNumber: pp.file_number || '' });
+                setShowPatientFile(true);
+              }}
+              onToggleExpand={() => togglePermanentCardExpansion(patient)}
+            />
+            ) : (
             <AnimatedPatientCard
               key={`${patient.id}-${animKey}`}
               index={index}
@@ -828,6 +844,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 }
               }}
             />
+            )
           ))}
         </ScrollView>
 

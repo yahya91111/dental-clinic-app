@@ -1,0 +1,926 @@
+import React, { useRef, useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  PanResponder,
+  StyleSheet,
+} from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { scale } from '../../lib/scale';
+import { Patient, CLINICS, CONDITIONS, TREATMENTS, TREATMENT_DURATIONS, treatmentNeedsDuration } from './constants';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PatientCardV2 — a faithful RN port of the glass "triad console" prototype.
+// Collapsed row (RTL): number + name on the right, arrow on the left.
+// Swipe right → Done / NA. Arrow → a tidy console (Clinic / Condition / Treatment
+// as collapsible segmented rows) + secondary actions. Feature-flagged in the
+// screen so the classic card is one boolean away.
+// ─────────────────────────────────────────────────────────────────────────────
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// palette (light — the app is a light surface)
+const C = {
+  ink: '#33415A',
+  inkStrong: '#1E2940',
+  muted: '#7E8CA3',
+  hair: 'rgba(40,54,82,0.10)',
+  glass: 'rgba(255,255,255,0.55)',
+  glass2: 'rgba(255,255,255,0.40)',
+  brd: 'rgba(255,255,255,0.85)',
+  blue: '#5B7CD8',
+  violet: '#9B6FD4',
+  teal: '#0EA5A0',
+  done: '#10B981',
+  away: '#64748B',
+  elderly: '#F97316',
+  special: '#8B5CF6',
+  danger: '#EF4444',
+};
+
+// accent (base, darker) pairs for segment fills / swipe buttons
+const G = {
+  blue: ['#5B7CD8', '#4560B4'] as [string, string],
+  amber: ['#EA8A0C', '#B96C05'] as [string, string],
+  teal: ['#0EA5A0', '#0A7A76'] as [string, string],
+  done: ['#10B981', '#0B8F63'] as [string, string],
+  away: ['#7C8798', '#4B5563'] as [string, string],
+};
+
+const ACCENT = { clinic: C.blue, cond: '#EA8A0C', tx: C.teal };
+const ACCENT_G = { clinic: G.blue, cond: G.amber, tx: G.teal };
+
+// queue-number chip: subtle top-left→bottom-right white glass gradient (prototype .qnum)
+const QNUM_G: [string, string] = ['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.14)'];
+
+const ACTIONS_W = scale(150); // swipe-reveal width (Done + NA), finger-tracked 1:1
+
+// status tint wash behind the card content — matches the prototype's .card::before
+// (default is applied at opacity 0.5 there, so the waiting stops are ~halved here)
+const TINT: Record<string, [string, string]> = {
+  waiting: ['rgba(184,212,241,0.30)', 'rgba(212,184,232,0.28)'],
+  inclinic: ['rgba(14,165,160,0.20)', 'rgba(91,124,216,0.14)'],
+  done: ['rgba(16,185,129,0.22)', 'rgba(59,130,246,0.16)'],
+  away: ['rgba(100,116,139,0.18)', 'rgba(100,116,139,0.10)'],
+};
+
+// action-tile gradients (iOS app-icon look): [top-light, bottom-dark]
+const ACT_G: Record<string, [string, string]> = {
+  note: ['#6D9BFF', '#4360D0'],
+  edit: ['#FFB443', '#F0890C'],
+  danger: ['#FF6E72', '#E23B42'],
+};
+// diagonal white sheen laid over each tile (glossy top-left → transparent)
+const SHEEN: [string, string, string] = ['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0)'];
+const SHEEN_LOC: [number, number, number] = [0, 0.46, 0.64];
+
+const clinicNumOf = (clinic?: string) => {
+  if (!clinic) return null;
+  const m = String(clinic).match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+};
+
+const kindOf = (p: Patient): 'done' | 'na' | 'inclinic' | 'waiting' => {
+  if (p.status === 'complete') return 'done';
+  if (p.status === 'na') return 'na';
+  return clinicNumOf(p.clinic) != null ? 'inclinic' : 'waiting';
+};
+
+const fmtHM = (d?: Date) => {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  const h = dt.getHours(), m = dt.getMinutes();
+  const hh = ((h + 11) % 12) + 1;
+  const ap = h < 12 ? 'AM' : 'PM';
+  return `${hh}:${m < 10 ? '0' + m : m} ${ap}`;
+};
+
+const statusText = (p: Patient) => {
+  const k = kindOf(p);
+  if (k === 'done') return p.completed_at ? `Done ${fmtHM(p.completed_at)}` : 'Done';
+  if (k === 'na') return p.na_at ? `Called ${fmtHM(p.na_at)}` : 'Not available';
+  if (k === 'inclinic') return `In ${p.clinic}`;
+  return 'Waiting';
+};
+
+// option lists derived from the app's canonical constants
+const CLINIC_OPTS = ['None', ...CLINICS.filter((c) => c.id !== 0).map((c) => String(c.id))];
+const COND_OPTS = CONDITIONS.map((c) => c.name);
+const TX_OPTS = TREATMENTS.map((t) => t.name);
+
+// duration counter (some treatments carry no scheduled time — see constants.treatmentNeedsDuration)
+const needsDuration = treatmentNeedsDuration;
+const DUR_MIN = 5, DUR_MAX = 120, DUR_STEP = 5;
+const durOf = (p: Patient) =>
+  p.expected_minutes && p.expected_minutes > 0 ? p.expected_minutes : (TREATMENT_DURATIONS[p.treatment || ''] ?? 30);
+
+// same-day appointment (entry time): a simple half-hour dial across the working day
+const APPT_START = 8 * 60, APPT_END = 20 * 60, APPT_STEP = 30;
+const fmtClock = (min: number) => {
+  const h = Math.floor(min / 60), m = min % 60;
+  const hh = ((h + 11) % 12) + 1;
+  return `${hh}:${m < 10 ? '0' + m : m} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+type FieldKey = 'clinic' | 'cond' | 'tx' | 'dur';
+
+// ── one segmented control (equal segments, selected one filled with the accent) ──
+function Segmented({
+  accent,
+  options,
+  current,
+  numeric,
+  onPick,
+}: {
+  accent: [string, string];
+  options: string[];
+  current: string;
+  numeric?: boolean;
+  onPick: (v: string) => void;
+}) {
+  const cols = numeric ? Math.min(options.length, 6) : 3;
+  const basis = `${100 / cols}%`;
+  return (
+    <View style={s.seg}>
+      {options.map((o) => {
+        const on = String(o) === String(current);
+        return (
+          <TouchableOpacity
+            key={o}
+            activeOpacity={0.85}
+            onPress={() => onPick(o)}
+            style={[s.segCell, { width: basis as any }]}
+          >
+            {on ? (
+              <LinearGradient
+                colors={accent}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[s.segFill, { shadowColor: accent[0], shadowOffset: { width: 0, height: scale(4) }, shadowOpacity: 0.5, shadowRadius: scale(6), elevation: 3 }]}
+              >
+                <Text style={[s.segTxt, s.segTxtOn]} numberOfLines={1}>{o}</Text>
+              </LinearGradient>
+            ) : (
+              <View style={s.segFill}>
+                <Text style={s.segTxt} numberOfLines={1}>{o}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// ── one collapsible console row: glanceable value up top, selector on tap ──
+function ConsoleRow({
+  icon,
+  label,
+  value,
+  accent,
+  accentG,
+  options,
+  current,
+  numeric,
+  open,
+  onToggle,
+  onPick,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  accent: string;
+  accentG: [string, string];
+  options: string[];
+  current: string;
+  numeric?: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onPick: (v: string) => void;
+}) {
+  return (
+    <View>
+      <TouchableOpacity activeOpacity={0.7} onPress={onToggle} style={s.rowHead}>
+        <View style={[s.rowIc, { backgroundColor: accent + '26' }]}>
+          <Ionicons name={icon} size={scale(15)} color={accent} />
+        </View>
+        <Text style={s.rowLabel}>{label}</Text>
+        <Text style={[s.rowVal, { color: accent }]} numberOfLines={1}>{value}</Text>
+        <Ionicons
+          name={open ? 'chevron-up' : 'chevron-down'}
+          size={scale(15)}
+          color={C.muted}
+        />
+      </TouchableOpacity>
+      {open && (
+        <View style={s.rowBody}>
+          <Segmented
+            accent={accentG}
+            options={options}
+            current={current}
+            numeric={numeric}
+            onPick={onPick}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── a professional drag counter for the treatment duration (5–120 min) ──
+function DurationDial({ minutes, onCommit }: { minutes: number; onCommit: (m: number) => void }) {
+  const [m, setM] = useState(minutes);
+  const mRef = useRef(minutes);
+  const trackRef = useRef<View>(null);
+  const geo = useRef({ x: 0, w: 1 }); // absolute left + width of the track (measured, not layout-relative)
+  const measure = () => { trackRef.current?.measureInWindow((x, _y, w) => { if (w) geo.current = { x, w }; }); };
+  const snapTo = (val: number) => {
+    const snapped = Math.max(DUR_MIN, Math.min(DUR_MAX, Math.round(val / DUR_STEP) * DUR_STEP));
+    mRef.current = snapped;
+    setM(snapped);
+  };
+  const fromPageX = (pageX: number) => {
+    const { x, w } = geo.current;
+    snapTo(DUR_MIN + (Math.max(0, Math.min(w, pageX - x)) / w) * (DUR_MAX - DUR_MIN));
+  };
+  const pan = useRef(
+    PanResponder.create({
+      // claim the touch in the capture phase so the vertical ScrollView can't steal the first drag
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: (e) => { measure(); fromPageX(e.nativeEvent.pageX); },
+      onPanResponderMove: (e) => fromPageX(e.nativeEvent.pageX),
+      onPanResponderRelease: () => onCommit(mRef.current),
+      onPanResponderTerminate: () => onCommit(mRef.current),
+    }),
+  ).current;
+  const pct = ((m - DUR_MIN) / (DUR_MAX - DUR_MIN)) * 100;
+  return (
+    <View style={s.dial}>
+      <View style={s.dialReadout}>
+        <Text style={s.dialNum}>{m}</Text>
+        <Text style={s.dialUnit}>min</Text>
+      </View>
+      <View ref={trackRef} style={s.dialTrackHit} onLayout={measure} {...pan.panHandlers}>
+        <View style={s.dialTrack}>
+          <LinearGradient colors={G.teal} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.dialFill, { width: `${pct}%` }]} />
+        </View>
+        <View style={[s.dialThumb, { left: `${pct}%` }]} />
+      </View>
+      <View style={s.dialScale}>
+        <Text style={s.dialTick}>{DUR_MIN}</Text>
+        <Text style={s.dialTick}>{DUR_MAX} min</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── a simple −/＋ time stepper for the same-day appointment (no drag), then Book (violet) ──
+function AppointmentStepper({ booked, onBook, onClear }: { booked?: number; onBook: (min: number) => void; onClear: () => void }) {
+  const init = booked != null ? Math.max(APPT_START, Math.min(APPT_END, booked)) : 9 * 60;
+  const [t, setT] = useState(init);
+  const step = (d: number) => setT((v) => Math.max(APPT_START, Math.min(APPT_END, v + d)));
+  const isBooked = booked != null && t === booked;
+  return (
+    <View style={s.apptWrap}>
+      <View style={s.stepRow}>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => step(-APPT_STEP)} style={s.stepBtn} disabled={t <= APPT_START}>
+          <Ionicons name="remove" size={scale(24)} color={t <= APPT_START ? C.hair : C.teal} />
+        </TouchableOpacity>
+        <View style={s.stepReadout}>
+          <Text style={s.apptNum}>{fmtClock(t)}</Text>
+        </View>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => step(APPT_STEP)} style={s.stepBtn} disabled={t >= APPT_END}>
+          <Ionicons name="add" size={scale(24)} color={t >= APPT_END ? C.hair : C.teal} />
+        </TouchableOpacity>
+      </View>
+      <View style={s.apptBtns}>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => onBook(t)} style={s.apptBook}>
+          <LinearGradient colors={G.teal} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.apptBookFill}>
+            <Ionicons name={isBooked ? 'checkmark-sharp' : 'alarm-outline'} size={scale(16)} color="#fff" />
+            <Text style={s.apptBookTxt}>{isBooked ? 'Booked' : 'Book time'}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        {booked != null && (
+          <TouchableOpacity activeOpacity={0.85} onPress={onClear} style={s.apptClear}>
+            <Text style={s.apptClearTxt}>Queue</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// ── status dot with an expanding "ping" halo for live states ──
+function PulseDot({ color, animated }: { color: string; animated?: boolean }) {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!animated) return;
+    const loop = Animated.loop(
+      Animated.timing(a, { toValue: 1, duration: 1600, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [animated]);
+  return (
+    <View style={s.dotWrap}>
+      <View style={[s.dotGlow, { backgroundColor: color }]} />
+      {animated && (
+        <Animated.View
+          style={[
+            s.dotRing,
+            {
+              backgroundColor: color,
+              opacity: a.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
+              transform: [{ scale: a.interpolate({ inputRange: [0, 1], outputRange: [1, 2.8] }) }],
+            },
+          ]}
+        />
+      )}
+      <View style={[s.dotCore, { backgroundColor: color, shadowColor: color }]} />
+    </View>
+  );
+}
+
+// ── an action tile styled like a real iOS app icon (squircle gradient + gloss + colored shadow) ──
+function ActBtn({
+  icon,
+  label,
+  kind,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  kind: 'note' | 'edit' | 'danger';
+  onPress: () => void;
+}) {
+  const g = ACT_G[kind];
+  const press = useRef(new Animated.Value(0)).current;
+  const to = (v: number) => Animated.timing(press, { toValue: v, duration: 120, useNativeDriver: true }).start();
+  const scaleTile = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] });
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={onPress} onPressIn={() => to(1)} onPressOut={() => to(0)} style={s.act}>
+      <Animated.View style={[s.actIcShadow, { shadowColor: g[1], backgroundColor: g[1], transform: [{ scale: scaleTile }] }]}>
+        <LinearGradient colors={g} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.actIcFill}>
+          <LinearGradient colors={SHEEN} locations={SHEEN_LOC} start={{ x: 0.12, y: 0 }} end={{ x: 0.82, y: 1 }} style={s.actSheen} />
+          <Ionicons name={icon} size={scale(23)} color="#fff" style={s.actGlyph} />
+        </LinearGradient>
+      </Animated.View>
+      <Text style={s.actLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ── read-only visit timeline (Registered → Entered clinic → Completed + doctor) ──
+// Surfaces, inline in the drawer, the same timestamps the old "View Details" showed.
+function VisitTimeline({ patient }: { patient: Patient }) {
+  const steps: { label: string; at?: Date; color: string; sub?: string }[] = [
+    { label: 'Registered', at: patient.registered_at || patient.timestamp, color: C.blue },
+    { label: 'Entered clinic', at: patient.clinic_entry_at, color: C.teal },
+    { label: 'Completed', at: patient.completed_at, color: C.done, sub: patient.doctor_name },
+  ];
+  return (
+    <View>
+      {steps.map((st, i) => {
+        const last = i === steps.length - 1;
+        const has = !!st.at;
+        return (
+          <View key={st.label} style={s.tlStep}>
+            <View style={s.tlRail}>
+              <View style={[s.tlDot, { backgroundColor: has ? st.color : C.hair, shadowColor: st.color }, has && s.tlDotOn]} />
+              {!last && <View style={s.tlLine} />}
+            </View>
+            <View style={[s.tlBody, !last && s.tlBodyGap]}>
+              <View style={s.tlBodyRow}>
+                <Text style={s.tlLabel}>{st.label}</Text>
+                <Text style={[s.tlTime, !has && s.tlTimeOff]}>{has ? fmtHM(st.at) : '—'}</Text>
+              </View>
+              {st.sub ? <Text style={s.tlSub}>{st.sub}</Text> : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+export interface PatientCardV2Props {
+  patient: Patient;
+  index: number;
+  animKey: number;
+  isExpanded: boolean;
+  onUpdateField: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
+  onSetDuration: (patientId: string, minutes: number | null) => void;
+  onSetAppointment: (patientId: string, min: number | null) => void;
+  onMenuAction: (patientId: string, action: string) => void;
+  onProfilePress: (patient: Patient) => void;
+  onToggleExpand: () => void;
+}
+
+export function PatientCardV2({
+  patient,
+  index,
+  animKey,
+  isExpanded,
+  onUpdateField,
+  onSetDuration,
+  onSetAppointment,
+  onMenuAction,
+  onProfilePress,
+  onToggleExpand,
+}: PatientCardV2Props) {
+  // Expansion is driven by the parent: one card open at a time, isolated on the page
+  // (the header collapses with the same animation the old card used).
+  const open = isExpanded;
+  const [row, setRow] = useState<FieldKey | null>(null);
+  // collapse any open selector when the card is closed from the outside
+  useEffect(() => { if (!isExpanded) setRow(null); }, [isExpanded]);
+
+  // ── swipe-to-reveal via gesture-handler Swipeable (coordinates cleanly with the scroll view) ──
+  const swipeRef = useRef<Swipeable>(null);
+  const closeSwipe = () => swipeRef.current?.close();
+  const renderLeftActions = () => (
+    <View style={s.actions}>
+      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction(patient.id, 'complete'); }}>
+        <LinearGradient colors={G.done} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
+          <Ionicons name="checkmark-sharp" size={scale(22)} color="#fff" />
+          <Text style={s.swipeTxt}>Done</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction(patient.id, 'na'); }}>
+        <LinearGradient colors={G.away} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
+          <Ionicons name="person-remove-outline" size={scale(20)} color="#fff" />
+          <Text style={s.swipeTxt}>NA</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // entrance slide-in (matches the classic list feel)
+  const slide = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    slide.setValue(0);
+    Animated.spring(slide, {
+      toValue: 1,
+      delay: index * 90,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 7,
+    }).start();
+  }, [animKey]);
+  const fromRight = index % 2 === 0;
+
+  const kind = kindOf(patient);
+  const tint = TINT[kind === 'na' ? 'away' : kind]; // NA reuses the grey "away" wash
+  const qn = patient.queue_number === 0 ? '-' : String(patient.queue_number);
+  const clinicNum = clinicNumOf(patient.clinic);
+  const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.teal : kind === 'na' ? C.away : C.blue;
+  const durLabel = needsDuration(patient.treatment) ? `${durOf(patient)}min` : '';
+  const caseText = [patient.condition, patient.treatment, durLabel].filter((x) => x && x !== 'Condition' && x !== 'Treatment').join(' · ');
+
+  const animate = (d = 200) =>
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(d, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity),
+    );
+
+  const toggleDrawer = () => {
+    // animate the drawer growing on open; on close, the returning list's own entrance handles it
+    if (!isExpanded) animate(240);
+    onToggleExpand();
+  };
+  const toggleRow = (k: FieldKey) => {
+    animate(200);
+    setRow((r) => (r === k ? null : k));
+  };
+
+  const pickClinic = (v: string) => {
+    onUpdateField(patient.id, 'clinic', v === 'None' ? 'Clinic' : `Clinic ${v}`);
+    setTimeout(() => { animate(180); setRow(null); }, 260);
+  };
+  const pickField = (field: 'condition' | 'treatment', v: string) => {
+    onUpdateField(patient.id, field, v); // for treatment this also applies its default duration (atomic)
+    if (field === 'treatment' && needsDuration(v)) {
+      setTimeout(() => { animate(220); setRow('dur'); }, 280); // reveal the dial to fine-tune
+      return;
+    }
+    setTimeout(() => { animate(180); setRow(null); }, 260);
+  };
+
+  // floating status micro-badges (top edge)
+  const badges: { t: string; c: string }[] = [];
+  if (kind === 'done') badges.push({ t: 'D', c: C.done });
+  if (patient.isElderly) badges.push({ t: 'E', c: C.elderly });
+  if (patient.isSpecialNeeds) badges.push({ t: 'S', c: C.special });
+  if (kind === 'na') badges.push({ t: 'X', c: C.away });
+  if (patient.note) badges.push({ t: 'N', c: '#3B82F6' });
+
+  return (
+    <Animated.View
+      style={{
+        opacity: slide,
+        transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: [fromRight ? 90 : -90, 0] }) }],
+        marginTop: index === 0 ? scale(16) : 0,
+        marginBottom: scale(15),
+      }}
+    >
+      {badges.length > 0 && (
+        <View style={s.badges} pointerEvents="none">
+          {badges.map((b, i) => (
+            <View key={i} style={[s.badge, { backgroundColor: b.c }]}>
+              <Text style={s.badgeTxt}>{b.t}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={s.shadowWrap}>
+      <View style={s.card}>
+        <Swipeable
+          ref={swipeRef}
+          renderLeftActions={renderLeftActions}
+          friction={1}
+          leftThreshold={scale(36)}
+          overshootLeft={false}
+          enabled={row !== 'dur'}
+        >
+          <View style={s.surface}>
+          <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.cardInner}>
+            {/* collapsed row (RTL: number + name right, arrow left) */}
+            <View style={s.row}>
+              <View style={s.qnum}>
+                <LinearGradient colors={QNUM_G} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.qnumFill}>
+                  <Text style={s.qnumTxt}>{qn}</Text>
+                </LinearGradient>
+              </View>
+              <View style={s.who}>
+                <View style={s.topLine}>
+                  <View style={s.statusWrap}>
+                    <PulseDot color={dotColor} animated />
+                    <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient)}</Text>
+                  </View>
+                  <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
+                </View>
+                {caseText ? <Text style={s.caseLine} numberOfLines={1}>{caseText}</Text> : null}
+              </View>
+              <TouchableOpacity style={s.chev} onPress={toggleDrawer} activeOpacity={0.7}>
+                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={scale(20)} color={C.inkStrong} />
+              </TouchableOpacity>
+            </View>
+
+            {/* drawer */}
+            {open && (
+              <View style={s.drawer}>
+                <View style={s.triad}>
+                  <ConsoleRow
+                    icon="business-outline"
+                    label="CLINIC"
+                    value={clinicNum == null ? '—' : String(clinicNum)}
+                    accent={ACCENT.clinic}
+                    accentG={ACCENT_G.clinic}
+                    options={CLINIC_OPTS}
+                    current={clinicNum == null ? 'None' : String(clinicNum)}
+                    numeric
+                    open={row === 'clinic'}
+                    onToggle={() => toggleRow('clinic')}
+                    onPick={pickClinic}
+                  />
+                  <View style={s.rowSep} />
+                  <ConsoleRow
+                    icon="pulse-outline"
+                    label="CONDITION"
+                    value={patient.condition && patient.condition !== 'Condition' ? patient.condition : '—'}
+                    accent={ACCENT.cond}
+                    accentG={ACCENT_G.cond}
+                    options={COND_OPTS}
+                    current={patient.condition || 'Condition'}
+                    open={row === 'cond'}
+                    onToggle={() => toggleRow('cond')}
+                    onPick={(v) => pickField('condition', v)}
+                  />
+                  <View style={s.rowSep} />
+                  <ConsoleRow
+                    icon="medical-outline"
+                    label="TREATMENT"
+                    value={patient.treatment && patient.treatment !== 'Treatment' ? patient.treatment : '—'}
+                    accent={ACCENT.tx}
+                    accentG={ACCENT_G.tx}
+                    options={TX_OPTS}
+                    current={patient.treatment || 'Treatment'}
+                    open={row === 'tx'}
+                    onToggle={() => toggleRow('tx')}
+                    onPick={(v) => pickField('treatment', v)}
+                  />
+                  {needsDuration(patient.treatment) && (
+                    <>
+                      <View style={s.rowSep} />
+                      <View>
+                        <TouchableOpacity activeOpacity={0.7} onPress={() => toggleRow('dur')} style={s.rowHead}>
+                          <View style={[s.rowIc, { backgroundColor: C.teal + '26' }]}>
+                            <Ionicons name="time-outline" size={scale(15)} color={C.teal} />
+                          </View>
+                          <Text style={s.rowLabel}>TIME</Text>
+                          <Text style={[s.rowVal, { color: C.teal }]} numberOfLines={1}>
+                            {durOf(patient)} min{patient.appointment_min != null ? ` · ${fmtClock(patient.appointment_min)}` : ''}
+                          </Text>
+                          <Ionicons name={row === 'dur' ? 'chevron-up' : 'chevron-down'} size={scale(15)} color={C.muted} />
+                        </TouchableOpacity>
+                        {row === 'dur' && (
+                          <View style={s.rowBody}>
+                            <Text style={s.subLabel}>DURATION</Text>
+                            <DurationDial key={patient.treatment} minutes={durOf(patient)} onCommit={(mnt) => onSetDuration(patient.id, mnt)} />
+                            <View style={s.subSep} />
+                            <Text style={s.subLabel}>APPOINTMENT</Text>
+                            <AppointmentStepper
+                              booked={patient.appointment_min}
+                              onBook={(min) => onSetAppointment(patient.id, min)}
+                              onClear={() => onSetAppointment(patient.id, null)}
+                            />
+                          </View>
+                        )}
+                      </View>
+                    </>
+                  )}
+                </View>
+
+                <View style={s.acts}>
+                  <ActBtn icon="document-text-outline" label="Notes" kind="note" onPress={() => onMenuAction(patient.id, 'note')} />
+                  <ActBtn icon="create-outline" label="Edit" kind="edit" onPress={() => onMenuAction(patient.id, 'edit')} />
+                  <ActBtn icon="trash-outline" label="Delete" kind="danger" onPress={() => onMenuAction(patient.id, 'delete')} />
+                </View>
+
+                <View style={s.toggles}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => onMenuAction(patient.id, 'elderly')}
+                    style={[s.tgl, patient.isElderly && { backgroundColor: C.elderly, borderColor: 'transparent' }]}
+                  >
+                    <View style={[s.pip, patient.isElderly && s.pipOn]} />
+                    <Text style={[s.tglTxt, patient.isElderly && s.tglTxtOn]}>Elderly</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => onMenuAction(patient.id, 'special_needs')}
+                    style={[s.tgl, patient.isSpecialNeeds && { backgroundColor: C.special, borderColor: 'transparent' }]}
+                  >
+                    <View style={[s.pip, patient.isSpecialNeeds && s.pipOn]} />
+                    <Text style={[s.tglTxt, patient.isSpecialNeeds && s.tglTxtOn]}>Special needs</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={s.hr} />
+                <VisitTimeline patient={patient} />
+              </View>
+            )}
+          </LinearGradient>
+          </View>
+        </Swipeable>
+        <View style={s.border} pointerEvents="none" />
+      </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+const s = StyleSheet.create({
+  badges: {
+    position: 'absolute',
+    top: scale(-9),
+    right: scale(20),
+    flexDirection: 'row',
+    gap: scale(4),
+    zIndex: 8,
+    elevation: 10,
+  },
+
+  // soft drop shadow (separate layer so the card's overflow:hidden can't clip it)
+  // mirrors the prototype's  0 14px 30px -18px rgba(30,45,75,.55)
+  shadowWrap: {
+    borderRadius: scale(22),
+    backgroundColor: '#EEF2F8',
+    shadowColor: '#1E2D4B',
+    shadowOffset: { width: 0, height: scale(9) },
+    shadowOpacity: 0.26,
+    shadowRadius: scale(18),
+    elevation: 6,
+  },
+  badge: {
+    width: scale(19),
+    height: scale(19),
+    borderRadius: scale(7),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.92)',
+  },
+  badgeTxt: { fontSize: scale(10), fontWeight: '800', color: '#fff' },
+
+  card: {
+    borderRadius: scale(22),
+    overflow: 'hidden',
+  },
+  // square corners — the outer card's overflow:hidden does all the rounding, so the
+  // content meets the swipe buttons edge-to-edge with no light sliver at the corners
+  cardInner: { borderRadius: 0 },
+  // opaque base so nothing shows through the card content
+  surface: { backgroundColor: '#F7F9FC' },
+  // continuous rounded border drawn on TOP of everything → frame stays connected across the buttons
+  border: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: scale(22),
+    borderWidth: 1,
+    borderColor: C.brd,
+  },
+
+  // swipe actions (Done / NA) — revealed to the left, clipped to the card's rounded corners
+  actions: { width: ACTIONS_W, flexDirection: 'row' },
+  swipeBtn: { flex: 1 },
+  swipeFill: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: scale(5) },
+  swipeTxt: { color: '#fff', fontSize: scale(11), fontWeight: '800', letterSpacing: 0.4 },
+
+  // collapsed row
+  // row-reverse → number + name sit on the RIGHT (Arabic reading start), arrow on the LEFT
+  row: { flexDirection: 'row-reverse', alignItems: 'center', gap: scale(12), paddingHorizontal: scale(13), paddingVertical: scale(12) },
+  qnum: {
+    width: scale(42),
+    height: scale(46),
+    borderRadius: scale(14),
+    backgroundColor: 'rgba(255,255,255,0.30)',
+    shadowColor: '#1E2D4B',
+    shadowOffset: { width: 0, height: scale(4) },
+    shadowOpacity: 0.22,
+    shadowRadius: scale(7),
+    elevation: 3,
+  },
+  qnumFill: {
+    flex: 1,
+    borderRadius: scale(14),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  qnumTxt: { fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5, color: C.inkStrong },
+  who: { flex: 1, minWidth: 0 },
+  name: { flex: 1, fontSize: scale(17), fontWeight: '700', color: C.inkStrong, textAlign: 'right', lineHeight: scale(23) },
+  // top line: status (left) faces the name (right); case sits on its own line below
+  topLine: { flexDirection: 'row', alignItems: 'center', gap: scale(8) },
+  statusWrap: { flexDirection: 'row', alignItems: 'center', gap: scale(6), flexShrink: 0 },
+  dotWrap: { width: scale(7), height: scale(7), alignItems: 'center', justifyContent: 'center' },
+  dotGlow: { position: 'absolute', width: scale(16), height: scale(16), borderRadius: scale(8), opacity: 0.22 },
+  dotRing: { position: 'absolute', width: scale(7), height: scale(7), borderRadius: scale(4) },
+  dotCore: {
+    width: scale(7), height: scale(7), borderRadius: scale(4),
+    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: scale(3), elevation: 3,
+  },
+  statusTxt: { fontSize: scale(11.5), fontWeight: '800' },
+  caseLine: { fontSize: scale(11.5), fontWeight: '500', color: C.muted, textAlign: 'left', marginTop: scale(3) },
+  chev: {
+    width: scale(32), height: scale(32), borderRadius: scale(11),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.glass2, borderWidth: 1, borderColor: C.brd,
+  },
+
+  // drawer
+  drawer: { paddingHorizontal: scale(13), paddingBottom: scale(14) },
+  triad: {
+    borderRadius: scale(18),
+    borderWidth: 1,
+    borderColor: C.brd,
+    backgroundColor: C.glass,
+    marginBottom: scale(13),
+    // raised "console" look (prototype: 0 16px 34px -22px navy) — no overflow:hidden so it isn't clipped
+    shadowColor: '#1E2D4B',
+    shadowOffset: { width: 0, height: scale(10) },
+    shadowOpacity: 0.16,
+    shadowRadius: scale(16),
+    elevation: 3,
+  },
+  rowSep: { height: 1, backgroundColor: C.hair },
+  rowHead: { flexDirection: 'row', alignItems: 'center', gap: scale(10), paddingHorizontal: scale(13), paddingVertical: scale(13) },
+  rowIc: { width: scale(28), height: scale(28), borderRadius: scale(8), alignItems: 'center', justifyContent: 'center' },
+  rowLabel: { fontSize: scale(10.5), fontWeight: '800', letterSpacing: 1, color: C.muted },
+  rowVal: { marginLeft: 'auto', fontSize: scale(14), fontWeight: '800', maxWidth: '46%' },
+  rowBody: { paddingHorizontal: scale(13), paddingBottom: scale(13), paddingTop: scale(2) },
+
+  // segmented
+  seg: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    borderRadius: scale(14),
+    borderWidth: 1.5,
+    borderColor: C.brd,
+    backgroundColor: C.glass2,
+  },
+  segCell: { height: scale(40), padding: scale(3) },
+  // fills the cell and centers the label both axes (fixes text sitting at the top)
+  segFill: { flex: 1, borderRadius: scale(11), alignItems: 'center', justifyContent: 'center' },
+  segTxt: { textAlign: 'center', fontSize: scale(12.5), fontWeight: '700', color: C.ink },
+  segTxtOn: { color: '#fff' },
+
+  // secondary actions — iOS app-icon tiles, 3 per row, equal width (a lone one keeps its size)
+  acts: { flexDirection: 'row', flexWrap: 'wrap', rowGap: scale(13) },
+  act: { width: '33.33%', alignItems: 'center', gap: scale(8), paddingVertical: scale(2) },
+  // shadow layer (no overflow, opaque base) so the colored drop shadow isn't clipped
+  actIcShadow: {
+    width: scale(52),
+    height: scale(52),
+    borderRadius: scale(15),
+    shadowOffset: { width: 0, height: scale(8) },
+    shadowOpacity: 0.5,
+    shadowRadius: scale(9),
+    elevation: 7,
+  },
+  // the gradient face; clips the sheen to the rounded corners
+  actIcFill: { flex: 1, borderRadius: scale(15), alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  actSheen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  actGlyph: { textShadowColor: 'rgba(0,0,0,0.22)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1.5 },
+  actLabel: { fontSize: scale(11.5), fontWeight: '600', color: C.muted },
+
+  // toggles
+  toggles: { flexDirection: 'row', gap: scale(8), marginTop: scale(9) },
+  tgl: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: scale(8),
+    height: scale(40),
+    borderRadius: scale(13),
+    borderWidth: 1.5,
+    borderColor: C.brd,
+    backgroundColor: C.glass2,
+  },
+  pip: { width: scale(15), height: scale(15), borderRadius: scale(8), borderWidth: 2, borderColor: C.muted, opacity: 0.5 },
+  pipOn: { opacity: 1, backgroundColor: '#fff', borderColor: '#fff' },
+  tglTxt: { fontSize: scale(12), fontWeight: '800', color: C.muted },
+  tglTxtOn: { color: '#fff' },
+
+  // read-only visit timeline (drawer, below the toggles) — faint divider then vertical steps
+  hr: { height: 1, backgroundColor: C.hair, marginTop: scale(14), marginBottom: scale(13) },
+  tlStep: { flexDirection: 'row' },
+  tlRail: { width: scale(18), alignItems: 'center' },
+  tlDot: { width: scale(9), height: scale(9), borderRadius: scale(5), marginTop: scale(4) },
+  tlDotOn: { shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: scale(3), elevation: 2 },
+  tlLine: { width: 2, flex: 1, backgroundColor: C.hair, marginTop: scale(3), borderRadius: 1 },
+  tlBody: { flex: 1, paddingLeft: scale(9) },
+  tlBodyGap: { paddingBottom: scale(13) },
+  tlBodyRow: { flexDirection: 'row', alignItems: 'center' },
+  tlLabel: { fontSize: scale(12.5), fontWeight: '700', color: C.ink },
+  tlTime: { marginLeft: 'auto', fontSize: scale(12.5), fontWeight: '800', color: C.inkStrong },
+  tlTimeOff: { color: C.muted, fontWeight: '700' },
+  tlSub: { fontSize: scale(11.5), fontWeight: '600', color: C.muted, marginTop: scale(2) },
+
+  // treatment-duration drag counter
+  dial: { paddingTop: scale(2) },
+  dialReadout: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: scale(5), marginBottom: scale(14) },
+  dialNum: { fontSize: scale(34), fontWeight: '800', color: C.teal, letterSpacing: -0.5 },
+  dialUnit: { fontSize: scale(13), fontWeight: '700', color: C.muted },
+  dialTrackHit: { height: scale(34), justifyContent: 'center' },
+  dialTrack: { height: scale(8), borderRadius: scale(4), backgroundColor: 'rgba(14,165,160,0.14)', overflow: 'hidden' },
+  dialFill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: scale(4) },
+  dialThumb: {
+    position: 'absolute', top: '50%', marginTop: -scale(12), marginLeft: -scale(12),
+    width: scale(24), height: scale(24), borderRadius: scale(12),
+    backgroundColor: '#fff', borderWidth: 2.5, borderColor: C.teal,
+    shadowColor: '#1E2D4B', shadowOffset: { width: 0, height: scale(2) }, shadowOpacity: 0.28, shadowRadius: scale(4), elevation: 4,
+  },
+  dialScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: scale(9) },
+  dialTick: { fontSize: scale(10.5), fontWeight: '700', color: C.muted },
+
+  // same-day appointment (merged under TIME): sub-labels, −/＋ stepper, Book/Queue
+  subLabel: { fontSize: scale(10.5), fontWeight: '800', letterSpacing: 1, color: C.muted, marginBottom: scale(6) },
+  subSep: { height: 1, backgroundColor: C.hair, marginTop: scale(14), marginBottom: scale(15) },
+  apptWrap: { paddingTop: scale(2) },
+  stepRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(18) },
+  stepBtn: {
+    width: scale(48), height: scale(48), borderRadius: scale(15),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,160,0.10)', borderWidth: 1.5, borderColor: 'rgba(14,165,160,0.32)',
+  },
+  stepReadout: { minWidth: scale(118), alignItems: 'center' },
+  apptNum: { fontSize: scale(30), fontWeight: '800', color: C.teal, letterSpacing: -0.5 },
+  apptBtns: { flexDirection: 'row', gap: scale(9), marginTop: scale(15) },
+  apptBook: { flex: 1, borderRadius: scale(13), overflow: 'hidden' },
+  apptBookFill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(7), paddingVertical: scale(12) },
+  apptBookTxt: { color: '#fff', fontSize: scale(13.5), fontWeight: '800', letterSpacing: 0.3 },
+  apptClear: {
+    paddingHorizontal: scale(18), alignItems: 'center', justifyContent: 'center',
+    borderRadius: scale(13), backgroundColor: C.glass2, borderWidth: 1, borderColor: C.brd,
+  },
+  apptClearTxt: { fontSize: scale(13), fontWeight: '800', color: C.muted },
+});

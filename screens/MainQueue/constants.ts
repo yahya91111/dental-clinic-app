@@ -57,9 +57,13 @@ export const TREATMENT_COLORS: { [key: string]: string } = {
 
 // المدّة الافتراضيّة المقدَّرة لكلّ علاج (دقائق) — تُقترح عند تحديد الوقت على الكرت
 export const TREATMENT_DURATIONS: { [key: string]: number } = {
-  Examination: 15, Scaling: 20, Filling: 30, Extraction: 30, Pulpectomy: 40,
-  Medication: 10, 'Suture Removal': 10, Cementation: 20, Referral: 10,
+  Examination: 15, Scaling: 25, Filling: 40, Extraction: 25, Pulpectomy: 40,
+  Medication: 10, 'Suture Removal': 15, Cementation: 15, Referral: 10,
 };
+
+// treatments that carry no scheduled duration (kept off the horizontal timeline)
+export const NO_DURATION_TREATMENTS = new Set(['Examination', 'Medication', 'Referral']);
+export const treatmentNeedsDuration = (tx?: string) => !!tx && tx !== 'Treatment' && !NO_DURATION_TREATMENTS.has(tx);
 
 export const REFERRAL_OPTIONS = [
   { key: 'endodontics', label: 'Endodontics' },
