@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Alert } from 'react-native';
 import { supabase, Patient, TimelineEvent, arabicToEnglish, TREATMENT_DURATIONS, treatmentNeedsDuration } from './constants';
-import { generateDentalSummary, calculateDentalChartTreatments, calculateGivenReferrals, checkScalingDoneToday, getTreatmentFromBadge } from './dentalHelpers';
+import { generateDentalSummary } from './dentalHelpers';
 import { DentalSummary, Referral, ToothNote } from '../../types';
 import {
   searchPermanentPatientsByFileNumber,
@@ -794,39 +794,38 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
           Alert.alert('Error', error.message);
         }
         break;
-      case 'complete':
+      // Done is a marker, not a record. It says the visit is finished and
+      // nothing else — statistics come from the acts themselves now. So a
+      // permanent patient behaves exactly like a walk-in: press again to
+      // take it back, and hand the visit to a colleague the same way.
+      // (It used to refuse, and to sign off in the doctor's own name with
+      //  no choice, because pressing it WROTE the day's numbers.)
+      case 'complete': {
         const targetPatient = patients.find(p => p.id === patientId);
 
-        if (targetPatient?.status === 'complete' && targetPatient?.permanent_patient_id) {
-          // المريض الدائم المكتمل - استخدم زر Undo
-          Alert.alert('Already Done', 'Use the Undo button to revert changes');
-        } else if (targetPatient?.status === 'complete' && !targetPatient?.permanent_patient_id) {
-          // المريض المؤقت المكتمل - السماح بالتراجع مباشرة
+        if (targetPatient?.status === 'complete') {
           try {
             await supabase
               .from('patients')
               .update({
                 status: 'normal',
                 completed_at: null,
+                doctor_id: null,
                 doctor_name: null,
-                assigned_by_doctor_name: null
+                assigned_by_doctor_name: null,
               })
               .eq('id', patientId);
             await loadPatients();
           } catch (error: any) {
             Alert.alert('Error', error.message);
           }
-        } else if (targetPatient?.permanent_patient_id) {
-          // المريض الدائم: Done by Me تلقائياً بدون اختيار طبيب
-          setTreatmentDonePatientId(patientId);
-          await handleTreatmentDoneByDoctor(null, null, patientId);
         } else {
-          // المريض العادي: فتح نافذة اختيار الطبيب
           setTreatmentDonePatientId(patientId);
           loadClinicDoctors();
           setShowTreatmentDoneModal(true);
         }
         break;
+      }
       case 'undo':
         const undoPatient = patients.find(p => p.id === patientId);
         if (!undoPatient?.permanent_patient_id) {
@@ -1173,224 +1172,32 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
       const finalDoctorId = doctorId || user?.id;
       const finalDoctorName = doctorName || user?.name || user?.email || 'Unknown';
       const assignedByDoctorName = (doctorId && doctorName) ? (user?.name || user?.email || 'Unknown') : null;
-      const today = new Date().toISOString().split('T')[0];
       const completedAt = new Date().toISOString();
 
-      // Check if this is a permanent patient
-      if (patient.permanent_patient_id) {
-        // ═══════════════════════════════════════════════════════════════
-        // PERMANENT PATIENT - Create separate records for each treatment
-        // ═══════════════════════════════════════════════════════════════
-
-        const treatmentsToInsert: any[] = [];
-
-        // 1. Calculate treatments from Dental Chart (editing_records)
-        const dentalChartTreatments = await calculateDentalChartTreatments(patient.permanent_patient_id);
-
-        for (const [treatment, count] of Object.entries(dentalChartTreatments)) {
-          for (let i = 0; i < count; i++) {
-            treatmentsToInsert.push({
-              permanent_patient_id: patient.permanent_patient_id,
-              name: patient.name,
-              file_number: patient.file_number,
-              treatment: treatment,
-              condition: patient.condition || 'Permanent Patient', // استخدام condition الأصلي
-              clinic: patient.clinic || 'Clinic',
-              status: 'complete',
-              completed_at: completedAt,
-              archive_date: null, // Will be archived at 12:59 AM
-              doctor_id: finalDoctorId,
-              doctor_name: finalDoctorName,
-              assigned_by_doctor_name: assignedByDoctorName,
-              clinic_id: patient.clinic_id,
-              queue_number: -1, // Special marker: statistics record (hidden from timeline)
-              patient_type: 'permanent',
-            });
-          }
-        }
-
-        // 2. Check for Referrals (only count once if at least one is given)
-        const referralCount = await calculateGivenReferrals(patient.permanent_patient_id);
-        if (referralCount > 0) {
-          treatmentsToInsert.push({
-            permanent_patient_id: patient.permanent_patient_id,
-            name: patient.name,
-            file_number: patient.file_number,
-            treatment: 'Referral',
-            condition: patient.condition || 'Permanent Patient', // استخدام condition الأصلي
-            clinic: patient.clinic || 'Clinic',
-            status: 'complete',
-            completed_at: completedAt,
-            archive_date: null, // Will be archived at 12:59 AM
-            doctor_id: finalDoctorId,
-            doctor_name: finalDoctorName,
-            assigned_by_doctor_name: assignedByDoctorName,
-            clinic_id: patient.clinic_id,
-            queue_number: -1, // Special marker: statistics record (hidden from timeline)
-            patient_type: 'permanent',
-          });
-        }
-
-        // 3. Check for Scaling (only if done today) - جلب مباشر من قاعدة البيانات
-        const scalingResult = await getScalingRecords(patient.permanent_patient_id);
-        const latestScalingDate = scalingResult.data && scalingResult.data.length > 0
-          ? scalingResult.data[0].timestamp
-          : null;
-        const scalingCount = checkScalingDoneToday(latestScalingDate);
-        if (scalingCount > 0) {
-          treatmentsToInsert.push({
-            permanent_patient_id: patient.permanent_patient_id,
-            name: patient.name,
-            file_number: patient.file_number,
-            treatment: 'Scaling',
-            condition: patient.condition || 'Permanent Patient', // استخدام condition الأصلي
-            clinic: patient.clinic || 'Clinic',
-            status: 'complete',
-            completed_at: completedAt,
-            archive_date: null, // Will be archived at 12:59 AM
-            doctor_id: finalDoctorId,
-            doctor_name: finalDoctorName,
-            assigned_by_doctor_name: assignedByDoctorName,
-            clinic_id: patient.clinic_id,
-            queue_number: -1, // Special marker: statistics record (hidden from timeline)
-            patient_type: 'permanent',
-          });
-        }
-
-        // 4. Check for treatments from badge (Medication, Cementation, Suture Removal)
-        const badgeTreatment = getTreatmentFromBadge(patient);
-        if (badgeTreatment) {
-          treatmentsToInsert.push({
-            permanent_patient_id: patient.permanent_patient_id,
-            name: patient.name,
-            file_number: patient.file_number,
-            treatment: badgeTreatment,
-            condition: patient.condition || 'Permanent Patient', // استخدام condition الأصلي
-            clinic: patient.clinic || 'Clinic',
-            status: 'complete',
-            completed_at: completedAt,
-            archive_date: null, // Will be archived at 12:59 AM
-            doctor_id: finalDoctorId,
-            doctor_name: finalDoctorName,
-            assigned_by_doctor_name: assignedByDoctorName,
-            clinic_id: patient.clinic_id,
-            queue_number: -1, // Special marker: statistics record (hidden from timeline)
-            patient_type: 'permanent',
-          });
-        }
-
-        // Get existing statistics records for this permanent patient today
-        const { data: existingStats, error: fetchStatsError } = await supabase
-          .from('patients')
-          .select('id, treatment')
-          .eq('permanent_patient_id', patient.permanent_patient_id)
-          .eq('queue_number', -1) // Statistics records only
-          .is('archive_date', null); // Only today's records (not archived)
-
-        if (fetchStatsError) throw fetchStatsError;
-
-        // Count existing treatments
-        const existingTreatmentCounts: { [key: string]: number } = {};
-        (existingStats || []).forEach((stat: any) => {
-          const treatment = stat.treatment;
-          existingTreatmentCounts[treatment] = (existingTreatmentCounts[treatment] || 0) + 1;
-        });
-
-        // Count desired treatments
-        const desiredTreatmentCounts: { [key: string]: number } = {};
-        treatmentsToInsert.forEach(t => {
-          const treatment = t.treatment;
-          desiredTreatmentCounts[treatment] = (desiredTreatmentCounts[treatment] || 0) + 1;
-        });
-
-        // Calculate what to add and what to remove
-        const treatmentsToAdd: any[] = [];
-        const treatmentIdsToDelete: string[] = [];
-
-        // Check what to add (if desired > existing)
-        for (const [treatment, desiredCount] of Object.entries(desiredTreatmentCounts)) {
-          const existingCount = existingTreatmentCounts[treatment] || 0;
-          const toAdd = desiredCount - existingCount;
-
-          if (toAdd > 0) {
-            // Add the missing treatments
-            for (let i = 0; i < toAdd; i++) {
-              const treatmentData = treatmentsToInsert.find(t => t.treatment === treatment);
-              if (treatmentData) {
-                treatmentsToAdd.push(treatmentData);
-              }
-            }
-          }
-        }
-
-        // Check what to remove (if existing > desired)
-        for (const [treatment, existingCount] of Object.entries(existingTreatmentCounts)) {
-          const desiredCount = desiredTreatmentCounts[treatment] || 0;
-          const toRemove = existingCount - desiredCount;
-
-          if (toRemove > 0) {
-            // Find records to delete
-            const recordsToDelete = (existingStats || [])
-              .filter((stat: any) => stat.treatment === treatment)
-              .slice(0, toRemove)
-              .map((stat: any) => stat.id);
-
-            treatmentIdsToDelete.push(...recordsToDelete);
-          }
-        }
-
-        // Delete excess treatments
-        if (treatmentIdsToDelete.length > 0) {
-          const { error: deleteError } = await supabase
-            .from('patients')
-            .delete()
-            .in('id', treatmentIdsToDelete);
-
-          if (deleteError) throw deleteError;
-        }
-
-        // Insert new treatments
-        if (treatmentsToAdd.length > 0) {
-          const { error: insertError } = await supabase
-            .from('patients')
-            .insert(treatmentsToAdd);
-
-          if (insertError) throw insertError;
-        }
-
-        // Update the original timeline patient record to complete
-        // Keep it visible in timeline until auto-archive at 12:59 AM
-        const { error: updateError } = await supabase
-          .from('patients')
-          .update({
-            status: 'complete',
-            completed_at: completedAt,
-            doctor_id: finalDoctorId,
-            doctor_name: finalDoctorName,
-            assigned_by_doctor_name: assignedByDoctorName,
-          })
-          .eq('id', effectivePatientId);
-
-        if (updateError) throw updateError;
-
-      } else {
-        // ═══════════════════════════════════════════════════════════════
-        // REGULAR PATIENT - Update existing record
-        // ═══════════════════════════════════════════════════════════════
-
-        const updateData: any = {
+      // Done ends the visit. It does NOT write statistics.
+      //
+      // It used to: for a permanent patient it re-read the whole file
+      // and wrote one hidden `patients` row (queue_number = -1) per
+      // treatment it found. Since the file has no notion of "today",
+      // a patient's entire history was booked as today's work — and
+      // booked again on every later visit.
+      //
+      // Now each act records itself the moment it happens (see
+      // sql/treatment_events.sql), so there is nothing to derive here.
+      // The card's `treatment` field is left to what it is for: the
+      // expected duration.
+      const { error: updateError } = await supabase
+        .from('patients')
+        .update({
           status: 'complete',
           completed_at: completedAt,
           doctor_id: finalDoctorId,
           doctor_name: finalDoctorName,
           assigned_by_doctor_name: assignedByDoctorName,
-        };
+        })
+        .eq('id', effectivePatientId);
 
-        await supabase
-          .from('patients')
-          .update(updateData)
-          .eq('id', effectivePatientId);
-      }
+      if (updateError) throw updateError;
 
       await loadPatients();
       setShowTreatmentDoneModal(false);

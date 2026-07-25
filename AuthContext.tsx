@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, UserRole, getPermissions, PermissionCheck } from './permissions';
 import { supabase } from './lib/supabase';
+import { setActingDoctor } from './lib/database';
 
 // Clinics mapping with UUID
 const CLINICS = [
@@ -41,6 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       setPermissions(null);
     }
+    // every treatment record needs to say WHO did it, by id — names
+    // repeat in this province. One place, so no login path can miss it.
+    setActingDoctor(user ? { id: user.id, name: user.name, clinicId: user.clinicId } : null);
   }, [user]);
 
   const loadUser = async () => {

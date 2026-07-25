@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Alert, Animated } from 'react-native';
 import { supabase, Patient } from './constants';
 import { startAutoArchive, stopAutoArchive, archiveEventEmitter } from '../../autoArchiveService';
+import { getTreatmentStats } from '../../lib/database';
 
 interface UsePatientDataParams {
   user: any;
@@ -146,61 +147,31 @@ export function usePatientData({ user, selectedClinicId, selectedPatient, loadTi
     fetchUserClinic();
   }, [user]);
 
-  // Fetch My Total Treatments automatically on app start
+  // Today's treatment count for this doctor — one bounded query against
+  // the treatment_events log. It used to pull the doctor's whole history
+  // and sift it in JS to undo a derived count; there is no derived count
+  // any more.
+  // Exposed, because work is now recorded where it is done — writing a
+  // filling into the chart never touches the queue, so the queue can no
+  // longer be the only thing that triggers a re-count.
+  const refreshMyTotalTreatments = useCallback(async () => {
+    if (!user) return;
+    try {
+      const dateFrom = new Date();
+      dateFrom.setHours(0, 0, 0, 0);
+      const dateTo = new Date();
+      dateTo.setHours(23, 59, 59, 999);
+
+      const { data } = await getTreatmentStats({ doctorId: user.id, from: dateFrom, to: dateTo });
+      if (data) setMyTotalTreatments(data.total);
+    } catch (error) {
+      // Error handled silently
+    }
+  }, [user]);
+
   useEffect(() => {
-    const fetchMyTotalTreatments = async () => {
-      if (user) {
-        try {
-          // Get today's date range (same as MyStatisticsScreen default)
-          const dateFrom = new Date();
-          dateFrom.setHours(0, 0, 0, 0);
-          const dateTo = new Date();
-          dateTo.setHours(23, 59, 59, 999);
-
-          const fromTime = dateFrom.getTime();
-          const toTime = dateTo.getTime();
-
-          // Get all patients for this doctor
-          const { data: patients, error } = await supabase
-            .from('patients')
-            .select('id, treatment, completed_at, updated_at, queue_number, permanent_patient_id')
-            .eq('doctor_id', user.id);
-
-          if (error) {
-            return;
-          }
-
-          // Filter by today's date range
-          const filteredPatients = patients?.filter((patient: any) => {
-            const completedDate = patient.completed_at ? new Date(patient.completed_at) : new Date(patient.updated_at);
-            const patientTime = completedDate.getTime();
-            return patientTime >= fromTime && patientTime <= toTime;
-          }) || [];
-
-          // Count only valid treatments (excluding "Treatment" and duplicate permanent patient records)
-          const validPatients = filteredPatients.filter((p: any) => {
-            // Exclude "Treatment"
-            if (p.treatment === 'Treatment') return false;
-
-            // For permanent patients: only count statistics records (queue_number = -1)
-            const isPermanentPatient = p.permanent_patient_id != null;
-            const isStatisticsRecord = p.queue_number === -1;
-
-            if (isPermanentPatient && !isStatisticsRecord) {
-              return false; // Skip original timeline card
-            }
-
-            return true;
-          });
-          setMyTotalTreatments(validPatients.length);
-        } catch (error) {
-          // Error handled silently
-        }
-      }
-    };
-
-    fetchMyTotalTreatments();
-  }, [user, patients]); // Re-fetch when user or patients change
+    refreshMyTotalTreatments();
+  }, [refreshMyTotalTreatments, patients]);
 
   // Realtime: التحقق من myTotalTreatments
   useEffect(() => {
@@ -499,6 +470,7 @@ export function usePatientData({ user, selectedClinicId, selectedPatient, loadTi
     userClinicId,
     myTotalTreatments,
     setMyTotalTreatments,
+    refreshMyTotalTreatments,
     loadPatients,
     animKey,
     setAnimKey,

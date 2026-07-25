@@ -7,6 +7,7 @@ import {
   Animated,
 } from 'react-native';
 import { scale } from '../../lib/scale';
+import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { styles, SCREEN_WIDTH, SCREEN_HEIGHT } from './styles';
 import { ToothNumberBadge } from './DentalChartComponents';
@@ -25,6 +26,8 @@ import type { ReferralsState, ReferralStatusState } from './DepartmentModal';
 
 export interface ToothRecord {
   type: 'editing' | 'planning';
+  // the source row, so a mistake can be taken back from where it is shown
+  id?: string;
   treatment?: string;
   details?: string;
   surfaces?: string[];
@@ -72,25 +75,58 @@ export interface TreatmentRecordContainerProps {
 
   // Setters
   setIsTreatmentRecordExpanded: (expanded: boolean) => void;
+
+  // Taking a record back from where it is shown. Undone work leaves the
+  // day's statistics on its own — the event is bound to the record.
+  currentDoctorName?: string;
+  onUndoRecord?: (record: TreatmentRecordEntry) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Treatment Record Card Sub-component
 // ═══════════════════════════════════════════════════════════════
 
-interface TreatmentRecordCardProps {
-  record: {
-    type: 'treatment' | 'scaling';
-    toothNumber?: number;
-    treatment?: string;
-    details?: string;
-    surfaces?: string[];
-    timestamp: string;
-    doctorName: string;
-  };
+export interface TreatmentRecordEntry {
+  type: 'treatment' | 'scaling';
+  id?: string;
+  toothNumber?: number;
+  treatment?: string;
+  details?: string;
+  surfaces?: string[];
+  timestamp: string;
+  timestampNum?: number;
+  doctorName: string;
 }
 
-const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record }) => {
+interface TreatmentRecordCardProps {
+  record: TreatmentRecordEntry;
+  // shown only on the doctor's own work — another doctor's record is not
+  // theirs to remove, and its statistic is not theirs to reduce
+  canUndo?: boolean;
+  onUndo?: () => void;
+}
+
+// a quiet corner control: correcting a record is rare, and must not compete
+// with reading the history
+const UndoTag: React.FC<{ tone: string; onPress: () => void }> = ({ tone, onPress }) => (
+  <TouchableOpacity
+    onPress={onPress}
+    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+    style={{
+      flexDirection: 'row', alignItems: 'center', gap: scale(6),
+      alignSelf: 'flex-start', marginTop: scale(12),
+      paddingHorizontal: scale(10), paddingVertical: scale(6),
+      borderRadius: scale(10),
+      backgroundColor: 'rgba(226,59,66,0.09)',
+      borderWidth: scale(1), borderColor: 'rgba(226,59,66,0.22)',
+    }}
+  >
+    <Ionicons name="arrow-undo-outline" size={scale(13)} color="#C4565C" />
+    <Text style={{ fontSize: scale(11.5), fontWeight: '700', letterSpacing: 0.6, color: '#C4565C' }}>UNDO</Text>
+  </TouchableOpacity>
+);
+
+const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record, canUndo, onUndo }) => {
   if (record.type === 'scaling') {
     return (
       <View style={{
@@ -116,6 +152,7 @@ const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record }) => 
         <View style={{ borderTopWidth: scale(1), borderTopColor: 'rgba(16, 185, 129, 0.2)', paddingTop: scale(12), marginTop: scale(8), gap: scale(6) }}>
           <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
           <Text style={{ fontSize: scale(13), color: '#047857', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
+          {canUndo && onUndo && <UndoTag tone="#047857" onPress={onUndo} />}
         </View>
       </View>
     );
@@ -182,6 +219,7 @@ const TreatmentRecordCard: React.FC<TreatmentRecordCardProps> = ({ record }) => 
       <View style={{ borderTopWidth: scale(1), borderTopColor: 'rgba(37, 99, 235, 0.2)', paddingTop: scale(12), gap: scale(6) }}>
         <Text style={{ fontSize: scale(13), color: '#6B7280', fontWeight: '500' }}>{record.timestamp}</Text>
         <Text style={{ fontSize: scale(13), color: '#2563EB', fontWeight: '600' }}>Dr. {record.doctorName}</Text>
+        {canUndo && onUndo && <UndoTag tone="#2563EB" onPress={onUndo} />}
       </View>
     </View>
   );
@@ -205,6 +243,8 @@ export const TreatmentRecordContainer: React.FC<TreatmentRecordContainerProps> =
   toothRecords,
   scalingRecords,
   setIsTreatmentRecordExpanded,
+  currentDoctorName,
+  onUndoRecord,
 }) => {
   const hasActiveReferrals = Object.entries(referrals).some(([key, checked]) =>
     checked && referralStatus[key as keyof typeof referralStatus] === 'not_given'
@@ -242,16 +282,7 @@ export const TreatmentRecordContainer: React.FC<TreatmentRecordContainerProps> =
 
   // Collect all treatment records
   const getAllRecords = () => {
-    const allRecords: Array<{
-      type: 'treatment' | 'scaling';
-      toothNumber?: number;
-      treatment?: string;
-      details?: string;
-      surfaces?: string[];
-      timestamp: string;
-      timestampNum?: number;
-      doctorName: string;
-    }> = [];
+    const allRecords: TreatmentRecordEntry[] = [];
 
     // Add tooth records (editing records only)
     Object.entries(toothRecords).forEach(([toothNum, records]) => {
@@ -259,6 +290,7 @@ export const TreatmentRecordContainer: React.FC<TreatmentRecordContainerProps> =
         if (record.type === 'editing') {
           allRecords.push({
             type: 'treatment',
+            id: record.id,
             toothNumber: parseInt(toothNum),
             treatment: record.treatment,
             details: record.details,
@@ -275,6 +307,7 @@ export const TreatmentRecordContainer: React.FC<TreatmentRecordContainerProps> =
     scalingRecords.forEach((record) => {
       allRecords.push({
         type: 'scaling',
+        id: record.id,
         timestamp: record.timestamp,
         timestampNum: record.timestampNum,
         doctorName: record.doctorName,
@@ -347,7 +380,12 @@ export const TreatmentRecordContainer: React.FC<TreatmentRecordContainerProps> =
                 }
 
                 return allRecords.map((record, index) => (
-                  <TreatmentRecordCard key={index} record={record} />
+                  <TreatmentRecordCard
+                    key={record.id || index}
+                    record={record}
+                    canUndo={!!onUndoRecord && !!record.id && record.doctorName === currentDoctorName}
+                    onUndo={() => onUndoRecord?.(record)}
+                  />
                 ));
               })()}
             </ScrollView>

@@ -22,7 +22,7 @@ import { styles } from './styles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../AuthContext';
 import type { ToothCondition } from '../../types';
-import { getGeneralNotes, createGeneralNote, deleteGeneralNote } from '../../lib/database';
+import { getGeneralNotes, createGeneralNote, deleteGeneralNote, revertEditingRecord, deleteScalingRecord } from '../../lib/database';
 
 // Import helpers and components from extracted files
 import { ToothSurfaceConditions } from './dentalHelpers';
@@ -34,6 +34,7 @@ import { useToothAnimations } from './useToothAnimations';
 import { TeethGrid } from './TeethGrid';
 import { ReferralContainer } from './ReferralContainer';
 import { TreatmentRecordContainer } from './TreatmentRecordContainer';
+import type { TreatmentRecordEntry } from './TreatmentRecordContainer';
 import { PlanningRecordContainer } from './PlanningRecordContainer';
 import { OralHygieneContainer } from './OralHygieneContainer';
 import { loadPatientDentalData as loadDentalDataFromDB } from './loadDentalData';
@@ -316,6 +317,32 @@ export default function DentalChartScreen({
     loadPatientDentalData();
   }, [permanentPatientId]);
 
+  // Taking a record back from the Total Treatments Done list. A treatment
+  // also puts its tooth back to what it was — a tooth that was never filled
+  // must not keep reading as filled. The day's statistics follow on their
+  // own, because the event is bound to the record.
+  const handleUndoRecord = (record: TreatmentRecordEntry) => {
+    if (!record.id) return;
+    const what = record.type === 'scaling'
+      ? 'This scaling record will be removed.'
+      : `${record.treatment || 'This treatment'}${record.toothNumber ? ` on tooth ${record.toothNumber}` : ''} will be removed, and the tooth put back to what it was.`;
+
+    Alert.alert('Undo this treatment', what, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Undo',
+        style: 'destructive',
+        onPress: async () => {
+          const res = record.type === 'scaling'
+            ? await deleteScalingRecord(record.id!)
+            : await revertEditingRecord(record.id!);
+          if (res.error) { Alert.alert('Cannot undo', res.error.message); return; }
+          await loadPatientDentalData();
+        },
+      },
+    ]);
+  };
+
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -583,6 +610,8 @@ export default function DentalChartScreen({
               toothRecords={toothRecords}
               scalingRecords={scalingRecords}
               setIsTreatmentRecordExpanded={setIsTreatmentRecordExpanded}
+              currentDoctorName={user?.name || 'Dr. Unknown'}
+              onUndoRecord={handleUndoRecord}
             />
 
             {/* Total Planning Record Container */}

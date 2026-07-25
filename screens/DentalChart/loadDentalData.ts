@@ -22,6 +22,8 @@ import type { ToothNumber, ToothCondition } from '../../types';
 
 export interface ToothRecord {
   type: 'editing' | 'planning';
+  // the source row, so a mistake can be taken back from where it is shown
+  id?: string;
   treatment?: string;
   details?: string;
   action?: 'diagnosed' | 'canceled';
@@ -140,6 +142,7 @@ function processEditingRecords(editingData: any[]): {
 
     records[toothNumber].push({
       type: 'editing',
+      id: record.id,
       treatment: record.treatment,
       details: record.details || '',
       surfaces: parsedSurfaces,

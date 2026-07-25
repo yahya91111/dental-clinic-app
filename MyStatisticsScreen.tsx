@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from './lib/supabaseClient';
+import { getTreatmentStats } from './lib/database';
 import { shadows } from './theme';
 import { useAuth } from './AuthContext';
 
@@ -72,80 +73,33 @@ export default function MyStatisticsScreen({ onBack, userClinicId, doctorName, c
     }
   };
 
+  // What this doctor actually did in the window.
+  //
+  // This used to pull every patient row the doctor had ever touched and
+  // sift it here — dropping the placeholder treatment, dropping the
+  // permanent patients' timeline cards, dating rows by updated_at when
+  // completed_at was missing. All of that existed to undo a derived
+  // count. There is nothing to undo now: the log holds one row per act,
+  // stamped when it happened, and the database does the date bounding.
   const loadMyStatistics = async (fromDate: Date, toDate: Date) => {
     setLoading(true);
     try {
-      // إذا كان هناك doctorId من props، استخدمه (للطبيب المختار)
-      // وإلا استخدم user.id (للطبيب الحالي)
+      // doctorId from props = a chosen doctor; otherwise the signed-in one
       const targetDoctorId = doctorId || user?.id;
-      const clinicId = user?.clinicId || userClinicId; // Use user's clinic_id first
 
-      // Get all patients for this doctor only
-      let query = supabase
-        .from('patients')
-        .select(`
-          id,
-          treatment,
-          status,
-          clinic_id,
-          archive_date,
-          doctor_id,
-          doctor_name,
-          completed_at,
-          updated_at,
-          queue_number,
-          permanent_patient_id
-        `)
-        .eq('doctor_id', targetDoctorId);
+      const { data, error } = await getTreatmentStats({
+        doctorId: targetDoctorId,
+        from: fromDate,
+        to: toDate,
+      });
 
-      // Don't filter by clinic_id for now - get all patients for this doctor
-      // if (clinicId) {
-      //   query = query.eq('clinic_id', clinicId);
-      // }
-
-      const { data: patients, error } = await query;
-
-      if (error) {
-        Alert.alert('Error', `Failed to load statistics: ${error.message}`);
+      if (error || !data) {
+        Alert.alert('Error', `Failed to load statistics: ${error?.message || 'unknown'}`);
         setStatsData({ treatments: {}, total: 0 });
         return;
       }
 
-      // Filter by date range
-      const fromTime = fromDate.getTime();
-      const toTime = toDate.getTime();
-      
-      const filteredPatients = patients?.filter((patient: any) => {
-        const completedDate = patient.completed_at ? new Date(patient.completed_at) : new Date(patient.updated_at);
-        const patientTime = completedDate.getTime();
-        return patientTime >= fromTime && patientTime <= toTime;
-      }) || [];
-
-      // Count treatments
-      const treatments: { [key: string]: number } = {};
-      let total = 0;
-
-      filteredPatients.forEach((patient: any) => {
-        const treatment = patient.treatment || 'Unknown';
-
-        // Exclude "Treatment" from statistics
-        if (treatment === 'Treatment') return;
-
-        // For permanent patients: only count statistics records (queue_number = -1)
-        // For regular patients: only count regular records (!permanent_patient_id)
-        const isPermanentPatient = patient.permanent_patient_id != null;
-        const isStatisticsRecord = patient.queue_number === -1;
-
-        if (isPermanentPatient && !isStatisticsRecord) {
-          // Skip original timeline card for permanent patients
-          return;
-        }
-
-        treatments[treatment] = (treatments[treatment] || 0) + 1;
-        total++;
-      });
-
-      setStatsData({ treatments, total });
+      setStatsData(data);
     } catch (error) {
       setStatsData({ treatments: {}, total: 0 });
     } finally {

@@ -5,7 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { updateReferralStatus, createScalingRecord, getScalingRecords, getGeneralNotes, createGeneralNote, deleteGeneralNote, getPreviousTreatments } from '../lib/database';
+import { updateReferralStatus, createScalingRecord, getScalingRecords, getGeneralNotes, createGeneralNote, deleteGeneralNote, getPreviousTreatments, revertEditingRecord, deleteScalingRecord, PreviousTreatment } from '../lib/database';
 
 // ═══════════════════════════════════════════════════════════════
 // Expanded Patient Header Component - iPhone Style Grid
@@ -104,6 +104,9 @@ interface ExpandedPatientHeaderProps {
   // The card's header chevron is the only back button, so it needs a way in:
   // this holds a function that closes an open section and says whether it did.
   backRef?: React.MutableRefObject<(() => boolean) | null>;
+  // undoing a chart treatment repaints the tooth, so the chart data the card
+  // is holding is stale the moment it happens
+  onDentalChanged?: () => void;
 }
 
 type SectionType = 'dental' | 'referrals' | 'hygiene' | 'notes' | 'consent' | 'general_notes' | null;
@@ -201,6 +204,7 @@ export function ExpandedPatientHeader({
   readOnly = false,
   embedded = false,
   backRef,
+  onDentalChanged,
 }: ExpandedPatientHeaderProps) {
   const [expandedSection, setExpandedSection] = useState<SectionType>(null);
   const [seenNotesCount, setSeenNotesCount] = useState<number | null>(null);
@@ -349,6 +353,36 @@ export function ExpandedPatientHeader({
     if (opening && prev === null) loadPrev();
   };
 
+  // Taking a treatment back. A chart entry also puts its tooth back to what
+  // it was — a tooth that was never filled must not keep reading as filled.
+  // The statistic follows on its own: the event is bound to the record.
+  const undoEntry = (v: PreviousTreatment) => {
+    const what =
+      v.kind === 'chart' ? `${v.treatment}${v.tooth != null ? ` on tooth ${v.tooth}` : ''} will be removed, and the tooth put back to what it was.`
+      : v.kind === 'scaling' ? 'This scaling record will be removed.'
+      : 'This referral goes back to pending.';
+
+    Alert.alert('Undo this treatment', what, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Undo',
+        style: 'destructive',
+        onPress: async () => {
+          const res =
+            v.kind === 'chart' ? await revertEditingRecord(v.raw_id)
+            : v.kind === 'scaling' ? await deleteScalingRecord(v.raw_id)
+            : await updateReferralStatus(v.raw_id, 'not_given');
+
+          if (res.error) { Alert.alert('Cannot undo', res.error.message); return; }
+
+          loadPrev();
+          if (v.kind === 'referral') onLoadReferrals();
+          if (v.kind === 'chart') onDentalChanged?.();
+        },
+      },
+    ]);
+  };
+
   const renderEmbeddedGrid = () => {
     // the chart lived in the header bar that the card doesn't need — it becomes a tile
     const tiles = [...icons, { id: 'chart', label: 'Chart', icon: 'open-outline', iconType: 'ionicon', color: '#fff', bgColor: '', badge: 0 }];
@@ -447,6 +481,19 @@ export function ExpandedPatientHeader({
                         <Text style={sp.day}>{d.getDate()}</Text>
                         <Text style={sp.mon}>{thisYear ? MONTHS[d.getMonth()] : String(d.getFullYear())}</Text>
                       </View>
+
+                      {/* a wrong tooth is taken back from where you see it.
+                          Only on your own work — another doctor's record is
+                          not yours to remove. */}
+                      {!readOnly && v.doctor_name === doctorName && (
+                        <TouchableOpacity
+                          onPress={() => undoEntry(v)}
+                          style={sp.undo}
+                          hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                        >
+                          <Ionicons name="arrow-undo-outline" size={scale(13)} color="#C4565C" />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   );
                 })}
@@ -1625,6 +1672,14 @@ const sp = StyleSheet.create({
   latestTxt: { fontSize: scale(8), fontWeight: '800', letterSpacing: 0.8, color: '#fff' },
   by: { flexShrink: 1, fontSize: scale(10.5), fontWeight: '600', color: '#8CA0A8' },
   when: { alignItems: 'flex-end', minWidth: scale(34) },
+  // quiet on purpose: correcting a record is rare, and should not compete
+  // with reading the history
+  undo: {
+    marginLeft: scale(8),
+    width: scale(26), height: scale(26), borderRadius: scale(9),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(226,59,66,0.09)',
+  },
   day: { fontSize: scale(17), fontWeight: '800', color: '#12232A', letterSpacing: -0.6 },
   mon: { marginTop: -scale(1), fontSize: scale(8.5), fontWeight: '800', letterSpacing: 1, color: '#8CA0A8' },
 });

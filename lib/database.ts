@@ -36,6 +36,36 @@ import {
 } from '../types';
 
 // ═══════════════════════════════════════════════════════════════
+// Who is acting
+// ═══════════════════════════════════════════════════════════════
+// A treatment record has to say which doctor did it, by id — this
+// province has repeated names, so a name cannot attribute the work.
+// The source tables only ever carried the name, so the id is stamped
+// here instead of being threaded through a dozen call sites. Set once
+// from AuthContext whenever the signed-in doctor changes.
+
+type ActingDoctor = { id: string; name: string; clinicId: string | null };
+let acting: ActingDoctor | null = null;
+
+export function setActingDoctor(
+  doctor: { id: string; name: string; clinicId?: string | number | null } | null
+) {
+  acting = doctor
+    ? {
+        id: doctor.id,
+        name: doctor.name,
+        clinicId: doctor.clinicId == null ? null : String(doctor.clinicId),
+      }
+    : null;
+}
+
+// stamped onto every source record so its trigger can attribute the event
+const actingStamp = () => ({
+  doctor_id: acting?.id ?? null,
+  clinic_id: acting?.clinicId ?? null,
+});
+
+// ═══════════════════════════════════════════════════════════════
 // Permanent Patients
 // ═══════════════════════════════════════════════════════════════
 
@@ -718,6 +748,7 @@ export async function createEditingRecord(
         doctor_name: doctorName,
         timestamp,
         timestamp_num: timestampNum,
+        ...actingStamp(),
       })
       .select()
       .single();
@@ -912,6 +943,7 @@ export async function createReferral(
         doctor_name: doctorName,
         timestamp: new Date().toISOString(),
         status: 'not_given',
+        ...actingStamp(),
       })
       .select()
       .single();
@@ -955,9 +987,18 @@ export async function updateReferralStatus(
   status: 'not_given' | 'given'
 ): Promise<DatabaseResponse<Referral>> {
   try {
+    // a referral counts when it is HANDED OVER, which can be another
+    // doctor on another day than the one who wrote it — so the handover
+    // is stamped separately, and cleared if it is taken back
+    const given = status === 'given';
     const { data, error } = await supabase
       .from('referrals')
-      .update({ status })
+      .update({
+        status,
+        given_at: given ? new Date().toISOString() : null,
+        given_by_id: given ? acting?.id ?? null : null,
+        given_by_name: given ? acting?.name ?? null : null,
+      })
       .eq('id', referralId)
       .select()
       .single();
@@ -1153,6 +1194,7 @@ export async function createScalingRecord(
         permanent_patient_id: permanentPatientId,
         doctor_name: doctorName,
         timestamp,
+        ...actingStamp(),
       })
       .select()
       .single();
@@ -1195,9 +1237,20 @@ export async function getScalingRecords(
  * Not the queue's `treatment` field, which is what a visit was FOR, not what
  * was carried out.
  */
+export type PreviousTreatment = {
+  id: string;
+  kind: 'chart' | 'scaling' | 'referral';
+  raw_id: string;
+  treatment: string;
+  tooth?: number | string | null;
+  doctor_id?: string | null;
+  doctor_name?: string;
+  timestamp: string;
+};
+
 export async function getPreviousTreatments(
   permanentPatientId: string
-): Promise<DatabaseResponse<{ id: string; treatment: string; tooth?: number | null; doctor_name?: string; timestamp: string }[]>> {
+): Promise<DatabaseResponse<PreviousTreatment[]>> {
   try {
     const [edits, scalings, referrals] = await Promise.all([
       getEditingRecords(permanentPatientId),
@@ -1205,18 +1258,25 @@ export async function getPreviousTreatments(
       getReferrals(permanentPatientId),
     ]);
 
-    const out = [
+    // kind + raw_id so this list can also be the place a mistake is taken back
+    const out: PreviousTreatment[] = [
       ...(edits.data || []).map((r: any) => ({
         id: `e-${r.id}`,
+        kind: 'chart' as const,
+        raw_id: r.id,
         treatment: r.treatment,
         tooth: r.tooth_number,
+        doctor_id: r.doctor_id ?? null,
         doctor_name: r.doctor_name,
         timestamp: r.timestamp,
       })),
       ...(scalings.data || []).map((r: any) => ({
         id: `s-${r.id}`,
+        kind: 'scaling' as const,
+        raw_id: r.id,
         treatment: 'Scaling',
         tooth: null,
+        doctor_id: r.doctor_id ?? null,
         doctor_name: r.doctor_name,
         timestamp: r.timestamp,
       })),
@@ -1225,16 +1285,230 @@ export async function getPreviousTreatments(
         .filter((r: any) => r.status === 'given')
         .map((r: any) => ({
           id: `r-${r.id}`,
+          kind: 'referral' as const,
+          raw_id: r.id,
           treatment: `Referral · ${r.department || r.referral_type || 'Department'}`,
           tooth: r.tooth_number ?? null,
-          doctor_name: r.doctor_name,
-          timestamp: r.timestamp || r.created_at,
+          // the handover is the act, so it is the handover that is credited
+          doctor_id: r.given_by_id ?? r.doctor_id ?? null,
+          doctor_name: r.given_by_name || r.doctor_name,
+          timestamp: r.given_at || r.timestamp || r.created_at,
         })),
     ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     return { data: out, error: null };
   } catch (error) {
     console.error('Error getting previous treatments:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Undoing one treatment
+// ═══════════════════════════════════════════════════════════════
+// A wrong tooth is a wrong tooth: the record has to go, and so does the
+// colour it put on the chart — a tooth that was never filled must not
+// keep reading as filled. The statistic follows on its own, because the
+// event is bound to the record (see sql/treatment_events.sql).
+//
+// Writing a treatment onto a tooth always wipes that tooth's surfaces
+// and rewrites them, so a tooth shows whatever its LATEST record says.
+// Undoing one record is therefore: drop it, wipe the tooth, then re-lay
+// whatever is now the latest — or, if nothing is left, put the tooth
+// back to what it was diagnosed as.
+
+const ALL_SURFACES: ToothSurface[] = ['mesial', 'distal', 'buccal', 'lingual', 'occlusal'];
+
+// records store the label the doctor saw, not the internal key
+const DETAIL_CONDITION: { [label: string]: ToothCondition } = {
+  'Temporary Filling': 'filling_replacement',
+  'Permanent Filling': 'permanent_filling',
+  'GI Filling': 'gi',
+  'Direct Pulp Capping': 'direct_pulp_capping',
+  'Indirect Pulp Capping': 'indirect_pulp_capping',
+};
+
+const DIAGNOSIS_CONDITION: { [label: string]: ToothCondition } = {
+  'Caries': 'caries',
+  'Broken/Inappropriate Filling': 'broken',
+  'Broken\\Inappropriate Filling': 'broken',
+  'Pulpectomy': 'pulpectomy',
+  'Follow-up': 'follow_up',
+  'Needs More Diagnosis': 'needs_diagnosis',
+  'Temporary Filling': 'filling_replacement',
+  'Permanent Filling': 'permanent_filling',
+  'Restoration to Replace': 'filling_replacement',
+  // Fracture and Impacted have no surface colour in this chart, so they
+  // restore to a clear tooth — which is what the chart showed anyway
+  'Root Canal Treated': 'treated',
+  'Direct Pulp Capping': 'direct_pulp_capping',
+  'Indirect Pulp Capping': 'indirect_pulp_capping',
+  'GI': 'gi',
+};
+
+const SURFACE_ALIAS: { [name: string]: ToothSurface } = {
+  mesial: 'mesial', distal: 'distal', buccal: 'buccal',
+  lingual: 'lingual', palatal: 'lingual', occlusal: 'occlusal',
+};
+
+// a diagnosis surface may read "caries (mesial)" or just "mesial"
+const surfaceOf = (label: string): ToothSurface | null => {
+  const inParens = label.match(/\(([^)]+)\)/);
+  const name = (inParens ? inParens[1] : label).trim().toLowerCase();
+  return SURFACE_ALIAS[name] || null;
+};
+
+const paintAll = async (pid: string, tooth: ToothNumber, condition: ToothCondition) => {
+  for (const s of ALL_SURFACES) await saveToothSurfaceCondition(pid, tooth, s, condition);
+};
+
+/** Re-lay what one treatment record puts on its tooth. */
+async function applyEditingRecord(pid: string, rec: any) {
+  const tooth = rec.tooth_number as ToothNumber;
+
+  if (/extract/i.test(rec.treatment || '')) {
+    await paintAll(pid, tooth, 'missing');
+    return;
+  }
+
+  const condition = DETAIL_CONDITION[rec.details];
+  let surfaces: string[] = [];
+  try { surfaces = JSON.parse(rec.surfaces || '[]'); } catch { surfaces = []; }
+
+  // no detail or no surfaces chosen means the doctor left the tooth
+  // reading healthy — which the wipe has already done
+  if (!condition || !surfaces.length) return;
+
+  for (const s of surfaces) {
+    const surface = surfaceOf(s);
+    if (surface) await saveToothSurfaceCondition(pid, tooth, surface, condition);
+  }
+}
+
+/** Put a tooth back to what it was diagnosed as, before any treatment. */
+async function restoreDiagnosis(pid: string, tooth: ToothNumber) {
+  const { data } = await supabase
+    .from('planning_records')
+    .select('*')
+    .eq('permanent_patient_id', pid)
+    .eq('tooth_number', tooth)
+    .eq('action', 'diagnosed')
+    .order('timestamp_num', { ascending: true });
+
+  for (const record of data || []) {
+    let surfaces: string[] = [];
+    try { surfaces = JSON.parse(record.surfaces || '[]'); } catch { surfaces = []; }
+    const condition = DIAGNOSIS_CONDITION[record.condition];
+
+    if (record.condition === 'Extraction' || surfaces.some((s) => /extraction/i.test(s))) {
+      await paintAll(pid, tooth, 'extraction');
+    } else if (surfaces.some((s) => /^missing tooth$/i.test(s))) {
+      await paintAll(pid, tooth, 'missing');
+    } else if (surfaces.some((s) => s === 'Root Canal Treated')) {
+      // RCT is drawn as a border, not surface colour — nothing to restore
+    } else if (condition && surfaces.some((s) => s.toLowerCase() === 'all surfaces')) {
+      await paintAll(pid, tooth, condition);
+    } else if (condition) {
+      for (const s of surfaces) {
+        const surface = surfaceOf(s);
+        if (surface) await saveToothSurfaceCondition(pid, tooth, surface, condition);
+      }
+    }
+  }
+}
+
+/**
+ * Undo one treatment: the record, the chart, and the statistic.
+ * Only the doctor who recorded it may take it back.
+ */
+export async function revertEditingRecord(recordId: string): Promise<DatabaseResponse<null>> {
+  try {
+    const { data: rec, error: readError } = await supabase
+      .from('editing_records')
+      .select('*')
+      .eq('id', recordId)
+      .single();
+
+    if (readError || !rec) throw readError || new Error('Record not found');
+
+    // a doctor corrects their own work; another doctor's numbers are not
+    // theirs to change. Older records carry only a name, so fall back to it.
+    const owned = rec.doctor_id
+      ? rec.doctor_id === acting?.id
+      : !!acting?.name && rec.doctor_name === acting.name;
+    if (!owned) {
+      return { data: null, error: new Error(`Only Dr. ${rec.doctor_name || 'the recording doctor'} can undo this`) };
+    }
+
+    const pid = rec.permanent_patient_id as string;
+    const tooth = rec.tooth_number as ToothNumber;
+
+    // the event goes with it, by trigger
+    const { error: delError } = await supabase.from('editing_records').delete().eq('id', recordId);
+    if (delError) throw delError;
+
+    for (const s of ALL_SURFACES) await deleteToothSurfaceCondition(pid, tooth, s);
+
+    const { data: rest } = await supabase
+      .from('editing_records')
+      .select('*')
+      .eq('permanent_patient_id', pid)
+      .eq('tooth_number', tooth)
+      .order('timestamp_num', { ascending: false })
+      .limit(1);
+
+    if (rest && rest.length > 0) await applyEditingRecord(pid, rest[0]);
+    else await restoreDiagnosis(pid, tooth);
+
+    return { data: null, error: null };
+  } catch (error) {
+    console.error('Error reverting editing record:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Treatment statistics
+// ═══════════════════════════════════════════════════════════════
+
+export type TreatmentStats = { treatments: { [key: string]: number }; total: number };
+
+/**
+ * What was actually done, in a window of time.
+ *
+ * Reads the treatment_events log, which is written by the acts
+ * themselves. Nothing is derived here and nothing is filtered out
+ * afterwards: the query is bounded by date in the database, so it
+ * stays the same size whether a doctor has worked a week or a decade.
+ */
+export async function getTreatmentStats(opts: {
+  doctorId?: string | null;
+  clinicId?: string | null;
+  from: Date;
+  to: Date;
+}): Promise<DatabaseResponse<TreatmentStats>> {
+  try {
+    let query = supabase
+      .from('treatment_events')
+      .select('treatment')
+      .gte('performed_at', opts.from.toISOString())
+      .lte('performed_at', opts.to.toISOString());
+
+    if (opts.doctorId) query = query.eq('doctor_id', opts.doctorId);
+    if (opts.clinicId) query = query.eq('clinic_id', String(opts.clinicId));
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const treatments: { [key: string]: number } = {};
+    (data || []).forEach((row: any) => {
+      const name = row.treatment || 'Unknown';
+      treatments[name] = (treatments[name] || 0) + 1;
+    });
+
+    return { data: { treatments, total: (data || []).length }, error: null };
+  } catch (error) {
+    console.error('Error getting treatment stats:', error);
     return { data: null, error: error as Error };
   }
 }
@@ -1246,6 +1520,24 @@ export async function deleteScalingRecord(
   id: string
 ): Promise<DatabaseResponse<boolean>> {
   try {
+    // scaling counts towards the day's work now, so the same rule holds
+    // as for a treatment: a doctor takes back their own record, not
+    // someone else's numbers
+    const { data: rec } = await supabase
+      .from('scaling_records')
+      .select('doctor_id, doctor_name')
+      .eq('id', id)
+      .single();
+
+    if (rec) {
+      const owned = rec.doctor_id
+        ? rec.doctor_id === acting?.id
+        : !!acting?.name && rec.doctor_name === acting.name;
+      if (!owned) {
+        return { data: false, error: new Error(`Only Dr. ${rec.doctor_name || 'the recording doctor'} can delete this`) };
+      }
+    }
+
     const { error } = await supabase
       .from('scaling_records')
       .delete()

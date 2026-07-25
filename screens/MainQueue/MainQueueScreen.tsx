@@ -109,6 +109,7 @@ export interface MainQueueScreenProps {
   setSelectedPatientForProfile: (val: { id: string; fileNumber: string } | null) => void;
   setShowPatientFile: (val: boolean) => void;
   togglePermanentCardExpansion: (patient: Patient) => void;
+  loadDentalData?: (permanentPatientId: string, patientId: string, forceReload?: boolean) => void;
   activeDentalTab: { [key: string]: 'treatment' | 'referrals' | 'notes' };
   setActiveDentalTab: React.Dispatch<React.SetStateAction<{ [key: string]: 'treatment' | 'referrals' | 'notes' }>>;
   dentalSummaries: { [key: string]: DentalSummary };
@@ -286,6 +287,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     setSelectedPatientForProfile,
     setShowPatientFile,
     togglePermanentCardExpansion,
+    loadDentalData,
     activeDentalTab,
     setActiveDentalTab,
     dentalSummaries,
@@ -848,6 +850,11 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                     setShowPatientFile(true);
                   }}
                   doctorName={currentDoctorName}
+                  // undoing a treatment repaints its tooth, so the summary
+                  // the card is showing has to be read again
+                  onDentalChanged={() => {
+                    if (patient.permanent_patient_id) loadDentalData?.(patient.permanent_patient_id, patient.id, true);
+                  }}
                   embedded
                 />
               )}

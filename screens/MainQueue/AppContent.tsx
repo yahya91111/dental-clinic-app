@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { shadows } from '../../theme';
+import { getTreatmentStats } from '../../lib/database';
 import LoginScreen from '../../LoginScreen';
 import DoctorProfileScreen from '../../DoctorProfileScreen';
 import ArchiveScreen from '../../ArchiveScreen';
@@ -152,7 +153,7 @@ export function AppContent() {
   // Patient data hook (patients, realtime, animations, etc.)
   const {
     patients, setPatients, displayedPatients, userClinicId,
-    myTotalTreatments, setMyTotalTreatments, loadPatients,
+    myTotalTreatments, setMyTotalTreatments, refreshMyTotalTreatments, loadPatients,
     animKey, setAnimKey,
     timelineBlob1Anim, timelineBlob2Anim, timelineBlob3Anim,
     timelineBlob4Anim, timelineBlob5Anim, timelineBlob6Anim
@@ -429,18 +430,28 @@ export function AppContent() {
     (p.clinic === 'Clinic' || !p.clinic)
   ).length;
 
-  // Treatment statistics: count only from statistics records (queue_number = -1) for permanent patients
-  // and from regular patients (queue_number >= 1 && !permanent_patient_id)
-  const treatmentStats = TREATMENTS.slice(1).reduce((acc, treatment) => {
-    const treatmentName = typeof treatment === 'string' ? treatment : treatment.name;
-    acc[treatmentName] = patients.filter(p =>
-      p.treatment === treatmentName &&
-      p.status === 'complete' &&
-      (p.queue_number === -1 || !p.permanent_patient_id) // Statistics records OR regular patients
-    ).length;
-    return acc;
-  }, {} as { [key: string]: number });
-  
+  // The centre's work today, read from the treatment_events log rather
+  // than counted off the queue. The queue only knows what a card SAYS
+  // its treatment is; the log knows what was actually done — a filling
+  // written into a chart, a referral handed over, a scaling recorded.
+  const [treatmentStats, setTreatmentStats] = useState<{ [key: string]: number }>({});
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const clinic = selectedClinicId || userClinicId;
+      if (!clinic) { if (alive) setTreatmentStats({}); return; }
+      const from = new Date(); from.setHours(0, 0, 0, 0);
+      const to = new Date(); to.setHours(23, 59, 59, 999);
+      const { data } = await getTreatmentStats({ clinicId: String(clinic), from, to });
+      if (alive && data) setTreatmentStats(data.treatments);
+    };
+    load();
+    return () => { alive = false; };
+    // showPatientFile / showToothModal: closing either means work may have
+    // been recorded that the queue knows nothing about
+  }, [selectedClinicId, userClinicId, patients, showPatientFile, showToothModal]);
+
+
   // Filter patients based on filters
   let filteredPatients = displayedPatients;
   
@@ -570,6 +581,8 @@ export function AppContent() {
           }
           setShowPatientFile(false);
           setSelectedPatientForProfile(null);
+          // work recorded inside the file never touches the queue
+          refreshMyTotalTreatments();
         }}
         onNavigateHome={async () => {
           // Reload dental data always (whether card is expanded or not)
@@ -582,6 +595,7 @@ export function AppContent() {
           }
           setShowPatientFile(false);
           setSelectedPatientForProfile(null);
+          refreshMyTotalTreatments();
         }}
         onNavigateAppointments={() => {
           setShowPatientFile(false);
@@ -893,6 +907,7 @@ export function AppContent() {
       setSelectedPatientForProfile={setSelectedPatientForProfile}
       setShowPatientFile={setShowPatientFile}
       togglePermanentCardExpansion={togglePermanentCardExpansion}
+      loadDentalData={loadDentalData}
       activeDentalTab={activeDentalTab}
       setActiveDentalTab={setActiveDentalTab}
       dentalSummaries={dentalSummaries}
