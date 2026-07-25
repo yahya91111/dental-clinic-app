@@ -112,6 +112,7 @@ const ACT_G: Record<string, [string, string]> = {
   note: ['#6D9BFF', '#4360D0'],
   edit: ['#FFB443', '#F0890C'],
   danger: ['#FF6E72', '#E23B42'],
+  profile: ['#B98BEA', '#7C4DC4'],   // only a filed patient has one
 };
 // diagonal white sheen laid over each tile (glossy top-left → transparent)
 const SHEEN: [string, string, string] = ['rgba(255,255,255,0.45)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0)'];
@@ -407,11 +408,13 @@ function ActBtn({
   icon,
   label,
   kind,
+  width,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  kind: 'note' | 'edit' | 'danger';
+  kind: 'note' | 'edit' | 'danger' | 'profile';
+  width?: string;
   onPress: () => void;
 }) {
   const g = ACT_G[kind];
@@ -419,7 +422,13 @@ function ActBtn({
   const to = (v: number) => Animated.timing(press, { toValue: v, duration: 120, useNativeDriver: true }).start();
   const scaleTile = press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] });
   return (
-    <TouchableOpacity activeOpacity={1} onPress={onPress} onPressIn={() => to(1)} onPressOut={() => to(0)} style={s.act}>
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={onPress}
+      onPressIn={() => to(1)}
+      onPressOut={() => to(0)}
+      style={[s.act, width ? { width: width as any } : null]}
+    >
       <Animated.View style={[s.actIcShadow, { shadowColor: g[1], backgroundColor: g[1], transform: [{ scale: scaleTile }] }]}>
         <LinearGradient colors={g} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.actIcFill}>
           <LinearGradient colors={SHEEN} locations={SHEEN_LOC} start={{ x: 0.12, y: 0 }} end={{ x: 0.82, y: 1 }} style={s.actSheen} />
@@ -476,6 +485,10 @@ export interface PatientCardV2Props {
   onMenuAction: (patientId: string, action: string) => void;
   onProfilePress: (patient: Patient) => void;
   onToggleExpand: () => void;
+  // a filed patient carries a record; the card borrows it rather than owning it,
+  // so everything the old card showed keeps its existing wiring
+  hasProfile?: boolean;
+  renderProfile?: (backRef: React.MutableRefObject<(() => boolean) | null>) => React.ReactNode;
 }
 
 export function PatientCardV2({
@@ -490,6 +503,8 @@ export function PatientCardV2({
   onMenuAction,
   onProfilePress,
   onToggleExpand,
+  hasProfile,
+  renderProfile,
 }: PatientCardV2Props) {
   // Expansion is driven by the parent: one card open at a time, isolated on the page
   // (the header collapses with the same animation the old card used).
@@ -497,8 +512,13 @@ export function PatientCardV2({
   const [row, setRow] = useState<FieldKey | null>(null);
   // the visit timeline is reference info — folded away until asked for
   const [showVisit, setShowVisit] = useState(false);
+  // the record is opened on request, inside this same card
+  const [showProfile, setShowProfile] = useState(false);
+  const profileBack = useRef<(() => boolean) | null>(null);
   // collapse any open selector when the card is closed from the outside
-  useEffect(() => { if (!isExpanded) { setRow(null); setShowVisit(false); } }, [isExpanded]);
+  useEffect(() => {
+    if (!isExpanded) { setRow(null); setShowVisit(false); setShowProfile(false); }
+  }, [isExpanded]);
 
   // ── the turn: one object, two sides. Rotation runs on the native driver; the height
   // change rides LayoutAnimation (also native) at the same duration, and the faces swap
@@ -620,6 +640,7 @@ export function PatientCardV2({
   const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.violet : kind === 'na' ? C.away : C.blue;
   const durLabel = needsDuration(patient.treatment) ? `${durOf(patient)}min` : '';
   const caseText = [patient.condition, patient.treatment, durLabel].filter((x) => x && x !== 'Condition' && x !== 'Treatment').join(' · ');
+  const ACT_W = hasProfile ? '25%' : '33.33%';   // a filed patient gets a fourth tile
   const flagList = [patient.isElderly ? 'Elderly' : null, patient.isSpecialNeeds ? 'Special' : null].filter(Boolean) as string[];
 
   const animate = (d = 200) =>
@@ -628,6 +649,14 @@ export function PatientCardV2({
     );
 
   const toggleDrawer = () => {
+    // inside the record, the chevron is the only way back: first out of an open
+    // section, then out of the record — never straight out of the card
+    if (showProfile) {
+      animate(240);
+      if (profileBack.current?.()) return;
+      setShowProfile(false);
+      return;
+    }
     // animate the drawer growing on open; on close, the returning list's own entrance handles it
     if (!isExpanded) animate(240);
     onToggleExpand();
@@ -726,7 +755,20 @@ export function PatientCardV2({
                       <PulseDot color={dotColor} animated />
                       <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient)}</Text>
                     </View>
-                    <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
+                    {/* the name is the patient — tapping it opens their chart,
+                        collapsed or open, as long as they have a file */}
+                    {hasProfile ? (
+                      <TouchableOpacity
+                        style={s.nameHit}
+                        activeOpacity={0.6}
+                        hitSlop={{ top: 8, bottom: 8 }}
+                        onPress={() => onProfilePress(patient)}
+                      >
+                        <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
+                    )}
                   </View>
                   {caseText ? <Text style={s.caseLine} numberOfLines={1}>{caseText}</Text> : null}
                 </Animated.View>
@@ -736,12 +778,23 @@ export function PatientCardV2({
                 </Animated.View>
               </View>
               <TouchableOpacity style={s.chev} onPress={toggleDrawer} activeOpacity={0.7}>
-                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={scale(20)} color={C.inkStrong} />
+                {/* inside the record it points back, because that is where it goes */}
+                <Ionicons
+                  name={showProfile ? 'chevron-back' : open ? 'chevron-up' : 'chevron-down'}
+                  size={scale(20)}
+                  color={C.inkStrong}
+                />
               </TouchableOpacity>
             </View>
 
+            {/* the record takes the whole drawer: the visit console and the action
+                tiles step out, and its own tiles are all that is left */}
+            {open && !turned && showProfile && renderProfile && (
+              <View style={s.drawer}>{renderProfile(profileBack)}</View>
+            )}
+
             {/* drawer — folded away while the card is turned over */}
-            {open && !turned && (
+            {open && !turned && !showProfile && (
               <View style={s.drawer}>
                 <View style={s.triad}>
                   <ConsoleRow
@@ -852,9 +905,18 @@ export function PatientCardV2({
                 </View>
 
                 <View style={s.acts}>
-                  <ActBtn icon="document-text-outline" label="Notes" kind="note" onPress={turnToNote} />
-                  <ActBtn icon="create-outline" label="Edit" kind="edit" onPress={() => onMenuAction(patient.id, 'edit')} />
-                  <ActBtn icon="trash-outline" label="Delete" kind="danger" onPress={() => onMenuAction(patient.id, 'delete')} />
+                  {hasProfile && (
+                    <ActBtn
+                      icon="person-circle-outline"
+                      label="Profile"
+                      kind="profile"
+                      width={ACT_W}
+                      onPress={() => { animate(260); setShowProfile(true); }}
+                    />
+                  )}
+                  <ActBtn icon="document-text-outline" label="Notes" kind="note" width={ACT_W} onPress={turnToNote} />
+                  <ActBtn icon="create-outline" label="Edit" kind="edit" width={ACT_W} onPress={() => onMenuAction(patient.id, 'edit')} />
+                  <ActBtn icon="trash-outline" label="Delete" kind="danger" width={ACT_W} onPress={() => onMenuAction(patient.id, 'delete')} />
                 </View>
 
                 <View style={s.hr} />
@@ -1069,6 +1131,7 @@ const s = StyleSheet.create({
   },
   qnumTxt: { fontSize: scale(22), fontWeight: '800', letterSpacing: -0.5, color: C.inkStrong },
   who: { flex: 1, minWidth: 0 },
+  nameHit: { flex: 1 },
   name: { flex: 1, fontSize: scale(17), fontWeight: '700', color: C.inkStrong, textAlign: 'right', lineHeight: scale(23) },
   // top line: status (left) faces the name (right); case sits on its own line below
   topLine: { flexDirection: 'row', alignItems: 'center', gap: scale(8) },

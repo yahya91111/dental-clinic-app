@@ -9,6 +9,7 @@ import {
   Animated,
   LayoutAnimation,
   PanResponder,
+  Alert,
 } from 'react-native';
 import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +27,8 @@ const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane } from './QueueTimeline';
 import { QueueStatsStrip } from './QueueStatsStrip';
+import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
+import { createScalingRecord, getScalingRecords } from '../../lib/database';
 
 export interface MainQueueScreenProps {
   // Animated blob values
@@ -792,6 +795,62 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 setShowPatientFile(true);
               }}
               onToggleExpand={() => togglePermanentCardExpansion(patient)}
+              hasProfile={!!patient.permanent_patient_id}
+              renderProfile={(backRef) => (
+                <ExpandedPatientHeader
+                  backRef={backRef}
+                  patient={patient as any}
+                  dentalSummary={(dentalSummaries[patient.id] || null) as any}
+                  loadingDentalData={loadingDentalData[patient.id] || false}
+                  patientReferrals={(patient.permanent_patient_id ? patientReferrals[patient.permanent_patient_id] || [] : []) as any}
+                  loadingReferrals={false}
+                  onLoadReferrals={async () => {
+                    if (!patient.permanent_patient_id) return;
+                    const result = await getReferrals(patient.permanent_patient_id);
+                    if (result.data) setPatientReferrals(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
+                  }}
+                  toothNotes={(patient.permanent_patient_id ? patientToothNotes[patient.permanent_patient_id] || [] : []) as any}
+                  loadingToothNotes={false}
+                  onLoadToothNotes={async () => {
+                    if (!patient.permanent_patient_id) return;
+                    const result = await getAllToothNotes(patient.permanent_patient_id);
+                    if (result.data) setPatientToothNotes(prev => ({ ...prev, [patient.permanent_patient_id!]: result.data || [] }));
+                  }}
+                  lastScalingDate={lastScalingDates[patient.id] ? new Date(lastScalingDates[patient.id]!) : undefined}
+                  onFluoridePress={() => {}}
+                  onScalingPress={async () => {
+                    if (!patient.permanent_patient_id) return;
+                    const { error } = await createScalingRecord(patient.permanent_patient_id, currentDoctorName || 'Doctor');
+                    if (error) { Alert.alert('Error', 'Failed to save'); return; }
+                    const { data: recs } = await getScalingRecords(patient.permanent_patient_id);
+                    if (recs && recs.length > 0) {
+                      const latest = recs.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+                      setLastScalingDates(prev => ({ ...prev, [patient.id]: latest.timestamp }));
+                    }
+                    Alert.alert('Success', 'Scaling record saved');
+                  }}
+                  patientConsents={patientConsents[patient.id] ? [{ consent_type: 'general', signed: true }] : []}
+                  onConsentPress={() => togglePatientConsent(patient)}
+                  onOpenDentalChart={() => {
+                    if (!patient.permanent_patient_id) return;
+                    setSelectedPatientForProfile({ id: patient.permanent_patient_id, fileNumber: patient.file_number || '' });
+                    setShowPatientFile(true);
+                  }}
+                  onTogglePermanentExpansion={() => togglePermanentCardExpansion(patient)}
+                  onToothEditPress={(_pid, tooth) => {
+                    if (!patient.permanent_patient_id) return;
+                    setToothModalPatientId(patient.permanent_patient_id);
+                    setSelectedTooth(String(tooth));
+                    setShowToothModal(true);
+                  }}
+                  onPatientNamePress={(patientId, fileNumber) => {
+                    setSelectedPatientForProfile({ id: patientId, fileNumber });
+                    setShowPatientFile(true);
+                  }}
+                  doctorName={currentDoctorName}
+                  embedded
+                />
+              )}
             />
             ) : (
             <AnimatedPatientCard

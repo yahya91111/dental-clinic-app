@@ -1189,6 +1189,57 @@ export async function getScalingRecords(
 }
 
 /**
+ * What has actually been done to this patient — the same sources the "Total
+ * Treatment Record" in the patient's file reads: the per-tooth editing records
+ * and the scaling records, plus any referral that was actually handed over.
+ * Not the queue's `treatment` field, which is what a visit was FOR, not what
+ * was carried out.
+ */
+export async function getPreviousTreatments(
+  permanentPatientId: string
+): Promise<DatabaseResponse<{ id: string; treatment: string; tooth?: number | null; doctor_name?: string; timestamp: string }[]>> {
+  try {
+    const [edits, scalings, referrals] = await Promise.all([
+      getEditingRecords(permanentPatientId),
+      getScalingRecords(permanentPatientId),
+      getReferrals(permanentPatientId),
+    ]);
+
+    const out = [
+      ...(edits.data || []).map((r: any) => ({
+        id: `e-${r.id}`,
+        treatment: r.treatment,
+        tooth: r.tooth_number,
+        doctor_name: r.doctor_name,
+        timestamp: r.timestamp,
+      })),
+      ...(scalings.data || []).map((r: any) => ({
+        id: `s-${r.id}`,
+        treatment: 'Scaling',
+        tooth: null,
+        doctor_name: r.doctor_name,
+        timestamp: r.timestamp,
+      })),
+      // a referral only counts as done to the patient once it was handed over
+      ...(referrals.data || [])
+        .filter((r: any) => r.status === 'given')
+        .map((r: any) => ({
+          id: `r-${r.id}`,
+          treatment: `Referral · ${r.department || r.referral_type || 'Department'}`,
+          tooth: r.tooth_number ?? null,
+          doctor_name: r.doctor_name,
+          timestamp: r.timestamp || r.created_at,
+        })),
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return { data: out, error: null };
+  } catch (error) {
+    console.error('Error getting previous treatments:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+/**
  * Delete scaling record
  */
 export async function deleteScalingRecord(
