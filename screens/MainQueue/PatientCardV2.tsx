@@ -70,12 +70,21 @@ const QNUM_G: [string, string] = ['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.
 
 const ACTIONS_W = scale(150); // swipe-reveal width (Done + NA), finger-tracked 1:1
 
+// the other side of the swipe: the clinics. One tone for all of them — they are
+// the same kind of thing, and the number is what tells them apart.
+const CLINIC_CHOICES = CLINICS.filter((c) => c.id !== 0).map((c) => c.id);
+const CLINIC_CHIP_W = scale(40), CLINIC_GAP = scale(6), CLINIC_PAD = scale(9);
+const CLINICS_W =
+  CLINIC_CHIP_W * CLINIC_CHOICES.length + CLINIC_GAP * (CLINIC_CHOICES.length - 1) + CLINIC_PAD * 2;
+
 // status tint wash behind the card content — matches the prototype's .card::before
 // (default is applied at opacity 0.5 there, so the waiting stops are ~halved here)
 const TINT: Record<string, [string, string]> = {
   waiting: ['rgba(184,212,241,0.30)', 'rgba(212,184,232,0.28)'],
-  inclinic: ['rgba(14,165,160,0.20)', 'rgba(91,124,216,0.14)'],
-  done: ['rgba(16,185,129,0.22)', 'rgba(59,130,246,0.16)'],
+  // in the chair reads violet — the one state that belongs to the clinic, not the queue.
+  // these two carry a step more colour than the rest: they are the states you scan for.
+  inclinic: ['rgba(155,111,212,0.34)', 'rgba(129,90,205,0.23)'],
+  done: ['rgba(16,185,129,0.30)', 'rgba(59,130,246,0.22)'],
   away: ['rgba(100,116,139,0.18)', 'rgba(100,116,139,0.10)'],
 };
 
@@ -521,8 +530,13 @@ export function PatientCardV2({
   // ── swipe-to-reveal via gesture-handler Swipeable (coordinates cleanly with the scroll view) ──
   const swipeRef = useRef<Swipeable>(null);
   const closeSwipe = () => swipeRef.current?.close();
-  const renderLeftActions = () => (
-    <View style={s.actions}>
+  // the card is glass now, so the buttons behind it must fade with the swipe —
+  // otherwise they stay legible through the card all the way through the close
+  const revealFade = (progress: Animated.AnimatedInterpolation<number>) =>
+    progress.interpolate({ inputRange: [0, 0.45, 1], outputRange: [0, 0.06, 1], extrapolate: 'clamp' });
+
+  const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>) => (
+    <Animated.View style={[s.actions, { opacity: revealFade(progress) }]}>
       <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction(patient.id, 'complete'); }}>
         <LinearGradient colors={G.done} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
           <Ionicons name="checkmark-sharp" size={scale(22)} color="#fff" />
@@ -535,7 +549,32 @@ export function PatientCardV2({
           <Text style={s.swipeTxt}>NA</Text>
         </LinearGradient>
       </TouchableOpacity>
-    </View>
+    </Animated.View>
+  );
+
+  // ── the other way: the clinics, straight from the swipe ──
+  const setClinic = (id: number) => {
+    closeSwipe();
+    onUpdateField(patient.id, 'clinic', `Clinic ${id}`);
+  };
+
+  // the queue chip stands where the clinic tray comes out, so it steps aside for it
+  const qnumFade = useRef(new Animated.Value(1)).current;
+  const fadeQnum = (to: number) =>
+    Animated.timing(qnumFade, { toValue: to, duration: 150, useNativeDriver: true }).start();
+
+  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => (
+    <Animated.View style={[s.clinics, { opacity: revealFade(progress) }]}>
+      {/* the tray is made of the same material as the card it comes out of */}
+      <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      {CLINIC_CHOICES.map((id) => (
+        <TouchableOpacity key={id} activeOpacity={0.8} style={s.clinicChip} onPress={() => setClinic(id)}>
+          <LinearGradient colors={QNUM_G} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.qnumFill}>
+            <Text style={s.clinicNum}>{id}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      ))}
+    </Animated.View>
   );
 
   // entrance slide-in (matches the classic list feel)
@@ -556,7 +595,7 @@ export function PatientCardV2({
   const tint = TINT[kind === 'na' ? 'away' : kind]; // NA reuses the grey "away" wash
   const qn = patient.queue_number === 0 ? '-' : String(patient.queue_number);
   const clinicNum = clinicNumOf(patient.clinic);
-  const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.teal : kind === 'na' ? C.away : C.blue;
+  const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.violet : kind === 'na' ? C.away : C.blue;
   const durLabel = needsDuration(patient.treatment) ? `${durOf(patient)}min` : '';
   const caseText = [patient.condition, patient.treatment, durLabel].filter((x) => x && x !== 'Condition' && x !== 'Treatment').join(' · ');
   const flagList = [patient.isElderly ? 'Elderly' : null, patient.isSpecialNeeds ? 'Special' : null].filter(Boolean) as string[];
@@ -638,20 +677,26 @@ export function PatientCardV2({
         <Swipeable
           ref={swipeRef}
           renderLeftActions={renderLeftActions}
+          renderRightActions={renderRightActions}
           friction={1}
           leftThreshold={scale(36)}
+          rightThreshold={scale(36)}
           overshootLeft={false}
+          overshootRight={false}
+          onSwipeableOpenStartDrag={(d) => { if (d === 'right') fadeQnum(0); }}
+          onSwipeableCloseStartDrag={(d) => { if (d === 'right') fadeQnum(1); }}
+          onSwipeableWillClose={(d) => { if (d === 'right') fadeQnum(1); }}
           enabled={row !== 'dur'}
         >
           <View style={s.surface}>
           <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.cardInner}>
             {/* collapsed row (RTL: number + name right, arrow left) */}
             <View style={s.row}>
-              <View style={s.qnum}>
+              <Animated.View style={[s.qnum, { opacity: qnumFade }]}>
                 <LinearGradient colors={QNUM_G} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.qnumFill}>
                   <Text style={s.qnumTxt}>{qn}</Text>
                 </LinearGradient>
-              </View>
+              </Animated.View>
               <View style={s.who}>
                 <View style={s.topLine}>
                   <View style={s.statusWrap}>
@@ -898,12 +943,14 @@ const s = StyleSheet.create({
 
   // soft drop shadow (separate layer so the card's overflow:hidden can't clip it)
   // mirrors the prototype's  0 14px 30px -18px rgba(30,45,75,.55)
+  // translucent, not opaque: the page shows through the card. It keeps just
+  // enough white to cast a shadow (a fully clear background casts none on iOS).
   shadowWrap: {
     borderRadius: scale(22),
-    backgroundColor: '#EEF2F8',
+    backgroundColor: 'rgba(255,255,255,0.20)',
     shadowColor: '#1E2D4B',
     shadowOffset: { width: 0, height: scale(9) },
-    shadowOpacity: 0.26,
+    shadowOpacity: 0.18,
     shadowRadius: scale(18),
     elevation: 6,
   },
@@ -930,14 +977,16 @@ const s = StyleSheet.create({
   // square corners — the outer card's overflow:hidden does all the rounding, so the
   // content meets the swipe buttons edge-to-edge with no light sliver at the corners
   cardInner: { borderRadius: 0 },
-  // opaque base so nothing shows through the card content
-  surface: { backgroundColor: '#F7F9FC' },
+  // glass base — the page reads through the card, the status wash sits on top.
+  // The swipe buttons don't leak: Swipeable parks them off the left edge and the
+  // card's overflow:hidden clips whatever is outside it.
+  surface: { backgroundColor: 'rgba(255,255,255,0.28)' },
   // continuous rounded border drawn on TOP of everything → frame stays connected across the buttons
   border: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: scale(22),
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: C.brd,
   },
 
@@ -946,6 +995,26 @@ const s = StyleSheet.create({
   swipeBtn: { flex: 1 },
   swipeFill: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: scale(5) },
   swipeTxt: { color: '#fff', fontSize: scale(11), fontWeight: '800', letterSpacing: 0.4 },
+
+  // the clinic picker on the other side — the queue chip, once per chair
+  clinics: {
+    width: CLINICS_W,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: CLINIC_PAD, gap: CLINIC_GAP,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  clinicChip: {
+    width: CLINIC_CHIP_W,
+    height: scale(44),
+    borderRadius: scale(14),
+    backgroundColor: 'rgba(255,255,255,0.30)',
+    shadowColor: '#1E2D4B',
+    shadowOffset: { width: 0, height: scale(4) },
+    shadowOpacity: 0.22,
+    shadowRadius: scale(7),
+    elevation: 3,
+  },
+  clinicNum: { fontSize: scale(19), fontWeight: '800', letterSpacing: -0.5, color: C.inkStrong },
 
   // collapsed row
   // row-reverse → number + name sit on the RIGHT (Arabic reading start), arrow on the LEFT

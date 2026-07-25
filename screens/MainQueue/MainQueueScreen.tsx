@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   StatusBar,
   Animated,
+  LayoutAnimation,
+  PanResponder,
 } from 'react-native';
 import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +25,7 @@ import { PatientCardV2 } from './PatientCardV2';
 const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane } from './QueueTimeline';
+import { QueueStatsStrip } from './QueueStatsStrip';
 
 export interface MainQueueScreenProps {
   // Animated blob values
@@ -319,6 +322,41 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   }, []);
   const appointmentCtx = useMemo(() => scheduleRef.current, [expandedPermanentCardId, patients]);
 
+  // ── الإحصاءُ يُطوى بالسحب ──
+  // سحبةٌ للأعلى فوقَ بطاقتَي «Total / Waiting» تُقلِّصُهما إلى شريطٍ زجاجيٍّ واحدٍ
+  // تمرُّ عليه الأرقامُ نفسُها، والمساحةُ المتحرِّرةُ تنزلُ لكروتِ المرضى.
+  //
+  // الطيُّ يجري على LayoutAnimation لا على قيمةٍ متحرِّكة: قيمةُ الارتفاعِ المتحرِّكةُ
+  // كانت تُعيدُ حسابَ تخطيطِ الصفحةِ كلَّ إطارٍ من خيطِ الجافاسكربت فيظهرُ التقطيع.
+  // أمّا هذه فتغييرٌ واحدٌ في الحالة، ثمّ تتولّى المنصّةُ الحركةَ كلَّها أصلًا.
+  const STRIP_H = scale(46);
+  const [statsH, setStatsH] = useState(0);      // الارتفاعُ الطبيعيّ — يلزمُ لضبطِ الكرتِ الموسَّع
+  const [statsFolded, setStatsFolded] = useState(false);
+  const foldedRef = useRef(false);
+
+  const setFold = useCallback((to: boolean) => {
+    if (foldedRef.current === to) return;
+    foldedRef.current = to;
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(300, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity),
+    );
+    setStatsFolded(to);
+  }, []);
+
+  // عموديًّا فقط، وإلّا فالسحبُ الأفقيُّ يبقى لصفحاتِ المخطّط
+  const statsPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx) * 1.4,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dy < -22) setFold(true);
+        else if (g.dy > 22) setFold(false);
+      },
+    }),
+  ).current;
+
+  // المساحةُ التي حرَّرها الطيُّ تُعادُ فوقَ الكرتِ الموسَّع، فلا يرتفعُ خلفَ سقفِ الشاشة
+  const foldGap = statsFolded && statsH ? Math.max(0, statsH - STRIP_H) : 0;
+
   // إجراءاتُ نافذةِ المريضِ على المخطّط = دوالُّ الكرتِ نفسُها، فالحدثُ واحدٌ أينما نُفِّذ:
   // الإدخالُ يكتبُ العيادةَ ووقتَ الدخول، و«غيرُ متاح» يُبدّلُ الحالة، و«إنهاء» يفتحُ مسارَ Done ذاتَه.
   const tlEnterClinic = useCallback((patientId: string, clinic: string) => {
@@ -591,7 +629,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           <View style={{ width: scale(44) }} />
         </Animated.View>
 
-        {/* Statistics + horizontal timeline (swipe left/right) */}
+        {/* Statistics + horizontal timeline (swipe left/right) — swipe up/down to fold */}
         <Animated.View
           style={[
             { marginBottom: scale(24) },
@@ -602,9 +640,22 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               ],
               opacity: headerElementsOpacity,
               zIndex: expandedPermanentCardId ? 1 : 10,
-            }
+            },
+            fold.clip,
+            statsFolded && { height: STRIP_H },
           ]}
           pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
+          {...statsPan.panHandlers}
+        >
+        <View
+          style={statsFolded ? fold.gone : null}
+          pointerEvents={statsFolded ? 'none' : 'auto'}
+          onLayout={(e) => {
+            // re-measured whenever the cards themselves change height (the
+            // statistics card is taller than the two counters)
+            const h = Math.round(e.nativeEvent.layout.height);
+            if (h > 0 && h !== statsH && !foldedRef.current) setStatsH(h);
+          }}
         >
           <QueueTimelinePager
             patients={patients}
@@ -656,42 +707,19 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               </>
             )}
           />
-        </Animated.View>
+        </View>
 
-        {/* Queue Header */}
-        <Animated.View
-          style={[
-            styles.queueHeader,
-            {
-              transform: [
-                { translateY: headerTranslateY },
-                { translateY: headerElementsTranslate },
-              ],
-              marginTop: queueMarginTop,
-              opacity: headerElementsOpacity,
-              zIndex: expandedPermanentCardId ? 1 : 10,
-            }
-          ]}
-          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
-        >
-          <View style={styles.queueTitleContainer}>
-            <Text style={styles.queueTitle}>Queue</Text>
-            {/* Minimize/Maximize Button */}
-            <TouchableOpacity
-              style={styles.minimizeButton}
-              onPress={toggleHeaderCollapse}
-              activeOpacity={0.7}
-            >
-              <View style={styles.minimizeButtonInnerGlow} />
-              <Ionicons
-                name={isHeaderCollapsed ? 'chevron-down' : 'chevron-up'}
-                size={scale(24)}
-                color="#7DD3C0"
-                style={{
-                  zIndex: 10
-                }}
-              />
-            </TouchableOpacity>
+          {/* what the two cards fold into */}
+          <View
+            style={[fold.abs, !statsFolded && fold.gone]}
+            pointerEvents={statsFolded ? 'auto' : 'none'}
+          >
+            <QueueStatsStrip
+              total={totalPatients}
+              waiting={waitingPatients}
+              patients={patients}
+              active={statsFolded}
+            />
           </View>
         </Animated.View>
 
@@ -741,7 +769,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           }}
         >
           {/* Patient List */}
-          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(80) }]}>
+          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(80) + foldGap }]}>
           {filteredPatients
             .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
             .map((patient, index) => (
@@ -995,3 +1023,10 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     </View>
   );
 };
+
+// the strip sits over the cards' own space, so the fold is a single height change
+const fold = StyleSheet.create({
+  clip: { overflow: 'hidden' },
+  abs: { position: 'absolute', top: 0, left: 0, right: 0 },
+  gone: { opacity: 0 },
+});
