@@ -1584,14 +1584,11 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
 
     setExpandedPermanentCardId(prev => prev === patient.id ? null : patient.id);
 
-    // Auto-collapse header when expanding card
-    if (isExpanding && !isHeaderCollapsed) {
-      toggleHeaderCollapse();
-    }
-    // Auto-expand header when closing card
-    else if (!isExpanding && isHeaderCollapsed) {
-      toggleHeaderCollapse();
-    }
+    // The header no longer slides on a manual toggle. It folds out of the layout
+    // purely because a card is expanded, so every way OUT of that state — closing
+    // the card, deleting it, a reload — brings the page back on its own. The old
+    // toggle had to be called again by hand, and delete never did: the header
+    // stayed shifted up and the cards stayed pinned to the top of the screen.
 
     // Load dental data when expanding - always force reload to get fresh data
     if (isExpanding && patient.permanent_patient_id) {

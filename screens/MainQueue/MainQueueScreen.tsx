@@ -354,8 +354,6 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     }),
   ).current;
 
-  // المساحةُ التي حرَّرها الطيُّ تُعادُ فوقَ الكرتِ الموسَّع، فلا يرتفعُ خلفَ سقفِ الشاشة
-  const foldGap = statsFolded && statsH ? Math.max(0, statsH - STRIP_H) : 0;
 
   // إجراءاتُ نافذةِ المريضِ على المخطّط = دوالُّ الكرتِ نفسُها، فالحدثُ واحدٌ أينما نُفِّذ:
   // الإدخالُ يكتبُ العيادةَ ووقتَ الدخول، و«غيرُ متاح» يُبدّلُ الحالة، و«إنهاء» يفتحُ مسارَ Done ذاتَه.
@@ -553,7 +551,10 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               ],
               opacity: headerElementsOpacity,
               zIndex: expandedPermanentCardId ? 1 : 10,
-            }
+            },
+            // an expanded card owns the page: the chrome above it is invisible
+            // anyway, so it gives up its space too
+            expandedPermanentCardId ? fold.away : null,
           ]}
           pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
         >
@@ -643,6 +644,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             },
             fold.clip,
             statsFolded && { height: STRIP_H },
+            expandedPermanentCardId ? fold.away : null,
           ]}
           pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
           {...statsPan.panHandlers}
@@ -769,7 +771,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           }}
         >
           {/* Patient List */}
-          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(80) + foldGap }]}>
+          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}>
           {filteredPatients
             .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
             .map((patient, index) => (
@@ -1029,4 +1031,5 @@ const fold = StyleSheet.create({
   clip: { overflow: 'hidden' },
   abs: { position: 'absolute', top: 0, left: 0, right: 0 },
   gone: { opacity: 0 },
+  away: { height: 0, marginBottom: 0, overflow: 'hidden' },
 });

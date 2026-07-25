@@ -77,6 +77,7 @@ const CLINIC_CHIP_W = scale(40), CLINIC_GAP = scale(6), CLINIC_PAD = scale(9);
 const CLINICS_W =
   CLINIC_CHIP_W * CLINIC_CHOICES.length + CLINIC_GAP * (CLINIC_CHOICES.length - 1) + CLINIC_PAD * 2;
 
+
 // status tint wash behind the card content — matches the prototype's .card::before
 // (default is applied at opacity 0.5 there, so the waiting stops are ~halved here)
 const TINT: Record<string, [string, string]> = {
@@ -87,6 +88,24 @@ const TINT: Record<string, [string, string]> = {
   done: ['rgba(16,185,129,0.30)', 'rgba(59,130,246,0.22)'],
   away: ['rgba(100,116,139,0.18)', 'rgba(100,116,139,0.10)'],
 };
+
+// The clinic tray sits against the card's RIGHT EDGE — and because the card slides
+// away whole, that edge always shows the tail of its wash, never a fraction of it.
+// Down that edge the diagonal reads from its half-way colour at the top to its last
+// colour at the bottom, so the tray repeats exactly that as a vertical gradient:
+// every column of it matches the card's edge, and no seam can appear between them.
+const chan = (c: string) => {
+  const m = c.match(/rgba?\(([^)]+)\)/);
+  const p = m ? m[1].split(',').map(Number) : [0, 0, 0, 0];
+  return [p[0] || 0, p[1] || 0, p[2] || 0, p[3] === undefined ? 1 : p[3]];
+};
+const halfway = (a: string, b: string) => {
+  const A = chan(a), B = chan(b);
+  const at = (i: number) => Math.round((A[i] + B[i]) / 2);
+  return `rgba(${at(0)}, ${at(1)}, ${at(2)}, ${((A[3] + B[3]) / 2).toFixed(3)})`;
+};
+const TRAY_TINT: Record<string, [string, string]> = {};
+for (const k of Object.keys(TINT)) TRAY_TINT[k] = [halfway(TINT[k][0], TINT[k][1]), TINT[k][1]];
 
 // action-tile gradients (iOS app-icon look): [top-light, bottom-dark]
 const ACT_G: Record<string, [string, string]> = {
@@ -558,15 +577,17 @@ export function PatientCardV2({
     onUpdateField(patient.id, 'clinic', `Clinic ${id}`);
   };
 
-  // the queue chip stands where the clinic tray comes out, so it steps aside for it
+  // the clinic tray comes out where the patient's identity sits, so the number and
+  // the name step aside for it and the card asks its question instead
   const qnumFade = useRef(new Animated.Value(1)).current;
+  const askFade = qnumFade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const fadeQnum = (to: number) =>
     Animated.timing(qnumFade, { toValue: to, duration: 150, useNativeDriver: true }).start();
 
   const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => (
     <Animated.View style={[s.clinics, { opacity: revealFade(progress) }]}>
-      {/* the tray is made of the same material as the card it comes out of */}
-      <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      {/* the same sheet of material, continued — not a second one */}
+      <LinearGradient colors={trayTint} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
       {CLINIC_CHOICES.map((id) => (
         <TouchableOpacity key={id} activeOpacity={0.8} style={s.clinicChip} onPress={() => setClinic(id)}>
           <LinearGradient colors={QNUM_G} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.qnumFill}>
@@ -593,6 +614,7 @@ export function PatientCardV2({
 
   const kind = kindOf(patient);
   const tint = TINT[kind === 'na' ? 'away' : kind]; // NA reuses the grey "away" wash
+  const trayTint = TRAY_TINT[kind === 'na' ? 'away' : kind] as [string, string];
   const qn = patient.queue_number === 0 ? '-' : String(patient.queue_number);
   const clinicNum = clinicNumOf(patient.clinic);
   const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.violet : kind === 'na' ? C.away : C.blue;
@@ -698,14 +720,20 @@ export function PatientCardV2({
                 </LinearGradient>
               </Animated.View>
               <View style={s.who}>
-                <View style={s.topLine}>
-                  <View style={s.statusWrap}>
-                    <PulseDot color={dotColor} animated />
-                    <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient)}</Text>
+                <Animated.View style={{ opacity: qnumFade }}>
+                  <View style={s.topLine}>
+                    <View style={s.statusWrap}>
+                      <PulseDot color={dotColor} animated />
+                      <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient)}</Text>
+                    </View>
+                    <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
                   </View>
-                  <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
-                </View>
-                {caseText ? <Text style={s.caseLine} numberOfLines={1}>{caseText}</Text> : null}
+                  {caseText ? <Text style={s.caseLine} numberOfLines={1}>{caseText}</Text> : null}
+                </Animated.View>
+                {/* the card stops saying who, and says what the swipe is for */}
+                <Animated.View style={[s.askClinic, { opacity: askFade }]} pointerEvents="none">
+                  <Text style={s.askClinicTxt}>Clinic</Text>
+                </Animated.View>
               </View>
               <TouchableOpacity style={s.chev} onPress={toggleDrawer} activeOpacity={0.7}>
                 <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={scale(20)} color={C.inkStrong} />
@@ -1053,6 +1081,9 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: scale(3), elevation: 3,
   },
   statusTxt: { fontSize: scale(11.5), fontWeight: '800' },
+  // sits exactly where the name was, so the swap reads as one thing becoming another
+  askClinic: { position: 'absolute', top: 0, right: 0, bottom: 0, alignItems: 'flex-end', justifyContent: 'center' },
+  askClinicTxt: { fontSize: scale(17), fontWeight: '800', color: C.violet, letterSpacing: -0.2 },
   caseLine: { fontSize: scale(11.5), fontWeight: '500', color: C.muted, textAlign: 'left', marginTop: scale(3) },
   chev: {
     width: scale(32), height: scale(32), borderRadius: scale(11),
