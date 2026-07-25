@@ -151,8 +151,12 @@ export interface MainQueueScreenProps {
   setNewPatientCondition: (val: string) => void;
   newPatientTreatment: string;
   setNewPatientTreatment: (val: string) => void;
+  newPatientMinutes: number | null;
+  setNewPatientMinutes: (val: number | null) => void;
   isElderly: boolean;
   setIsElderly: (val: boolean) => void;
+  isSpecialNeeds: boolean;
+  setIsSpecialNeeds: (val: boolean) => void;
   newPatientNote: string;
   setNewPatientNote: (val: string) => void;
   permanentPatientSearchResults: any[];
@@ -213,6 +217,7 @@ export interface MainQueueScreenProps {
   toothModalPatientId: string;
   selectedTooth: string;
   currentDoctorName: string;
+  treatmentDonePatientId: string | null;
   setDentalSummaries: React.Dispatch<React.SetStateAction<{ [key: string]: DentalSummary }>>;
 }
 
@@ -910,8 +915,12 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           setNewPatientCondition={props.setNewPatientCondition}
           newPatientTreatment={props.newPatientTreatment}
           setNewPatientTreatment={props.setNewPatientTreatment}
+          newPatientMinutes={props.newPatientMinutes}
+          setNewPatientMinutes={props.setNewPatientMinutes}
           isElderly={props.isElderly}
           setIsElderly={props.setIsElderly}
+          isSpecialNeeds={props.isSpecialNeeds}
+          setIsSpecialNeeds={props.setIsSpecialNeeds}
           newPatientNote={props.newPatientNote}
           setNewPatientNote={props.setNewPatientNote}
           permanentPatientSearchResults={props.permanentPatientSearchResults}
@@ -973,6 +982,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           toothModalPatientId={toothModalPatientId}
           selectedTooth={selectedTooth}
           currentDoctorName={currentDoctorName}
+          treatmentDonePatientId={props.treatmentDonePatientId}
           setDentalSummaries={setDentalSummaries}
           setPatientReferrals={setPatientReferrals}
           setPatientToothNotes={setPatientToothNotes}

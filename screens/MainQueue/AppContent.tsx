@@ -229,9 +229,11 @@ export function AppContent() {
   const [newPatientName, setNewPatientName] = useState('');
   const [newPatientFileNumber, setNewPatientFileNumber] = useState(''); // New: File number (4 digits)
   const [newPatientQueueNumber, setNewPatientQueueNumber] = useState('');
+  const [newPatientMinutes, setNewPatientMinutes] = useState<number | null>(null);
   const [newPatientCondition, setNewPatientCondition] = useState('Condition');
   const [newPatientTreatment, setNewPatientTreatment] = useState('Treatment');
   const [isElderly, setIsElderly] = useState(false);
+  const [isSpecialNeeds, setIsSpecialNeeds] = useState(false);
   const [newPatientNote, setNewPatientNote] = useState('');
 
   // Permanent patient search state
@@ -292,12 +294,16 @@ export function AppContent() {
     setNewPatientFileNumber,
     newPatientQueueNumber,
     setNewPatientQueueNumber,
+    newPatientMinutes,
+    setNewPatientMinutes,
     newPatientCondition,
     setNewPatientCondition,
     newPatientTreatment,
     setNewPatientTreatment,
     isElderly,
     setIsElderly,
+    isSpecialNeeds,
+    setIsSpecialNeeds,
     newPatientNote,
     setNewPatientNote,
     patientMode,
@@ -927,6 +933,8 @@ export function AppContent() {
       newPatientFileNumber={newPatientFileNumber}
       setNewPatientFileNumber={setNewPatientFileNumber}
       newPatientQueueNumber={newPatientQueueNumber}
+      newPatientMinutes={newPatientMinutes}
+      setNewPatientMinutes={setNewPatientMinutes}
       setNewPatientQueueNumber={setNewPatientQueueNumber}
       newPatientCondition={newPatientCondition}
       setNewPatientCondition={setNewPatientCondition}
@@ -934,6 +942,8 @@ export function AppContent() {
       setNewPatientTreatment={setNewPatientTreatment}
       isElderly={isElderly}
       setIsElderly={setIsElderly}
+      isSpecialNeeds={isSpecialNeeds}
+      setIsSpecialNeeds={setIsSpecialNeeds}
       newPatientNote={newPatientNote}
       setNewPatientNote={setNewPatientNote}
       permanentPatientSearchResults={permanentPatientSearchResults}
@@ -971,6 +981,7 @@ export function AppContent() {
       convertToPermanentPatient={convertToPermanentPatient}
       showTreatmentDoneModal={showTreatmentDoneModal}
       setShowTreatmentDoneModal={setShowTreatmentDoneModal}
+      treatmentDonePatientId={treatmentDonePatientId}
       clinicDoctors={clinicDoctors}
       doctorSearchQuery={doctorSearchQuery}
       setDoctorSearchQuery={setDoctorSearchQuery}

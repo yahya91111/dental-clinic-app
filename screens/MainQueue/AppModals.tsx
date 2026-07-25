@@ -11,6 +11,13 @@ import ToothDetailsModal from '../../components/ToothDetailsModal';
 import { generateDentalSummary } from './dentalHelpers';
 import { getCompleteDentalChart, getReferrals, getAllToothNotes } from '../../lib/database';
 import { DentalSummary, Referral, ToothNote } from '../../types';
+import { AddPatientTicket } from './AddPatientTicket';
+import { TreatmentDoneSheet } from './TreatmentDoneSheet';
+
+// the add-patient window as a queue ticket. Flip to false for the classic modal.
+const USE_TICKET = true;
+// the treatment-done window as a sign-off sheet. Flip to false for the classic modal.
+const USE_DONE_SHEET = true;
 
 interface AppModalsProps {
   // Add Patient Modal
@@ -28,12 +35,16 @@ interface AppModalsProps {
   setNewPatientFileNumber: (num: string) => void;
   newPatientQueueNumber: string;
   setNewPatientQueueNumber: (num: string) => void;
+  newPatientMinutes: number | null;
+  setNewPatientMinutes: (m: number | null) => void;
   newPatientCondition: string;
   setNewPatientCondition: (condition: string) => void;
   newPatientTreatment: string;
   setNewPatientTreatment: (treatment: string) => void;
   isElderly: boolean;
   setIsElderly: (elderly: boolean) => void;
+  isSpecialNeeds: boolean;
+  setIsSpecialNeeds: (special: boolean) => void;
   newPatientNote: string;
   setNewPatientNote: (note: string) => void;
   permanentPatientSearchResults: any[];
@@ -82,6 +93,7 @@ interface AppModalsProps {
 
   // Treatment Done Modal
   showTreatmentDoneModal: boolean;
+  treatmentDonePatientId: string | null;
   setShowTreatmentDoneModal: (show: boolean) => void;
   clinicDoctors: {id: string, name: string}[];
   doctorSearchQuery: string;
@@ -121,8 +133,69 @@ interface AppModalsProps {
 export function AppModals(props: AppModalsProps) {
   return (
     <>
-      {/* Add Patient Modal */}
-      <Modal visible={props.showAddModal} animationType="fade" transparent onRequestClose={() => {
+      {/* Add Patient — ticket */}
+      {USE_TICKET && (
+        <AddPatientTicket
+          visible={props.showAddModal}
+          onClose={() => {
+            props.setShowAddModal(false);
+            props.setIsModalExpanded(false);
+            props.setPatientMode('search');
+            props.setIsPatientEditMode(false);
+            props.setModalEditingPatientId(null);
+            props.setNewPatientName('');
+            props.setNewPatientFileNumber('');
+            props.setNewPatientQueueNumber('');
+            props.setNewPatientCondition(CONDITIONS[0].name);
+            // a closed ticket is a torn ticket — the next one opens blank
+            props.setNewPatientTreatment(TREATMENTS[0].name);
+            props.setNewPatientMinutes(null);
+            props.setNewPatientNote('');
+            props.setIsElderly(false);
+            props.setIsSpecialNeeds(false);
+            props.setSelectedPermanentPatientId(null);
+            props.setShowFileNumberSuggestions(false);
+            props.setShowPatientSuggestions(false);
+            props.setFileNumberSearchResults([]);
+            props.setPermanentPatientSearchResults([]);
+          }}
+          isEditMode={props.isPatientEditMode}
+          name={props.newPatientName}
+          setName={props.setNewPatientName}
+          fileNumber={props.newPatientFileNumber}
+          setFileNumber={props.setNewPatientFileNumber}
+          queueNumber={props.newPatientQueueNumber}
+          setQueueNumber={props.setNewPatientQueueNumber}
+          condition={props.newPatientCondition}
+          setCondition={props.setNewPatientCondition}
+          treatment={props.newPatientTreatment}
+          setTreatment={props.setNewPatientTreatment}
+          note={props.newPatientNote}
+          setNote={props.setNewPatientNote}
+          isElderly={props.isElderly}
+          setIsElderly={props.setIsElderly}
+          isSpecialNeeds={props.isSpecialNeeds}
+          setIsSpecialNeeds={props.setIsSpecialNeeds}
+          minutes={props.newPatientMinutes}
+          setMinutes={props.setNewPatientMinutes}
+          patientMode={props.patientMode}
+          setPatientMode={props.setPatientMode}
+          selectedPermanentPatientId={props.selectedPermanentPatientId}
+          setSelectedPermanentPatientId={props.setSelectedPermanentPatientId}
+          onNameSearch={props.handlePatientNameSearch}
+          onFileSearch={props.handleFileNumberSearch}
+          fileNumberSearchResults={props.fileNumberSearchResults}
+          permanentPatientSearchResults={props.permanentPatientSearchResults}
+          showFileNumberSuggestions={props.showFileNumberSuggestions}
+          setShowFileNumberSuggestions={props.setShowFileNumberSuggestions}
+          showPatientSuggestions={props.showPatientSuggestions}
+          setShowPatientSuggestions={props.setShowPatientSuggestions}
+          onSubmit={props.handleAddPatient}
+        />
+      )}
+
+      {/* Add Patient Modal (classic) */}
+      <Modal visible={!USE_TICKET && props.showAddModal} animationType="fade" transparent onRequestClose={() => {
         props.setShowAddModal(false);
         props.setIsModalExpanded(false);
       }}>
@@ -828,8 +901,30 @@ export function AppModals(props: AppModalsProps) {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Treatment Done Modal */}
-      <Modal visible={props.showTreatmentDoneModal} animationType="slide" transparent onRequestClose={() => props.setShowTreatmentDoneModal(false)}>
+      {/* Treatment Done — sign-off sheet */}
+      {USE_DONE_SHEET && (() => {
+        const done = props.patients.find(pt => pt.id === props.treatmentDonePatientId);
+        return (
+          <TreatmentDoneSheet
+            visible={props.showTreatmentDoneModal}
+            onClose={() => {
+              props.setShowTreatmentDoneModal(false);
+              props.setDoctorSearchQuery('');
+            }}
+            patientName={done?.name}
+            queueNumber={done?.queue_number}
+            treatment={done?.treatment}
+            currentDoctorName={props.currentDoctorName}
+            doctors={props.clinicDoctors}
+            query={props.doctorSearchQuery}
+            setQuery={props.setDoctorSearchQuery}
+            onPick={props.handleTreatmentDoneByDoctor}
+          />
+        );
+      })()}
+
+      {/* Treatment Done Modal (classic) */}
+      <Modal visible={!USE_DONE_SHEET && props.showTreatmentDoneModal} animationType="slide" transparent onRequestClose={() => props.setShowTreatmentDoneModal(false)}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>

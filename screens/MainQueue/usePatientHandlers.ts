@@ -43,12 +43,16 @@ interface UsePatientHandlersParams {
   setNewPatientFileNumber: React.Dispatch<React.SetStateAction<string>>;
   newPatientQueueNumber: string;
   setNewPatientQueueNumber: React.Dispatch<React.SetStateAction<string>>;
+  newPatientMinutes: number | null;
+  setNewPatientMinutes: React.Dispatch<React.SetStateAction<number | null>>;
   newPatientCondition: string;
   setNewPatientCondition: React.Dispatch<React.SetStateAction<string>>;
   newPatientTreatment: string;
   setNewPatientTreatment: React.Dispatch<React.SetStateAction<string>>;
   isElderly: boolean;
   setIsElderly: React.Dispatch<React.SetStateAction<boolean>>;
+  isSpecialNeeds: boolean;
+  setIsSpecialNeeds: React.Dispatch<React.SetStateAction<boolean>>;
   newPatientNote: string;
   setNewPatientNote: React.Dispatch<React.SetStateAction<string>>;
 
@@ -165,12 +169,16 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     setNewPatientFileNumber,
     newPatientQueueNumber,
     setNewPatientQueueNumber,
+    newPatientMinutes,
+    setNewPatientMinutes,
     newPatientCondition,
     setNewPatientCondition,
     newPatientTreatment,
     setNewPatientTreatment,
     isElderly,
     setIsElderly,
+    isSpecialNeeds,
+    setIsSpecialNeeds,
     newPatientNote,
     setNewPatientNote,
     patientMode,
@@ -451,6 +459,7 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
           name: newPatientName,
           queue_number: queueNumber,
           is_elderly: isElderly,
+          is_special_needs: isSpecialNeeds,
           status: isElderly ? 'elderly' : 'normal',
           note: newPatientNote.trim() || null,
           condition: newPatientCondition,
@@ -610,11 +619,16 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
             queue_number: queueNumber,
             status: isElderly ? 'elderly' : 'normal',
             is_elderly: isElderly,
+            is_special_needs: isSpecialNeeds,
             note: newPatientNote.trim() || null,
             clinic: 'Clinic',
             clinic_id: selectedClinicId || userClinicId,
             condition: newPatientCondition,
             treatment: newPatientTreatment,
+            // chair time chosen on the ticket — the horizontal timeline needs it to place them
+            expected_minutes: treatmentNeedsDuration(newPatientTreatment)
+              ? (newPatientMinutes ?? TREATMENT_DURATIONS[newPatientTreatment] ?? 30)
+              : null,
             // Permanent patient linking (Migration completed )
             file_number: englishFileNumber,
             permanent_patient_id: permanentPatientId || null,
@@ -635,6 +649,8 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
       setNewPatientCondition('Condition');
       setNewPatientTreatment('Treatment');
       setIsElderly(false);
+      setIsSpecialNeeds(false);
+      setNewPatientMinutes(null);
       setNewPatientNote('');
       setShowConditionDropdown(false);
       setShowTreatmentDropdown(false);
@@ -703,6 +719,7 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
           setNewPatientQueueNumber(queueNumberString);
           setNewPatientCondition(editPatient.condition || 'Condition');
           setIsElderly(editPatient.isElderly || false);
+          setIsSpecialNeeds(editPatient.isSpecialNeeds || false);
           setNewPatientNote(editPatient.note || '');
 
           // Set edit mode
