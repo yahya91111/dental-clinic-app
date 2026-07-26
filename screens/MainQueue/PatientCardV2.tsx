@@ -17,6 +17,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../../lib/scale';
 import { Patient, CLINICS, CONDITIONS, TREATMENTS, TREATMENT_DURATIONS, treatmentNeedsDuration } from './constants';
+import { slotAvailable, shiftFit, Lane, Break } from './QueueTimeline';
+
+// لقطةُ الجدولِ المعروضِ على المخطّط — بها يُفحَصُ توفّرُ وقتِ الحجز، وهل تسعُ المدّةُ قبلَ تبديلِ الشفت
+type ApptCtx = { chairCount: number; breaks: Break[]; lanes: Lane[]; nowMin: number };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PatientCardV2 — a faithful RN port of the glass "triad console" prototype.
@@ -57,6 +61,7 @@ const G = {
   done: ['#10B981', '#0B8F63'] as [string, string],
   away: ['#7C8798', '#4B5563'] as [string, string],
   keep: ['#5B7CD8', '#9B6FD4'] as [string, string],
+  busy: ['#E0616A', '#C0303C'] as [string, string],   // لا كرسيَّ فارغًا في هذا الوقت
 };
 
 // the reverse of the card: the same wash, lit from the other side
@@ -336,12 +341,61 @@ function DurationDial({ minutes, onCommit }: { minutes: number; onCommit: (m: nu
   );
 }
 
+// ── the shift-change heads-up ──
+// The doctor picks the minutes the treatment needs, not the minutes that are left. So this
+// never blocks and never edits behind their back — it only says what the chart will do with
+// the number they chose, and names the hour, so the answer isn't a surprise on the timeline.
+// "Shorten" is there because the common case is a treatment that would fit in the gap with a
+// small trim; it snaps to the largest duration that still lands before the change.
+function ShiftNotice({ minutes, ctx, selfId, onShorten }: {
+  minutes: number; ctx?: ApptCtx; selfId: string; onShorten: (m: number) => void;
+}) {
+  const [okFor, setOkFor] = useState<number | null>(null);
+  if (!ctx || !ctx.lanes.length) return null;
+  const r = shiftFit(minutes, ctx.lanes, ctx.breaks, ctx.nowMin, selfId);
+  if (r.fits || okFor === minutes) return null;
+  const alt = Math.floor(r.gap / DUR_STEP) * DUR_STEP;   // أطولُ مدّةٍ ما زالت تسعُ قبلَ التبديل
+  return (
+    <View style={s.shWrap}>
+      <View style={s.shHead}>
+        <View style={s.shIc}><Ionicons name="swap-horizontal" size={scale(13)} color="#B96C05" /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.shTitle}>After the shift change</Text>
+          <Text style={s.shBody}>
+            {minutes} min won't fit before it — his turn comes at{' '}
+            <Text style={s.shTime}>{r.startsAt != null ? fmtClock(r.startsAt) : ''}</Text>
+          </Text>
+        </View>
+      </View>
+      <View style={s.shBtns}>
+        {alt >= DUR_MIN && (
+          <TouchableOpacity activeOpacity={0.85} style={s.shAlt} onPress={() => { setOkFor(null); onShorten(alt); }}>
+            <Text style={s.shAltTxt}>Shorten to {alt}</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity activeOpacity={0.85} style={s.shOk} onPress={() => setOkFor(minutes)}>
+          <LinearGradient colors={G.amber} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.shOkFill}>
+            <Text style={s.shOkTxt}>OK</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ── a simple −/＋ time stepper for the same-day appointment (no drag), then Book (violet) ──
-function AppointmentStepper({ booked, onBook, onClear }: { booked?: number; onBook: (min: number) => void; onClear: () => void }) {
+// A time with no free chair is not a time you can book: every chair is taken for
+// the whole visit, so the patient could not be treated then. The clock turns red
+// and says so, rather than letting the booking be made and quietly slip later.
+function AppointmentStepper({ booked, dur, avail, selfId, onBook, onClear }: {
+  booked?: number; dur: number; avail?: ApptCtx; selfId: string;
+  onBook: (min: number) => void; onClear: () => void;
+}) {
   const init = booked != null ? Math.max(APPT_START, Math.min(APPT_END, booked)) : 9 * 60;
   const [t, setT] = useState(init);
   const step = (d: number) => setT((v) => Math.max(APPT_START, Math.min(APPT_END, v + d)));
   const isBooked = booked != null && t === booked;
+  const free = avail ? slotAvailable(t, dur, avail.chairCount, avail.lanes, avail.breaks, selfId) : true;
   return (
     <View style={s.apptWrap}>
       <View style={s.stepRow}>
@@ -349,17 +403,22 @@ function AppointmentStepper({ booked, onBook, onClear }: { booked?: number; onBo
           <Ionicons name="remove" size={scale(24)} color={t <= APPT_START ? C.hair : C.teal} />
         </TouchableOpacity>
         <View style={s.stepReadout}>
-          <Text style={s.apptNum}>{fmtClock(t)}</Text>
+          <Text style={[s.apptNum, !free && s.apptNumOff]}>{fmtClock(t)}</Text>
+          {!free && <Text style={s.apptNo}>Unavailable</Text>}
         </View>
         <TouchableOpacity activeOpacity={0.8} onPress={() => step(APPT_STEP)} style={s.stepBtn} disabled={t >= APPT_END}>
           <Ionicons name="add" size={scale(24)} color={t >= APPT_END ? C.hair : C.teal} />
         </TouchableOpacity>
       </View>
       <View style={s.apptBtns}>
-        <TouchableOpacity activeOpacity={0.85} onPress={() => onBook(t)} style={s.apptBook}>
-          <LinearGradient colors={G.teal} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.apptBookFill}>
-            <Ionicons name={isBooked ? 'checkmark-sharp' : 'alarm-outline'} size={scale(16)} color="#fff" />
-            <Text style={s.apptBookTxt}>{isBooked ? 'Booked' : 'Book time'}</Text>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => free && onBook(t)} disabled={!free} style={s.apptBook}>
+          <LinearGradient colors={free ? G.teal : G.busy} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.apptBookFill}>
+            <Ionicons
+              name={!free ? 'close-circle-outline' : isBooked ? 'checkmark-sharp' : 'alarm-outline'}
+              size={scale(16)}
+              color="#fff"
+            />
+            <Text style={s.apptBookTxt}>{!free ? 'No chair free' : isBooked ? 'Booked' : 'Book time'}</Text>
           </LinearGradient>
         </TouchableOpacity>
         {booked != null && (
@@ -488,6 +547,8 @@ export interface PatientCardV2Props {
   // a filed patient carries a record; the card borrows it rather than owning it,
   // so everything the old card showed keeps its existing wiring
   hasProfile?: boolean;
+  // لقطةُ المخطّطِ نفسِه (عبرَ onSchedule) فيطابقُ فحصُ الحجزِ ما تراه على الشاشة
+  appointmentCtx?: ApptCtx;
   renderProfile?: (backRef: React.MutableRefObject<(() => boolean) | null>) => React.ReactNode;
 }
 
@@ -504,6 +565,7 @@ export function PatientCardV2({
   onProfilePress,
   onToggleExpand,
   hasProfile,
+  appointmentCtx,
   renderProfile,
 }: PatientCardV2Props) {
   // Expansion is driven by the parent: one card open at a time, isolated on the page
@@ -853,11 +915,20 @@ export function PatientCardV2({
                         {row === 'dur' && (
                           <View style={s.rowBody}>
                             <Text style={s.subLabel}>DURATION</Text>
-                            <DurationDial key={patient.treatment} minutes={durOf(patient)} onCommit={(mnt) => onSetDuration(patient.id, mnt)} />
+                            <DurationDial key={`${patient.treatment}·${durOf(patient)}`} minutes={durOf(patient)} onCommit={(mnt) => onSetDuration(patient.id, mnt)} />
+                            <ShiftNotice
+                              minutes={durOf(patient)}
+                              ctx={appointmentCtx}
+                              selfId={patient.id}
+                              onShorten={(mnt) => onSetDuration(patient.id, mnt)}
+                            />
                             <View style={s.subSep} />
                             <Text style={s.subLabel}>APPOINTMENT</Text>
                             <AppointmentStepper
                               booked={patient.appointment_min}
+                              dur={durOf(patient)}
+                              avail={appointmentCtx}
+                              selfId={patient.id}
                               onBook={(min) => onSetAppointment(patient.id, min)}
                               onClear={() => onSetAppointment(patient.id, null)}
                             />
@@ -1267,6 +1338,32 @@ const s = StyleSheet.create({
   // same-day appointment (merged under TIME): sub-labels, −/＋ stepper, Book/Queue
   subLabel: { fontSize: scale(10.5), fontWeight: '800', letterSpacing: 1, color: C.muted, marginBottom: scale(6) },
   subSep: { height: 1, backgroundColor: C.hair, marginTop: scale(14), marginBottom: scale(15) },
+
+  // ── تنبيهُ تبديلِ الشفت: كهرمانٌ لا أحمر — إخبارٌ بما سيحدث، لا منعٌ ولا خطأ ──
+  shWrap: {
+    marginTop: scale(12), padding: scale(11), borderRadius: scale(14),
+    backgroundColor: 'rgba(234,138,12,0.09)',
+    borderWidth: 1, borderColor: 'rgba(234,138,12,0.22)',
+  },
+  shHead: { flexDirection: 'row', alignItems: 'flex-start', gap: scale(9) },
+  shIc: {
+    width: scale(24), height: scale(24), borderRadius: scale(8),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(234,138,12,0.16)',
+  },
+  shTitle: { fontSize: scale(11), fontWeight: '900', letterSpacing: 0.6, color: '#B96C05', textTransform: 'uppercase' },
+  shBody: { marginTop: scale(3), fontSize: scale(12), lineHeight: scale(17), fontWeight: '600', color: C.ink },
+  shTime: { fontWeight: '900', color: '#B96C05' },
+  shBtns: { flexDirection: 'row', alignItems: 'center', gap: scale(8), marginTop: scale(11) },
+  shAlt: {
+    flex: 1, paddingVertical: scale(10), borderRadius: scale(12), alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    borderWidth: 1, borderColor: 'rgba(234,138,12,0.30)',
+  },
+  shAltTxt: { fontSize: scale(12.5), fontWeight: '800', color: '#B96C05' },
+  shOk: { width: scale(88), borderRadius: scale(12), overflow: 'hidden' },
+  shOkFill: { paddingVertical: scale(11), alignItems: 'center' },
+  shOkTxt: { color: '#fff', fontSize: scale(12.5), fontWeight: '900', letterSpacing: 0.4 },
   apptWrap: { paddingTop: scale(2) },
   stepRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(18) },
   stepBtn: {
@@ -1276,6 +1373,8 @@ const s = StyleSheet.create({
   },
   stepReadout: { minWidth: scale(118), alignItems: 'center' },
   apptNum: { fontSize: scale(30), fontWeight: '800', color: C.teal, letterSpacing: -0.5 },
+  apptNumOff: { color: '#C0303C' },
+  apptNo: { marginTop: scale(1), fontSize: scale(9.5), fontWeight: '800', letterSpacing: 1, color: '#C0303C' },
   apptBtns: { flexDirection: 'row', gap: scale(9), marginTop: scale(15) },
   apptBook: { flex: 1, borderRadius: scale(13), overflow: 'hidden' },
   apptBookFill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: scale(7), paddingVertical: scale(12) },

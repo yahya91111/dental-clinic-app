@@ -17,218 +17,31 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Defs, Pattern, Line as SvgLine, Rect as SvgRect } from 'react-native-svg';
 import { scale, scaledStyleSheet, SCREEN } from '../../lib/scale';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getScheduleSettings, updateScheduleBreaks } from '../../lib/database';
 import { Patient, TREATMENT_DURATIONS } from './constants';
 
-// المدّة: الطبيبُ يحدّدها لكلِّ مريض (expected_minutes)؛ وإلّا تقديرٌ من نوعِ العلاج.
-const estMinutes = (p: Patient): number =>
-  (p.expected_minutes && p.expected_minutes > 0) ? p.expected_minutes : (TREATMENT_DURATIONS[p.treatment || ''] ?? 20);
-// شرطُ الظهورِ في المخطّط: أن يكون الطبيبُ قد حدّد المدّة على الكرت.
-const hasDuration = (p: Patient): boolean => !!p.expected_minutes && p.expected_minutes > 0;
-// ذوو الأولويّة إلى مقدّمةِ الدور: كبارُ السنّ + الاحتياجاتُ الخاصّة (يُختاران على الكرت).
-const isPriority = (p: Patient): boolean => !!p.isElderly || !!p.isSpecialNeeds;
+// قلبُ الترتيب في ملفٍّ مستقلٍّ بلا React — كي يُشغَّلَ ويُختبَرَ وحدَه.
+// (scripts/test-timeline-wall.ts)
+import {
+  buildLanes, slotAvailable, shiftFit, estMinutes, hasDuration, isPriority,
+  minutesOfDay, isRealClinic, clinicNum,
+} from './queueLanes';
+import type { Kind, Blk, Lane, TimelineData, Break } from './queueLanes';
+export { buildLanes, slotAvailable, shiftFit };
+export type { Lane, TimelineData, Break };
 
-const minutesOfDay = (d?: Date): number | null =>
-  d ? d.getHours() * 60 + d.getMinutes() : null;
 const fmtHM = (min: number): string => {
   const m = Math.round(min);
   return `${Math.floor(m / 60)}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
 };
-// مدّةُ الفراغِ المتاحِ (بين مريضَين أو قبلَ البريك): دقائقُ حتّى ٥٩ «10 min»، ثمّ ساعاتٌ «1hr» / «1hr 30min»
+// مدّةُ الفراغِ المتاحِ: دقائقُ حتّى ٥٩ «10 min»، ثمّ ساعاتٌ «1hr» / «1hr 30min»
 const fmtGap = (min: number): string => {
   const m = Math.round(min);
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60), r = m % 60;
   return r === 0 ? `${h}hr` : `${h}hr ${r}min`;
 };
-
-type Kind = 'done' | 'cur' | 'over' | 'fut' | 'eld' | 'lateDone' | 'break' | 'na';
-// orig: وقتُ البريكِ الأصليُّ المحدَّد (كي نُظهِرَ «أُزيحَ · كان HH:MM» إن تحرّك) — للبريكِ فقط
-// fixed: بريكٌ ثابتٌ (تبديلُ شفت) لا يتحرّكُ مهما حصل؛ وإلّا متحرّكٌ يُدفَعُ بانشغالٍ حقيقيّ
-type Blk = { start: number; end: number; kind: Kind; p: Patient; orig?: number; fixed?: boolean };
-export type Lane = { clinic: string; short: string; blocks: Blk[] };
-export type TimelineData = { lanes: Lane[]; dayStart: number; dayEnd: number };
-export type Break = { start: number; end: number; fixed?: boolean };   // فترةُ استراحةٍ لكلِّ العيادات (دقائقُ من منتصف الليل)؛ fixed = ثابتٌ لا يتحرّك
-
-const isRealClinic = (c?: string): boolean => !!c && /^clinic\s*\d+/i.test(c);
-const clinicNum = (c: string): number => parseInt((c.match(/\d+/) || ['0'])[0], 10);
-
-// مريضٌ صوريٌّ لكتلةِ البريك (كي تُعامَلَ ككتلةٍ عاديّةٍ في الرسمِ والتخطيط دونَ حقلٍ اختياريّ)
-const BREAK_P = { id: '__break__', name: 'Break', queue_number: -2, age: 0 } as Patient;
-
-// ── توفّرُ المواعيد (لحجزِ وقتِ الدخول من الكرت) ──
-// هل الفترةُ [start, start+dur] متاحةٌ لموعدٍ جديد؟ متاحٌ = عيادةٌ واحدةٌ على الأقلِّ تبقى فارغةً
-// طوالَ الفترةِ وفقَ الجدولِ المتوقَّعِ لكلِّ العيادات (كلُّ المرضى: داخلون + منتظِرون بالدور + محجوزون)
-// وخارجَ البريك. الفحصُ لكلِّ عيادةٍ على حدة فلا يُحسَبُ كرسيٌّ فيه مريضان متتاليان ككرسيَّين.
-// chairCount<1 (غيرُ معروف) → لا نمنع. excludeId يستثني كتلةَ المريضِ نفسِه عند تعديلِ حجزِه.
-export function slotAvailable(
-  start: number, dur: number, chairCount: number,
-  lanes: Lane[], breaks: Break[], excludeId?: string,
-): boolean {
-  const end = start + dur;
-  if (breaks.some((b) => start < b.end && end > b.start)) return false;
-  if (chairCount < 1 || !lanes.length) return true;
-  return lanes.some((lane) =>
-    lane.blocks.every((b) =>
-      // البريكُ يُفحَصُ أعلاه، و«غيرُ المتاح» لا يشغلُ كرسيًّا أصلًا
-      b.kind === 'break' || b.kind === 'na' || b.p.id === excludeId || !(start < b.end && end > b.start)
-    )
-  );
-}
-
-// ── بناءُ المسارات من المرضى ──
-// chairsOverride: عددُ الكراسي من الجدولِ المبنيّ (إن وُجد)؛ وإلّا تُشتَقُّ من عياداتِ المرضى.
-export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?: string[], breaks: Break[] = []): TimelineData {
-  // «غيرُ المتاح» (na) يبقى ظاهرًا في دورِه ضمنَ الطابور (يُلوَّنُ فقط، لا يُنقَلُ إلى مكانٍ آخر) — يُعالَجُ داخلَ حلقةِ الانتظار
-  const active = patients.filter((p) => p.queue_number !== -1 && hasDuration(p));
-
-  let chairs: string[];
-  if (chairsOverride && chairsOverride.length) {
-    chairs = chairsOverride.slice();
-  } else {
-    chairs = Array.from(new Set(active.map((p) => p.clinic).filter(isRealClinic))) as string[];
-    chairs.sort((a, b) => clinicNum(a) - clinicNum(b));
-    if (chairs.length === 0) chairs.push('Clinic 1');
-  }
-
-  const lanes: { [c: string]: Blk[] } = {};
-  const free: { [c: string]: number } = {};
-  const hasReal: { [c: string]: boolean } = {};
-  chairs.forEach((c) => { lanes[c] = []; free[c] = nowMin; hasReal[c] = false; });
-  const laneOf = (c?: string): string => (isRealClinic(c) && lanes[c!] ? c! : chairs[0]);
-  const earliestFree = (): string => chairs.reduce((best, c) => (free[c] < free[best] ? c : best), chairs[0]);
-
-  const waiting: Patient[] = [];
-
-  for (const p of active) {
-    const entry = minutesOfDay(p.clinic_entry_at);
-    const done = minutesOfDay(p.completed_at);
-    const est = estMinutes(p);
-
-    // غيرُ المتاحِ: لا يُعامَلُ كجارٍ أو منجَز — يُوضَعُ في دورِه ضمنَ الطابور (سيُلوَّنُ 'na' ويبقى مكانَه)
-    if (p.status === 'na') { waiting.push(p); continue; }
-    if (p.status === 'complete' || done != null) {
-      const s = entry ?? (done != null ? done - est : nowMin);
-      const e = Math.max(done ?? s + est, s + 5);
-      const lane = laneOf(p.clinic);
-      // أُنجزَ متأخّرًا إن تجاوزَ الزمنُ الفعليُّ المدّةَ المقدَّرة → يبقى أحمر (لا يتحوّلُ رماديًّا)
-      const late = entry != null && (e - s) > est + 1;
-      lanes[lane].push({ start: s, end: e, kind: late ? 'lateDone' : 'done', p });
-      free[lane] = Math.max(free[lane], e); hasReal[lane] = true;
-    } else if (entry != null) {
-      // دخلَ العيادة: يبقى شكلُ الكرتِ كما كانَ — كرتٌ بمقاسِ المدّةِ المقدَّرةِ كاملةً [الدخول → الدخول+المدّة]،
-      // فـ«يمشي عليه الخطُّ الزمنيُّ» مُظهِرًا كم بقيَ ومتى ينتهي. وإن تجاوزَ المدّةَ (over) امتدَّ إلى الآنَ ليُبيّنَ زمنَ التأخير.
-      const lane = laneOf(p.clinic);
-      const estEnd = entry + est;
-      const late = nowMin > estEnd;
-      lanes[lane].push({ start: entry, end: late ? Math.max(nowMin, entry + 2) : estEnd, kind: late ? 'over' : 'cur', p });
-      // الكرسيُّ مشغولٌ حتّى الإنجازِ المتوقَّعِ (أو الآنَ إن تجاوزَه) — لِتوقُّعٍ صحيحٍ لِمَن بعده
-      free[lane] = Math.max(free[lane], estEnd, nowMin); hasReal[lane] = true;
-    } else {
-      waiting.push(p);
-    }
-  }
-
-  // ── البريك لكلِّ عيادةٍ على حدة: كتلةٌ **ثابتةٌ في وقتِها المحدَّد** ──
-  //   • الخطُّ الزمنيُّ لا يحرّكُه، والمنتظِرون المتوقَّعون لا يحرّكونَه، و«غيرُ المتاح» لا يحرّكُه.
-  //   • يحرّكُه شيءٌ واحدٌ فقط: انشغالٌ **حقيقيٌّ** — مريضٌ دخلَ فعلًا (سُجِّل) عندَ/قبلَ وقتِ البريكِ وما زالَ
-  //     يُعالَجُ خلالَه → يُرحَّلُ البريكُ إلى ما بعدِ انتهائِه. المتوقَّعون/غيرُ المتاحِ يلتفّونَ حولَه (يأتون بعدَه إن بلغوه).
-  const brs = [...breaks].sort((a, b) => a.start - b.start);
-  const breakIv: { [c: string]: { start: number; end: number }[] } = {};   // فتراتُ البريكِ الفعليّةُ (لالتفافِ المنتظِرين)
-  chairs.forEach((c) => { breakIv[c] = []; });
-  for (const c of chairs) {
-    const realBlocks = lanes[c].slice();   // في هذه المرحلةِ كلُّ كتلِ العيادةِ حقيقيّةٌ (منجَز/جارٍ) — لم يُوضَعْ منتظِرٌ بعد
-    for (const br of brs) {
-      const d = Math.max(1, br.end - br.start);            // مدّةٌ ثابتةٌ (تُعرَضُ داخلَ الكرت)
-      let s = br.start;
-      // البريكُ **الثابت** (تبديلُ شفت) لا يتحرّكُ مهما حصل. أمّا **المتحرّك** فيُدفَعُ فقط بانشغالٍ حقيقيٍّ
-      // يغطّي وقتَه (مريضٌ دخلَ عندَ/قبلَه وما زالَ) — لا الخطُّ الزمنيُّ ولا المتوقَّعون.
-      if (!br.fixed) {
-        for (let g = 0; g < 8; g++) {
-          const cover = realBlocks.find((rb) => rb.start <= s && s < rb.end);
-          if (!cover) break;
-          s = cover.end;
-        }
-      }
-      lanes[c].push({ start: s, end: s + d, kind: 'break', p: BREAK_P, orig: br.start, fixed: br.fixed });
-      breakIv[c].push({ start: s, end: s + d });
-    }
-  }
-
-  // ── المواعيدُ المحجوزة (appointment_min): تُوضَعُ في وقتِها الثابتِ على كرسيٍّ متاحٍ لها ──
-  //   يُحجَزُ ذو الموعدِ سلَفًا، والمنتظِرون العاديّون (حسبَ الدور) يلتفّون حولَ الحجزِ والبريكِ فلا يتداخلان.
-  // «غيرُ المتاح» يُعزَلُ عن الدورِ تمامًا (يُوضَعُ في المؤخّرةِ لاحقًا)، فلا يدخلُ حسابَ المواعيدِ ولا الطابور
-  const naWaiting = waiting.filter((p) => p.status === 'na');
-  const apptWaiting = waiting.filter((p) => p.status !== 'na' && p.appointment_min != null)
-    .sort((a, b) => (a.appointment_min! - b.appointment_min!) || a.queue_number - b.queue_number);
-  const flowWaiting = waiting.filter((p) => p.status !== 'na' && p.appointment_min == null);
-
-  const apptIv: { [c: string]: { start: number; end: number }[] } = {};
-  chairs.forEach((c) => { apptIv[c] = []; });
-  for (const p of apptWaiting) {
-    const est = estMinutes(p);
-    const t = p.appointment_min!;
-    const e = t + est;
-    // اختَرْ عيادةً بلا موعدٍ متداخلٍ ولا بريكٍ متداخلٍ ولا انشغالٍ حقيقيٍّ يتجاوزُ وقتَ الموعد
-    let chosen: string | null = null;
-    for (const c of chairs) {
-      const realBusy = hasReal[c] && free[c] > t;
-      const clash = apptIv[c].concat(breakIv[c]).some((x) => t < x.end && e > x.start);
-      if (!realBusy && !clash) { chosen = c; break; }
-    }
-    if (chosen == null) chosen = earliestFree();               // احتياطًا: أقربُ كرسيٍّ (قد يتأخّر)
-    const s = Math.max(t, hasReal[chosen] ? free[chosen] : t);
-    lanes[chosen].push({ start: s, end: s + est, kind: 'fut', p });
-    apptIv[chosen].push({ start: s, end: s + est });
-  }
-  // يدفعُ بدايةَ المنتظِرِ العاديِّ إلى ما بعدِ أيِّ فترةٍ محجوزةٍ (موعدٍ أو بريك) يتداخلُ معها
-  const avoidIv = (s: number, est: number, ivs: { start: number; end: number }[]): number => {
-    let x = s;
-    for (let g = 0; g < 16; g++) {
-      let moved = false;
-      for (const iv of ivs) if (x < iv.end && x + est > iv.start) { x = iv.end; moved = true; }
-      if (!moved) break;
-    }
-    return x;
-  };
-
-  // المنتظِرون العاديّون: ذوو الأولويّة (كبارُ السنّ + الاحتياجاتُ الخاصّة) إلى المقدّمة، ثمّ ترتيبُ الدور
-  flowWaiting.sort((a, b) => (isPriority(b) ? 1 : 0) - (isPriority(a) ? 1 : 0) || a.queue_number - b.queue_number);
-  for (const p of flowWaiting) {
-    const est = estMinutes(p);
-    const pri = isPriority(p);
-    const lane = pri ? earliestFree()
-      : (isRealClinic(p.clinic) && lanes[p.clinic!] ? p.clinic! : earliestFree());
-    // بدايةُ المنتظِرِ = بعدَ فراغِ الكرسيِّ الفعليِّ (إنجازُ سابقِه المبكرُ أو المتأخّر)، ولا تسبقُ الآنَ أبدًا،
-    // ويلتفُّ حولَ المواعيدِ **والبريك** (فلا يدفعُ البريكَ بل يأتي بعدَه إن بلغَه).
-    const s = avoidIv(Math.max(free[lane], nowMin), est, apptIv[lane].concat(breakIv[lane]));
-    lanes[lane].push({ start: s, end: s + est, kind: pri ? 'eld' : 'fut', p });
-    free[lane] = s + est;                                   // يحجزُ دورَه فلا يقفزُ ولا يتراكبُ مع مَن بعده
-  }
-
-  // ── «غيرُ المتاح»: يُنقَلُ دائمًا إلى **مؤخّرةِ** الكروت (بعدَ كلِّ المنتظِرين) فلا يحجزُ وقتًا ولا يشوّشُ الدور ──
-  //   نُودِعُه آخرَ العيادةِ (بعدَ آخرِ كرت، ملتفًّا حولَ البريك)، ويُظهِرُ وقتَ ندائِه — لا وقتَ انتهاء. إن عادَ متاحًا
-  //   فُقِدَ وسمُ 'na' فيعودُ تلقائيًّا إلى ترتيبِ دورِه (flowWaiting حسبَ queue_number؛ إن كان دورُه أوّلَ فمقدّمة).
-  for (const p of naWaiting) {
-    const est = estMinutes(p);
-    const lane = (isRealClinic(p.clinic) && lanes[p.clinic!]) ? p.clinic! : earliestFree();
-    const s = avoidIv(Math.max(free[lane], nowMin), est, breakIv[lane]);
-    lanes[lane].push({ start: s, end: s + est, kind: 'na', p });
-    free[lane] = s + est;                                   // ركمُ عدّةِ «غير متاح» دونَ تراكب (لا شيءَ يُوضَعُ بعدَها)
-  }
-
-  const laneList: Lane[] = chairs.map((c) => ({
-    clinic: c,
-    short: c.match(/\d+/) ? 'C' + c.match(/\d+/)![0] : c.slice(0, 3),
-    blocks: lanes[c].sort((a, b) => a.start - b.start),
-  }));
-
-  // النافذةُ الثابتة: ٧ صباحًا (٤٢٠) → ٩ مساءً (١٢٦٠)، وتتّسعُ فقط إن تجاوزتها البيانات
-  let minS = 7 * 60, maxE = 21 * 60;
-  for (const l of laneList) for (const b of l.blocks) { minS = Math.min(minS, b.start); maxE = Math.max(maxE, b.end); }
-  maxE = Math.max(maxE, nowMin + 30);
-  return { lanes: laneList, dayStart: Math.min(7 * 60, Math.floor(minS / 60) * 60), dayEnd: Math.max(21 * 60, Math.ceil(maxE / 60) * 60) };
-}
 
 const TEAL_INK = '#0E7C66';
 const BG_COLORS: [string, string, string] = ['#F0F4F8', '#E8EDF3', '#F5F0F8'];
@@ -520,17 +333,28 @@ function Card({ b, left, width, nowMin, onPress }:
 }
 
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
-function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, actions }:
+function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions }:
   { visible: boolean; onClose: () => void; data: TimelineData; nowMin: number; topInset: number; bottomInset: number;
     sim: { on: boolean; playing: boolean; speed: number; toggle: () => void; playPause: () => void; cycleSpeed: () => void; reset: () => void };
-    breaks: Break[]; onSaveBreaks: (b: Break[]) => void; actions: BlockActions }) {
+    breaks: Break[]; onSaveBreaks: (b: Break[]) => void;
+    chairCount: number; onSetChairCount: (n: number) => void; actions: BlockActions }) {
   const { lanes, dayStart, dayEnd } = data;
   const [actionId, setActionId] = useState<string | null>(null);   // المريضُ المفتوحةُ نافذتُه
   const [editingBreaks, setEditingBreaks] = useState(false);
   const [draft, setDraft] = useState<Break[]>([]);
   const [breakActionOrig, setBreakActionOrig] = useState<number | null>(null);   // بدايةُ البريكِ الملموسِ (لنافذةِ ثابت/متحرّك)
-  const openEditor = () => { setDraft(breaks.map((b) => ({ ...b }))); setEditingBreaks(true); };
-  const saveEditor = () => { onSaveBreaks(draft.filter((b) => b.end > b.start).sort((a, b) => a.start - b.start)); setEditingBreaks(false); };
+  const [beyondLane, setBeyondLane] = useState<string | null>(null);             // عيادةُ شارةِ «خلفَ الشفت» المفتوحة
+  const [chairDraft, setChairDraft] = useState(chairCount);
+  const openEditor = () => {
+    setDraft(breaks.map((b) => ({ ...b })));
+    setChairDraft(chairCount);
+    setEditingBreaks(true);
+  };
+  const saveEditor = () => {
+    onSaveBreaks(draft.filter((b) => b.end > b.start).sort((a, b) => a.start - b.start));
+    if (chairDraft !== chairCount) onSetChairCount(chairDraft);
+    setEditingBreaks(false);
+  };
   // البريكُ الملموس + ضبطُ نوعِه (ثابتٌ لا يتحرّك / متحرّكٌ يُدفَعُ بانشغالٍ حقيقيّ) — يُطابَقُ ببدايتِه الأصليّة
   const actBreak = breakActionOrig != null ? breaks.find((b) => b.start === breakActionOrig) : null;
   const setBreakFixed = (fixed: boolean) => {
@@ -610,6 +434,19 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   };
   const nowX = xAt(nowMin);
 
+  // يُفتَحُ المخطّطُ على الآنَ — لا على أوّلِ اليوم. فالساعةُ هي ما جئتَ تنظرُ إليه،
+  // ولا معنى لأن تُمرّرَ باحثًا عنها في كلِّ مرّةٍ تفتحُ فيها الصفحة. نتركُ قليلًا من
+  // الماضي على اليسارِ لِيُقرأَ السياقُ (مَن كان قبلَ قليل).
+  const hScroll = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (!visible) return;
+    const id = setTimeout(() => {
+      hScroll.current?.scrollTo({ x: Math.max(0, nowX - scale(90)), animated: false });
+    }, 0);
+    return () => clearTimeout(id);
+    // عندَ الفتحِ فقط: بعدَ ذلك التمريرُ لك، فلا يُخطَفُ منك مع كلِّ دقيقة
+  }, [visible]);
+
   // الكتلةُ (والمريضُ) المفتوحةُ نافذتُها — تُقرأُ من المساراتِ الحيّةِ لا من لقطة، فتعكسُ الحالةَ اللحظيّة.
   const actBlk = actionId ? (lanes.flatMap((l) => l.blocks).find((b) => b.p.id === actionId) ?? null) : null;
   const actP = actBlk?.p ?? null;
@@ -648,21 +485,33 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // وحيثُ توجدُ فجوةُ فراغٍ زمنيّةٌ نُوسّعُ المسافةَ قليلًا كي يظهرَ خيطُها ولو كانتِ الفجوةُ دقائقَ معدودة.
   // تخطيطُ الكروت من المحورِ المشترك: كلُّ كرتٍ في موضعِه الزمنيِّ الحقيقيِّ (left = xAt(البداية))،
   // وعرضُه يمتدُّ إلى نهايتِه الزمنيّةِ (أو الحدُّ الأدنى المقروء)، مقصوصًا كي لا يتجاوزَ تاليَه في العيادة.
-  const laidLanes = lanes.map((l) =>
-    l.blocks.map((b, i) => {
+  const CHIP_W = scale(44);                        // شارةُ «خلفَ الشفت» — تُحجَزُ لها مساحةٌ قبلَ التبديل
+  const laidLanes = lanes.map((l) => {
+    // خطوطُ تبديلِ الشفتِ في هذه العيادة — حواجزُ رسمٍ صلبة
+    const walls = l.blocks.filter((b) => b.kind === 'break' && b.fixed).map((b) => b.start);
+    const chipWall = l.blocks.find((b) => b.kind === 'break' && b.fixed);   // حيثُ تلتصقُ شارةُ «خلفَ الشفت»
+    return l.blocks.map((b, i) => {
       const left = xAt(b.start);
       const succ = l.blocks[i + 1];
       const rawW = Math.max(minWOf(b.kind), xAt(b.end) - left);
-      const capW = succ ? (xAt(succ.start) - GAP - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
+      const chipRoom = (succ && succ === chipWall && l.beyond.length > 0) ? CHIP_W + GAP : 0;
+      const capW = succ ? (xAt(succ.start) - GAP - chipRoom - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
       let width = Math.max(minWOf(b.kind), Math.min(rawW, capW));
-      // البريكُ الثابتُ (تبديلُ شفت) حائطٌ صلب: الكرتُ الذي قبلَه **يتوقّفُ قبلَه فقط** ولا يتجاوزُه أبدًا (حتّى لو ضاقَ عرضُه دونَ الأدنى)
-      if (succ && succ.kind === 'break' && succ.fixed) width = Math.min(width, Math.max(scale(1), capW));
+      // ── حائطُ الرسم ──
+      // الكرتُ يُرسَمُ بعرضٍ أدنى مقروءٍ مهما قصُرَت مدّتُه، فكرتُ نصفِ ساعةٍ يُطلى أعرضَ من
+      // نصفِ ساعة. ولهذا كانت كروتُ الانتظارِ تعبرُ خطَّ التبديلِ **رسمًا** وإن كان جدولُها
+      // سليمًا. فهنا حاجزٌ صلب: لا بكسلَ واحدًا يتجاوزُ الخطَّ — يضيقُ الكرتُ ولا يعبر.
+      // (الجاري والمنجَزُ لا يُقصّان: هما واقعٌ حدثَ، لا تنبّؤٌ يُربِكُ الشفتَ التالي.)
+      if (b.kind === 'fut' || b.kind === 'eld' || b.kind === 'na') {
+        const wall = walls.find((w) => b.start < w);
+        if (wall != null) width = Math.min(width, Math.max(scale(1), xAt(wall) - GAP - left));
+      }
       const prev = i > 0 ? l.blocks[i - 1] : null;
       const prevEnd = prev ? ((prev.kind === 'cur' || prev.kind === 'over') ? Math.max(prev.end, prev.start + estMinutes(prev.p)) : prev.end) : -Infinity;
       const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لخيطِ الفراغِ المنقّط)
       return { b, left, width, idle };
-    })
-  );
+    });
+  });
   // ═══ الكروتُ المنجَزةُ خلفَ خطِّ الآنَ: اقتراضٌ ثمّ عودةٌ تدريجيّة ═══
   // كلُّ منجَزٍ مثبَّتٌ بيمينِه على وقتِ إنجازِه (≤ الآنَ فيبقى خلفَ الخطّ) ويمتدُّ يسارًا بعرضٍ مقروء.
   // إن لم يتّسعِ المكانُ خلفَه دفعَ المنجَزَ الأسبقَ إلى الخلفِ (يقترضُ مكانَه مؤقّتًا فيصيرُ موضعُه «خطأً» زمنيًّا)،
@@ -716,8 +565,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               <View style={{ flex: 1 }} />
               <TouchableOpacity style={[full.iconBtn, full.breakBtn]} activeOpacity={0.85} onPress={openEditor}>
                 <LinearGradient colors={['rgba(253,246,231,0.97)', 'rgba(243,223,183,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.breakBtnFill} />
-                <View style={full.breakBtnDot}><Text style={full.breakBtnIcon}>☕</Text></View>
-                <Text style={full.breakBtnTxt}>Break</Text>
+                <View style={full.breakBtnDot}><Text style={full.breakBtnIcon}>⚙︎</Text></View>
+                <Text style={full.breakBtnTxt}>Edit</Text>
               </TouchableOpacity>
               <TouchableOpacity style={full.iconBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Text style={full.closeTxt}>✕</Text></TouchableOpacity>
             </View>
@@ -783,7 +632,13 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               </View>
 
               {/* المساراتُ القابلةُ للتمرير أفقيًّا */}
-              <ScrollView horizontal style={{ flex: 1 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ width: contentW }}>
+              <ScrollView
+                ref={hScroll}
+                horizontal
+                style={{ flex: 1 }}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ width: contentW }}
+              >
                 <View style={{ width: contentW, height: topH + lanes.length * unitH }}>
                   {/* خلفيّةُ المستقبل: نقشٌ قطريٌّ يمينَ خطِّ الآنَ (تنبّؤٌ لا واقع) */}
                   {contentW > nowX + 2 ? (
@@ -831,6 +686,27 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                         </View>
                         {/* صفُّ العيادة */}
                         <View style={[full.laneRow, { top: uTop + stripH, height: laneH }]}>
+                          {/* «خلفَ الشفت»: مَن انتهى شفتُه قبلَ أن يأتيَ دورُه — سيرحل. لا نرسمُ له
+                              كرتًا في شفتٍ ليس شفتَه؛ شارةٌ ملاصقةٌ لكرتِ التبديلِ من اليسارِ
+                              تقولُ كم هم، وبالنقرِ تظهرُ أسماؤهم. */}
+                          {l.beyond.length > 0 && (() => {
+                            // تلتصقُ بأوّلِ تبديلٍ في العيادةِ من **يسارِه** دائمًا — مهما مضى الوقت.
+                            // فهي تقولُ «هؤلاء وقفوا هنا ولم يعبروا»، ولو رحلَتْ يمينَه لقالتْ عكسَ ذلك.
+                            const wall = l.blocks.find((b) => b.kind === 'break' && b.fixed);
+                            const left = wall
+                              ? xAt(wall.start) - CHIP_W - GAP
+                              : laid.reduce((m, o) => Math.max(m, o.left + o.width), scale(8)) + GAP;
+                            return (
+                              <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => setBeyondLane(l.clinic)}
+                                style={[full.beyond, { left, width: CHIP_W }]}
+                              >
+                                <Text style={full.beyondN}>+{l.beyond.length}</Text>
+                                <Text style={full.beyondL}>next</Text>
+                              </TouchableOpacity>
+                            );
+                          })()}
                           {/* عيادةٌ بلا مرضى */}
                           {laid.length === 0 ? (
                             <View style={[full.vacant, { left: scale(8), width: contentW - scale(16) }]}>
@@ -1021,6 +897,38 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             </View>
           )}
 
+          {/* «خلفَ الشفت»: أسماءُ مَن لن يُدرِكَهم هذا الشفتُ في هذه العيادة */}
+          {beyondLane && (() => {
+            const l = lanes.find((x) => x.clinic === beyondLane);
+            if (!l) return null;
+            return (
+              <View style={StyleSheet.absoluteFill}>
+                <BlurView intensity={20} tint="light" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
+                <View style={full.editScrim}>
+                  <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setBeyondLane(null)} />
+                  <View style={full.byCard}>
+                    <Text style={full.byT}>خلفَ تبديلِ الشفت</Text>
+                    <Text style={full.byS}>{l.clinic} · لن يُدرِكَهم هذا الشفت</Text>
+                    <ScrollView style={{ maxHeight: scale(220) }} showsVerticalScrollIndicator={false}>
+                      {l.beyond.map((p) => (
+                        <View key={p.id} style={full.byRow}>
+                          <View style={full.byNo}><Text style={full.byNoTxt}>{p.queue_number}</Text></View>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={full.byName} numberOfLines={1}>{p.name}</Text>
+                            <Text style={full.byTx} numberOfLines={1}>{p.treatment || '—'} · {estMinutes(p)} min</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </ScrollView>
+                    <TouchableOpacity style={full.actClose} onPress={() => setBeyondLane(null)}>
+                      <Text style={full.actCloseTxt}>Close</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+
           {/* محرِّرُ أوقاتِ البريك (لوحٌ كريميٌّ في القلب — إعدادٌ لا إجراءٌ على مريض) */}
           {editingBreaks && (
             <View style={StyleSheet.absoluteFill}>
@@ -1029,13 +937,42 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setEditingBreaks(false)} />
               <Animated.View style={[full.editCard, { opacity: editAnim, transform: [{ translateY: editAnim.interpolate({ inputRange: [0, 1], outputRange: [scale(14), 0] }) }] }]}>
                 <View style={full.editHd}>
-                  <View style={full.editHdIcon}><Text style={{ fontSize: scale(14) }}>☕</Text></View>
+                  <View style={full.editHdIcon}><Text style={{ fontSize: scale(14) }}>⚙︎</Text></View>
                   <View>
-                    <Text style={full.editHdT}>أوقاتُ الاستراحة</Text>
+                    <Text style={full.editHdT}>إعداداتُ المخطّط</Text>
                     <Text style={full.editHdS}>لكلِّ العيادات · تُطبَّقُ فورًا</Text>
                   </View>
                 </View>
-                <ScrollView style={{ maxHeight: scale(216) }}>
+
+                {/* عددُ الكراسي — لِمخطّطِ الدورِ وحدَه. الجدولُ الأسبوعيُّ شيءٌ آخر:
+                    قد تفتحُ عيادةً إضافيّةً اليومَ أو تُغلقَ واحدةً، وليس على المخطّطِ
+                    أن ينتظرَ تعديلَ الجدولِ كي يعكسَ ما هو قائمٌ فعلًا. */}
+                <View style={full.cntRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={full.cntT}>عددُ العيادات</Text>
+                    <Text style={full.cntS}>مستقلٌّ عن الجدول</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[full.cntBtn, chairDraft <= 1 && full.cntBtnOff]}
+                    activeOpacity={0.8}
+                    disabled={chairDraft <= 1}
+                    onPress={() => setChairDraft((n) => Math.max(1, n - 1))}
+                  >
+                    <Text style={full.cntBtnTxt}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={full.cntNum}>{chairDraft || 1}</Text>
+                  <TouchableOpacity
+                    style={[full.cntBtn, chairDraft >= 12 && full.cntBtnOff]}
+                    activeOpacity={0.8}
+                    disabled={chairDraft >= 12}
+                    onPress={() => setChairDraft((n) => Math.min(12, (n || 1) + 1))}
+                  >
+                    <Text style={full.cntBtnTxt}>＋</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={full.editGroup}>أوقاتُ الاستراحة</Text>
+                <ScrollView style={{ maxHeight: scale(176) }}>
                   {draft.length === 0 && <Text style={full.editEmpty}>لا فتراتٍ بعد — أضِفْ فترة.</Text>}
                   {draft.map((b, i) => (
                     <View key={i} style={full.brRow}>
@@ -1064,7 +1001,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
 // ═══════════════ الحاوية: سحبٌ بين الإحصاء والمخطّط ═══════════════
 export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone }:
   { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
-    onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[]) => void;
+    onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
     // إجراءاتُ صفحةِ الدور الحقيقيّة (نفسُها على الكرت) — تُستدعى خارجَ المحاكاة
     onEnterClinic?: (patientId: string, clinic: string) => void;
     onToggleNA?: (patientId: string) => void;
@@ -1075,6 +1012,22 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   const [page, setPage] = useState(0);
   const [showFull, setShowFull] = useState(false);
   const [clinicCount, setClinicCount] = useState(0);
+  // تجاوزٌ محلّيٌّ لعددِ الكراسي: المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ
+  // إضافيّةٌ اليومَ أو تُغلَقُ واحدةٌ — ولا ينبغي أن ينتظرَ تعديلَ الجدولِ الأسبوعيِّ ليقولَ ذلك.
+  const [chairOverride, setChairOverride] = useState<number | null>(null);
+  const chairKey = clinicId ? `queue_chairs_${clinicId}` : null;
+  useEffect(() => {
+    let alive = true;
+    if (!chairKey) { setChairOverride(null); return; }
+    AsyncStorage.getItem(chairKey).then((v) => {
+      if (alive) setChairOverride(v ? Number(v) || null : null);
+    });
+    return () => { alive = false; };
+  }, [chairKey]);
+  const setChairCount = (n: number) => {
+    setChairOverride(n);
+    if (chairKey) AsyncStorage.setItem(chairKey, String(n));
+  };
   const [breaks, setBreaks] = useState<Break[]>([]);   // أوقاتُ البريك لكلِّ العيادات (من إعداداتِ المركز)
   // محاكاة (مسرِّعٌ زمنيّ): ساعةٌ افتراضيّةٌ من 7ص إلى 9م + مرضى مولَّدون
   const [simOn, setSimOn] = useState(false);
@@ -1106,8 +1059,10 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 
   // الكراسي = عددُ العيادات (عيادة ١ .. عيادة N)؛ وإن لم يتوفّر تُشتَقُّ من عياداتِ المرضى.
   const chairs = useMemo(() =>
-    clinicCount >= 1 ? Array.from({ length: clinicCount }, (_, i) => `Clinic ${i + 1}`) : [],
-    [clinicCount]);
+    (chairOverride ?? clinicCount) >= 1
+      ? Array.from({ length: chairOverride ?? clinicCount }, (_, i) => `Clinic ${i + 1}`)
+      : [],
+    [chairOverride, clinicCount]);
 
   // ساعةُ المحاكاة: تتقدّمُ بسرعةٍ مختارةٍ حتّى 9م ثمّ تتوقّف
   const simSpeed = SIM_SPEEDS[simSpeedIdx];
@@ -1125,6 +1080,9 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   //  • بدون محاكاة = الوقتُ الفعليُّ والحالةُ الحقيقيّة (يأتي ربطُه حيًّا لاحقًا).
   const simChairs = chairs.length ? chairs : ['Clinic 1', 'Clinic 2', 'Clinic 3'];
   const effNow = simOn ? Math.round(simNowMin) : nowMin;
+  // ملحوظةٌ عن المحاكاة: ساعتُها افتراضيّةٌ بينما يبقى registered_at بالساعةِ الحقيقيّة، فكلُّ
+  // مَن في الطابورِ يبدو لها «منتظِرًا منذ الفجر». فحكمُ البريكِ الثابتِ على تسجيلٍ جديدٍ لا
+  // يُعايَنُ إلّا في الوضعِ الحيّ — والمحاكاةُ تبقى لِمعاينةِ سيرِ الدورِ لا لِهذا.
   const effPatients = useMemo(
     () => (simOn ? applySimActs(patients, simActs, currentDoctorName) : patients),
     [simOn, patients, simActs, currentDoctorName],
@@ -1134,7 +1092,10 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 
   // نُبلّغُ الشاشةَ بالجدولِ الحاليِّ نفسِه المعروضِ (محاكاةً كان أو وقتًا فعليًّا) كي يعتمدَه
   // فحصُ توفّرِ حجزِ موعدِ الدخول في الكروت — فيطابقُ الحجزُ ما تراه على المخطّطِ تمامًا.
-  useEffect(() => { onSchedule?.(data.lanes, effChairs.length, breaks); }, [data, effChairs, breaks, onSchedule]);
+  // نُبلّغُ بعددِ الكراسي **المرسومةِ فعلًا** لا بالمُعَدِّ: إن لم يكن للمركزِ عددٌ محفوظٌ
+  // (ولا تجاوزٌ محلّيّ) كان المُعَدُّ صفرًا، وصفرٌ يعني عندَ فحصِ التوفّرِ «لا أعرفُ فلا أمنع» —
+  // فلا يحمرُّ وقتٌ ممتلئٌ أبدًا. أمّا المرسومُ فلا يقلُّ عن واحد، ويطابقُ ما تراه.
+  useEffect(() => { onSchedule?.(data.lanes, data.lanes.length, breaks, effNow); }, [data, breaks, effNow, onSchedule]);
 
   // حفظُ أوقاتِ البريك في إعداداتِ المركز (تفاؤليّ + كتابةٌ في قاعدة البيانات)
   const onSaveBreaks = async (next: Break[]) => {
@@ -1201,7 +1162,7 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
         <View style={[dots.dot, page === 1 && dots.on]} />
       </View>
 
-      <FullTimeline visible={showFull} onClose={() => setShowFull(false)} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} actions={actions} />
+      <FullTimeline visible={showFull} onClose={() => setShowFull(false)} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} />
     </View>
   );
 }
@@ -1396,6 +1357,56 @@ const full = scaledStyleSheet({
   editHdT: { fontSize: 15, fontWeight: '800', color: '#5F4E36' },
   editHdS: { marginTop: 1, fontSize: 9.5, fontWeight: '700', color: '#9A8564' },
   editEmpty: { fontSize: 12, color: '#A8926F', textAlign: 'center', paddingVertical: 22 },
+
+  // شارةُ «خلفَ الشفت» ولوحُ أسمائِها — رماديّةٌ هادئة: هؤلاء ليسوا جدولًا، بل تنبيهٌ
+  beyond: {
+    position: 'absolute', top: 26, bottom: 26,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 12, backgroundColor: 'rgba(122,140,150,0.16)',
+    borderWidth: 1.5, borderColor: 'rgba(122,140,150,0.4)', borderStyle: 'dashed',
+  },
+  beyondN: { fontSize: 15, fontWeight: '800', color: '#5A7079', letterSpacing: -0.4 },
+  beyondL: { marginTop: 1, fontSize: 7.5, fontWeight: '800', letterSpacing: 0.8, color: '#8CA0A8' },
+  byCard: {
+    width: '86%', maxWidth: 380, borderRadius: 22, padding: 18,
+    backgroundColor: 'rgba(252,253,255,0.98)',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#1E2D4B', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 12,
+  },
+  byT: { fontSize: 16, fontWeight: '800', color: '#12232A' },
+  byS: { marginTop: 2, marginBottom: 12, fontSize: 11.5, fontWeight: '600', color: '#8CA0A8' },
+  byRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 11,
+    paddingVertical: 9, borderTopWidth: 1, borderTopColor: 'rgba(40,54,82,0.07)',
+  },
+  byNo: {
+    width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(122,140,150,0.14)',
+  },
+  byNoTxt: { fontSize: 13, fontWeight: '800', color: '#5A7079' },
+  byName: { fontSize: 14, fontWeight: '700', color: '#12232A' },
+  byTx: { marginTop: 1, fontSize: 11, fontWeight: '600', color: '#8CA0A8' },
+
+  // عددُ العيادات — صفٌّ واحدٌ بارزٌ فوقَ فتراتِ الاستراحة
+  cntRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginTop: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.46)',
+    borderWidth: 1.5, borderColor: 'rgba(212,186,148,0.55)',
+  },
+  cntT: { fontSize: 13, fontWeight: '800', color: '#6B5735' },
+  cntS: { marginTop: 1, fontSize: 9.5, fontWeight: '700', color: '#9A8564' },
+  cntBtn: {
+    width: 32, height: 32, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: 1.5, borderColor: 'rgba(212,186,148,0.7)',
+  },
+  cntBtnOff: { opacity: 0.35 },
+  cntBtnTxt: { fontSize: 17, fontWeight: '800', color: '#6B5735', marginTop: -1 },
+  cntNum: { minWidth: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', color: '#4E3F24', letterSpacing: -0.5 },
+
+  editGroup: { marginTop: 14, marginBottom: 4, fontSize: 10, fontWeight: '800', letterSpacing: 1, color: '#9A8564' },
   brRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8, padding: 8, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
   brArrow: { fontSize: 12, fontWeight: '800', color: '#B49A72' },
   brDel: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(239,68,68,0.1)' },

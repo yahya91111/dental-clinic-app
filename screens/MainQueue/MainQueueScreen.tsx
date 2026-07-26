@@ -25,7 +25,7 @@ import { PatientCardV2 } from './PatientCardV2';
 // Design toggle — flip to false to instantly restore the classic patient card.
 const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
-import { QueueTimelinePager, Lane } from './QueueTimeline';
+import { QueueTimelinePager, Lane, Break } from './QueueTimeline';
 import { QueueStatsStrip } from './QueueStatsStrip';
 import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
 import { createScalingRecord, getScalingRecords } from '../../lib/database';
@@ -321,9 +321,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   // سياقُ حجزِ موعدِ الدخول: يأتي جاهزًا من مخطّطِ الدور (QueueTimelinePager عبرَ onSchedule) فيطابقُ
   // تمامًا ما يظهرُ على المخطّطِ — محاكاةً كان أو وقتًا فعليًّا. يُخزَّنُ في مرجعٍ (ref) كي لا تُعادَ
   // رسمُ قائمةِ الكروتِ مع كلِّ نبضةِ ساعةِ المحاكاة، ويُلتقَطُ لقطةً عندَ فتحِ كرتٍ للحجز.
-  const scheduleRef = useRef<{ lanes: Lane[]; chairCount: number; breaks: { start: number; end: number }[] }>({ lanes: [], chairCount: 0, breaks: [] });
-  const onSchedule = useCallback((lanes: Lane[], chairCount: number, breaks: { start: number; end: number }[]) => {
-    scheduleRef.current = { lanes, chairCount, breaks };
+  const scheduleRef = useRef<{ lanes: Lane[]; chairCount: number; breaks: Break[]; nowMin: number }>({ lanes: [], chairCount: 0, breaks: [], nowMin: 0 });
+  const onSchedule = useCallback((lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => {
+    scheduleRef.current = { lanes, chairCount, breaks, nowMin };
   }, []);
   const appointmentCtx = useMemo(() => scheduleRef.current, [expandedPermanentCardId, patients]);
 
@@ -798,6 +798,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               }}
               onToggleExpand={() => togglePermanentCardExpansion(patient)}
               hasProfile={!!patient.permanent_patient_id}
+              appointmentCtx={appointmentCtx}
               renderProfile={(backRef) => (
                 <ExpandedPatientHeader
                   backRef={backRef}
