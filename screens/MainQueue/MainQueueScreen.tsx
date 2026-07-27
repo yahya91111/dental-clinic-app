@@ -3,7 +3,7 @@ import {
   StyleSheet,
   View,
   Text,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   StatusBar,
   Animated,
@@ -775,11 +775,24 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             marginTop: headerTranslateY,
           }}
         >
-          {/* Patient List */}
-          <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}>
-          {filteredPatients
-            .filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)
-            .map((patient, index) => (
+          {/* Patient List — قائمةٌ مُنافَذة (FlatList) لا ScrollView.
+              كان الطابورُ يُركِّبُ كلَّ كروتِه دفعةً واحدة: مئتا كرتٍ = مئتا Swipeable
+              وتدرّجًا لونيًّا مضاعفًا ونقطةً نابضة، كلُّها تُبنى قبلَ أن تُرسَمَ الشاشةُ
+              أوّلَ مرّة. فلا يُنقَذُ ذلك بضبطِ حركةٍ ولا بتخفيفِ ظلّ. الآن يُركَّبُ ما
+              يُرى وما يليه، ويأتي الباقي مع التمرير.
+              removeClippedSubviews مُطفأٌ عمدًا: وجها الكرتِ (الوجهُ والظهر) مطلقانِ
+              فوقَ بعضِهما، وقصُّ الأبناءِ على أندرويد يُفرِّغُ مثلَ هذه البِنى. */}
+          <FlatList
+            style={styles.scrollView}
+            contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}
+            data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
+            keyExtractor={(patient) => `${patient.id}-${animKey}`}
+            initialNumToRender={8}
+            maxToRenderPerBatch={6}
+            windowSize={7}
+            removeClippedSubviews={false}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item: patient, index }) => (
             USE_V2_CARD ? (
             <PatientCardV2
               key={`${patient.id}-${animKey}`}
@@ -949,8 +962,8 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               }}
             />
             )
-          ))}
-        </ScrollView>
+          )}
+        />
 
         {/* FAB */}
         <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>

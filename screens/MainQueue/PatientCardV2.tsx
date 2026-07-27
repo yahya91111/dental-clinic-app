@@ -75,6 +75,10 @@ const QNUM_G: [string, string] = ['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.
 
 const ACTIONS_W = scale(150); // swipe-reveal width (Done + NA), finger-tracked 1:1
 
+// تتابعُ الدخول: مِلِّيٌّ لكلِّ كرت، وسقفٌ لا يُتجاوَز (انظر تعليقَ slide أدناه)
+const STAGGER_MS = 65;
+const STAGGER_MAX = 6;
+
 // the other side of the swipe: the clinics. One tone for all of them — they are
 // the same kind of thing, and the number is what tells them apart.
 const CLINIC_CHOICES = CLINICS.filter((c) => c.id !== 0).map((c) => c.id);
@@ -453,16 +457,35 @@ function AppointmentStepper({ booked, dur, avail, selfId, onBook, onClear }: {
   );
 }
 
+// ── نبضةٌ واحدةٌ لكلِّ النقاط ──
+// كانت كلُّ نقطةٍ تُشعِلُ حلقتَها: مئتا كرتٍ = مئتا حلقةٍ لا نهائيّة، تعملُ كلُّها ولو
+// لم يكنْ صاحبُها على الشاشة. والنبضُ واحدٌ في حقيقتِه، فليكنْ محرّكُه واحدًا — تعدُّها
+// النقاطُ عندَ ظهورِها وتُطفِئُه آخرُ نقطةٍ تغيب. (وتنبضُ متوافقةً الآن، وهي أهدأُ للعين.)
+const pulseVal = new Animated.Value(0);
+let pulseLoop: Animated.CompositeAnimation | null = null;
+let pulseUsers = 0;
+const pulseJoin = () => {
+  if (++pulseUsers > 1) return;
+  pulseLoop = Animated.loop(
+    Animated.timing(pulseVal, { toValue: 1, duration: 1600, useNativeDriver: true }),
+  );
+  pulseLoop.start();
+};
+const pulseLeave = () => {
+  if (--pulseUsers > 0) return;
+  pulseUsers = 0;
+  pulseLoop?.stop();
+  pulseLoop = null;
+  pulseVal.setValue(0);
+};
+
 // ── status dot with an expanding "ping" halo for live states ──
 function PulseDot({ color, animated }: { color: string; animated?: boolean }) {
-  const a = useRef(new Animated.Value(0)).current;
+  const a = pulseVal;
   useEffect(() => {
     if (!animated) return;
-    const loop = Animated.loop(
-      Animated.timing(a, { toValue: 1, duration: 1600, useNativeDriver: true }),
-    );
-    loop.start();
-    return () => loop.stop();
+    pulseJoin();
+    return pulseLeave;
   }, [animated]);
   return (
     <View style={s.dotWrap}>
@@ -713,13 +736,16 @@ export function PatientCardV2({
     </Animated.View>
   );
 
-  // entrance slide-in (matches the classic list feel)
+  // entrance slide-in (matches the classic list feel).
+  // التتابعُ زينةٌ لأوّلِ ما تقعُ عليه العين. وكان كلُّ كرتٍ يتأخّرُ تسعينَ مِلِّي عن سابقِه
+  // بلا سقف، فالكرتُ الستّون يبدأُ بعدَ خمسِ ثوانٍ والمئتانِ بعدَ ثمانيَ عشرة — فيُرى
+  // تقطيعًا لا أناقة. الآن يتتابعُ ما تراه الشاشةُ وحدَه، وما بعدَه يدخلُ فورًا.
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     slide.setValue(0);
     Animated.spring(slide, {
       toValue: 1,
-      delay: index * 90,
+      delay: Math.min(index, STAGGER_MAX) * STAGGER_MS,
       useNativeDriver: true,
       tension: 50,
       friction: 7,
