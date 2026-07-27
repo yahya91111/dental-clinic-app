@@ -1324,8 +1324,10 @@ const mini = scaledStyleSheet({
   timeBig: { fontSize: 14.5, fontWeight: '800', color: '#0B7F71', letterSpacing: -0.3 },
   timeSub: { marginTop: 1, fontSize: 8.5, fontWeight: '800', letterSpacing: 1, color: '#5A7079' },
 
-  // الاثنانِ بعدَه: حبّتانِ متساويتانِ، الرقمُ يمينَ الاسمِ فيهما أيضًا
-  thenRow: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  // الاثنانِ بعدَه: حبّتانِ متساويتانِ، الرقمُ يمينَ الاسمِ فيهما أيضًا.
+  // والصفُّ معكوسٌ كذلك، فالأقربُ دورًا يقعُ يمينًا والذي يليه يساره — يُقرأُ الدورُ من
+  // اليمينِ إلى اليسارِ كما تُقرأُ الأسماءُ عليه.
+  thenRow: { flexDirection: 'row-reverse', gap: 8, marginTop: 9 },
   thenChip: {
     flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 7,
     height: 30, borderRadius: 12, paddingHorizontal: 7,
