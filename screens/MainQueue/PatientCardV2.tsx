@@ -772,8 +772,13 @@ export function PatientCardV2({
 
   const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => (
     <Animated.View style={[s.clinics, { opacity: revealFade(progress) }]}>
-      {/* the same sheet of material, continued — not a second one */}
+      {/* the same sheet of material, continued — not a second one.
+          وقاعدتُها هي قاعدةُ الكرتِ الجديدةُ (الدخان) لا الزجاجَ الأبيضَ القديم، وإلّا
+          بانَ الدَّرزُ: صينيّةٌ أفتحُ من الكرتِ الذي تخرجُ منه. */}
+      <LinearGradient colors={SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <LinearGradient colors={trayTint} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <LinearGradient colors={GLOSS} style={s.gloss} pointerEvents="none" />
+      <LinearGradient colors={FLOOR} style={s.floor} pointerEvents="none" />
       {CLINIC_CHOICES.map((id) => (
         <TouchableOpacity key={id} activeOpacity={0.8} style={s.clinicChip} onPress={() => setClinic(id)}>
           <LinearGradient colors={QNUM_G} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.qnumFill}>
@@ -1338,16 +1343,15 @@ const s = StyleSheet.create({
     width: CLINICS_W,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: CLINIC_PAD, gap: CLINIC_GAP,
-    backgroundColor: 'rgba(255,255,255,0.28)',
   },
   clinicChip: {
     width: CLINIC_CHIP_W,
     height: scale(44),
     borderRadius: scale(14),
     backgroundColor: 'rgba(255,255,255,0.30)',
-    shadowColor: '#1E2D4B',
+    shadowColor: '#08202A',
     shadowOffset: { width: 0, height: scale(4) },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.20,
     shadowRadius: scale(7),
     elevation: 3,
   },
@@ -1371,7 +1375,7 @@ const s = StyleSheet.create({
     flex: 1,
     borderRadius: scale(14),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.7)',
+    borderColor: RIM,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
