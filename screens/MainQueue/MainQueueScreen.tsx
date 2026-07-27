@@ -353,37 +353,41 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   // اللوحُ يصعدُ بكاملِ ارتفاعِ البطاقتَين، فيحلُّ الشريطُ (وهو ملصَقٌ أسفلَهما) محلَّهما
   const sheetRise = useMemo(
     () => foldT.interpolate({ inputRange: [0, 1], outputRange: [0, -statsH] }), [statsH, foldT]);
-  // والقائمةُ تصعدُ بالفرقِ وحدَه — وهو المساحةُ التي تحرّرت لها
+  // والقائمةُ تصعدُ بالفرقِ وحدَه — وهو المساحةُ التي تحرّرت لها.
+  // إلّا أن يكونَ كرتٌ موسَّعًا: عندَها يُلغى رأسُ الصفحةِ كلُّه (height:0) فلا مساحةَ
+  // تحرّرت ولا صعودَ — ولو بقيَ الصعودُ لارتفعَ الكرتُ فوقَ حافّةِ الشاشةِ واختفى رأسُه.
+  // نضربُ في مفتاحٍ لا نُبدِّلُ العُقدةَ بعدد: منظرٌ يتأرجحُ بين قيمةٍ متحرّكةٍ وثابتةٍ
+  // يُعيدُ ربطَ عُقدتِه في كلِّ مرّة، وهذا بابُ أعطالٍ في المحرّكِ الأصليّ.
+  const expandT = useRef(new Animated.Value(0)).current;
+  React.useEffect(() => { expandT.setValue(expandedPermanentCardId ? 1 : 0); }, [expandedPermanentCardId, expandT]);
   const listRise = useMemo(
-    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [0, -Math.max(0, statsH - STRIP_H)] }), [statsH, foldT]);
+    () => Animated.multiply(
+      foldT.interpolate({ inputRange: [0, 1], outputRange: [0, -Math.max(0, statsH - STRIP_H)] }),
+      Animated.subtract(1, expandT),
+    ), [statsH, foldT, expandT]);
   // البطاقتانِ تذهبانِ في أوّلِ السحبة، والشريطُ يأتي في آخرِها — فلا يُقرآنِ معًا
   const cardsFade = useMemo(
     () => foldT.interpolate({ inputRange: [0, 0.55], outputRange: [1, 0], extrapolate: 'clamp' }), [foldT]);
   const stripFade = useMemo(
     () => foldT.interpolate({ inputRange: [0.35, 0.9], outputRange: [0, 1], extrapolate: 'clamp' }), [foldT]);
 
-  // ── الرجوعُ إلى حيثُ كنت ──
-  // توسيعُ كرتٍ يُخلي القائمةَ إلّا منه، فينكمشُ المحتوى وتُقصَرُ إزاحةُ التمريرِ إلى صفر
-  // قسرًا. وعندَ الإغلاقِ تعودُ الكروتُ كلُّها والإزاحةُ صفر — فتجدُ نفسَك في رأسِ الصفحة
-  // وكنتَ عندَ الخامسِ والعشرين. فنحفظُ الإزاحةَ قبلَ التوسيعِ ونُعيدُها بعدَ الإغلاق.
+  // ── الكرتُ يكبرُ في مكانِه ──
+  // كانت القائمةُ تُخلى إلّا من الكرتِ الموسَّع. وهذا يُفقِدُ الإزاحةَ قسرًا (المحتوى انكمشَ
+  // فلم يبقَ لها ما تُقاسُ عليه)، فكان لا بدَّ من جبرِها عندَ الإغلاق — إخلاءٌ ثمّ جبرٌ،
+  // وكلاهما يُرى تقطيعًا. والكرتُ لا يحتاجُ إخلاءَ ما حولَه لِيَكبُر: يبقى الجميعُ في
+  // مواضعِهم، ويُساقُ الموسَّعُ إلى رأسِ الشاشةِ سَوقًا ليّنًا، وينزلُ ما تحتَه بنموِّه.
+  // وعندَ الإغلاقِ لا يلزمُ جبرٌ أصلًا: ما فوقَه لم يتحرّكْ قطُّ، فأنت حيثُ كنت.
   const listRef = useRef<FlatList<Patient>>(null);
-  const offsetY = useRef(0);
-  const parked = useRef(0);
 
-  const toggleCard = useCallback((patient: Patient) => {
-    const closing = expandedPermanentCardId === patient.id;
-    if (!closing) parked.current = offsetY.current;
+  const toggleCard = useCallback((patient: Patient, index?: number) => {
+    const opening = expandedPermanentCardId !== patient.id;
     togglePermanentCardExpansion(patient);
-    if (!closing) return;
-    // القائمةُ مُنافَذة: لا تعرفُ ارتفاعَ ما لم تُركِّبْه بعد، فأوّلُ قفزةٍ قد تقصُر.
-    // نُكرِّرُها إطاراتٍ قليلةً حتّى يستقرَّ المحتوى على ارتفاعِه.
-    const back = parked.current;
-    let n = 4;
-    const again = () => {
-      listRef.current?.scrollToOffset({ offset: back, animated: false });
-      if (--n > 0) requestAnimationFrame(again);
-    };
-    requestAnimationFrame(again);
+    if (!opening || index == null) return;
+    requestAnimationFrame(() => {
+      try {
+        listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: true });
+      } catch { /* فهرسٌ خارجَ النافذة — يتولّاه onScrollToIndexFailed */ }
+    });
   }, [expandedPermanentCardId, togglePermanentCardExpansion]);
 
   const settle = useCallback((to: 0 | 1) => {
@@ -700,7 +704,10 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             fold.clip,
             expandedPermanentCardId ? fold.away : null,
           ]}
-          pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
+          // box-none لا auto: الصندوقُ يحتفظُ بارتفاعِ البطاقتَينِ كاملًا حتّى وهو مطويّ
+          // (الطيُّ إزاحةٌ لا ارتفاع)، فلو التقطَ اللمسَ بنفسِه لابتلعَ ما تحتَ الشريطِ من
+          // الشاشة — وهناك يقعُ أوّلُ كرتَين. فلْيمرَّ اللمسُ خلالَه إلّا حيثُ يقفُ ابنٌ.
+          pointerEvents={expandedPermanentCardId ? 'none' : 'box-none'}
         >
         {/* اللوحُ المنزلِق: البطاقتانِ، والشريطُ ملصَقٌ أسفلَهما مباشرةً (top:'100%')
             فلا يزيدُ في ارتفاعِ الصندوقِ ولا يحتاجُ قياسًا كي يقفَ في مكانِه. */}
@@ -832,7 +839,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           <Animated.View
             style={{
               flex: 1,
-              marginBottom: -Math.max(0, statsH - STRIP_H),
+              marginBottom: expandedPermanentCardId ? 0 : -Math.max(0, statsH - STRIP_H),
               transform: [{ translateY: listRise }],
             }}
           >
@@ -847,10 +854,11 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             ref={listRef}
             style={styles.scrollView}
             contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}
-            data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
+            data={filteredPatients}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
-            onScroll={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
-            scrollEventThrottle={32}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true });
+            }}
             initialNumToRender={7}
             maxToRenderPerBatch={4}
             updateCellsBatchingPeriod={60}
@@ -874,7 +882,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 setSelectedPatientForProfile({ id: pp.permanent_patient_id || pp.id, fileNumber: pp.file_number || '' });
                 setShowPatientFile(true);
               }}
-              onToggleExpand={() => toggleCard(patient)}
+              onToggleExpand={() => toggleCard(patient, index)}
               hasProfile={!!patient.permanent_patient_id}
               appointmentCtx={appointmentCtx}
               renderProfile={(backRef) => (
@@ -917,7 +925,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                     setSelectedPatientForProfile({ id: patient.permanent_patient_id, fileNumber: patient.file_number || '' });
                     setShowPatientFile(true);
                   }}
-                  onTogglePermanentExpansion={() => toggleCard(patient)}
+                  onTogglePermanentExpansion={() => toggleCard(patient, index)}
                   onToothEditPress={(_pid, tooth) => {
                     if (!patient.permanent_patient_id) return;
                     setToothModalPatientId(patient.permanent_patient_id);

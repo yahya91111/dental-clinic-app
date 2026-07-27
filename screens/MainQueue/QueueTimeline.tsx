@@ -1061,6 +1061,13 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   const [page, setPage] = useState(() => lastPage[pageKey] ?? 0);
   const pagerRef = useRef<ScrollView>(null);
   const restored = useRef(false);
+  // لا يُكشَفُ الشريطُ إلّا وهو على صفحتِه — وإن لم يصلْ نداءُ القياسِ لسببٍ ما كشفناه بعدَ إطار
+  const [ready, setReady] = useState(() => (lastPage[clinicId || '·'] ?? 0) === 0);
+  useEffect(() => {
+    if (ready) return;
+    const id = setTimeout(() => setReady(true), 60);
+    return () => clearTimeout(id);
+  }, [ready]);
   const [showFull, setShowFull] = useState(false);
   const [clinicCount, setClinicCount] = useState(0);
   // تجاوزٌ محلّيٌّ لعددِ الكراسي: المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ
@@ -1210,11 +1217,16 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        // الاستعادةُ عندَ قياسِ المحتوى لا عندَ التركيب: قبلَ القياسِ لا عرضَ يُقفَزُ إليه
+        // الإزاحةُ الابتدائيّةُ تُوضَعُ قبلَ أوّلِ رسمةٍ فلا تُرى الصفحةُ الأولى أصلًا.
+        // والقفزُ عندَ قياسِ المحتوى احتياطٌ لا أكثر، وحجبُ الشريطِ حتّى تستقرَّ الإزاحةُ
+        // يضمنُ ألّا يُرى انتقالٌ في أسوأِ الحالات: إطارٌ فارغٌ أهونُ من إطارٍ كاذب.
+        contentOffset={{ x: page * W, y: 0 }}
+        style={{ opacity: ready ? 1 : 0 }}
         onContentSizeChange={() => {
           if (restored.current) return;
           restored.current = true;
           if (page > 0) pagerRef.current?.scrollTo({ x: page * W, animated: false });
+          setReady(true);
         }}
         onMomentumScrollEnd={(e) => {
           const p = Math.round(e.nativeEvent.contentOffset.x / W);
