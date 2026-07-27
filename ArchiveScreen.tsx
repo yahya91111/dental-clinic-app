@@ -100,8 +100,6 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   const [showClinicDropdown, setShowClinicDropdown] = useState(false);
   const [archivedPatients, setArchivedPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showNoteModal, setShowNoteModal] = useState(false);
-  const [selectedNote, setSelectedNote] = useState<string>('');
 
   // حالة التوسيع للمريض الدائم (للقراءة فقط)
   const [expandedArchiveCardId, setExpandedArchiveCardId] = useState<string | null>(null);
@@ -476,10 +474,6 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-GB');
-  };
-
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
   if (showDoctorProfile) {
@@ -1206,28 +1200,6 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
           </TouchableOpacity>
         </Modal>
 
-        {/* Note Modal (Read-Only) */}
-        <Modal visible={showNoteModal} transparent animationType="fade">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowNoteModal(false)}
-          >
-            <View style={styles.noteModal}>
-              <View style={styles.noteModalHeader}>
-                <Text style={styles.noteModalTitle}>Patient Note</Text>
-                <TouchableOpacity onPress={() => setShowNoteModal(false)}>
-                  <Ionicons name="close" size={scale(24)} color="#4A5568" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.noteModalContent}>
-                <Text style={styles.noteModalText}>{selectedNote}</Text>
-              </View>
-              <Text style={styles.noteModalFooter}>Read-only - Cannot be edited in Archive</Text>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
         </View>
       </SafeAreaView>
 
@@ -1270,9 +1242,6 @@ const styles = scaledStyleSheet({
   container: {
     flex: 1,
   },
-  gradient: {
-    flex: 1,
-  },
   headerContainer: {
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -1283,16 +1252,6 @@ const styles = scaledStyleSheet({
     alignItems: 'center',
     justifyContent: 'center',  //  توسيط العنوان
     marginBottom: 20,
-  },
-  doctorProfileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
   headerDivider: {
     height: 1,
@@ -1367,33 +1326,6 @@ const styles = scaledStyleSheet({
     shadowRadius: Platform.OS === 'android' ? 0 : 12,
     elevation: Platform.OS === 'android' ? 0 : 5,
   },
-  cardLabel: {
-    fontSize: 14,
-    color: '#718096',
-    marginBottom: 10,
-  },
-  dateButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  dateText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2D3748',
-  },
-  dropdownButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  dropdownText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2D3748',
-  },
   sectionLabel: {
     fontSize: 14,
     color: '#718096',
@@ -1411,108 +1343,6 @@ const styles = scaledStyleSheet({
     color: '#718096',
     fontSize: 16,
   },
-  patientCardWrapper: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  patientCard: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
-    borderWidth: 2.5,
-    borderColor: 'rgba(255, 255, 255, 0.7)',
-    shadowColor: '#5B9FED',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  patientCardContent: {
-    flex: 1,
-    padding: 10,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  leftSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  badgesContainer: {
-    position: 'absolute',
-    top: 8,  // داخل الكرت (بدلاً من -8)
-    left: 8,
-    flexDirection: 'row',
-    gap: 4,
-    zIndex: 10,
-  },
-  statusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    minWidth: 35,
-    maxWidth: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  menuButton: {
-    padding: 4,
-  },
-  menuIcon: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  tag: {
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 12,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4A5568',
-    textAlign: 'center',
-  },
-  timelineSection: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.1)',
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  timelineMarker: {
-    alignItems: 'center',
-    marginRight: 12,
-    width: 20,
-  },
   timelineDot: {
     width: 10,
     height: 10,
@@ -1522,86 +1352,6 @@ const styles = scaledStyleSheet({
     width: 2,
     flex: 1,
     marginTop: 4,
-  },
-  timelineContent: {
-    flex: 1,
-    paddingBottom: 4,
-  },
-  timelineEventText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  timelineTimeText: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  queueNumberSection: {
-    width: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  queueNumberText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  patientHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  patientName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2D3748',
-    letterSpacing: 0.3,
-    fontFamily: 'IBMPlexSansArabic-Bold',
-    marginLeft: 70,
-    marginRight: 20,
-  },
-  doctorName: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  queueBadge: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#5B9FED',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  queueNumber: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#7DD3C0',
-    paddingHorizontal: 15,
-    paddingVertical: 5,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  statusText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  divider: {
-    height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    marginBottom: 6,
-  },
-  dividerOld: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginBottom: 6,
   },
 
   readonlyBadge: {
@@ -1618,92 +1368,6 @@ const styles = scaledStyleSheet({
     color: '#92400E',
     fontSize: 12,
     fontWeight: 'bold',
-  },
-  dateRangeContainer: {
-    flexDirection: 'row',
-    gap: 15,
-    marginBottom: 15,
-  },
-  dateRangeButton: {
-    flex: 1,
-    backgroundColor: '#F0F9FF',
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#5B9FED',
-    padding: 12,
-  },
-  dateRangeLabel: {
-    fontSize: 12,
-    color: '#718096',
-    marginBottom: 5,
-  },
-  dateRangeText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2D3748',
-  },
-  loadButton: {
-    backgroundColor: '#F687B3',
-    borderRadius: 12,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  loadButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  statsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2D3748',
-    marginBottom: 15,
-  },
-  statItem: {
-    marginBottom: 20,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#2D3748',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#5B9FED',
-    position: 'absolute',
-    right: 0,
-    top: 0,
-  },
-  progressBar: {
-    height: 12,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 6,
-  },
-  clinicItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  clinicBadge: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginRight: 15,
-  },
-  clinicBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  clinicCount: {
-    fontSize: 14,
-    color: '#2D3748',
   },
   chartContainer: {
     flexDirection: 'row',
@@ -1992,50 +1656,6 @@ const styles = scaledStyleSheet({
   },
   
   // Note Modal (Read-Only)
-  noteModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    width: '85%',
-    maxHeight: '70%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  noteModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: '#E5E7EB',
-  },
-  noteModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#2D3748',
-  },
-  noteModalContent: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    minHeight: 100,
-  },
-  noteModalText: {
-    fontSize: 16,
-    color: '#4A5568',
-    lineHeight: 24,
-  },
-  noteModalFooter: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
   archiveBlob: {
     position: 'absolute',
     borderRadius: 100,

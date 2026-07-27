@@ -95,28 +95,23 @@ export function DayChartCard({ chart, dateLabel, onPress }: {
       {cards.length || all.length ? (
         <View style={d.mini}>
           {chart.lanes.map((l, i) => (
-            <View key={i} style={d.laneRow}>
-              <View style={d.laneChip}>
-                <Text style={d.laneTxt}>{l.short}</Text>
-              </View>
-              <View style={d.track}>
-                {/* البريكُ أوّلًا فتمرُّ الكروتُ فوقَه، كما هو الحالُ في المخطّط */}
-                {l.blocks.filter((b) => b.kind === 'break').map((b, k) => (
-                  <View key={`b${k}`} style={[d.seg, {
-                    left: `${at(b.start)}%`,
-                    width: `${Math.max(0.6, at(b.end) - at(b.start))}%`,
-                    backgroundColor: SEG.break,
-                    borderRadius: 0,
-                  }]} />
-                ))}
-                {l.blocks.filter((b) => b.kind !== 'break').map((b, k) => (
-                  <View key={`c${k}`} style={[d.seg, {
-                    left: `${at(b.start)}%`,
-                    width: `${Math.max(1.2, at(b.end) - at(b.start))}%`,
-                    backgroundColor: SEG[b.kind],
-                  }]} />
-                ))}
-              </View>
+            <View key={i} style={d.track}>
+              {/* البريكُ أوّلًا فتمرُّ الكروتُ فوقَه، كما هو الحالُ في المخطّط */}
+              {l.blocks.filter((b) => b.kind === 'break').map((b, k) => (
+                <View key={`b${k}`} style={[d.seg, {
+                  left: `${at(b.start)}%`,
+                  width: `${Math.max(0.6, at(b.end) - at(b.start))}%`,
+                  backgroundColor: SEG.break,
+                  borderRadius: 0,
+                }]} />
+              ))}
+              {l.blocks.filter((b) => b.kind !== 'break').map((b, k) => (
+                <View key={`c${k}`} style={[d.seg, {
+                  left: `${at(b.start)}%`,
+                  width: `${Math.max(1.2, at(b.end) - at(b.start))}%`,
+                  backgroundColor: SEG[b.kind],
+                }]} />
+              ))}
             </View>
           ))}
           <View style={d.axis}>
@@ -174,19 +169,12 @@ const d = StyleSheet.create({
   },
 
   mini: { marginTop: scale(13), gap: scale(6) },
-  laneRow: { flexDirection: 'row', alignItems: 'center', gap: scale(8) },
-  laneChip: {
-    minWidth: scale(24), height: scale(17), borderRadius: scale(6),
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(4),
-    backgroundColor: 'rgba(59,46,99,0.07)',
-  },
-  laneTxt: { fontSize: scale(9.5), fontWeight: '800', color: TONE },
   track: {
-    flex: 1, height: scale(11), borderRadius: scale(5), overflow: 'hidden',
+    height: scale(11), borderRadius: scale(5), overflow: 'hidden',
     backgroundColor: 'rgba(59,46,99,0.05)',
   },
   seg: { position: 'absolute', top: 0, bottom: 0, borderRadius: scale(3) },
-  axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: scale(3), paddingLeft: scale(32) },
+  axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: scale(4) },
   axisTxt: { fontSize: scale(9.5), fontWeight: '700', color: 'rgba(59,46,99,0.45)' },
   empty: { marginTop: scale(13), fontSize: scale(12), fontWeight: '600', color: 'rgba(59,46,99,0.5)' },
 
