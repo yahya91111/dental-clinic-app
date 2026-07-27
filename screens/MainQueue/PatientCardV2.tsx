@@ -10,6 +10,7 @@ import {
   Platform,
   UIManager,
   PanResponder,
+  InteractionManager,
   StyleSheet,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -684,6 +685,19 @@ export function PatientCardV2({
   const frontFade = spin.interpolate({ inputRange: [0, 0.5, 0.501, 1], outputRange: [1, 1, 0, 0] });
   const backFade = spin.interpolate({ inputRange: [0, 0.499, 0.5, 1], outputRange: [0, 0, 1, 1] });
 
+  // ── ما لا يُرى لا يُبنى مع أوّلِ رسمة ──
+  // Swipeable يُركِّبُ لوحَي السحبِ من أوّلِ لحظة، وهما مطويّانِ خلفَ الكرتِ لا يُرَيان:
+  // زرّا «تمَّ» و«غائب»، ودُرجُ العيادات (خمسُ رقاقاتٍ لكلِّ واحدةٍ تدرّجٌ وظلٌّ مرتفع).
+  // فكلُّ كرتٍ يُنشئُ ثمانيةَ تدرّجاتٍ وخمسةَ ظلالٍ لا تُطلَبُ حتّى يُسحَب — وهي التي
+  // كانت تُثقِلُ أوّلَ رسمةٍ للطابور. فلْتُبنَ حينَ يهدأُ الخيط: الكرتُ يظهرُ أوّلًا،
+  // ويأتي ما خلفَه بعدَ أن تستقرَّ الحركة. والأرشيفُ لا يُسحَبُ أصلًا فلا لوحَ له.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (readOnly) return;
+    const h = InteractionManager.runAfterInteractions(() => setArmed(true));
+    return () => h.cancel();
+  }, [readOnly]);
+
   // ── swipe-to-reveal via gesture-handler Swipeable (coordinates cleanly with the scroll view) ──
   const swipeRef = useRef<Swipeable>(null);
   const closeSwipe = () => swipeRef.current?.close();
@@ -854,8 +868,8 @@ export function PatientCardV2({
       <View style={s.card}>
         <Swipeable
           ref={swipeRef}
-          renderLeftActions={renderLeftActions}
-          renderRightActions={renderRightActions}
+          renderLeftActions={armed ? renderLeftActions : undefined}
+          renderRightActions={armed ? renderRightActions : undefined}
           friction={1}
           leftThreshold={scale(36)}
           rightThreshold={scale(36)}

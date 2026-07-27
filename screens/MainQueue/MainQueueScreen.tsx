@@ -787,9 +787,10 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
-            initialNumToRender={8}
-            maxToRenderPerBatch={6}
-            windowSize={7}
+            initialNumToRender={7}
+            maxToRenderPerBatch={4}
+            updateCellsBatchingPeriod={60}
+            windowSize={5}
             removeClippedSubviews={false}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item: patient, index }) => (
