@@ -50,9 +50,9 @@ export async function flushDayChart(): Promise<void> {
   if (!pending) return;
   const { clinicId, chart } = pending;
   lastWriteAt = Date.now();
-  try {
-    await saveDayChart(clinicId, chart.day, chart);
-  } catch {
-    // الحفظُ ليس أهمَّ من سيرِ العمل: لا نُعطِّلُ شيئًا بفشلِ لقطة
-  }
+  // saveDayChart لا يرمي: يُعيدُ error. ولو ابتلعنا الفشلَ صامتين لبقيَتِ البصمةُ
+  // مُسجَّلةً كأنَّ اللقطةَ كُتِبَت، فينتظرُ المحاوَلةَ التاليةَ خمسَ دقائقَ بلا سبب.
+  // فنُنسي البصمةَ عندَ الفشل: أوّلُ بناءٍ تالٍ يُعيدُ المحاولةَ فورًا.
+  const { error } = await saveDayChart(clinicId, chart.day, chart);
+  if (error) lastSig = '';
 }

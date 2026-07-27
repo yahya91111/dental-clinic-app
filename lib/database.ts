@@ -36,6 +36,20 @@ import {
 } from '../types';
 
 // ═══════════════════════════════════════════════════════════════
+// لماذا فشل؟
+// ═══════════════════════════════════════════════════════════════
+// أخطاءُ Supabase كائناتٌ عاديّةٌ لا استثناءات، وLogBox يطبعُ عنوانَ السطرِ
+// ويبتلعُ الكائن — فيقرأُ المطوّرُ «Error saving day chart:» ولا شيءَ بعدَها.
+// فنُسطِّحُها إلى نصٍّ يُطبَع: الرسالةُ ورمزُ Postgres والتفصيل.
+// وفشلُ الشبكةِ استثناءٌ حقيقيٌّ رسالتُه «Network request failed» — فيُميَّزُ الاثنان.
+export const dbWhy = (e: any): string => {
+  if (!e) return 'unknown';
+  if (typeof e === 'string') return e;
+  const parts = [e.message, e.code ? `code=${e.code}` : null, e.details, e.hint].filter(Boolean);
+  return parts.length ? parts.join(' · ') : JSON.stringify(e);
+};
+
+// ═══════════════════════════════════════════════════════════════
 // Who is acting
 // ═══════════════════════════════════════════════════════════════
 // A treatment record has to say which doctor did it, by id — this
@@ -1981,7 +1995,7 @@ export async function getScheduleSettings(clinicId: string): Promise<DatabaseRes
     if (error) throw error;
     return { data: data || { clinic_count: 2 }, error: null };
   } catch (error) {
-    console.error('Error fetching schedule settings:', error);
+    console.error('Error fetching schedule settings:', dbWhy(error), '· clinic', clinicId);
     return { data: null, error: error as Error };
   }
 }
@@ -2088,7 +2102,7 @@ export async function saveDayChart(
     if (error) throw error;
     return { data, error: null };
   } catch (error) {
-    console.error('Error saving day chart:', error);
+    console.error('Error saving day chart:', dbWhy(error), '· clinic', clinicId, '· day', day);
     return { data: null, error: error as Error };
   }
 }
@@ -2107,7 +2121,7 @@ export async function getDayChart(
     if (error) throw error;
     return { data, error: null };
   } catch (error) {
-    console.error('Error loading day chart:', error);
+    console.error('Error loading day chart:', dbWhy(error), '· clinic', clinicId, '· day', day);
     return { data: null, error: error as Error };
   }
 }
