@@ -88,6 +88,12 @@ const CLINICS_W =
   CLINIC_CHIP_W * CLINIC_CHOICES.length + CLINIC_GAP * (CLINIC_CHOICES.length - 1) + CLINIC_PAD * 2;
 
 
+// ── تجربة: عمقُ الكرتِ من عمقِ اللوح ──
+// قاعدةُ الكرتِ كانت زجاجًا أبيضَ صافيًا (0.28)، والصفحةُ تُقرأُ من خلالِه كما هي. وهذه
+// قاعدةُ «المدخّن · عمق ٢٠» نفسُها التي في QueueBoard: زُرقةٌ رماديّةٌ عندَ 0.49، فيصيرُ
+// الكرتُ من مادّةِ اللوحِ ذاتِها. ووَشْمُ الحالةِ يبقى فوقَها كما هو، فلا يضيعُ لونُ الحالة.
+const SMOKE: [string, string] = ['rgba(209,219,222,0.49)', 'rgba(190,203,208,0.49)'];
+
 // status tint wash behind the card content — matches the prototype's .card::before
 // (default is applied at opacity 0.5 there, so the waiting stops are ~halved here)
 const TINT: Record<string, [string, string]> = {
@@ -892,6 +898,10 @@ export function PatientCardV2({
           enabled={!readOnly && row !== 'dur'}
         >
           <View style={s.surface}>
+          <LinearGradient
+            colors={SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }}
+            style={StyleSheet.absoluteFill} pointerEvents="none"
+          />
           <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.cardInner}>
             {/* collapsed row (RTL: number + name right, arrow left) */}
             <View style={s.row}>
@@ -1269,7 +1279,8 @@ const s = StyleSheet.create({
   // glass base — the page reads through the card, the status wash sits on top.
   // The swipe buttons don't leak: Swipeable parks them off the left edge and the
   // card's overflow:hidden clips whatever is outside it.
-  surface: { backgroundColor: 'rgba(255,255,255,0.28)' },
+  // القاعدةُ لم تعدْ لونًا واحدًا بل تدرُّجَ «المدخّن» المطلَقَ فوقَها (انظر SMOKE)
+  surface: {},
   // continuous rounded border drawn on TOP of everything → frame stays connected across the buttons
   border: {
     position: 'absolute',
