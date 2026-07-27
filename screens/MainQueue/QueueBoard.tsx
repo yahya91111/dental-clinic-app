@@ -170,13 +170,14 @@ export const QueueBoard = React.memo(function QueueBoard({
 });
 
 const s = scaledStyleSheet({
+  // ورثَ ارتفاعَ نُقَطِ الصفحاتِ التي أُزيلَت من تحتِه، ومعها مساحةٌ من رأسِ الصفحة
   card: {
     flex: 1,
-    height: 150,
-    borderRadius: 24,
+    height: 180,
+    borderRadius: 26,
     overflow: 'hidden',
-    paddingTop: 15,
-    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingHorizontal: 20,
     borderWidth: 1.5,
     borderColor: RIM,
     shadowColor: '#08202A',
@@ -185,51 +186,51 @@ const s = scaledStyleSheet({
     shadowRadius: 15,
     elevation: 6,
   },
-  floor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 46 },
-  gloss: { position: 'absolute', left: 0, right: 0, top: 0, height: 18 },
+  floor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 54 },
+  gloss: { position: 'absolute', left: 0, right: 0, top: 0, height: 20 },
   clock: {
-    position: 'absolute', top: 15, right: 18, zIndex: 3,
-    fontSize: 10, fontWeight: '800', letterSpacing: 0.4, color: SUB,
+    position: 'absolute', top: 18, right: 20, zIndex: 3,
+    fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4, color: SUB,
   },
 
   body: { flex: 1, flexDirection: 'row' },
   left: { width: '40%', justifyContent: 'center', paddingRight: 10 },
   // ارتفاعُ السطرِ لا ينزلُ تحتَ حجمِ الحرف: أندرويد يقصُّ الرقمَ حينَ ينزل
   num: {
-    fontSize: 62, fontWeight: '800', letterSpacing: -4.4, lineHeight: 62, color: INK,
+    fontSize: 74, fontWeight: '800', letterSpacing: -5.2, lineHeight: 74, color: INK,
   },
-  cap: { marginTop: 7, fontSize: 8, fontWeight: '800', letterSpacing: 1.8, color: SUB },
+  cap: { marginTop: 8, fontSize: 8.5, fontWeight: '800', letterSpacing: 1.9, color: SUB },
 
   right: {
     flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'center',
-    paddingLeft: 14, borderLeftWidth: 1, borderLeftColor: HAIR,
+    paddingLeft: 15, borderLeftWidth: 1, borderLeftColor: HAIR,
   },
   // الخانةُ تملأُ نصفَ العرضِ فلا يفيضُ محتواها، وعليه يستقيمُ الطوقُ حولَ «ينتظر» كحبّة
-  slot: { width: '50%', paddingVertical: 6 },
+  slot: { width: '50%', paddingVertical: 9 },
   cellBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderRadius: 9, paddingHorizontal: 4, paddingVertical: 3,
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    borderRadius: 10, paddingHorizontal: 5, paddingVertical: 4,
     borderWidth: 1.5, borderColor: 'transparent',
   },
   cellOn: { backgroundColor: 'rgba(14,159,140,0.14)', borderColor: 'rgba(14,159,140,0.55)' },
   // لا هالةَ حولَ النقطةِ في الوجهِ الفاتح: التوهُّجُ لا يُرى إلّا على سطحٍ داكن
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  cnum: { fontSize: 19, fontWeight: '800', letterSpacing: -0.8, color: INK },
-  ccap: { flexShrink: 1, fontSize: 7.5, fontWeight: '800', letterSpacing: 1.1, color: SUB },
+  dot: { width: 6.5, height: 6.5, borderRadius: 4 },
+  cnum: { fontSize: 22, fontWeight: '800', letterSpacing: -0.9, color: INK },
+  ccap: { flexShrink: 1, fontSize: 8, fontWeight: '800', letterSpacing: 1.1, color: SUB },
 
-  tx: { flexDirection: 'row', gap: 11, paddingBottom: 13 },
-  txLine: { fontSize: 7.5, fontWeight: '800', letterSpacing: 1.2, color: SUB },
+  tx: { flexDirection: 'row', gap: 13, paddingBottom: 16 },
+  txLine: { fontSize: 8, fontWeight: '800', letterSpacing: 1.2, color: SUB },
   txLineNum: { color: INK },
 
   // ── الوجهُ الآخر: العلاجاتُ كلُّها ──
-  txFace: { flex: 1, paddingBottom: 13 },
-  txTitle: { fontSize: 8, fontWeight: '800', letterSpacing: 1.8, color: SUB },
+  txFace: { flex: 1, paddingBottom: 16 },
+  txTitle: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.9, color: SUB },
   txGrid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'center' },
-  txRow: { width: '50%', flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingVertical: 4 },
-  txNum: { fontSize: 17, fontWeight: '800', letterSpacing: -0.7, color: INK, minWidth: 20 },
-  txName: { flex: 1, fontSize: 10.5, fontWeight: '700', color: SUB },
-  txEmpty: { marginTop: 16, fontSize: 13, fontWeight: '700', color: SUB },
-  txMore: { fontSize: 7.5, fontWeight: '800', letterSpacing: 1.2, color: SUB },
+  txRow: { width: '50%', flexDirection: 'row', alignItems: 'baseline', gap: 9, paddingVertical: 5 },
+  txNum: { fontSize: 19, fontWeight: '800', letterSpacing: -0.8, color: INK, minWidth: 22 },
+  txName: { flex: 1, fontSize: 11.5, fontWeight: '700', color: SUB },
+  txEmpty: { marginTop: 20, fontSize: 14, fontWeight: '700', color: SUB },
+  txMore: { fontSize: 8, fontWeight: '800', letterSpacing: 1.2, color: SUB },
 
   led: { position: 'absolute', left: 0, bottom: 0, height: 3, borderTopRightRadius: 2, borderBottomRightRadius: 2 },
 }) as any;

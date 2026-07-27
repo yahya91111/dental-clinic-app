@@ -1242,10 +1242,7 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
         </TouchableOpacity>
       </ScrollView>
 
-      <View style={dots.row}>
-        <View style={[dots.dot, page === 0 && dots.on]} />
-        <View style={[dots.dot, page === 1 && dots.on]} />
-      </View>
+      {/* لا نُقَطَ صفحاتٍ تحتَ اللوح: مساحتُها صارت له، والصفحةُ الثانيةُ تُعرَفُ بالسحب */}
 
       <FullTimeline visible={showFull} onClose={() => setShowFull(false)} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} />
     </View>
@@ -1253,7 +1250,8 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 }
 
 const mini = scaledStyleSheet({
-  card: { minHeight: 150, backgroundColor: 'rgba(255,255,255,0.42)', borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', paddingVertical: 13, paddingHorizontal: 15, justifyContent: 'center' },
+  // يُطابقُ ارتفاعَ اللوحِ في الصفحةِ الأولى، فلا تعلو صفحةٌ على أختِها في الصفّاحة
+  card: { minHeight: 180, backgroundColor: 'rgba(255,255,255,0.42)', borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', paddingVertical: 13, paddingHorizontal: 15, justifyContent: 'center' },
   expIcon: { position: 'absolute', top: 9, right: 12, zIndex: 3 },
   expTxt: { fontSize: 14, color: '#94a3b8' },
   simBadge: { position: 'absolute', top: 9, left: 13, zIndex: 3, backgroundColor: '#0E7C66', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2 },
