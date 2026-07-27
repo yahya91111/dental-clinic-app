@@ -92,6 +92,17 @@ function firstFreeChair(acts: { [id: string]: SimAct }, chairCount: number): num
 
 const SIM_SPEEDS = [1, 3, 10, 30, 90]; // دقائقُ افتراضيّةٌ لكلِّ ثانيةٍ حقيقيّة (1 = أبطأ، الافتراضيّ — دقيقةٌ لكلِّ ثانية)
 
+// مادّةُ الصفحة — «مدخّن · عمق ٢٠»، القيمُ نفسُها في QueueBoard وPatientCardV2 وQueueStatsStrip
+const MINI_SMOKE: [string, string] = ['rgba(209,219,222,0.49)', 'rgba(190,203,208,0.49)'];
+const MINI_GLOSS: [string, string] = ['rgba(255,255,255,0.58)', 'rgba(255,255,255,0)'];
+const MINI_FLOOR: [string, string] = ['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)'];
+const MINI_RIM = 'rgba(255,255,255,0.80)';
+const MINI_TEAL_G: [string, string] = ['#12B39D', '#0B7F71'];
+const AMBER_G: [string, string] = ['#F0A93C', '#C97D14'];
+// وَشْمُ البلاطة: يبدأُ من جهةِ الشارةِ (اليمين) ويفنى قِبَلَ الوقتِ — فلا حافّةَ له تُقرأُ صندوقًا
+const MINI_TEAL_W: [string, string] = ['rgba(18,192,166,0.20)', 'rgba(18,192,166,0.02)'];
+const MINI_AMBER_W: [string, string] = ['rgba(240,169,60,0.22)', 'rgba(240,169,60,0.02)'];
+
 // ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
   const { lanes } = data;
@@ -104,19 +115,35 @@ function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: num
   const nextBreak = flat.filter((x) => x.b.kind === 'break' && x.b.end > nowMin).sort((a, b) => a.b.start - b.b.start)[0]?.b ?? null;
   const caseOf = (p: Patient) => (p.treatment && p.treatment !== 'Treatment') ? p.treatment : 'Treatment';
 
+  const eld = next?.b.kind === 'eld';
+
   return (
     <View style={mini.card}>
-      <View style={mini.expIcon}><Text style={mini.expTxt}>⤢</Text></View>
-      {simOn && <View style={mini.simBadge}><Text style={mini.simBadgeTxt}>SIM {fmtHM(nowMin)}</Text></View>}
+      {/* المادّةُ نفسُها: قاعدةٌ مدخّنة، ثمّ بريقُ الحافّةِ العليا وضوءُ القاع */}
+      <LinearGradient colors={MINI_SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={MINI_GLOSS} style={mini.gloss} pointerEvents="none" />
+      <LinearGradient colors={MINI_FLOOR} style={mini.floor} pointerEvents="none" />
+
+      <View style={mini.head}>
+        <Text style={mini.eyebrow}>{next ? 'NEXT UP' : 'QUEUE'}</Text>
+        {simOn && <View style={mini.simBadge}><Text style={mini.simBadgeTxt}>SIM</Text></View>}
+        <Text style={mini.clock}>{fmtHM(nowMin)}</Text>
+        <View style={mini.exp}><Text style={mini.expTxt}>⤢</Text></View>
+      </View>
 
       {next ? (
         <>
-          <Text style={mini.eyebrow}>UP NEXT</Text>
-          <View style={mini.nextRow}>
-            <View style={[mini.badge, next.b.kind === 'eld' && mini.badgeEld]}>
-              <Text style={[mini.badgeTxt, next.b.kind === 'eld' && { color: '#7c2d12' }]}>{next.b.p.queue_number}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
+          {/* بلاطةُ التالي: مرفوعةٌ عن السطحِ بوَشْمٍ فيروزيٍّ خفيف، والرقمُ يمينَ الاسمِ كما في الكرت */}
+          <View style={mini.slab}>
+            <LinearGradient
+              colors={eld ? MINI_AMBER_W : MINI_TEAL_W}
+              start={{ x: 0.9, y: 0 }} end={{ x: 0.1, y: 1 }}
+              style={StyleSheet.absoluteFill} pointerEvents="none"
+            />
+            <LinearGradient colors={eld ? AMBER_G : MINI_TEAL_G} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={mini.badge}>
+              <Text style={mini.badgeTxt}>{next.b.p.queue_number}</Text>
+            </LinearGradient>
+            <View style={mini.who}>
               <Text style={mini.name} numberOfLines={1}>{next.b.p.name}</Text>
               <Text style={mini.sub} numberOfLines={1}>{caseOf(next.b.p)} · {estMinutes(next.b.p)} min</Text>
             </View>
@@ -128,27 +155,30 @@ function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: num
 
           {then.length ? (
             <View style={mini.thenRow}>
-              <Text style={mini.thenLbl}>THEN</Text>
               {then.map((x, i) => (
                 <View key={i} style={mini.thenChip}>
-                  <Text style={mini.thenNum}>{x.b.p.queue_number}</Text>
+                  <View style={mini.thenNumBox}><Text style={mini.thenNum}>{x.b.p.queue_number}</Text></View>
                   <Text style={mini.thenName} numberOfLines={1}>{x.b.p.name}</Text>
                 </View>
               ))}
+              {then.length === 1 ? <View style={mini.thenGhost} /> : null}
             </View>
           ) : null}
         </>
-      ) : serving.length ? (
-        <><Text style={mini.eyebrow}>QUEUE</Text><Text style={mini.emptyBig}>No one waiting</Text><Text style={mini.emptySub}>{serving.length} patient{serving.length > 1 ? 's' : ''} in clinic now</Text></>
       ) : (
-        <><Text style={mini.eyebrow}>QUEUE</Text><Text style={mini.emptyBig}>No patients yet</Text><Text style={mini.emptySub}>Add patients to see who's next</Text></>
+        <View style={mini.emptyWrap}>
+          <Text style={mini.emptyBig}>{serving.length ? 'No one waiting' : 'No patients yet'}</Text>
+          <Text style={mini.emptySub}>
+            {serving.length ? `${serving.length} patient${serving.length > 1 ? 's' : ''} in the chair now` : "Add patients to see who's next"}
+          </Text>
+        </View>
       )}
 
       <View style={mini.statsRow}>
-        <View style={mini.stat}><View style={[mini.dot, mini.dotServing]} /><Text style={mini.statTxt}>{serving.length} in clinic</Text></View>
-        <View style={mini.stat}><View style={[mini.dot, mini.dotWait]} /><Text style={mini.statTxt}>{upcoming.length} waiting</Text></View>
-        {nextBreak ? <View style={mini.stat}><Text style={mini.statIcon}>☕</Text><Text style={mini.statTxt}>{fmtHM(nextBreak.start)}</Text></View> : null}
-        {naCount ? <View style={mini.stat}><Text style={mini.statIcon}>🚫</Text><Text style={mini.statTxt}>{naCount} away</Text></View> : null}
+        <View style={mini.stat}><View style={[mini.dot, mini.dotServing]} /><Text style={mini.statTxt}>{serving.length} IN CHAIR</Text></View>
+        <View style={mini.stat}><View style={[mini.dot, mini.dotWait]} /><Text style={mini.statTxt}>{upcoming.length} WAITING</Text></View>
+        {nextBreak ? <View style={mini.stat}><View style={[mini.dot, mini.dotBreak]} /><Text style={mini.statTxt}>{fmtHM(nextBreak.start)}</Text></View> : null}
+        {naCount ? <View style={mini.stat}><View style={[mini.dot, mini.dotAway]} /><Text style={mini.statTxt}>{naCount} AWAY</Text></View> : null}
       </View>
     </View>
   );
@@ -1250,36 +1280,82 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 }
 
 const mini = scaledStyleSheet({
-  // يُطابقُ ارتفاعَ اللوحِ في الصفحةِ الأولى، فلا تعلو صفحةٌ على أختِها في الصفّاحة
-  card: { minHeight: 180, backgroundColor: 'rgba(255,255,255,0.42)', borderRadius: 20, borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)', paddingVertical: 13, paddingHorizontal: 15, justifyContent: 'center' },
-  expIcon: { position: 'absolute', top: 9, right: 12, zIndex: 3 },
-  expTxt: { fontSize: 14, color: '#94a3b8' },
-  simBadge: { position: 'absolute', top: 9, left: 13, zIndex: 3, backgroundColor: '#0E7C66', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2 },
-  simBadgeTxt: { fontSize: 10, fontWeight: '800', color: '#fff' },
-  eyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.4, color: '#8CA0A8', marginBottom: 9 },
-  nextRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  badge: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#7DD3C0', shadowColor: '#09705C', shadowOpacity: 0.28, shadowRadius: 7, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
-  badgeEld: { backgroundColor: '#FBBF24' },
-  badgeTxt: { fontSize: 17, fontWeight: '800', color: '#05302A' },
-  name: { fontSize: 16, fontWeight: '800', color: '#12232A', letterSpacing: -0.3 },
-  sub: { marginTop: 2, fontSize: 11, fontWeight: '600', color: '#5A7079' },
-  timeCol: { alignItems: 'flex-end' },
-  timeBig: { fontSize: 15, fontWeight: '800', color: '#0E7C66' },
-  timeSub: { marginTop: 1, fontSize: 9.5, fontWeight: '700', color: '#8CA0A8' },
-  thenRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 11 },
-  thenLbl: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.8, color: '#9AACB3' },
-  thenChip: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(140,160,168,0.24)' },
-  thenNum: { fontSize: 10.5, fontWeight: '800', color: '#0E7C66' },
-  thenName: { flex: 1, fontSize: 10.5, fontWeight: '700', color: '#31454D' },
-  emptyBig: { fontSize: 16, fontWeight: '800', color: '#31454D' },
-  emptySub: { marginTop: 3, fontSize: 11, fontWeight: '600', color: '#8CA0A8' },
-  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(140,160,168,0.18)' },
-  stat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  dotServing: { backgroundColor: '#34D399' },
-  dotWait: { backgroundColor: '#B6C2C8' },
-  statIcon: { fontSize: 10 },
-  statTxt: { fontSize: 10, fontWeight: '700', color: '#5A7079' },
+  // يُطابقُ ارتفاعَ اللوحِ في الصفحةِ الأولى، فلا تعلو صفحةٌ على أختِها في الصفّاحة،
+  // ومادّتُه مادّتُه: قاعدةٌ مدخّنةٌ وحافّةٌ مضيئةٌ وظلٌّ من حبرِه.
+  card: {
+    height: 180, borderRadius: 26, overflow: 'hidden',
+    borderWidth: 1.5, borderColor: MINI_RIM,
+    paddingTop: 18, paddingHorizontal: 20, paddingBottom: 13,
+    shadowColor: '#08202A', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.27, shadowRadius: 14, elevation: 5,
+  },
+  gloss: { position: 'absolute', top: 0, left: 0, right: 0, height: 20 },
+  floor: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 54 },
+
+  head: { flexDirection: 'row', alignItems: 'center', gap: 7, zIndex: 3 },
+  eyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.9, color: '#5A7079' },
+  clock: { marginLeft: 'auto', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4, color: '#5A7079' },
+  exp: {
+    width: 19, height: 19, borderRadius: 7, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: MINI_RIM,
+  },
+  expTxt: { fontSize: 9, color: '#8FA3AC', fontWeight: '800' },
+  simBadge: { backgroundColor: '#0B7F71', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 },
+  simBadgeTxt: { fontSize: 8, fontWeight: '800', letterSpacing: 1, color: '#fff' },
+
+  // بلاطةُ التالي — الرقمُ يمينَ الاسم (صفٌّ معكوس)، ووَشْمُها يذوبُ فلا حدَّ لها
+  slab: {
+    flexDirection: 'row-reverse', alignItems: 'center', gap: 11,
+    height: 54, marginTop: 11, borderRadius: 17, overflow: 'hidden',
+    paddingHorizontal: 11,
+    borderWidth: 1, borderColor: MINI_RIM,
+    shadowColor: '#08202A', shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.16, shadowRadius: 9, elevation: 3,
+  },
+  badge: {
+    width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#09705C', shadowOpacity: 0.55, shadowRadius: 8, shadowOffset: { width: 0, height: 5 }, elevation: 4,
+  },
+  badgeTxt: { fontSize: 16, fontWeight: '800', color: '#fff', letterSpacing: -0.4 },
+  who: { flex: 1, minWidth: 0 },
+  name: { fontSize: 15.5, fontWeight: '800', color: '#12232A', letterSpacing: -0.3, textAlign: 'right' },
+  sub: { marginTop: 2, fontSize: 10.5, fontWeight: '600', color: '#5A7079', textAlign: 'left' },
+  timeCol: { alignItems: 'flex-start' },
+  timeBig: { fontSize: 14.5, fontWeight: '800', color: '#0B7F71', letterSpacing: -0.3 },
+  timeSub: { marginTop: 1, fontSize: 8.5, fontWeight: '800', letterSpacing: 1, color: '#5A7079' },
+
+  // الاثنانِ بعدَه: حبّتانِ متساويتانِ، الرقمُ يمينَ الاسمِ فيهما أيضًا
+  thenRow: { flexDirection: 'row', gap: 8, marginTop: 9 },
+  thenChip: {
+    flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 7,
+    height: 30, borderRadius: 12, paddingHorizontal: 7,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)',
+  },
+  thenGhost: { flex: 1 },
+  thenNumBox: {
+    minWidth: 20, height: 20, borderRadius: 7, paddingHorizontal: 4,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(18,35,42,0.08)',
+  },
+  thenNum: { fontSize: 10.5, fontWeight: '800', color: '#0B7F71' },
+  thenName: { flex: 1, fontSize: 11, fontWeight: '700', color: '#31454D', textAlign: 'right' },
+
+  emptyWrap: { flex: 1, justifyContent: 'center' },
+  emptyBig: { fontSize: 17, fontWeight: '800', color: '#12232A', letterSpacing: -0.4 },
+  emptySub: { marginTop: 4, fontSize: 11.5, fontWeight: '600', color: '#5A7079' },
+
+  statsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 'auto',
+    paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(18,35,42,0.10)',
+  },
+  stat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  dot: { width: 6.5, height: 6.5, borderRadius: 4 },
+  dotServing: { backgroundColor: '#8A5CD6' },
+  dotWait: { backgroundColor: 'rgba(18,35,42,0.28)' },
+  dotBreak: { backgroundColor: '#D08A1E' },
+  dotAway: { backgroundColor: '#93A5AD' },
+  statTxt: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.1, color: '#5A7079' },
 }) as any;
 
 const full = scaledStyleSheet({
