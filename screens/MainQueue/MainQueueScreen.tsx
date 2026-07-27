@@ -28,6 +28,7 @@ const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane, Break } from './QueueTimeline';
 import { QueueStatsStrip } from './QueueStatsStrip';
+import { QueueBoard } from './QueueBoard';
 import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
 import { createScalingRecord, getScalingRecords } from '../../lib/database';
 
@@ -827,47 +828,18 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             onEnterClinic={tlEnterClinic}
             onToggleNA={tlToggleNA}
             onDone={tlDone}
-            statsNode={showTreatmentStats ? (
-              <TouchableOpacity
-                style={[styles.statCardExpanded, shadows.neumorphic]}
-                onPress={() => setShowTreatmentStats(false)}
-              >
-                <View style={styles.expandedHeader}>
-                  <MaterialCommunityIcons name="chart-bar" size={scale(32)} color="#9CA3AF" />
-                  <Text style={styles.expandedTitle}>Statistics</Text>
-                </View>
-                <View style={styles.treatmentStatsList}>
-                  {Object.entries(treatmentStats)
-                    .filter(([_, count]) => count > 0)
-                    .sort(([_, a], [__, b]) => b - a)
-                    .map(([treatment, count]) => (
-                      <View key={treatment} style={styles.treatmentStatRow}>
-                        <Text style={styles.treatmentStatCount}>{count}</Text>
-                        <Text style={styles.treatmentStatName}>{treatment}</Text>
-                      </View>
-                    ))}
-                </View>
-              </TouchableOpacity>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={[styles.statCard, shadows.neumorphic]}
-                  onPress={() => setShowTreatmentStats(true)}
-                >
-                  <MaterialCommunityIcons name="tooth-outline" size={scale(48)} color="#9CA3AF" style={{ marginBottom: scale(8) }} />
-                  <Text style={styles.statLabel}>Total Patients</Text>
-                  <Text style={styles.statValue}>{totalPatients}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.statCard, shadows.neumorphic, filterWaitingOnly && styles.statCardActive]}
-                  onPress={() => setFilterWaitingOnly(!filterWaitingOnly)}
-                >
-                  <Ionicons name="person-outline" size={scale(48)} color={filterWaitingOnly ? '#7DD3C0' : '#9CA3AF'} style={{ marginBottom: scale(8) }} />
-                  <Text style={[styles.statLabel, filterWaitingOnly && styles.statLabelActive]}>Waiting</Text>
-                  <Text style={[styles.statValue, filterWaitingOnly && styles.statValueActive]}>{waitingPatients}</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            // بطاقتانِ لا تحملانِ إلّا رقمَين صارتا لوحًا واحدًا يحملُ اليومَ كلَّه — والعلاجاتُ
+            // التي كانت خلفَ لمسةٍ لا يعرفُها أحدٌ صارت سطرًا ظاهرًا فيه.
+            statsNode={
+              <QueueBoard
+                patients={patients}
+                treatmentStats={treatmentStats}
+                filterWaitingOnly={filterWaitingOnly}
+                onToggleFilter={() => setFilterWaitingOnly(!filterWaitingOnly)}
+                showTreatments={showTreatmentStats}
+                onToggleTreatments={() => setShowTreatmentStats(!showTreatmentStats)}
+              />
+            }
           />
         </Animated.View>
 
