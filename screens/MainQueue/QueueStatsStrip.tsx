@@ -1,147 +1,176 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Animated, Easing, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { scale } from '../../lib/scale';
 import { Patient } from './constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QueueStatsStrip — what the two stat cards become once you swipe them away.
-// A single glass rail carrying the same numbers on a slow drift, so the space
-// they used to occupy goes to the patient cards instead.
+//
+// كان شريطًا متحرّكًا تمرُّ عليه الأرقامُ واحدًا بعدَ واحد. وهذا يقلبُ الغرضَ رأسًا على
+// عقب: أنتَ طويتَ الإحصاءَ لتنظرَ إلى الكروت، ثمّ يطلبُ منك الشريطُ أن **تنتظرَ** رقمَك
+// حتّى يمرّ. فصارَ ساكنًا يُقرأُ كلُّه في نظرة، وقُسِمَ إلى ما يُسأَلُ عنه فعلًا:
+//   كم ينتظر · مَن في الكرسيِّ الآن · مَن التالي
+// وتحتَه شريطُ تركيبِ اليوم: مُنجَزٌ وفي الكرسيِّ ومنتظِرٌ وغائب، بنسبِهم الحقيقيّة —
+// حالةُ اليومِ كلِّها في ثلاثةِ بكسلاتٍ لا تُزاحمُ كلمةً على السطر.
+// وألوانُه ألوانُ المخطّطِ الأفقيِّ نفسُها، فاللونُ يعني الشيءَ ذاتَه أينما وقعت عليه العين.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TEAL = '#0E9F8C';
 const INK = '#12232A';
 const MUTED = '#5A7079';
+const TEAL = '#0E9F8C';
 
-type Item = { key: string; label: string; value: string; tone: string };
+const TONE = {
+  done: 'rgba(90,112,121,0.40)',
+  chair: TEAL,
+  wait: '#9FD9CE',
+  away: '#B4B7D8',
+};
+
+const firstName = (n?: string) => (n || '').trim().split(/\s+/)[0] || '—';
 
 export const QueueStatsStrip = React.memo(function QueueStatsStrip({
   total,
   waiting,
   patients,
-  active,
 }: {
   total: number;
   waiting: number;
   patients: Patient[];
-  active: boolean;
 }) {
-  const items = useMemo<Item[]>(() => {
+  const m = useMemo(() => {
     const live = patients.filter((p) => p.status !== 'complete' && p.status !== 'na');
     const inChair = live.filter((p) => !!p.clinic && p.clinic !== 'Clinic');
     const queued = live
-      .filter((p) => p.clinic === 'Clinic' || !p.clinic)
+      .filter((p) => !p.clinic || p.clinic === 'Clinic')
       .sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
-    const done = patients.filter((p) => p.status === 'complete').length;
-    const away = patients.filter((p) => p.status === 'na').length;
+    return {
+      done: patients.filter((p) => p.status === 'complete').length,
+      away: patients.filter((p) => p.status === 'na').length,
+      inChair,
+      next: queued[0] ?? null,
+    };
+  }, [patients]);
 
-    const out: Item[] = [
-      { key: 'total', label: 'TOTAL', value: String(total), tone: INK },
-      { key: 'waiting', label: 'WAITING', value: String(waiting), tone: TEAL },
-    ];
-    if (queued[0]) {
-      out.push({ key: 'next', label: 'NEXT', value: `${queued[0].queue_number} · ${queued[0].name}`, tone: INK });
-    }
-    if (inChair.length) {
-      out.push({
-        key: 'chair',
-        label: 'IN CHAIR',
-        value: inChair.length === 1 ? inChair[0].name : `${inChair.length} patients`,
-        tone: TEAL,
-      });
-    }
-    out.push({ key: 'done', label: 'DONE', value: String(done), tone: MUTED });
-    if (away) out.push({ key: 'away', label: 'AWAY', value: String(away), tone: MUTED });
-    return out;
-  }, [patients, total, waiting]);
+  const segs = [
+    { k: 'done', n: m.done, c: TONE.done },
+    { k: 'chair', n: m.inChair.length, c: TONE.chair },
+    { k: 'wait', n: Math.max(0, waiting - m.inChair.length), c: TONE.wait },
+    { k: 'away', n: m.away, c: TONE.away },
+  ].filter((s) => s.n > 0);
 
-  // the drift: one run of the items measured, then two copies chase each other
-  const [runW, setRunW] = useState(0);
-  const x = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!runW || !active) {
-      x.stopAnimation();
-      return;
-    }
-    x.setValue(0);
-    const loop = Animated.loop(
-      Animated.timing(x, {
-        toValue: -runW,
-        duration: Math.max(7000, Math.round(runW * 26)),
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [runW, active, items.length]);
-
-  const run = (copy: string) => (
-    <View
-      style={s.run}
-      onLayout={copy === 'a' ? (e) => setRunW(Math.round(e.nativeEvent.layout.width)) : undefined}
-    >
-      {items.map((it) => (
-        <View key={copy + it.key} style={s.chip}>
-          <View style={[s.dot, { backgroundColor: it.tone }]} />
-          <Text style={s.chipLbl}>{it.label}</Text>
-          <Text style={[s.chipVal, { color: it.tone }]} numberOfLines={1}>{it.value}</Text>
+  if (!total) {
+    return (
+      <View style={s.rail}>
+        <View style={s.row}>
+          <Text style={s.empty}>No patients yet</Text>
         </View>
-      ))}
-    </View>
-  );
+      </View>
+    );
+  }
 
   return (
     <View style={s.rail}>
-      <View style={s.track}>
-        <Animated.View style={[s.belt, { transform: [{ translateX: x }] }]}>
-          {run('a')}
-          {run('b')}
-        </Animated.View>
+      <View style={s.row}>
+        {/* ما ينتظر — الرقمُ الذي طُوِيَ الإحصاءُ ولم يُطوَ هو */}
+        <View style={s.lead}>
+          <LinearGradient
+            colors={waiting ? ['#12B39D', '#0B7F71'] : ['#B9C6CB', '#93A5AC']}
+            start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}
+            style={s.leadFill}
+          >
+            <Text style={s.leadNum}>{waiting}</Text>
+          </LinearGradient>
+        </View>
+        <Text style={s.leadLbl}>WAITING</Text>
+
+        {m.inChair.length > 0 && (
+          <View style={s.mid}>
+            <View style={s.liveDot}>
+              <View style={s.liveHalo} />
+              <View style={s.liveCore} />
+            </View>
+            <Text style={s.midTxt} numberOfLines={1}>
+              {m.inChair.length === 1 ? firstName(m.inChair[0].name) : `${m.inChair.length} in chair`}
+            </Text>
+          </View>
+        )}
+
+        <View style={s.tail}>
+          {m.next ? (
+            <>
+              <Text style={s.tailLbl}>NEXT</Text>
+              <View style={s.qn}><Text style={s.qnTxt}>{m.next.queue_number}</Text></View>
+              <Text style={s.tailName} numberOfLines={1}>{firstName(m.next.name)}</Text>
+            </>
+          ) : (
+            <Text style={s.tailLbl}>{m.done === total ? 'ALL DONE' : 'NO ONE WAITING'}</Text>
+          )}
+        </View>
       </View>
 
-      {/* the rail's own light, so items slide in and out of the glass */}
-      <LinearGradient
-        colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0)']}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={[s.fade, s.fadeL]}
-        pointerEvents="none"
-      />
-      <LinearGradient
-        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)']}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={[s.fade, s.fadeR]}
-        pointerEvents="none"
-      />
+      {/* تركيبُ اليومِ بنسبِه — بلا أرقامٍ ولا كلمات، اللونُ وحدَه والطول */}
+      <View style={s.bar}>
+        {segs.map((g) => (
+          <View key={g.k} style={{ flex: g.n, backgroundColor: g.c }} />
+        ))}
+      </View>
     </View>
   );
-})
+});
 
 const s = StyleSheet.create({
   rail: {
     marginHorizontal: scale(24),
     height: scale(46),
     borderRadius: scale(16),
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.8)',
-    backgroundColor: 'rgba(255,255,255,0.42)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255,255,255,0.52)',
     overflow: 'hidden',
-    justifyContent: 'center',
+    shadowColor: '#0A2834',
+    shadowOffset: { width: 0, height: scale(4) },
+    shadowOpacity: 0.10,
+    shadowRadius: scale(9),
+    elevation: 2,
   },
-  track: { flex: 1, justifyContent: 'center', overflow: 'hidden' },
-  belt: { flexDirection: 'row' },
-  run: { flexDirection: 'row', alignItems: 'center' },
+  row: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(8),
+    paddingHorizontal: scale(11),
+    paddingBottom: scale(3),   // مكانُ شريطِ التركيبِ بالأسفل
+  },
+  empty: { flex: 1, textAlign: 'center', fontSize: scale(12), fontWeight: '700', color: MUTED },
 
-  chip: { flexDirection: 'row', alignItems: 'center', gap: scale(7), paddingHorizontal: scale(14) },
-  dot: { width: scale(6), height: scale(6), borderRadius: scale(3) },
-  chipLbl: { fontSize: scale(9), fontWeight: '800', letterSpacing: 1.3, color: MUTED },
-  chipVal: { fontSize: scale(13.5), fontWeight: '800', letterSpacing: -0.2 },
+  lead: {
+    width: scale(27), height: scale(25), borderRadius: scale(9),
+    shadowColor: '#0B7F71', shadowOffset: { width: 0, height: scale(3) },
+    shadowOpacity: 0.32, shadowRadius: scale(5), elevation: 3,
+  },
+  leadFill: { flex: 1, borderRadius: scale(9), alignItems: 'center', justifyContent: 'center' },
+  leadNum: { fontSize: scale(14), fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
+  leadLbl: { fontSize: scale(8.5), fontWeight: '800', letterSpacing: 1.2, color: MUTED },
 
-  fade: { position: 'absolute', top: 0, bottom: 0, width: scale(26) },
-  fadeL: { left: 0 },
-  fadeR: { right: 0 },
+  mid: { flexDirection: 'row', alignItems: 'center', gap: scale(6), flexShrink: 1 },
+  liveDot: { width: scale(7), height: scale(7), alignItems: 'center', justifyContent: 'center' },
+  liveHalo: {
+    position: 'absolute', width: scale(15), height: scale(15), borderRadius: scale(8),
+    backgroundColor: TEAL, opacity: 0.18,
+  },
+  liveCore: { width: scale(7), height: scale(7), borderRadius: scale(4), backgroundColor: TEAL },
+  midTxt: { fontSize: scale(11.5), fontWeight: '700', color: TEAL, flexShrink: 1 },
+
+  tail: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: scale(6) },
+  tailLbl: { fontSize: scale(8.5), fontWeight: '800', letterSpacing: 1.2, color: MUTED },
+  qn: {
+    minWidth: scale(18), height: scale(18), borderRadius: scale(6),
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(4),
+    backgroundColor: 'rgba(18,35,42,0.07)',
+  },
+  qnTxt: { fontSize: scale(10.5), fontWeight: '800', color: INK },
+  tailName: { fontSize: scale(12.5), fontWeight: '800', color: INK, flexShrink: 1 },
+
+  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: scale(3), flexDirection: 'row' },
 });

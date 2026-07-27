@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StatusBar,
   Animated,
-  LayoutAnimation,
   PanResponder,
   Alert,
 } from 'react-native';
@@ -327,35 +326,61 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   }, []);
   const appointmentCtx = useMemo(() => scheduleRef.current, [expandedPermanentCardId, patients]);
 
-  // ── الإحصاءُ يُطوى بالسحب ──
+  // ── الإحصاءُ يُطوى بالسحب، والطيُّ يتبعُ الإصبع ──
   // سحبةٌ للأعلى فوقَ بطاقتَي «Total / Waiting» تُقلِّصُهما إلى شريطٍ زجاجيٍّ واحدٍ
-  // تمرُّ عليه الأرقامُ نفسُها، والمساحةُ المتحرِّرةُ تنزلُ لكروتِ المرضى.
+  // يحملُ الأرقامَ نفسَها، والمساحةُ المتحرِّرةُ تنزلُ لكروتِ المرضى.
   //
-  // الطيُّ يجري على LayoutAnimation لا على قيمةٍ متحرِّكة: قيمةُ الارتفاعِ المتحرِّكةُ
-  // كانت تُعيدُ حسابَ تخطيطِ الصفحةِ كلَّ إطارٍ من خيطِ الجافاسكربت فيظهرُ التقطيع.
-  // أمّا هذه فتغييرٌ واحدٌ في الحالة، ثمّ تتولّى المنصّةُ الحركةَ كلَّها أصلًا.
+  // كان القرارُ يقعُ عندَ رفعِ الإصبع: تسحبُ فلا يتغيّرُ شيء، ثمّ يقفزُ الشكلُ دفعةً واحدة.
+  // وسحبُ كرتِ المريضِ يفعلُ العكسَ — يمشي مع اليدِ بمقدارِ ما تُعطيه — فليكنْ هذا مثلَه:
+  // foldT تمشي مع الإصبعِ بين ٠ (مفتوح) و١ (مطويّ)، فترى البطاقتَينِ تذهبانِ والشريطَ
+  // يأتي وأنت ما زلتَ تسحب، ولا يستقرُّ الأمرُ على طرفٍ إلّا عندَ الرفع.
+  //
+  // ملاحظةٌ على الارتفاعِ المتحرّك: كان يُقطِّعُ حينَ كانت القائمةُ ScrollView تحملُ كلَّ
+  // كروتِها، فيُعادُ تخطيطُ مئتَي كرتٍ مع كلِّ إطار. وقد صارت مُنافَذةً لا تُركِّبُ إلّا
+  // نحوَ سبعة، فالتخطيطُ في كلِّ إطارٍ صارَ رخيصًا وأمكنَ ربطُه بالإصبع.
   const STRIP_H = scale(46);
   const [statsH, setStatsH] = useState(0);      // الارتفاعُ الطبيعيّ — يلزمُ لضبطِ الكرتِ الموسَّع
   const [statsFolded, setStatsFolded] = useState(false);
   const foldedRef = useRef(false);
 
-  const setFold = useCallback((to: boolean) => {
-    if (foldedRef.current === to) return;
-    foldedRef.current = to;
-    LayoutAnimation.configureNext(
-      LayoutAnimation.create(300, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity),
-    );
-    setStatsFolded(to);
-  }, []);
+  const foldT = useRef(new Animated.Value(0)).current;   // ٠ مفتوح · ١ مطويّ
+  const foldAt = useRef(0);                              // الطرفُ المستقرُّ الذي تبدأُ منه السحبةُ التالية
+  const rangeRef = useRef(1);                            // المسافةُ التي يقطعُها الطيُّ بالبكسل
+  rangeRef.current = Math.max(1, statsH - STRIP_H);
+
+  const foldH = useMemo(
+    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [Math.max(statsH, STRIP_H), STRIP_H] }),
+    [statsH, foldT],
+  );
+  // البطاقتانِ تذهبانِ في أوّلِ السحبة، والشريطُ يأتي في آخرِها — فلا يظهرانِ معًا
+  const cardsFade = useMemo(
+    () => foldT.interpolate({ inputRange: [0, 0.55], outputRange: [1, 0], extrapolate: 'clamp' }), [foldT]);
+  const stripFade = useMemo(
+    () => foldT.interpolate({ inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp' }), [foldT]);
+  const stripRise = useMemo(
+    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [scale(9), 0], extrapolate: 'clamp' }), [foldT]);
+
+  const settle = useCallback((to: 0 | 1) => {
+    foldAt.current = to;
+    foldedRef.current = to === 1;
+    setStatsFolded(to === 1);
+    Animated.spring(foldT, { toValue: to, useNativeDriver: false, speed: 15, bounciness: 0 }).start();
+  }, [foldT]);
 
   // عموديًّا فقط، وإلّا فالسحبُ الأفقيُّ يبقى لصفحاتِ المخطّط
   const statsPan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 10 && Math.abs(g.dy) > Math.abs(g.dx) * 1.4,
-      onPanResponderRelease: (_e, g) => {
-        if (g.dy < -22) setFold(true);
-        else if (g.dy > 22) setFold(false);
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.4,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_e, g) => {
+        foldT.setValue(Math.max(0, Math.min(1, foldAt.current - g.dy / rangeRef.current)));
       },
+      onPanResponderRelease: (_e, g) => {
+        // السرعةُ تُرجِّحُ قبلَ المسافة: نفضةٌ قصيرةٌ سريعةٌ تكفي، كما في سحبِ الكرت
+        const t = Math.max(0, Math.min(1, foldAt.current - g.dy / rangeRef.current));
+        settle(g.vy < -0.4 ? 1 : g.vy > 0.4 ? 0 : t > 0.5 ? 1 : 0);
+      },
+      onPanResponderTerminate: () => settle(foldAt.current === 1 ? 1 : 0),
     }),
   ).current;
 
@@ -648,14 +673,14 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               zIndex: expandedPermanentCardId ? 1 : 10,
             },
             fold.clip,
-            statsFolded && { height: STRIP_H },
+            statsH > 0 && { height: foldH },
             expandedPermanentCardId ? fold.away : null,
           ]}
           pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
           {...statsPan.panHandlers}
         >
-        <View
-          style={statsFolded ? fold.gone : null}
+        <Animated.View
+          style={{ opacity: cardsFade }}
           pointerEvents={statsFolded ? 'none' : 'auto'}
           onLayout={(e) => {
             // re-measured whenever the cards themselves change height (the
@@ -714,20 +739,19 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               </>
             )}
           />
-        </View>
+        </Animated.View>
 
           {/* what the two cards fold into */}
-          <View
-            style={[fold.abs, !statsFolded && fold.gone]}
+          <Animated.View
+            style={[fold.abs, { opacity: stripFade, transform: [{ translateY: stripRise }] }]}
             pointerEvents={statsFolded ? 'auto' : 'none'}
           >
             <QueueStatsStrip
               total={totalPatients}
               waiting={waitingPatients}
               patients={patients}
-              active={statsFolded}
             />
-          </View>
+          </Animated.View>
         </Animated.View>
 
         {/* Expandable Options */}
@@ -1111,6 +1135,5 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
 const fold = StyleSheet.create({
   clip: { overflow: 'hidden' },
   abs: { position: 'absolute', top: 0, left: 0, right: 0 },
-  gone: { opacity: 0 },
   away: { height: 0, marginBottom: 0, overflow: 'hidden' },
 });
