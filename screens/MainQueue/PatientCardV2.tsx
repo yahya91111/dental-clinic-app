@@ -94,6 +94,13 @@ const CLINICS_W =
 // الكرتُ من مادّةِ اللوحِ ذاتِها. ووَشْمُ الحالةِ يبقى فوقَها كما هو، فلا يضيعُ لونُ الحالة.
 const SMOKE: [string, string] = ['rgba(209,219,222,0.49)', 'rgba(190,203,208,0.49)'];
 
+// وحدَه اللونُ لا يجعلُهما مادّةً واحدة: حافّةُ اللوحِ لا تُقرأُ خطًّا مرسومًا لأنَّ فوقَها
+// بريقًا يلتقطُ الضوءَ وتحتَها ضوءًا يتجمّعُ في القاع — فالإطارُ يُضيءُ ولا يُحَدّ. وهذا
+// هو الغائبُ عن الكرت، فأُلحِقُه به بالقيمِ نفسِها.
+const GLOSS: [string, string] = ['rgba(255,255,255,0.58)', 'rgba(255,255,255,0)'];
+const FLOOR: [string, string] = ['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)'];
+const RIM = 'rgba(255,255,255,0.80)';
+
 // status tint wash behind the card content — matches the prototype's .card::before
 // (default is applied at opacity 0.5 there, so the waiting stops are ~halved here)
 const TINT: Record<string, [string, string]> = {
@@ -903,6 +910,9 @@ export function PatientCardV2({
             style={StyleSheet.absoluteFill} pointerEvents="none"
           />
           <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.cardInner}>
+            {/* بريقُ الحافّةِ العليا وضوءُ القاع — أوّلُ الأبناءِ فهما تحتَ المحتوى وفوقَ الوَشْم */}
+            <LinearGradient colors={GLOSS} style={s.gloss} pointerEvents="none" />
+            <LinearGradient colors={FLOOR} style={s.floor} pointerEvents="none" />
             {/* collapsed row (RTL: number + name right, arrow left) */}
             <View style={s.row}>
               <Animated.View style={[s.qnum, { opacity: qnumFade }]}>
@@ -1244,13 +1254,14 @@ const s = StyleSheet.create({
   // mirrors the prototype's  0 14px 30px -18px rgba(30,45,75,.55)
   // translucent, not opaque: the page shows through the card. It keeps just
   // enough white to cast a shadow (a fully clear background casts none on iOS).
+  // الظلُّ من حبرِ اللوحِ نفسِه لا من زرقةٍ أخرى، فيقعُ الكرتُ واللوحُ على أرضٍ واحدة
   shadowWrap: {
-    borderRadius: scale(22),
+    borderRadius: scale(24),
     backgroundColor: 'rgba(255,255,255,0.20)',
-    shadowColor: '#1E2D4B',
-    shadowOffset: { width: 0, height: scale(9) },
-    shadowOpacity: 0.18,
-    shadowRadius: scale(18),
+    shadowColor: '#08202A',
+    shadowOffset: { width: 0, height: scale(8) },
+    shadowOpacity: 0.20,
+    shadowRadius: scale(16),
     elevation: 6,
   },
   badge: {
@@ -1270,9 +1281,11 @@ const s = StyleSheet.create({
   badgeTxt: { fontSize: scale(10.5), fontWeight: '800', color: '#fff' },
 
   card: {
-    borderRadius: scale(22),
+    borderRadius: scale(24),
     overflow: 'hidden',
   },
+  gloss: { position: 'absolute', top: 0, left: 0, right: 0, height: scale(16) },
+  floor: { position: 'absolute', bottom: 0, left: 0, right: 0, height: scale(26) },
   // square corners — the outer card's overflow:hidden does all the rounding, so the
   // content meets the swipe buttons edge-to-edge with no light sliver at the corners
   cardInner: { borderRadius: 0 },
@@ -1285,9 +1298,9 @@ const s = StyleSheet.create({
   border: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: scale(22),
+    borderRadius: scale(24),
     borderWidth: 1.5,
-    borderColor: C.brd,
+    borderColor: RIM,
   },
 
   // swipe actions (Done / NA) — revealed to the left, clipped to the card's rounded corners
