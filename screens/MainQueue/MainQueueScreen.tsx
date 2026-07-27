@@ -335,36 +335,37 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   // foldT تمشي مع الإصبعِ بين ٠ (مفتوح) و١ (مطويّ)، فترى البطاقتَينِ تذهبانِ والشريطَ
   // يأتي وأنت ما زلتَ تسحب، ولا يستقرُّ الأمرُ على طرفٍ إلّا عندَ الرفع.
   //
-  // ملاحظةٌ على الارتفاعِ المتحرّك: كان يُقطِّعُ حينَ كانت القائمةُ ScrollView تحملُ كلَّ
-  // كروتِها، فيُعادُ تخطيطُ مئتَي كرتٍ مع كلِّ إطار. وقد صارت مُنافَذةً لا تُركِّبُ إلّا
-  // نحوَ سبعة، فالتخطيطُ في كلِّ إطارٍ صارَ رخيصًا وأمكنَ ربطُه بالإصبع.
-  const STRIP_H = scale(46);
-  const [statsH, setStatsH] = useState(0);      // الارتفاعُ الطبيعيّ — يلزمُ لضبطِ الكرتِ الموسَّع
-  const [statsFolded, setStatsFolded] = useState(false);
+  // ولا بكسلَ واحدًا من هذا يمرُّ على التخطيط. جرّبتُ ارتفاعًا متحرّكًا أوّلًا فقطّع:
+  // الارتفاعُ خاصّيّةُ تخطيطٍ لا يعرفُها المحرّكُ الأصليّ، فكلُّ إطارٍ يعبرُ الجسرَ ويُعيدُ
+  // حسابَ الصفحة. فالطيُّ هنا **إزاحةٌ لا ارتفاع**: صندوقٌ ثابتُ الارتفاعِ يقصُّ، وداخلَه
+  // لوحٌ ينزلقُ للأعلى (البطاقتانِ تخرجانِ من فوقِه والشريطُ يدخلُ من تحته)، والقائمةُ
+  // تنزلقُ معه بالقدرِ المتحرَّر. إزاحةٌ وشفافيّةٌ فقط — وكلتاهما تعملُ على المحرّكِ الأصليّ،
+  // فالحركةُ كلُّها على خيطِ الواجهةِ ولا تمسُّ جافاسكربت.
+  const STRIP_H = scale(50);
+  const [statsH, setStatsH] = useState(0);      // ارتفاعُ البطاقتَين — منه تُشتَقُّ مسافاتُ الإزاحة
   const foldedRef = useRef(false);
 
   const foldT = useRef(new Animated.Value(0)).current;   // ٠ مفتوح · ١ مطويّ
   const foldAt = useRef(0);                              // الطرفُ المستقرُّ الذي تبدأُ منه السحبةُ التالية
-  const rangeRef = useRef(1);                            // المسافةُ التي يقطعُها الطيُّ بالبكسل
+  const rangeRef = useRef(1);                            // ما تقطعُه السحبةُ بالبكسل
   rangeRef.current = Math.max(1, statsH - STRIP_H);
 
-  const foldH = useMemo(
-    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [Math.max(statsH, STRIP_H), STRIP_H] }),
-    [statsH, foldT],
-  );
-  // البطاقتانِ تذهبانِ في أوّلِ السحبة، والشريطُ يأتي في آخرِها — فلا يظهرانِ معًا
+  // اللوحُ يصعدُ بكاملِ ارتفاعِ البطاقتَين، فيحلُّ الشريطُ (وهو ملصَقٌ أسفلَهما) محلَّهما
+  const sheetRise = useMemo(
+    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [0, -statsH] }), [statsH, foldT]);
+  // والقائمةُ تصعدُ بالفرقِ وحدَه — وهو المساحةُ التي تحرّرت لها
+  const listRise = useMemo(
+    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [0, -Math.max(0, statsH - STRIP_H)] }), [statsH, foldT]);
+  // البطاقتانِ تذهبانِ في أوّلِ السحبة، والشريطُ يأتي في آخرِها — فلا يُقرآنِ معًا
   const cardsFade = useMemo(
     () => foldT.interpolate({ inputRange: [0, 0.55], outputRange: [1, 0], extrapolate: 'clamp' }), [foldT]);
   const stripFade = useMemo(
-    () => foldT.interpolate({ inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp' }), [foldT]);
-  const stripRise = useMemo(
-    () => foldT.interpolate({ inputRange: [0, 1], outputRange: [scale(9), 0], extrapolate: 'clamp' }), [foldT]);
+    () => foldT.interpolate({ inputRange: [0.35, 0.9], outputRange: [0, 1], extrapolate: 'clamp' }), [foldT]);
 
   const settle = useCallback((to: 0 | 1) => {
     foldAt.current = to;
     foldedRef.current = to === 1;
-    setStatsFolded(to === 1);
-    Animated.spring(foldT, { toValue: to, useNativeDriver: false, speed: 15, bounciness: 0 }).start();
+    Animated.spring(foldT, { toValue: to, useNativeDriver: true, speed: 15, bounciness: 0 }).start();
   }, [foldT]);
 
   // عموديًّا فقط، وإلّا فالسحبُ الأفقيُّ يبقى لصفحاتِ المخطّط
@@ -673,15 +674,18 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               zIndex: expandedPermanentCardId ? 1 : 10,
             },
             fold.clip,
-            statsH > 0 && { height: foldH },
             expandedPermanentCardId ? fold.away : null,
           ]}
           pointerEvents={expandedPermanentCardId ? 'none' : 'auto'}
+        >
+        {/* اللوحُ المنزلِق: البطاقتانِ، والشريطُ ملصَقٌ أسفلَهما مباشرةً (top:'100%')
+            فلا يزيدُ في ارتفاعِ الصندوقِ ولا يحتاجُ قياسًا كي يقفَ في مكانِه. */}
+        <Animated.View
+          style={{ transform: [{ translateY: sheetRise }] }}
           {...statsPan.panHandlers}
         >
         <Animated.View
           style={{ opacity: cardsFade }}
-          pointerEvents={statsFolded ? 'none' : 'auto'}
           onLayout={(e) => {
             // re-measured whenever the cards themselves change height (the
             // statistics card is taller than the two counters)
@@ -741,17 +745,15 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           />
         </Animated.View>
 
-          {/* what the two cards fold into */}
-          <Animated.View
-            style={[fold.abs, { opacity: stripFade, transform: [{ translateY: stripRise }] }]}
-            pointerEvents={statsFolded ? 'auto' : 'none'}
-          >
+          {/* what the two cards fold into — يقفُ تحتَ البطاقتَينِ تمامًا فيصعدُ محلَّهما */}
+          <Animated.View style={[fold.under, { opacity: stripFade }]}>
             <QueueStatsStrip
               total={totalPatients}
               waiting={waitingPatients}
               patients={patients}
             />
           </Animated.View>
+        </Animated.View>
         </Animated.View>
 
         {/* Expandable Options */}
@@ -799,6 +801,17 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             marginTop: headerTranslateY,
           }}
         >
+          {/* القائمةُ تصعدُ مع الطيِّ بالمساحةِ المتحرَّرة. إزاحةٌ لا ارتفاع، وطبقةٌ مستقلّةٌ
+              عن الأمِّ لأنَّ تلك تتحرّكُ بمحرّكِ جافاسكربت (marginTop) وهذه بالمحرّكِ الأصليّ،
+              ولا يجتمعُ محرّكانِ على منظرٍ واحد. والهامشُ السالبُ يُطيلُها بالقدرِ نفسِه،
+              فما ينكشفُ أسفلَ الشاشةِ وهي تصعدُ مملوءٌ لا فراغ. */}
+          <Animated.View
+            style={{
+              flex: 1,
+              marginBottom: -Math.max(0, statsH - STRIP_H),
+              transform: [{ translateY: listRise }],
+            }}
+          >
           {/* Patient List — قائمةٌ مُنافَذة (FlatList) لا ScrollView.
               كان الطابورُ يُركِّبُ كلَّ كروتِه دفعةً واحدة: مئتا كرتٍ = مئتا Swipeable
               وتدرّجًا لونيًّا مضاعفًا ونقطةً نابضة، كلُّها تُبنى قبلَ أن تُرسَمَ الشاشةُ
@@ -989,6 +1002,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             )
           )}
         />
+          </Animated.View>
 
         {/* FAB */}
         <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
@@ -1134,6 +1148,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
 // the strip sits over the cards' own space, so the fold is a single height change
 const fold = StyleSheet.create({
   clip: { overflow: 'hidden' },
-  abs: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // ملصَقٌ أسفلَ اللوحِ بلا قياس: top:'100%' نسبةٌ من ارتفاعِ اللوحِ نفسِه، فيقفُ الشريطُ
+  // خلفَ حافّتِه السفلى مهما تغيّرَ ارتفاعُ البطاقتَين، وخارجَ الصندوقِ القاصِّ فلا يُرى
+  // حتّى يصعدَ اللوحُ به.
+  under: { position: 'absolute', top: '100%', left: 0, right: 0 },
   away: { height: 0, marginBottom: 0, overflow: 'hidden' },
 });

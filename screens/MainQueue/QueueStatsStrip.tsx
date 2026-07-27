@@ -1,31 +1,27 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../../lib/scale';
 import { Patient } from './constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QueueStatsStrip — what the two stat cards become once you swipe them away.
+// QueueStatsStrip — ما تصيرُ إليه بطاقتا الإحصاءِ حينَ تُطويانِ بالسحب.
 //
-// كان شريطًا متحرّكًا تمرُّ عليه الأرقامُ واحدًا بعدَ واحد. وهذا يقلبُ الغرضَ رأسًا على
-// عقب: أنتَ طويتَ الإحصاءَ لتنظرَ إلى الكروت، ثمّ يطلبُ منك الشريطُ أن **تنتظرَ** رقمَك
-// حتّى يمرّ. فصارَ ساكنًا يُقرأُ كلُّه في نظرة، وقُسِمَ إلى ما يُسأَلُ عنه فعلًا:
-//   كم ينتظر · مَن في الكرسيِّ الآن · مَن التالي
-// وتحتَه شريطُ تركيبِ اليوم: مُنجَزٌ وفي الكرسيِّ ومنتظِرٌ وغائب، بنسبِهم الحقيقيّة —
-// حالةُ اليومِ كلِّها في ثلاثةِ بكسلاتٍ لا تُزاحمُ كلمةً على السطر.
-// وألوانُه ألوانُ المخطّطِ الأفقيِّ نفسُها، فاللونُ يعني الشيءَ ذاتَه أينما وقعت عليه العين.
+// طويتَ الإحصاءَ لتنظرَ إلى الكروت، فلا يصحُّ أن يطلبَ منك ما بقيَ منه انتباهًا.
+// فهو لا يتحرّكُ ولا يُنادي: **اليومُ نفسُه هو خلفيّتُه**. يمتلئُ الشريطُ من يساره
+// بقدرِ ما أُنجِز، وعندَ حدِّ الامتلاءِ خيطٌ فيروزيٌّ مضيءٌ هو موضعُك من اليوم — فترى
+// تقدُّمَك دونَ أن تقرأَ رقمًا. وفوقَه ثلاثةٌ لا رابعَ لها: كم ينتظر، كم في الكراسي،
+// ومَن التالي.
+//
+// وما استُغنيَ عنه مقصودٌ: «المنجَز» يقولُه الامتلاءُ فلا يُكتَب، و«الغائب» ليس ممّا
+// يُتَّخَذُ عليه قرارٌ في لمحة. الجمالُ هنا في ما لم يُوضَع.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#12232A';
 const MUTED = '#5A7079';
 const TEAL = '#0E9F8C';
-
-const TONE = {
-  done: 'rgba(90,112,121,0.40)',
-  chair: TEAL,
-  wait: '#9FD9CE',
-  away: '#B4B7D8',
-};
+const TEAL_G: [string, string] = ['#12B39D', '#0B7F71'];
 
 const firstName = (n?: string) => (n || '').trim().split(/\s+/)[0] || '—';
 
@@ -40,81 +36,79 @@ export const QueueStatsStrip = React.memo(function QueueStatsStrip({
 }) {
   const m = useMemo(() => {
     const live = patients.filter((p) => p.status !== 'complete' && p.status !== 'na');
-    const inChair = live.filter((p) => !!p.clinic && p.clinic !== 'Clinic');
-    const queued = live
-      .filter((p) => !p.clinic || p.clinic === 'Clinic')
-      .sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
     return {
       done: patients.filter((p) => p.status === 'complete').length,
-      away: patients.filter((p) => p.status === 'na').length,
-      inChair,
-      next: queued[0] ?? null,
+      inChair: live.filter((p) => !!p.clinic && p.clinic !== 'Clinic').length,
+      next: live
+        .filter((p) => !p.clinic || p.clinic === 'Clinic')
+        .sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0))[0] ?? null,
     };
   }, [patients]);
 
-  const segs = [
-    { k: 'done', n: m.done, c: TONE.done },
-    { k: 'chair', n: m.inChair.length, c: TONE.chair },
-    { k: 'wait', n: Math.max(0, waiting - m.inChair.length), c: TONE.wait },
-    { k: 'away', n: m.away, c: TONE.away },
-  ].filter((s) => s.n > 0);
-
-  if (!total) {
-    return (
-      <View style={s.rail}>
-        <View style={s.row}>
-          <Text style={s.empty}>No patients yet</Text>
-        </View>
-      </View>
-    );
-  }
+  const pct = total ? Math.min(100, Math.round((m.done / total) * 100)) : 0;
 
   return (
     <View style={s.rail}>
-      <View style={s.row}>
-        {/* ما ينتظر — الرقمُ الذي طُوِيَ الإحصاءُ ولم يُطوَ هو */}
-        <View style={s.lead}>
+      <LinearGradient
+        colors={['rgba(255,255,255,0.66)', 'rgba(255,255,255,0.40)']}
+        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* اليومُ يملأُ الشريط: ما أُنجِزَ فيروزيٌّ خافت، وحدُّه خيطٌ مضيءٌ هو موضعُك منه */}
+      {pct > 0 && (
+        <View style={[s.wash, { width: `${pct}%` }]} pointerEvents="none">
           <LinearGradient
-            colors={waiting ? ['#12B39D', '#0B7F71'] : ['#B9C6CB', '#93A5AC']}
-            start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}
-            style={s.leadFill}
-          >
-            <Text style={s.leadNum}>{waiting}</Text>
-          </LinearGradient>
+            colors={['rgba(14,159,140,0.24)', 'rgba(14,159,140,0.07)']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {pct < 100 && <View style={s.edge} />}
         </View>
-        <Text style={s.leadLbl}>WAITING</Text>
+      )}
 
-        {m.inChair.length > 0 && (
-          <View style={s.mid}>
-            <View style={s.liveDot}>
-              <View style={s.liveHalo} />
-              <View style={s.liveCore} />
-            </View>
-            <Text style={s.midTxt} numberOfLines={1}>
-              {m.inChair.length === 1 ? firstName(m.inChair[0].name) : `${m.inChair.length} in chair`}
-            </Text>
+      {/* بريقُ الزجاجِ على الحافّةِ العليا */}
+      <LinearGradient
+        colors={['rgba(255,255,255,0.85)', 'rgba(255,255,255,0)']}
+        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={s.gloss}
+        pointerEvents="none"
+      />
+
+      {total === 0 ? (
+        <View style={s.row}><Text style={s.empty}>No patients yet</Text></View>
+      ) : (
+        <View style={s.row}>
+          <View style={s.well}>
+            <Text style={s.wellNum}>{waiting}</Text>
+            <Text style={s.wellLbl}>WAITING</Text>
           </View>
-        )}
+          <View style={s.hair} />
+          <View style={s.well}>
+            <Text style={[s.wellNum, m.inChair > 0 && { color: TEAL }]}>{m.inChair}</Text>
+            <Text style={s.wellLbl}>IN CHAIR</Text>
+          </View>
 
-        <View style={s.tail}>
+          <View style={s.gap} />
+
           {m.next ? (
-            <>
-              <Text style={s.tailLbl}>NEXT</Text>
-              <View style={s.qn}><Text style={s.qnTxt}>{m.next.queue_number}</Text></View>
-              <Text style={s.tailName} numberOfLines={1}>{firstName(m.next.name)}</Text>
-            </>
+            <View style={s.next}>
+              <LinearGradient colors={TEAL_G} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={s.qn}>
+                <Text style={s.qnTxt}>{m.next.queue_number}</Text>
+              </LinearGradient>
+              <View style={s.nextTxt}>
+                <Text style={s.nextLbl}>NEXT UP</Text>
+                <Text style={s.nextName} numberOfLines={1}>{firstName(m.next.name)}</Text>
+              </View>
+            </View>
           ) : (
-            <Text style={s.tailLbl}>{m.done === total ? 'ALL DONE' : 'NO ONE WAITING'}</Text>
+            <View style={s.clear}>
+              <Ionicons name="checkmark-circle" size={scale(15)} color={TEAL} />
+              <Text style={s.clearTxt}>{m.inChair ? 'NO ONE WAITING' : 'ALL SEEN'}</Text>
+            </View>
           )}
         </View>
-      </View>
-
-      {/* تركيبُ اليومِ بنسبِه — بلا أرقامٍ ولا كلمات، اللونُ وحدَه والطول */}
-      <View style={s.bar}>
-        {segs.map((g) => (
-          <View key={g.k} style={{ flex: g.n, backgroundColor: g.c }} />
-        ))}
-      </View>
+      )}
     </View>
   );
 });
@@ -122,55 +116,57 @@ export const QueueStatsStrip = React.memo(function QueueStatsStrip({
 const s = StyleSheet.create({
   rail: {
     marginHorizontal: scale(24),
-    height: scale(46),
-    borderRadius: scale(16),
+    height: scale(50),
+    borderRadius: scale(17),
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.85)',
-    backgroundColor: 'rgba(255,255,255,0.52)',
+    borderColor: 'rgba(255,255,255,0.9)',
     overflow: 'hidden',
     shadowColor: '#0A2834',
-    shadowOffset: { width: 0, height: scale(4) },
-    shadowOpacity: 0.10,
-    shadowRadius: scale(9),
-    elevation: 2,
+    shadowOffset: { width: 0, height: scale(5) },
+    shadowOpacity: 0.11,
+    shadowRadius: scale(11),
+    elevation: 3,
   },
-  row: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(8),
-    paddingHorizontal: scale(11),
-    paddingBottom: scale(3),   // مكانُ شريطِ التركيبِ بالأسفل
+  wash: { position: 'absolute', top: 0, bottom: 0, left: 0 },
+  edge: {
+    position: 'absolute', right: 0, top: 0, bottom: 0, width: 2,
+    backgroundColor: TEAL, opacity: 0.55,
+    shadowColor: TEAL, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: scale(4),
   },
+  gloss: { position: 'absolute', top: 0, left: 0, right: 0, height: scale(16) },
+
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: scale(13) },
   empty: { flex: 1, textAlign: 'center', fontSize: scale(12), fontWeight: '700', color: MUTED },
+  gap: { flex: 1, minWidth: scale(8) },
 
-  lead: {
-    width: scale(27), height: scale(25), borderRadius: scale(9),
-    shadowColor: '#0B7F71', shadowOffset: { width: 0, height: scale(3) },
-    shadowOpacity: 0.32, shadowRadius: scale(5), elevation: 3,
+  well: { alignItems: 'flex-start' },
+  wellNum: { fontSize: scale(17), fontWeight: '800', color: INK, letterSpacing: -0.6, lineHeight: scale(19) },
+  wellLbl: { fontSize: scale(7.5), fontWeight: '800', letterSpacing: 1.1, color: MUTED },
+  hair: { width: 1, height: scale(22), marginHorizontal: scale(13), backgroundColor: 'rgba(18,35,42,0.11)' },
+
+  next: {
+    flexDirection: 'row', alignItems: 'center', gap: scale(7), flexShrink: 1,
+    height: scale(34), borderRadius: scale(12),
+    paddingLeft: scale(4), paddingRight: scale(11),
+    backgroundColor: 'rgba(255,255,255,0.74)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#0A2834', shadowOffset: { width: 0, height: scale(2) },
+    shadowOpacity: 0.10, shadowRadius: scale(5), elevation: 2,
   },
-  leadFill: { flex: 1, borderRadius: scale(9), alignItems: 'center', justifyContent: 'center' },
-  leadNum: { fontSize: scale(14), fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
-  leadLbl: { fontSize: scale(8.5), fontWeight: '800', letterSpacing: 1.2, color: MUTED },
-
-  mid: { flexDirection: 'row', alignItems: 'center', gap: scale(6), flexShrink: 1 },
-  liveDot: { width: scale(7), height: scale(7), alignItems: 'center', justifyContent: 'center' },
-  liveHalo: {
-    position: 'absolute', width: scale(15), height: scale(15), borderRadius: scale(8),
-    backgroundColor: TEAL, opacity: 0.18,
-  },
-  liveCore: { width: scale(7), height: scale(7), borderRadius: scale(4), backgroundColor: TEAL },
-  midTxt: { fontSize: scale(11.5), fontWeight: '700', color: TEAL, flexShrink: 1 },
-
-  tail: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: scale(6) },
-  tailLbl: { fontSize: scale(8.5), fontWeight: '800', letterSpacing: 1.2, color: MUTED },
   qn: {
-    minWidth: scale(18), height: scale(18), borderRadius: scale(6),
+    minWidth: scale(26), height: scale(26), borderRadius: scale(9),
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: scale(4),
-    backgroundColor: 'rgba(18,35,42,0.07)',
   },
-  qnTxt: { fontSize: scale(10.5), fontWeight: '800', color: INK },
-  tailName: { fontSize: scale(12.5), fontWeight: '800', color: INK, flexShrink: 1 },
+  qnTxt: { fontSize: scale(12), fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
+  nextTxt: { flexShrink: 1 },
+  nextLbl: { fontSize: scale(7.5), fontWeight: '800', letterSpacing: 1.1, color: MUTED },
+  nextName: { fontSize: scale(12.5), fontWeight: '800', color: INK, marginTop: scale(1) },
 
-  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: scale(3), flexDirection: 'row' },
+  clear: {
+    flexDirection: 'row', alignItems: 'center', gap: scale(6),
+    height: scale(30), paddingHorizontal: scale(11), borderRadius: scale(11),
+    backgroundColor: 'rgba(255,255,255,0.66)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
+  },
+  clearTxt: { fontSize: scale(9.5), fontWeight: '800', letterSpacing: 0.9, color: TEAL },
 });
