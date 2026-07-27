@@ -2068,6 +2068,51 @@ export async function updateScheduleBreaks(
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Queue day charts — لقطةُ مخطّطِ الدورِ لكلِّ يوم (sql/queue_day_charts.sql)
+// ═══════════════════════════════════════════════════════════════
+
+// يومٌ واحدٌ لكلِّ مركز: الكتابةُ تُحدِّثُ اللقطةَ نفسَها فتبقى الأحدثُ هي المحفوظة.
+export async function saveDayChart(
+  clinicId: string, day: string, chart: any
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('queue_day_charts')
+      .upsert(
+        { clinic_id: clinicId, day, chart, saved_at: new Date().toISOString() },
+        { onConflict: 'clinic_id,day' }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error saving day chart:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+export async function getDayChart(
+  clinicId: string, day: string
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('queue_day_charts')
+      .select('chart, saved_at')
+      .eq('clinic_id', clinicId)
+      .eq('day', day)
+      .maybeSingle();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error loading day chart:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // AI Prompt Templates
 // ═══════════════════════════════════════════════════════════════
 

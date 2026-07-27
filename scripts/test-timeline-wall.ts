@@ -269,5 +269,35 @@ console.log('\n⑩ تنبيهُ المدّة على الكرت (shiftFit): يق�
   check(none.fits && none.startsAt == null, 'والبريكُ المرنُ لا يُنبِّه — يُلتَفُّ حولَه لا يُوقِف');
 }
 
+// ═══════════════════════════════════════════════════════════════
+console.log('\n⑪ حدُّ اليوم: المخطّطُ يومٌ تقويميٌّ كامل، ولا علاجَ يعبرُ إلى الغد');
+{
+  const { lanes, dayStart, dayEnd } = buildLanes([waiting(1, 30, 9 * 60)], 9 * 60, ['Clinic 1'], []);
+  check(dayStart === 0 && dayEnd === 24 * 60, 'المحورُ ٠٠:٠٠ → ٢٤:٠٠ ثابتًا', `${hm(dayStart)} → ${hm(dayEnd)}`);
+  check(lanes[0].blocks.length === 1, 'ويومٌ عاديٌّ يُرسَمُ كما هو');
+
+  // ٢٣:٣٠ + ٣٠د = منتصفُ الليلِ تمامًا → يُرسَم
+  const fitEnd = buildLanes([waiting(1, 30, 23 * 60 + 30)], 23 * 60 + 30, ['Clinic 1'], []).lanes[0];
+  const e = fitEnd.blocks.find((b) => b.kind !== 'break');
+  check(e != null && e.end === 24 * 60, 'وما ينتهي عندَ منتصفِ الليلِ تمامًا يُرسَم', e ? hm(e.end) : 'شارة');
+
+  // ٢٣:٣٠ + ٦٠د → يعبرُ إلى الغد → لا يُرسَم، شارة
+  const over = buildLanes([waiting(1, 60, 23 * 60 + 30)], 23 * 60 + 30, ['Clinic 1'], []).lanes[0];
+  check(over.blocks.length === 0 && over.beyond.length === 1, 'وما يعبرُ منتصفَ الليلِ لا يُرسَمُ — شارة',
+    `مرسوم ${over.blocks.length} · شارة ${over.beyond.length}`);
+
+  // تبديلٌ ثابتٌ مسائيّ: مَن لا يسعُه ما قبلَه يُؤجَّلُ بعدَه ما دامَ اليومُ يسعُه
+  const NIGHT: Break = { start: 22 * 60, end: 22 * 60 + 30, fixed: true };
+  const late = buildLanes([waiting(1, 90, 21 * 60)], 21 * 60, ['Clinic 1'], [NIGHT]).lanes[0];
+  dump([late]);
+  const l1 = late.blocks.find((b) => b.kind !== 'break');
+  check(l1 != null && l1.start === 22 * 60 + 30 && l1.end === 24 * 60, 'تسعونَ دقيقةً بعدَ تبديلِ ٢٢:٠٠ → ٢٢:٣٠ حتّى منتصفِ الليل',
+    l1 ? `${hm(l1.start)}→${hm(l1.end)}` : 'شارة');
+
+  const tooLate = buildLanes([waiting(1, 120, 21 * 60)], 21 * 60, ['Clinic 1'], [NIGHT]).lanes[0];
+  check(tooLate.blocks.filter((b) => b.kind !== 'break').length === 0 && tooLate.beyond.length === 1,
+    'ومئةٌ وعشرون لا يسعُها اليومُ بعدَ التبديل → شارة');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ناجح · ${fail} فاشل\n`);
 process.exit(fail === 0 ? 0 : 1);

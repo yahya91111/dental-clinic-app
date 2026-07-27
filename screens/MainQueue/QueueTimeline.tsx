@@ -24,12 +24,13 @@ import { Patient, TREATMENT_DURATIONS } from './constants';
 // قلبُ الترتيب في ملفٍّ مستقلٍّ بلا React — كي يُشغَّلَ ويُختبَرَ وحدَه.
 // (scripts/test-timeline-wall.ts)
 import {
-  buildLanes, slotAvailable, shiftFit, estMinutes, hasDuration, isPriority,
-  minutesOfDay, isRealClinic, clinicNum,
+  buildLanes, slotAvailable, shiftFit, snapshotChart, estMinutes, hasDuration, isPriority,
+  minutesOfDay, isRealClinic, clinicNum, localDay,
 } from './queueLanes';
-import type { Kind, Blk, Lane, TimelineData, Break } from './queueLanes';
+import type { Kind, Blk, Lane, TimelineData, Break, DayChart } from './queueLanes';
+import { rememberDayChart } from './dayChartStore';
 export { buildLanes, slotAvailable, shiftFit };
-export type { Lane, TimelineData, Break };
+export type { Lane, TimelineData, Break, DayChart };
 
 const fmtHM = (min: number): string => {
   const m = Math.round(min);
@@ -333,11 +334,14 @@ function Card({ b, left, width, nowMin, onPress }:
 }
 
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
-function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions }:
+// readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا محاكاةَ ولا
+// تحريرَ بريكاتٍ ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
+function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle }:
   { visible: boolean; onClose: () => void; data: TimelineData; nowMin: number; topInset: number; bottomInset: number;
     sim: { on: boolean; playing: boolean; speed: number; toggle: () => void; playPause: () => void; cycleSpeed: () => void; reset: () => void };
     breaks: Break[]; onSaveBreaks: (b: Break[]) => void;
-    chairCount: number; onSetChairCount: (n: number) => void; actions: BlockActions }) {
+    chairCount: number; onSetChairCount: (n: number) => void; actions: BlockActions;
+    readOnly?: boolean; title?: string; subtitle?: string }) {
   const { lanes, dayStart, dayEnd } = data;
   const [actionId, setActionId] = useState<string | null>(null);   // المريضُ المفتوحةُ نافذتُه
   const [editingBreaks, setEditingBreaks] = useState(false);
@@ -561,34 +565,39 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
           {/* الرأس: التاريخُ ثمّ العنوانُ والساعةُ الكبيرة */}
           <View style={full.head}>
             <View style={full.headTop}>
-              <Text style={full.eyebrow}>{fmtToday()}</Text>
+              <Text style={full.eyebrow}>{title ?? fmtToday()}</Text>
               <View style={{ flex: 1 }} />
-              <TouchableOpacity style={[full.iconBtn, full.breakBtn]} activeOpacity={0.85} onPress={openEditor}>
-                <LinearGradient colors={['rgba(253,246,231,0.97)', 'rgba(243,223,183,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.breakBtnFill} />
-                <View style={full.breakBtnDot}><Text style={full.breakBtnIcon}>⚙︎</Text></View>
-                <Text style={full.breakBtnTxt}>Edit</Text>
-              </TouchableOpacity>
+              {!readOnly && (
+                <TouchableOpacity style={[full.iconBtn, full.breakBtn]} activeOpacity={0.85} onPress={openEditor}>
+                  <LinearGradient colors={['rgba(253,246,231,0.97)', 'rgba(243,223,183,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.breakBtnFill} />
+                  <View style={full.breakBtnDot}><Text style={full.breakBtnIcon}>⚙︎</Text></View>
+                  <Text style={full.breakBtnTxt}>Edit</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={full.iconBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Text style={full.closeTxt}>✕</Text></TouchableOpacity>
             </View>
             <View style={full.titleRow}>
               <View style={{ flexShrink: 1 }}>
-                <Text style={full.title}>Today's chairs</Text>
-                <Text style={full.sub}>{lanes.length} clinics · {fmtHM(dayStart)} – {fmtHM(dayEnd)}</Text>
+                <Text style={full.title}>{readOnly ? 'Day chart' : "Today's chairs"}</Text>
+                <Text style={full.sub}>{subtitle ?? `${lanes.length} clinics · ${fmtHM(dayStart)} – ${fmtHM(dayEnd)}`}</Text>
               </View>
               <View style={full.clockWrap}>
                 <Text style={full.clockT}>{fmtHM(nowMin)}</Text>
                 <View style={full.clockL}>
-                  <View style={full.clockDotWrap}>
-                    <Animated.View pointerEvents="none" style={[full.clockRing, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] }) }] }]} />
-                    <View style={full.clockDot} />
-                  </View>
-                  <Text style={full.clockLTxt}>{sim.on ? 'SIM' : 'LIVE'}</Text>
+                  {!readOnly && (
+                    <View style={full.clockDotWrap}>
+                      <Animated.View pointerEvents="none" style={[full.clockRing, { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }), transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] }) }] }]} />
+                      <View style={full.clockDot} />
+                    </View>
+                  )}
+                  <Text style={full.clockLTxt}>{readOnly ? 'SAVED' : sim.on ? 'SIM' : 'LIVE'}</Text>
                 </View>
               </View>
             </View>
           </View>
 
-          {/* شريطُ المحاكاة (مسرِّعٌ زمنيّ للاختبار) */}
+          {/* شريطُ المحاكاة (مسرِّعٌ زمنيّ للاختبار) — لا معنى له في يومٍ مضى */}
+          {!readOnly && (
           <View style={full.simBar}>
             <TouchableOpacity onPress={sim.toggle} style={[full.simMain, sim.on && full.simMainOn]}>
               <Text style={[full.simMainTxt, sim.on && { color: '#fff' }]}>{sim.on ? '● محاكاة' : '▶ محاكاة يوم'}</Text>
@@ -603,7 +612,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             <View style={{ flex: 1 }} />
             {sim.on ? <Text style={full.simTag}>اختبار</Text> : null}
           </View>
-          {sim.on && (
+          )}
+          {!readOnly && sim.on && (
             <Text style={full.simHint}>انقرِ المريضَ على المخطّطِ لتفتحَ إجراءاتِه — لا شيءَ تلقائيّ.</Text>
           )}
 
@@ -741,7 +751,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                               const moved = b.orig != null && b.orig !== b.start;
                               return (
                                 <TouchableOpacity key={i} activeOpacity={0.8} style={[full.brk, b.fixed && full.brkFixed, { left, width }]}
-                                  onPress={() => setBreakActionOrig(b.orig ?? b.start)}>
+                                  onPress={() => { if (!readOnly) setBreakActionOrig(b.orig ?? b.start); }}>
                                   <View style={[full.brkChip, b.fixed && full.brkChipFixed]}><Text style={full.brkChipTxt}>{b.fixed ? '🔒' : '☕'}</Text></View>
                                   <Text style={[full.brkS, b.fixed && full.brkSFixed]}>{fmtHM(b.start)} · {Math.round(b.end - b.start)} min</Text>
                                   {b.fixed
@@ -750,7 +760,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                                 </TouchableOpacity>
                               );
                             }
-                            return <Card key={i} b={b} left={left} width={width} nowMin={nowMin} onPress={() => setActionId(b.p.id)} />;
+                            return <Card key={i} b={b} left={left} width={width} nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }} />;
                           })}
                         </View>
                       </React.Fragment>
@@ -999,6 +1009,38 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
 }
 
 // ═══════════════ الحاوية: سحبٌ بين الإحصاء والمخطّط ═══════════════
+// ── عارضُ لقطةِ يومٍ محفوظة (الأرشيف) ──
+// اللقطةُ تحملُ مساراتِها ومحورَها وساعةَ حفظِها، فلا حسابَ هنا ولا اعتمادَ على «الآن»:
+// نرسمُ ما حُفِظَ كما حُفِظ. ونمرّرُ دوالَّ صوريّةً لأنّ readOnly يقطعُ كلَّ ما يستدعيها.
+const NO_SIM = { on: false, playing: false, speed: 1, toggle: () => {}, playPause: () => {}, cycleSpeed: () => {}, reset: () => {} };
+const NO_ACTIONS: BlockActions = { onEnterClinic: () => {}, onToggleNA: () => {}, onDone: () => {} };
+
+export function DayChartViewer({ visible, onClose, chart, dateLabel }:
+  { visible: boolean; onClose: () => void; chart: DayChart | null; dateLabel: string }) {
+  const insets = useSafeAreaInsets();
+  if (!chart) return null;
+  const data: TimelineData = { lanes: chart.lanes, dayStart: chart.dayStart, dayEnd: chart.dayEnd };
+  return (
+    <FullTimeline
+      visible={visible}
+      onClose={onClose}
+      data={data}
+      nowMin={chart.savedAtMin}
+      topInset={insets.top}
+      bottomInset={insets.bottom}
+      sim={NO_SIM}
+      breaks={chart.breaks}
+      onSaveBreaks={() => {}}
+      chairCount={chart.chairCount}
+      onSetChairCount={() => {}}
+      actions={NO_ACTIONS}
+      readOnly
+      title={dateLabel}
+      subtitle={`${chart.lanes.length} clinics · saved ${fmtHM(chart.savedAtMin)}`}
+    />
+  );
+}
+
 export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone }:
   { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
     onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
@@ -1069,7 +1111,7 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   useEffect(() => {
     if (!simOn || !simPlaying) return;
     const id = setInterval(() => {
-      setSimNowMin((m) => Math.min(21 * 60, m + simSpeed * 0.25));
+      setSimNowMin((m) => Math.min(24 * 60, m + simSpeed * 0.25));
     }, 250);
     return () => clearInterval(id);
   }, [simOn, simPlaying, simSpeed]);
@@ -1096,6 +1138,17 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   // (ولا تجاوزٌ محلّيّ) كان المُعَدُّ صفرًا، وصفرٌ يعني عندَ فحصِ التوفّرِ «لا أعرفُ فلا أمنع» —
   // فلا يحمرُّ وقتٌ ممتلئٌ أبدًا. أمّا المرسومُ فلا يقلُّ عن واحد، ويطابقُ ما تراه.
   useEffect(() => { onSchedule?.(data.lanes, data.lanes.length, breaks, effNow); }, [data, breaks, effNow, onSchedule]);
+
+  // لقطةُ اليوم: تُودَعُ مع كلِّ بناءٍ فيبقى في قاعدةِ البيانات آخرُ ما رآه المركز، وتجدُها
+  // أرشفةُ الخادمِ الليليّةُ جاهزةً. والمحاكاةُ عالَمٌ افتراضيٌّ — لا تُحفَظ.
+  // البصمةُ تصفُ **المضمونَ** بلا وقت، فتُفرَّقُ الكتابةُ عندَ تغييرٍ حقيقيٍّ عن تقدُّمِ الساعةِ وحدَه.
+  useEffect(() => {
+    if (simOn || !clinicId) return;
+    const sig = effPatients
+      .map((p) => `${p.id}:${p.status}:${p.expected_minutes}:${p.appointment_min}:${p.clinic_entry_at?.getTime() ?? ''}:${p.completed_at?.getTime() ?? ''}:${p.na_at?.getTime() ?? ''}`)
+      .join('|') + `#${JSON.stringify(breaks)}#${effChairs.length}`;
+    rememberDayChart(clinicId, snapshotChart(data, breaks, localDay(), effNow), sig);
+  }, [data, effPatients, breaks, effChairs.length, effNow, simOn, clinicId]);
 
   // حفظُ أوقاتِ البريك في إعداداتِ المركز (تفاؤليّ + كتابةٌ في قاعدة البيانات)
   const onSaveBreaks = async (next: Break[]) => {

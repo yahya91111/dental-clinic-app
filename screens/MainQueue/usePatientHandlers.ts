@@ -668,38 +668,9 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     }
   };
 
-  // دالة الأرشفة - نقل جميع المرضى للأرشيف
-  const handleArchive = async () => {
-    try {
-      const clinicId = selectedClinicId || userClinicId;
-
-      if (clinicId === null) {
-        Alert.alert('Error', 'Please select a clinic first');
-        return;
-      }
-
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-      // تحديث archive_date لجميع المرضى في المركز الحالي
-      const { data, error } = await supabase
-        .from('patients')
-        .update({
-          archive_date: today,
-          status: 'complete' // تغيير الحالة إلى complete
-        })
-        .eq('clinic_id', clinicId) // عزل حسب المركز
-        .is('archive_date', null); // فقط المرضى غير المؤرشفين
-
-      if (error) throw error;
-
-      // إعادة تحميل المرضى (سيكون فارغاً)
-      await loadPatients();
-
-      Alert.alert('Success', `All patients archived for clinic ${selectedClinicName} successfully`);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Archive failed');
-    }
-  };
+  // (حُذفَتْ دالّةُ الأرشفةِ اليدويّة: لم يكن لها زرٌّ في الواجهةِ قط، وكانت تُجبِرُ
+  //  status='complete' على المنتظِرين فتُظهِرُ في الأرشيفِ مَن لم يحضرْ كأنّه عُولِج.
+  //  الأرشفةُ الآنَ من مسارٍ واحد: autoArchiveService الساعةَ ٢٣:٥٩، وهو يحفظُ الحالةَ كما هي.)
 
   const handleMenuAction = async (patientId: string, action: string) => {
     setShowMenuForPatient(null);
@@ -1604,7 +1575,6 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     handleFileNumberSearch,
     handlePatientNameSearch,
     handleAddPatient,
-    handleArchive,
     handleMenuAction,
     handleSaveNote,
     handleViewNote,

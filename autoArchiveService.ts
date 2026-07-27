@@ -1,11 +1,18 @@
 /**
- * Auto Archive Service
- * Automatically archives patients at midnight (12:00 AM) every day
- * Silent mode - no notifications
+ * Auto Archive Service — شبكةُ أمانٍ لا الأصل.
+ *
+ * الأرشفةُ الأصليّةُ صارت على الخادم: pg_cron يستدعي archive_day() الساعةَ ٢٣:٥٩ بتوقيتِ
+ * بغداد (sql/archive_day_cron.sql)، فتُؤرشَفُ مراكزُ المحافظةِ كلُّها سواءٌ فُتِحَ التطبيقُ
+ * أم لا. وهذا ما يعمل عليه الاعتماد.
+ *
+ * ويبقى هذا المؤقّتُ احتياطًا إن تعذّرَ pg_cron: يعملُ في الدقيقةِ نفسِها، وهو **عديمُ الأثرِ
+ * إن سبقَه الخادم** لأنّه لا يمسُّ إلّا الصفوفَ التي archive_date فيها NULL.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './lib/supabaseClient';
+import { flushDayChart } from './screens/MainQueue/dayChartStore';
+import { localDay } from './screens/MainQueue/queueLanes';
 
 //  نظام بسيط لإبلاغ Timeline بالأرشفة
 type ArchiveListener = (date: string) => void;
@@ -39,7 +46,11 @@ let archiveInterval: NodeJS.Timeout | null = null;
  */
 async function archiveAllPatients(): Promise<boolean> {
   try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = localDay();   // بالتوقيتِ المحلّيِّ لا الـ UTC — كي يطابقَ يومَ اللقطةِ ويومَ الخادم
+
+    // لقطةُ مخطّطِ اليومِ أوّلًا (لمركزِ هذا الجهاز — وهو المركزُ الذي رُسِمَ مخطّطُه هنا).
+    // بقيّةُ المراكزِ تحفظُ لقطاتِها من أجهزتِها؛ الحفظُ يجري باستمرارٍ لا عندَ الأرشفةِ وحدَها.
+    await flushDayChart();
 
     // Step 1: Update archive_date for all patients that are not yet archived
     const { data: archivedPatients, error: archiveError } = await supabase
@@ -84,7 +95,7 @@ async function archiveAllPatients(): Promise<boolean> {
  */
 async function shouldArchiveToday(): Promise<boolean> {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDay();
     const lastArchiveDate = await AsyncStorage.getItem(LAST_ARCHIVE_DATE_KEY);
 
     // Archive if we haven't archived today yet

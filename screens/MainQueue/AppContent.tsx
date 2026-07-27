@@ -259,7 +259,6 @@ export function AppContent() {
     handleFileNumberSearch,
     handlePatientNameSearch,
     handleAddPatient,
-    handleArchive,
     handleMenuAction,
     handleSaveNote,
     handleViewNote,

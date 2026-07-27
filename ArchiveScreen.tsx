@@ -11,8 +11,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import DoctorProfileScreen from './DoctorProfileScreen';
 import { useAuth } from './AuthContext';
 import { ExpandedPatientHeader } from './components/ExpandedPatientHeader';
-import { getCompleteDentalChart, getReferrals, getAllToothNotes, getScalingRecords, getGeneralNotes, getPermanentPatientById } from './lib/database';
+import { getCompleteDentalChart, getReferrals, getAllToothNotes, getScalingRecords, getGeneralNotes, getPermanentPatientById, getDayChart } from './lib/database';
 import { generateDentalSummary } from './screens/MainQueue/dentalHelpers';
+import { DayChartViewer } from './screens/MainQueue/QueueTimeline';
+import { reviveChart } from './screens/MainQueue/queueLanes';
+import type { DayChart } from './screens/MainQueue/queueLanes';
 
 type Patient = {
   id: string;
@@ -69,6 +72,10 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   const [archiveScalingDates, setArchiveScalingDates] = useState<{ [key: string]: string | null }>({});
   const [archiveConsents, setArchiveConsents] = useState<{ [key: string]: boolean }>({});
   const [archiveLoadingDental, setArchiveLoadingDental] = useState<{ [key: string]: boolean }>({});
+
+  // مخطّطُ اليومِ المحفوظ (لقطةٌ تُعرَضُ كما حُفِظَت، لا يُعادُ حسابُها)
+  const [dayChart, setDayChart] = useState<DayChart | null>(null);
+  const [showDayChart, setShowDayChart] = useState(false);
 
   // Stats state
   const [dateFrom, setDateFrom] = useState(new Date(new Date().setDate(new Date().getDate() - 7)));
@@ -249,6 +256,14 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
       const dateStr = date.toISOString().split('T')[0];
       //  استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
       const clinicId = selectedClinicId || userClinicId;
+
+      // لقطةُ مخطّطِ ذلك اليوم (إن حُفِظَت) — تُقرأُ كما حُفِظَتْ ولا يُعادُ حسابُها
+      setDayChart(null);
+      if (clinicId) {
+        getDayChart(String(clinicId), dateStr)
+          .then(({ data: row }) => setDayChart(row?.chart ? reviveChart(row.chart) : null))
+          .catch(() => setDayChart(null));
+      }
 
       let query = supabase
         .from('patients')
@@ -685,6 +700,29 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                   <Text style={styles.timelineValue}>Tap</Text>
                 </View>
               </View>
+
+              {/* مخطّطُ ذلك اليوم — لقطةٌ محفوظةٌ ساعةَ الأرشفة. تظهرُ فقط إن وُجدت،
+                  فالأيّامُ التي سبقت هذه الميزةَ ليس لها مخطّط. */}
+              {dayChart && (
+                <TouchableOpacity activeOpacity={0.85} onPress={() => setShowDayChart(true)} style={chartStyles.card}>
+                  <LinearGradient
+                    colors={['rgba(167,139,250,0.22)', 'rgba(125,211,252,0.18)']}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View style={chartStyles.icon}>
+                    <Ionicons name="bar-chart-outline" size={scale(20)} color="#6D53C6" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={chartStyles.title}>Day chart</Text>
+                    <Text style={chartStyles.sub}>
+                      {dayChart.chairCount} clinic{dayChart.chairCount === 1 ? '' : 's'} ·{' '}
+                      {dayChart.lanes.reduce((n, l) => n + l.blocks.filter((b) => b.kind !== 'break').length, 0)} cards
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={scale(18)} color="#6D53C6" />
+                </TouchableOpacity>
+              )}
 
               {/* Timeline Label */}
               <Text style={styles.sectionLabel}>Timeline:</Text>
@@ -1172,6 +1210,14 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
             }}
           />
         )}
+
+        {/* مخطّطُ ذلك اليومِ كما حُفِظ — المخطّطُ نفسُه بلا يدٍ تُغيّره */}
+        <DayChartViewer
+          visible={showDayChart}
+          onClose={() => setShowDayChart(false)}
+          chart={dayChart}
+          dateLabel={formatDate(selectedDate).split(',')[0]}
+        />
 
         {/* Date From Picker */}
         {showDateFromPicker && Platform.OS === 'ios' && (
@@ -2118,4 +2164,23 @@ const styles = scaledStyleSheet({
     position: 'absolute',
     borderRadius: 100,
   },
+});
+
+// أنماطُ مدخلِ مخطّطِ اليوم — في StyleSheet.create مستقلٍّ عمدًا: كائنُ styles أعلاه
+// فيه مفاتيحُ مكرَّرةٌ قديمةٌ تُفسِدُ استنتاجَ الأنواعِ لكلِّ ما يُضافُ إليه.
+const chartStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: scale(11),
+    paddingVertical: scale(13), paddingHorizontal: scale(14),
+    borderRadius: scale(16), overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(109,83,198,0.20)',
+    marginBottom: scale(16),
+  },
+  icon: {
+    width: scale(36), height: scale(36), borderRadius: scale(12),
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.60)',
+  },
+  title: { fontSize: scale(14.5), fontWeight: '800', color: '#3B2E63' },
+  sub: { marginTop: scale(2), fontSize: scale(11.5), fontWeight: '600', color: '#6D53C6' },
 });

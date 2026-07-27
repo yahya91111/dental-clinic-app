@@ -164,7 +164,8 @@ const durOf = (p: Patient) =>
   p.expected_minutes && p.expected_minutes > 0 ? p.expected_minutes : (TREATMENT_DURATIONS[p.treatment || ''] ?? 30);
 
 // same-day appointment (entry time): a simple half-hour dial across the working day
-const APPT_START = 8 * 60, APPT_END = 20 * 60, APPT_STEP = 30;
+// مدى الحجز = اليومُ التقويميُّ نفسُه الذي يرسمُه المخطّط، فلا يُمنَعُ شفتٌ مسائيٌّ من الحجزِ في وقتِه
+const APPT_START = 0, APPT_END = 23 * 60 + 30, APPT_STEP = 30;
 const fmtClock = (min: number) => {
   const h = Math.floor(min / 60), m = min % 60;
   const hh = ((h + 11) % 12) + 1;

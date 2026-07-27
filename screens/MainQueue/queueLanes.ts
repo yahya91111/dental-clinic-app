@@ -19,6 +19,17 @@ export const isPriority = (p: Patient): boolean => !!p.isElderly || !!p.isSpecia
 export const minutesOfDay = (d?: Date): number | null =>
   d ? d.getHours() * 60 + d.getMinutes() : null;
 
+// ── نافذةُ المخطّط: اليومُ التقويميُّ كاملًا، منتصفَ الليلِ إلى منتصفِ الليل ──
+// مخطّطٌ لكلِّ يومٍ وحدَه: لا شيءَ يُجدوَلُ خارجَه ولا يعبرُ إلى الغد. وهو ما يجعلُ
+// مخطّطَ يومٍ ماضٍ قابلًا للعرضِ في الأرشيفِ كما هو، بلا حسابٍ يعتمدُ على «الآن».
+export const DAY_START = 0;
+export const DAY_END = 24 * 60;
+
+// تاريخُ اليومِ **بالتوقيتِ المحلّيّ**. لا تصلحُ toISOString هنا: هي بالـ UTC، وبغدادُ
+// UTC+3، فالساعةُ الواحدةُ ليلًا تُعطي تاريخَ الأمسِ فيُحفَظُ مخطّطُ اليومِ تحتَ يومٍ سابق.
+export const localDay = (d: Date = new Date()): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export const isRealClinic = (c?: string): boolean => !!c && /^clinic\s*\d+/i.test(c);
 export const clinicNum = (c: string): number => parseInt((c.match(/\d+/) || ['0'])[0], 10);
 
@@ -35,6 +46,60 @@ export type Break = { start: number; end: number; fixed?: boolean };   // فتر
 
 // مريضٌ صوريٌّ لكتلةِ البريك (كي تُعامَلَ ككتلةٍ عاديّةٍ في الرسمِ والتخطيط دونَ حقلٍ اختياريّ)
 const BREAK_P = { id: '__break__', name: 'Break', queue_number: -2, age: 0 } as Patient;
+
+// ── لقطةُ يومٍ محفوظة ──
+// المخطّطُ صورةٌ تُحسَبُ من بياناتٍ حاضرة، فإذا مضى اليومُ لم تعدْ قابلةً لإعادةِ الحساب:
+// الأرشفةُ تُجبِرُ status='complete' على المنتظِرين، والبريكاتُ وعددُ الكراسي تُقرأُ من
+// إعداداتِ المركزِ الحاليّةِ لا إعداداتِ ذلك اليوم. فنحفظُ ما رآه الطبيبُ كما رآه.
+export type DayChart = {
+  v: 1;
+  day: string;                 // YYYY-MM-DD
+  savedAtMin: number;          // «الآنَ» لحظةَ اللقطة — موضعُ خطِّ الزمنِ في العرضِ الأرشيفيّ
+  dayStart: number; dayEnd: number;
+  chairCount: number;
+  breaks: Break[];
+  lanes: Lane[];
+};
+
+// الحقولُ التي يقرؤها الرسمُ وحدَها — لا نُضاعِفُ ملفَّ المريضِ في جدولٍ آخر
+const slimPatient = (p: Patient): Patient => ({
+  id: p.id, name: p.name, queue_number: p.queue_number, age: p.age ?? 0,
+  clinic: p.clinic, treatment: p.treatment, condition: p.condition,
+  expected_minutes: p.expected_minutes, appointment_min: p.appointment_min,
+  doctor_name: p.doctor_name, status: p.status,
+  isElderly: p.isElderly, isSpecialNeeds: p.isSpecialNeeds,
+  na_at: p.na_at,
+} as Patient);
+
+export function snapshotChart(
+  data: TimelineData, breaks: Break[], day: string, nowMin: number,
+): DayChart {
+  return {
+    v: 1, day, savedAtMin: nowMin,
+    dayStart: data.dayStart, dayEnd: data.dayEnd,
+    chairCount: data.lanes.length,
+    breaks: breaks.map((b) => ({ ...b })),
+    lanes: data.lanes.map((l) => ({
+      clinic: l.clinic, short: l.short,
+      blocks: l.blocks.map((b) => ({ ...b, p: slimPatient(b.p) })),
+      beyond: l.beyond.map(slimPatient),
+    })),
+  };
+}
+
+// JSON لا يعرفُ Date: نُعيدُ ما يقرؤُه الرسمُ تاريخًا (na_at وحدَه) بعدَ القراءة
+export function reviveChart(raw: any): DayChart | null {
+  if (!raw || raw.v !== 1 || !Array.isArray(raw.lanes)) return null;
+  const fix = (p: any): Patient => (p?.na_at ? { ...p, na_at: new Date(p.na_at) } : p);
+  return {
+    ...raw,
+    lanes: raw.lanes.map((l: any) => ({
+      ...l,
+      blocks: (l.blocks ?? []).map((b: any) => ({ ...b, p: fix(b.p) })),
+      beyond: (l.beyond ?? []).map(fix),
+    })),
+  };
+}
 
 // ── توفّرُ المواعيد (لحجزِ وقتِ الدخول من الكرت) ──
 // هل الفترةُ [start, start+dur] متاحةٌ لموعدٍ جديد؟ متاحٌ = عيادةٌ واحدةٌ على الأقلِّ تبقى فارغةً
@@ -176,7 +241,7 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
   // في قطاعٍ واحدٍ **كاملًا** أو يُؤجَّلُ إلى تاليه: لا يعبرُ التبديلَ، ولا يبدأُ داخلَه،
   // ولا يُقَصُّ عندَه. ولكلِّ قطاعٍ وقتُ فراغِه الخاصُّ — فلو أُجِّلَ علاجٌ طويلٌ إلى ما بعدَ
   // التبديلِ بقيَتِ الفجوةُ التي لم تسعْه مفتوحةً لعلاجٍ أقصرَ يأتي بعدَه.
-  const WORK_END = 21 * 60;                                      // نهايةُ نافذةِ المخطّط
+  const WORK_END = DAY_END;                                      // منتصفُ الليل: لا علاجَ يعبرُ إلى الغد
   const MIN_ROOM = 5;                                            // أقلُّ من هذا ليس متّسعًا، بل شظيّة
   const segs: { [c: string]: { start: number; end: number }[] } = {};
   const segFree: { [c: string]: number[] } = {};
@@ -322,9 +387,7 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
     beyond: beyond[c],
   }));
 
-  // النافذةُ الثابتة: ٧ صباحًا (٤٢٠) → ٩ مساءً (١٢٦٠)، وتتّسعُ فقط إن تجاوزتها البيانات
-  let minS = 7 * 60, maxE = 21 * 60;
-  for (const l of laneList) for (const b of l.blocks) { minS = Math.min(minS, b.start); maxE = Math.max(maxE, b.end); }
-  maxE = Math.max(maxE, nowMin + 30);
-  return { lanes: laneList, dayStart: Math.min(7 * 60, Math.floor(minS / 60) * 60), dayEnd: Math.max(21 * 60, Math.ceil(maxE / 60) * 60) };
+  // النافذةُ = اليومُ التقويميُّ كاملًا. ثابتةٌ لا تتمدّدُ بالبيانات: مخطّطُ اليومِ هو اليومُ
+  // نفسُه، فمخطّطُ أمسِ في الأرشيفِ يُرسَمُ بمحورٍ واحدٍ مع مخطّطِ اليوم، ويصحُّ قياسُ أحدِهما بالآخر.
+  return { lanes: laneList, dayStart: DAY_START, dayEnd: DAY_END };
 }
