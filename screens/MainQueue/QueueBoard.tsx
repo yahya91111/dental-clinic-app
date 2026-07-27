@@ -24,12 +24,12 @@ import { Patient } from './constants';
 // إلى وجهِ العلاجاتِ الكامل.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// «مدخّن · عمق ٣٥» — مأخوذةٌ من البروتوتايبِ بأرقامِها.
+// «مدخّن · عمق ٢٠» — مأخوذةٌ من البروتوتايبِ بأرقامِها.
 // وهذا العمقُ دونَ نقطةِ الانقلاب (٤٨)، فاللوحُ في وجهِه الفاتح: حروفٌ حبريّةٌ لا مضيئة،
 // ونقاطٌ بألوانِ الصفحةِ لا بتوهُّجِها، وضوءٌ خافتٌ في القاعِ لا بئرٌ ساطع.
-const SURF_A = 'rgba(178,194,199,0.54)';
-const SURF_B = 'rgba(158,174,180,0.54)';
-const RIM = 'rgba(255,255,255,0.68)';
+const SURF_A = 'rgba(209,219,222,0.49)';
+const SURF_B = 'rgba(190,203,208,0.49)';
+const RIM = 'rgba(255,255,255,0.80)';
 const INK = '#12232A';
 const SUB = '#5A7079';
 const HAIR = 'rgba(18,35,42,0.10)';
@@ -106,7 +106,7 @@ export const QueueBoard = React.memo(function QueueBoard({
       />
       {/* بئرُ الضوءِ من أسفلِ اليسار — خافتٌ هنا، فالسطحُ فاتحٌ أصلًا */}
       <LinearGradient
-        colors={['rgba(22,192,166,0.17)', 'rgba(22,192,166,0.05)', 'rgba(22,192,166,0)']}
+        colors={['rgba(22,192,166,0.12)', 'rgba(22,192,166,0.035)', 'rgba(22,192,166,0)']}
         locations={[0, 0.45, 0.8]}
         start={{ x: 0, y: 1 }} end={{ x: 0.85, y: 0.05 }}
         style={StyleSheet.absoluteFill}
@@ -114,7 +114,7 @@ export const QueueBoard = React.memo(function QueueBoard({
       />
       {/* ضوءٌ يتجمّعُ في القاعِ (لا عتمة، فاللوحُ فاتح)، وبريقُ الزجاجِ على حافّتِه العليا */}
       <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)']} style={s.floor} pointerEvents="none" />
-      <LinearGradient colors={['rgba(255,255,255,0.50)', 'rgba(255,255,255,0)']} style={s.gloss} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.58)', 'rgba(255,255,255,0)']} style={s.gloss} pointerEvents="none" />
 
       <View style={s.head}>
         <Text style={s.eyebrow}>{showTreatments ? 'TREATMENTS' : 'TODAY'}</Text>
@@ -211,10 +211,10 @@ const s = scaledStyleSheet({
     borderWidth: 1.5,
     borderColor: RIM,
     shadowColor: '#08202A',
-    shadowOffset: { width: 0, height: 9 },
-    shadowOpacity: 0.30,
-    shadowRadius: 15,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.27,
+    shadowRadius: 14,
+    elevation: 5,
   },
   floor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 54 },
   gloss: { position: 'absolute', left: 0, right: 0, top: 0, height: 20 },
