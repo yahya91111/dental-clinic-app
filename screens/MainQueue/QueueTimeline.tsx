@@ -91,6 +91,10 @@ function firstFreeChair(acts: { [id: string]: SimAct }, chairCount: number): num
 
 const SIM_SPEEDS = [1, 3, 10, 30, 90]; // دقائقُ افتراضيّةٌ لكلِّ ثانيةٍ حقيقيّة (1 = أبطأ، الافتراضيّ — دقيقةٌ لكلِّ ثانية)
 
+// المخطّطُ يُمرَّرُ أفقيًّا، وشريطُ اليومِ يقرأُ إزاحتَه. نقرؤها بالمحرّكِ الأصليِّ فلا إعادةَ
+// رسمٍ لكلِّ إطار، وscrollTo يمرُّ عبرَ المرجعِ كما هو (createAnimatedComponent يُمرّرُ المراجع).
+const AnimatedScrollView = Animated.ScrollView as unknown as typeof ScrollView;
+
 // مادّةُ الصفحة — «مدخّن · عمق ٢٠»، القيمُ نفسُها في QueueBoard وPatientCardV2 وQueueStatsStrip
 const MINI_SMOKE: [string, string] = ['rgba(209,219,222,0.49)', 'rgba(190,203,208,0.49)'];
 const MINI_GLOSS: [string, string] = ['rgba(255,255,255,0.58)', 'rgba(255,255,255,0)'];
@@ -123,6 +127,8 @@ const TROUGH_FOCUS: [string, string, string] = ['rgba(255,158,48,0)', 'rgba(255,
 const TROUGH_TOP: [string, string] = ['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)'];
 // غِلالةُ الغائرِ: ظلٌّ من أعلاه وضوءُ الحافّةِ ينطبقُ على قاعِه
 const SUNK_IN: [string, string, string] = ['rgba(10,35,45,0.22)', 'rgba(10,35,45,0)', 'rgba(255,255,255,0.30)'];
+// ظلُّ الحائمِ على الورقة: لطخةٌ تشتدُّ في وسطِها وتفنى عندَ حافّتَيها فتبدو ليّنةً بلا حدّ
+const LAND: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.22)', 'rgba(10,35,45,0)'];
 
 // ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
@@ -240,6 +246,12 @@ type CardVis = {
   badgeBg?: string; badgeGrad?: [string, string]; badgeDash?: string; badgeInk: string;
   trk: string; fil: string;
 };
+// ألوانُ شريطِ اليوم: أثرٌ واحدٌ لكلِّ كتلةٍ بلونِ حالتِها — اليومُ كلُّه يُقرأُ في سطر
+const RIB_C: { [k in Kind]: string } = {
+  done: 'rgba(147,165,173,0.75)', lateDone: 'rgba(217,83,79,0.80)', cur: '#0E9F8C', over: '#E1483C',
+  fut: 'rgba(14,124,102,0.40)', eld: '#E0A32E', na: 'rgba(124,129,168,0.70)', break: 'rgba(212,186,148,0.95)',
+};
+
 const CARD: { [k in Kind]?: CardVis } = {
   done:     { depth: 'sunk', bg: 'rgba(176,190,196,0.55)', border: 'rgba(255,255,255,0.35)',
               ink: '#43585F', sub: '#6C838B', badgeBg: 'rgba(255,255,255,0.55)', badgeInk: '#5A7079',
@@ -337,9 +349,11 @@ function BlobField() {
 }
 
 // ═══════════════ كرتُ المريضِ في المخطّطِ المكبّر ═══════════════
-// lift = كم يرتفعُ الكرتُ عن السطحِ (للحائمِ وحدَه): يزدادُ مع بُعدِ الدور، ومعه يطولُ ظلُّه ويخفت.
-function Card({ b, left, width, top, height, lift, nowMin, onPress }:
-  { b: Blk; left: number; width: number; top: number; height: number; lift: number;
+// الكروتُ كلُّها على سطرٍ واحدٍ وارتفاعٍ واحد. العمقُ يقولُه الظلُّ والمادّة:
+// الغائرُ بلا ظلٍّ أصلًا، والمستقرُّ ظلُّه قصيرٌ كثيف، والحائمُ له **ظلٌّ منفصلٌ تحتَه** يبعدُ عنه
+// فيبدو معلَّقًا في الهواءِ فوقَ الورقة.
+function Card({ b, left, width, top, height, nowMin, onPress }:
+  { b: Blk; left: number; width: number; top: number; height: number;
     nowMin: number; onPress: () => void }) {
   const v = CARD[b.kind]!;
   const est = estMinutes(b.p);
@@ -361,15 +375,18 @@ function Card({ b, left, width, top, height, lift, nowMin, onPress }:
   const shade = v.depth === 'sunk'
     ? { shadowOpacity: 0, elevation: 0 }
     : v.depth === 'rest'
-      ? { shadowColor: '#08202A', shadowOpacity: 0.30, shadowRadius: scale(22), shadowOffset: { width: 0, height: scale(12) }, elevation: 8 }
-      : { shadowColor: '#08202A', shadowOpacity: Math.max(0.08, 0.20 - lift * 0.006),
-          shadowRadius: scale(22) + lift, shadowOffset: { width: 0, height: scale(16) + lift }, elevation: 4 };
+      ? { shadowColor: '#08202A', shadowOpacity: 0.30, shadowRadius: scale(20), shadowOffset: { width: 0, height: scale(11) }, elevation: 8 }
+      : { shadowColor: '#08202A', shadowOpacity: 0.22, shadowRadius: scale(26), shadowOffset: { width: 0, height: scale(20) }, elevation: 5 };
   return (
+    <>
+      {/* ظلُّ الحائم: لطخةٌ ليّنةٌ **منفصلةٌ** أسفلَه، بينَه وبينَها فُرجة — بها يُقرأُ معلّقًا لا ملتصقًا */}
+      {v.depth === 'air' ? (
+        <LinearGradient pointerEvents="none" colors={LAND} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+          style={[cs.land, { left: left + scale(11), width: Math.max(scale(10), width - scale(22)), top: top + height + scale(3) }]} />
+      ) : null}
     <TouchableOpacity activeOpacity={0.75} onPress={onPress}
       style={[cs.card, { left, width, top, height, borderColor: v.border },
-        v.depth === 'sunk' ? cs.sunk : null,
-        v.depth === 'air' ? { opacity: Math.max(0.82, 1 - lift * 0.006) } : null,
-        shade]}>
+        v.depth === 'sunk' ? cs.sunk : null, shade]}>
       {/* طبقةٌ داخليّةٌ تُقصُّ (overflow) لتحتضنَ الخلفيّةَ دونَ أن تبتلعَ ظلَّ الكرتِ الخارجيّ */}
       <View pointerEvents="none" style={[cs.clip, v.bg ? { backgroundColor: v.bg } : null]}>
         {v.grad ? <LinearGradient colors={v.grad} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
@@ -420,6 +437,7 @@ function Card({ b, left, width, top, height, lift, nowMin, onPress }:
         </View>
       ) : null}
     </TouchableOpacity>
+    </>
   );
 }
 
@@ -464,10 +482,12 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   const HOUR_W = scale(200);                        // اتّساعُ الساعةِ الواحدة — أوسعُ كي يقتربَ عرضُ الكرتِ من امتدادِه الزمنيِّ الحقيقيّ (فيبقى داخلَ نطاقِ ساعتِه)
   // topH = رأسُ الجدول: حافّةٌ مطويّةٌ فوقَ الورقةِ تحملُ محورَ الأوقاتِ الثابت (7:00 8:00 …) مرجعًا لكلِّ العيادات
   // laneH اتّسعَ عن ٩٦: الكرتُ الحائمُ يرتفعُ عن مستقرِّه، فيلزمُه فراغٌ فوقَه لا يخرجُ منه إلى صفِّ الأوقات
-  const laneH = scale(114), stripH = scale(17), topH = scale(46), labelW = scale(64);
-  const CARD_H = scale(84);                          // ارتفاعُ الكرتِ ثابتٌ، وموضعُه في الصفِّ يقولُ عمقَه
-  const TROUGH_H = scale(38);                        // المَجْرى أقصرُ من الكرتِ فيُقرأُ حفرًا لا صندوقًا
-  const liftOf = (rank: number) => scale(2) + Math.min(rank, 3) * scale(4);   // ارتفاعُ الحائمِ بحسبِ بُعدِ دورِه
+  const laneH = scale(106), stripH = scale(17), topH = scale(46), labelW = scale(64);
+  // كلُّ الكروتِ على سطرٍ واحدٍ وارتفاعٍ واحد — العمقُ يقولُه الظلُّ والمادّةُ لا موضعُ الكرتِ في صفِّه
+  const CARD_H = scale(84);
+  const CARD_TOP = (laneH - CARD_H) / 2;
+  const TROUGH_H = scale(44);                        // المَجْرى أقصرُ من الكرتِ فيُقرأُ حفرًا لا صندوقًا
+  const NOW_PAD = scale(12);                         // فُرجةٌ بينَ حدِّ الماءِ ومَن يبدأُ عنده، كي يُقرأَ وقتُ دخولِه
   const unitH = stripH + laneH;                    // شريطُ الأوقات + كروتُ العيادة = وحدةٌ واحدة
   const GAP = scale(8);                             // فجوةٌ دنيا بين كلِّ كرتَين متجاورَين (كي لا تلتصقَ الكروت)
   const MIN_IDLE = scale(12);                       // حدٌّ أدنى مرئيٌّ لخيطِ الفراغِ (للفجواتِ الصغيرةِ جدًّا فقط) — لا يُضافُ فوقَ المتناسبِ، فتبقى المسافةُ دقيقةً للأكبر
@@ -593,7 +613,11 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     const walls = l.blocks.filter((b) => b.kind === 'break' && b.fixed).map((b) => b.start);
     const chipWall = l.blocks.find((b) => b.kind === 'break' && b.fixed);   // حيثُ تلتصقُ شارةُ «خلفَ الشفت»
     return l.blocks.map((b, i) => {
-      const left = xAt(b.start);
+      let left = xAt(b.start);
+      // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
+      // خلفَه. ندفعُه فُرجةً صغيرةً إلى اليمين — دفعُ رسمٍ لا تغييرَ في جدولِه ولا في ساعتِه.
+      if (b.kind !== 'done' && b.kind !== 'lateDone' && b.kind !== 'break'
+        && left >= nowX - scale(2) && left < nowX + NOW_PAD) left = nowX + NOW_PAD;
       const succ = l.blocks[i + 1];
       const rawW = Math.max(minWOf(b), xAt(b.end) - left);
       const chipRoom = (succ && succ === chipWall && l.beyond.length > 0) ? CHIP_W + GAP : 0;
@@ -633,6 +657,31 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
 
   const maxRight = laidLanes.reduce((mx, arr) => arr.reduce((m, p) => Math.max(m, p.left + p.width), mx), 0);
   const contentW = Math.max(xAt(dayEnd), maxRight + scale(24));
+
+  // ═══ شريطُ اليوم: اليومُ كلُّه في سطرٍ تحتَ الجدول ═══
+  // المخطّطُ يتمدّدُ لساعاتٍ وأنتَ ترى منه شبرًا. الشريطُ يُريكَ شكلَ اليومِ كلِّه — أينَ الازدحامُ
+  // وأينَ الفراغُ وأينَ الطيّة — و**تسحبُه فينتقلُ المخطّطُ معك**. ونافذةُ نظرِك مرسومةٌ عليه:
+  // تُترجَمُ عن إزاحةِ التمريرِ بالمحرّكِ الأصليِّ مباشرةً، فلا إعادةَ رسمٍ مع كلِّ إطار.
+  const [portW, setPortW] = useState(0);
+  const [ribW, setRibW] = useState(0);
+  const ribX = useRef(new Animated.Value(0)).current;
+  const onHScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { x: ribX } } }], { useNativeDriver: true }),
+    [ribX]);
+  const ribShift = useMemo(
+    () => ribX.interpolate({ inputRange: [0, Math.max(1, contentW)], outputRange: [0, ribW], extrapolate: 'clamp' }),
+    [ribX, contentW, ribW]);
+  const ribViewW = (contentW > 0 && ribW > 0 && portW > 0) ? Math.max(scale(16), (portW / contentW) * ribW) : 0;
+  const ribRowGap = scale(3);
+  const ribRowH = Math.max(scale(3), Math.min(scale(7),
+    (scale(28) - (lanes.length - 1) * ribRowGap) / Math.max(1, lanes.length)));
+  const ribTrackH = lanes.length * ribRowH + Math.max(0, lanes.length - 1) * ribRowGap;
+  const ribAt = (px: number) => (contentW > 0 ? (px / contentW) * ribW : 0);
+  const ribJump = (e: any) => {
+    if (!ribW || !contentW || !portW) return;
+    const p = Math.max(0, Math.min(1, e.nativeEvent.locationX / ribW));
+    hScroll.current?.scrollTo({ x: Math.max(0, Math.min(contentW - portW, p * contentW - portW / 2)), animated: false });
+  };
 
   // شريطُ أوقاتٍ خاصٌّ بكلِّ عيادة: بداياتُ كروتِها فوقَها (متحرِّكةٌ مع الدور)، أو الساعاتُ الافتراضيّة إن كانت فارغة.
   const LBL_GAP = scale(40);
@@ -685,7 +734,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
           <LinearGradient colors={TROUGH_TOP} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.troughTop} />
           <View pointerEvents="none" style={full.lipT} />
           <View pointerEvents="none" style={full.lipB} />
-          <Text style={full.troughTxt} numberOfLines={1}>{fmtHM(b.start)}   ·   {Math.round(b.end - b.start)} min</Text>
+          <Text style={full.troughEyebrow} numberOfLines={1}>BREAK</Text>
+          <Text style={full.troughTxt} numberOfLines={1}>{Math.round(b.end - b.start)} min</Text>
         </TouchableOpacity>
       </React.Fragment>
     );
@@ -792,12 +842,15 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               </View>
 
               {/* المساراتُ القابلةُ للتمرير أفقيًّا */}
-              <ScrollView
+              <AnimatedScrollView
                 ref={hScroll}
                 horizontal
                 style={{ flex: 1 }}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ width: contentW }}
+                onScroll={onHScroll as any}
+                scrollEventThrottle={16}
+                onLayout={(e) => setPortW(e.nativeEvent.layout.width)}
               >
                 <View style={{ width: contentW, height: topH + lanes.length * unitH }}>
                   {/* المستقبلُ نصفُ ورقةٍ أعلى: حجابٌ فاتحٌ يبدأُ عندَ الآنَ ويخفُّ سريعًا — يُفتِّحُ الأرضَ ولا يُغرِقُها */}
@@ -838,7 +891,6 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     style={[full.shadeBand, { top: topH, width: contentW }]} />
                   {/* خطوطُ التقسيم: أعمدةُ الساعاتِ الرأسيّةُ تمتدُّ من الرأسِ إلى أسفلِ الجدول (top:0) + فواصلُ العيادات الأفقيّة */}
                   {hours.map((h) => <View key={'gv' + h} pointerEvents="none" style={[full.gridV, { left: xAt(h * 60), top: 0 }]} />)}
-                  {lanes.map((l, li) => <View key={'gh' + li} pointerEvents="none" style={[full.gridH, { top: topH + li * unitH, width: contentW }]} />)}
                   {lanes.map((l, li) => {
                     const uTop = topH + li * unitH;
                     const st = strips[li];
@@ -905,21 +957,16 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                             );
                           })}
                           {/* الكتل: مَجْرى الاستراحةِ المرنةِ أو كرتُ مريض — والبريكُ الثابتُ طيّةٌ تُرسَمُ فوقَ الصفوفِ كلِّها */}
-                          {(() => {
-                            let air = 0;                       // ترتيبُ الحائمِ في هذه العيادة (يرفعُه أكثرَ كلّما بَعُد)
-                            return laid.map(({ b, left, width }, i) => {
-                              if (b.kind === 'break') {
-                                if (b.fixed) return null;      // الطيّةُ تُرسَمُ مرّةً واحدةً بعدَ الصفوف
-                                return renderTrough(b, left, width, i);
-                              }
-                              const lift = CARD[b.kind]!.depth === 'air' ? liftOf(++air) : 0;
-                              return (
-                                <Card key={i} b={b} left={left} width={width}
-                                  top={(laneH - CARD_H) / 2 - lift} height={CARD_H} lift={lift}
-                                  nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }} />
-                              );
-                            });
-                          })()}
+                          {laid.map(({ b, left, width }, i) => {
+                            if (b.kind === 'break') {
+                              if (b.fixed) return null;        // الطيّةُ تُرسَمُ مرّةً واحدةً بعدَ الصفوف
+                              return renderTrough(b, left, width, i);
+                            }
+                            return (
+                              <Card key={i} b={b} left={left} width={width} top={CARD_TOP} height={CARD_H}
+                                nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }} />
+                            );
+                          })}
                         </View>
                       </React.Fragment>
                     );
@@ -966,10 +1013,51 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     <Text style={full.wMarkTxt}>{fmtHM(nowMin)}</Text>
                   </LinearGradient>
                 </View>
-              </ScrollView>
+              </AnimatedScrollView>
             </View>
             </ScrollView>
           </View>
+          </View>
+
+          {/* ═══ شريطُ اليوم ═══ اليومُ كلُّه في سطر، ونافذةُ نظرِك عليه — اسحبْه فينتقلَ المخطّطُ معك */}
+          <View style={[full.rib, { height: scale(36) + Math.max(scale(6), ribTrackH) }]}>
+            <LinearGradient colors={MINI_SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={MINI_GLOSS} style={full.ribGloss} pointerEvents="none" />
+            <LinearGradient colors={MINI_FLOOR} style={full.ribFloor} pointerEvents="none" />
+            <View style={full.ribHead}>
+              <Text style={full.ribEdge}>{fmtHM(dayStart)}</Text>
+              <Text style={full.ribTitle}>THE WHOLE DAY</Text>
+              <Text style={full.ribEdge}>{fmtHM(dayEnd)}</Text>
+            </View>
+            <View
+              style={[full.ribTrack, { height: Math.max(scale(6), ribTrackH) }]}
+              onLayout={(e) => setRibW(e.nativeEvent.layout.width)}
+              onStartShouldSetResponder={() => true}
+              onMoveShouldSetResponder={() => true}
+              onResponderGrant={ribJump}
+              onResponderMove={ribJump}
+            >
+              {laidLanes.map((laid, li) => (
+                <React.Fragment key={'rb' + li}>
+                  <View pointerEvents="none" style={[full.ribLane, { top: li * (ribRowH + ribRowGap), height: ribRowH, borderRadius: ribRowH / 2 }]} />
+                  {laid.map((o, oi) => (o.b.kind === 'break' && o.b.fixed) ? null : (
+                    <View key={oi} pointerEvents="none" style={{
+                      position: 'absolute', top: li * (ribRowH + ribRowGap), height: ribRowH, borderRadius: ribRowH / 2,
+                      left: ribAt(o.left), width: Math.max(scale(2), ribAt(o.width)),
+                      backgroundColor: RIB_C[o.b.kind],
+                    }} />
+                  ))}
+                </React.Fragment>
+              ))}
+              {folds.map((fb, fi) => (
+                <View key={'rf' + fi} pointerEvents="none" style={[full.ribWall, { left: ribAt(xAt(fb.start)) }]} />
+              ))}
+              <View pointerEvents="none" style={[full.ribNow, { left: ribAt(nowX) }]} />
+              {ribViewW > 0 ? (
+                <Animated.View pointerEvents="none"
+                  style={[full.ribView, { width: ribViewW, transform: [{ translateX: ribShift }] }]} />
+              ) : null}
+            </View>
           </View>
 
           {/* نافذةُ إجراءاتِ المريض (لوحٌ زجاجيٌّ ينزلقُ من الأسفل) — نفسُ إجراءاتِ الكرتِ في صفحةِ الدور */}
@@ -1560,8 +1648,6 @@ const full = scaledStyleSheet({
   panel: { flex: 1, borderRadius: 28, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.80)' },
   panelTopHi: { position: 'absolute', top: 0, left: 22, right: 22, height: 1, backgroundColor: 'rgba(255,255,255,0.9)', zIndex: 5 },
   gridV: { position: 'absolute', bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(18,58,68,0.05)' },
-  // فاصلٌ أفقيٌّ واضحٌ بين العيادات (كان خافتًا جدًّا فلا يُرى) — يمتدُّ عرضَ الجدولِ فوقَ كلِّ عيادة
-  gridH: { position: 'absolute', left: 0, height: 1, backgroundColor: 'rgba(18,58,68,0.13)' },
 
   // ── رأسُ الجدول: حافّةٌ مطويّةٌ تحملُ الساعاتِ الثابتة ──
   // الساعةُ رقمٌ محفورٌ (حبرٌ داكنٌ وضوءٌ أبيضُ تحتَه) ودقائقُها صغيرةٌ مرفوعةٌ بجانبِه، فتُقرأُ في لمحة.
@@ -1624,7 +1710,9 @@ const full = scaledStyleSheet({
   troughTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 12 },
   lipT: { position: 'absolute', top: 0, left: 8, right: 8, height: 1, backgroundColor: 'rgba(0,0,0,0.40)' },
   lipB: { position: 'absolute', bottom: 0, left: 10, right: 10, height: 1.5, backgroundColor: 'rgba(255,236,198,0.55)' },
-  troughTxt: { fontSize: 10, lineHeight: 12, fontWeight: '800', letterSpacing: 0.6, color: '#FFE6BB',
+  troughEyebrow: { fontSize: 7.5, lineHeight: 9, fontWeight: '800', letterSpacing: 2.2, color: 'rgba(255,222,170,0.78)',
+    textShadowColor: 'rgba(48,26,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  troughTxt: { marginTop: 2, fontSize: 12, lineHeight: 14, fontWeight: '800', letterSpacing: -0.2, color: '#FFF3DF',
     textShadowColor: 'rgba(48,26,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   // خيالُه في موضعِه الأوّلِ إن أزاحَه انشغالٌ حقيقيّ
   ghost: { position: 'absolute', borderRadius: 19, borderWidth: 1.5, borderStyle: 'dashed',
@@ -1641,6 +1729,30 @@ const full = scaledStyleSheet({
   foldTx: { position: 'absolute', top: '42%', textAlign: 'center', fontSize: 7.5, lineHeight: 10, fontWeight: '800',
     letterSpacing: 1.8, color: '#63757D', transform: [{ rotate: '90deg' }],
     textShadowColor: 'rgba(255,255,255,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+
+  // ── شريطُ اليوم ──
+  rib: {
+    marginHorizontal: 14, marginBottom: 12, height: 64, borderRadius: 20, overflow: 'hidden',
+    paddingHorizontal: 11, paddingTop: 8, paddingBottom: 8,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.80)',
+    shadowColor: '#08202A', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.20, shadowRadius: 12, elevation: 4,
+  },
+  ribGloss: { position: 'absolute', top: 0, left: 0, right: 0, height: 16 },
+  ribFloor: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 20 },
+  ribHead: { flexDirection: 'row', alignItems: 'center' },
+  ribEdge: { fontSize: 7, lineHeight: 9, fontWeight: '800', letterSpacing: 1.1, color: '#5A7079' },
+  ribTitle: { flex: 1, textAlign: 'center', fontSize: 7, lineHeight: 9, fontWeight: '800', letterSpacing: 1.5, color: '#8CA0A8' },
+  ribTrack: { marginTop: 8 },
+  ribLane: { position: 'absolute', left: 0, right: 0, backgroundColor: 'rgba(18,35,42,0.07)' },
+  ribWall: { position: 'absolute', top: -2, bottom: -2, width: 2, borderRadius: 1, backgroundColor: 'rgba(99,116,152,0.80)' },
+  ribNow: {
+    position: 'absolute', top: -4, bottom: -4, width: 2, borderRadius: 1, backgroundColor: '#0E7C66',
+    shadowColor: '#0E7C66', shadowOpacity: 0.6, shadowRadius: 6, shadowOffset: { width: 0, height: 0 }, elevation: 3,
+  },
+  ribView: {
+    position: 'absolute', top: -5, bottom: -5, left: 0, borderRadius: 8,
+    borderWidth: 1.5, borderColor: 'rgba(11,127,113,0.85)', backgroundColor: 'rgba(255,255,255,0.30)',
+  },
 
   // ── ① حدُّ الماء: الخطُّ الزمنيّ ──
   ripple: { position: 'absolute', borderWidth: 1, borderColor: 'rgba(14,159,140,0.26)', borderLeftColor: 'transparent' },
@@ -1815,6 +1927,8 @@ const cs = scaledStyleSheet({
   // موضعُ الكرتِ في صفِّه يقولُ عمقَه (top يُحسَبُ في الصفّ)، وارتفاعُه ثابتٌ في الحالاتِ كلِّها
   card: { position: 'absolute', borderRadius: 16, paddingTop: 6, paddingBottom: 6, paddingLeft: 12, paddingRight: 10, borderWidth: 1, justifyContent: 'center' },
   sunk: { transform: [{ scale: 0.965 }] },        // الغائرُ ينحسرُ قليلًا عن حدودِه فيبدو داخلَ السطح
+  // ظلُّ الحائمِ على الورقة: مفصولٌ عنه بفُرجةٍ فيبدو معلَّقًا فوقَها لا واقعًا عليها
+  land: { position: 'absolute', height: 11, borderRadius: 6 },
   clip: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 15, overflow: 'hidden' },
   gloss: { position: 'absolute', top: 0, left: 8, right: 8, height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
   row1: { flexDirection: 'row', alignItems: 'center', gap: 6 },
