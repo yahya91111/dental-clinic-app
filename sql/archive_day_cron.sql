@@ -12,8 +12,16 @@
 --  آمنٌ لإعادةِ التشغيل.
 
 -- ── ١) الامتداد ────────────────────────────────────────────────────────────
--- إن مُنِعَ هنا فمَكِّنْه من لوحةِ Supabase: Database → Extensions → pg_cron
-CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- pg_cron يُمكَّنُ من لوحةِ Supabase وحدَها: Database → Extensions → pg_cron.
+-- ولا يصحُّ CREATE EXTENSION هنا: سكربتُ Supabase الذي يليه يُعيدُ توزيعَ الصلاحيّاتِ
+-- فيفشلُ بـ «dependent privileges exist» إن كان الامتدادُ مفعَّلًا سلفًا. فنتحقّقُ فقط.
+DO $chk$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    RAISE EXCEPTION 'pg_cron غير مفعَّل. فعِّلْه من: Database → Extensions → pg_cron، ثمّ أعِدْ تشغيلَ هذا الملفّ.';
+  END IF;
+END
+$chk$;
 
 -- ── ٢) الدالّة ─────────────────────────────────────────────────────────────
 -- لا تلمسُ status: تبقى الحالةُ كما كانت، فمَن لم يحضرْ لا يظهرُ في الأرشيفِ مُعالَجًا.
