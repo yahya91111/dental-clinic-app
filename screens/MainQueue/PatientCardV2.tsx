@@ -235,6 +235,27 @@ function Segmented({
   );
 }
 
+// ── the head of one console row: the icon, the label, the value it holds ──
+// Shared so a read-only row is the same row with nothing to press, not a second design.
+function RowHead({ icon, label, value, accent, chevron }: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  accent: string;
+  chevron?: 'up' | 'down';
+}) {
+  return (
+    <>
+      <View style={[s.rowIc, { backgroundColor: accent + '26' }]}>
+        <Ionicons name={icon} size={scale(15)} color={accent} />
+      </View>
+      <Text style={s.rowLabel}>{label}</Text>
+      <Text style={[s.rowVal, { color: accent }]} numberOfLines={1}>{value}</Text>
+      {chevron ? <Ionicons name={`chevron-${chevron}`} size={scale(15)} color={C.muted} /> : null}
+    </>
+  );
+}
+
 // ── one collapsible console row: glanceable value up top, selector on tap ──
 function ConsoleRow({
   icon,
@@ -246,6 +267,7 @@ function ConsoleRow({
   current,
   numeric,
   open,
+  readOnly,
   onToggle,
   onPick,
 }: {
@@ -258,22 +280,21 @@ function ConsoleRow({
   current: string;
   numeric?: boolean;
   open: boolean;
+  readOnly?: boolean;
   onToggle: () => void;
   onPick: (v: string) => void;
 }) {
+  if (readOnly) {
+    return (
+      <View style={s.rowHead}>
+        <RowHead icon={icon} label={label} value={value} accent={accent} />
+      </View>
+    );
+  }
   return (
     <View>
       <TouchableOpacity activeOpacity={0.7} onPress={onToggle} style={s.rowHead}>
-        <View style={[s.rowIc, { backgroundColor: accent + '26' }]}>
-          <Ionicons name={icon} size={scale(15)} color={accent} />
-        </View>
-        <Text style={s.rowLabel}>{label}</Text>
-        <Text style={[s.rowVal, { color: accent }]} numberOfLines={1}>{value}</Text>
-        <Ionicons
-          name={open ? 'chevron-up' : 'chevron-down'}
-          size={scale(15)}
-          color={C.muted}
-        />
+        <RowHead icon={icon} label={label} value={value} accent={accent} chevron={open ? 'up' : 'down'} />
       </TouchableOpacity>
       {open && (
         <View style={s.rowBody}>
@@ -503,10 +524,14 @@ function ActBtn({
 // ── read-only visit timeline (Registered → Entered clinic → Completed + doctor) ──
 // Surfaces, inline in the drawer, the same timestamps the old "View Details" showed.
 function VisitTimeline({ patient }: { patient: Patient }) {
-  const steps: { label: string; at?: Date; color: string; sub?: string }[] = [
+  const steps: { label: string; at?: Date; color: string; sub?: string; sub2?: string }[] = [
     { label: 'Registered', at: patient.registered_at || patient.timestamp, color: C.blue },
     { label: 'Entered clinic', at: patient.clinic_entry_at, color: C.teal },
-    { label: 'Completed', at: patient.completed_at, color: C.done, sub: patient.doctor_name },
+    {
+      label: 'Completed', at: patient.completed_at, color: C.done,
+      sub: patient.doctor_name,
+      sub2: patient.assigned_by_doctor_name ? `Assigned by Dr. ${patient.assigned_by_doctor_name}` : undefined,
+    },
   ];
   return (
     <View>
@@ -525,6 +550,7 @@ function VisitTimeline({ patient }: { patient: Patient }) {
                 <Text style={[s.tlTime, !has && s.tlTimeOff]}>{has ? fmtHM(st.at) : '—'}</Text>
               </View>
               {st.sub ? <Text style={s.tlSub}>{st.sub}</Text> : null}
+              {st.sub2 ? <Text style={s.tlSub}>{st.sub2}</Text> : null}
             </View>
           </View>
         );
@@ -538,13 +564,17 @@ export interface PatientCardV2Props {
   index: number;
   animKey: number;
   isExpanded: boolean;
-  onUpdateField: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
-  onSetDuration: (patientId: string, minutes: number | null) => void;
-  onSetAppointment: (patientId: string, min: number | null) => void;
-  onWriteNote: (patientId: string, note: string | null) => void;
-  onMenuAction: (patientId: string, action: string) => void;
-  onProfilePress: (patient: Patient) => void;
+  // كلُّها اختياريّةٌ لأنَّ الكرتَ يُعرَضُ أيضًا في الأرشيف، حيثُ لا شيءَ يُعدَّل
+  onUpdateField?: (patientId: string, field: 'clinic' | 'condition' | 'treatment', value: string) => void;
+  onSetDuration?: (patientId: string, minutes: number | null) => void;
+  onSetAppointment?: (patientId: string, min: number | null) => void;
+  onWriteNote?: (patientId: string, note: string | null) => void;
+  onMenuAction?: (patientId: string, action: string) => void;
+  onProfilePress?: (patient: Patient) => void;
   onToggleExpand: () => void;
+  // الأرشيف: يومٌ مضى. الكرتُ هو الكرتُ نفسُه شكلًا، لكنّه يُقرأُ ولا يُلمَس —
+  // لا سحبَ ولا اختياراتٍ ولا أزرارَ فعل، والدرجُ يعرضُ ما كان.
+  readOnly?: boolean;
   // a filed patient carries a record; the card borrows it rather than owning it,
   // so everything the old card showed keeps its existing wiring
   hasProfile?: boolean;
@@ -565,6 +595,7 @@ export function PatientCardV2({
   onMenuAction,
   onProfilePress,
   onToggleExpand,
+  readOnly,
   hasProfile,
   appointmentCtx,
   renderProfile,
@@ -573,15 +604,16 @@ export function PatientCardV2({
   // (the header collapses with the same animation the old card used).
   const open = isExpanded;
   const [row, setRow] = useState<FieldKey | null>(null);
-  // the visit timeline is reference info — folded away until asked for
-  const [showVisit, setShowVisit] = useState(false);
+  // the visit timeline is reference info — folded away until asked for.
+  // In the archive it is the point of opening the card at all, so it starts open.
+  const [showVisit, setShowVisit] = useState(!!readOnly);
   // the record is opened on request, inside this same card
   const [showProfile, setShowProfile] = useState(false);
   const profileBack = useRef<(() => boolean) | null>(null);
   // collapse any open selector when the card is closed from the outside
   useEffect(() => {
-    if (!isExpanded) { setRow(null); setShowVisit(false); setShowProfile(false); }
-  }, [isExpanded]);
+    if (!isExpanded) { setRow(null); setShowVisit(!!readOnly); setShowProfile(false); }
+  }, [isExpanded, readOnly]);
 
   // ── the turn: one object, two sides. Rotation runs on the native driver; the height
   // change rides LayoutAnimation (also native) at the same duration, and the faces swap
@@ -619,8 +651,8 @@ export function PatientCardV2({
     }).start(() => setBackUp(false));
   };
 
-  const keepNote = () => { onWriteNote(patient.id, draft.trim() || null); turnBack(); };
-  const dropNote = () => { setDraft(''); onWriteNote(patient.id, null); turnBack(); };
+  const keepNote = () => { onWriteNote?.(patient.id, draft.trim() || null); turnBack(); };
+  const dropNote = () => { setDraft(''); onWriteNote?.(patient.id, null); turnBack(); };
 
   // faces: front turns 0→180, back 180→360; opacity flips hard at the edge-on midpoint
   // so the wrong face can never show even where backfaceVisibility is unreliable
@@ -639,13 +671,13 @@ export function PatientCardV2({
 
   const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>) => (
     <Animated.View style={[s.actions, { opacity: revealFade(progress) }]}>
-      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction(patient.id, 'complete'); }}>
+      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction?.(patient.id, 'complete'); }}>
         <LinearGradient colors={G.done} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
           <Ionicons name="checkmark-sharp" size={scale(22)} color="#fff" />
           <Text style={s.swipeTxt}>Done</Text>
         </LinearGradient>
       </TouchableOpacity>
-      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction(patient.id, 'na'); }}>
+      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction?.(patient.id, 'na'); }}>
         <LinearGradient colors={G.away} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
           <Ionicons name="person-remove-outline" size={scale(20)} color="#fff" />
           <Text style={s.swipeTxt}>NA</Text>
@@ -657,7 +689,7 @@ export function PatientCardV2({
   // ── the other way: the clinics, straight from the swipe ──
   const setClinic = (id: number) => {
     closeSwipe();
-    onUpdateField(patient.id, 'clinic', `Clinic ${id}`);
+    onUpdateField?.(patient.id, 'clinic', `Clinic ${id}`);
   };
 
   // the clinic tray comes out where the patient's identity sits, so the number and
@@ -701,7 +733,13 @@ export function PatientCardV2({
   const qn = patient.queue_number === 0 ? '-' : String(patient.queue_number);
   const clinicNum = clinicNumOf(patient.clinic);
   const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.violet : kind === 'na' ? C.away : C.blue;
-  const durLabel = needsDuration(patient.treatment) ? `${durOf(patient)}min` : '';
+  // في الأرشيف يُقاسُ الوقتُ لا يُقدَّر: من الدخولِ إلى الإنجاز. وإن لم يكتملْ فالمدّةُ المحدَّدةُ هي كلُّ ما كان
+  const actualMin = patient.clinic_entry_at && patient.completed_at
+    ? Math.max(0, Math.round((+new Date(patient.completed_at) - +new Date(patient.clinic_entry_at)) / 60000))
+    : null;
+  const showTime = needsDuration(patient.treatment) || actualMin != null;
+  const shownMin = readOnly && actualMin != null ? actualMin : durOf(patient);
+  const durLabel = showTime && (readOnly || needsDuration(patient.treatment)) ? `${shownMin}min` : '';
   const caseText = [patient.condition, patient.treatment, durLabel].filter((x) => x && x !== 'Condition' && x !== 'Treatment').join(' · ');
   const ACT_W = hasProfile ? '25%' : '33.33%';   // a filed patient gets a fourth tile
   const flagList = [patient.isElderly ? 'Elderly' : null, patient.isSpecialNeeds ? 'Special' : null].filter(Boolean) as string[];
@@ -730,11 +768,11 @@ export function PatientCardV2({
   };
 
   const pickClinic = (v: string) => {
-    onUpdateField(patient.id, 'clinic', v === 'None' ? 'Clinic' : `Clinic ${v}`);
+    onUpdateField?.(patient.id, 'clinic', v === 'None' ? 'Clinic' : `Clinic ${v}`);
     setTimeout(() => { animate(180); setRow(null); }, 260);
   };
   const pickField = (field: 'condition' | 'treatment', v: string) => {
-    onUpdateField(patient.id, field, v); // for treatment this also applies its default duration (atomic)
+    onUpdateField?.(patient.id, field, v); // for treatment this also applies its default duration (atomic)
     if (field === 'treatment' && needsDuration(v)) {
       setTimeout(() => { animate(220); setRow('dur'); }, 280); // reveal the dial to fine-tune
       return;
@@ -800,7 +838,7 @@ export function PatientCardV2({
           onSwipeableOpenStartDrag={(d) => { if (d === 'right') fadeQnum(0); }}
           onSwipeableCloseStartDrag={(d) => { if (d === 'right') fadeQnum(1); }}
           onSwipeableWillClose={(d) => { if (d === 'right') fadeQnum(1); }}
-          enabled={row !== 'dur'}
+          enabled={!readOnly && row !== 'dur'}
         >
           <View style={s.surface}>
           <LinearGradient colors={tint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.cardInner}>
@@ -820,12 +858,12 @@ export function PatientCardV2({
                     </View>
                     {/* the name is the patient — tapping it opens their chart,
                         collapsed or open, as long as they have a file */}
-                    {hasProfile ? (
+                    {hasProfile && !readOnly ? (
                       <TouchableOpacity
                         style={s.nameHit}
                         activeOpacity={0.6}
                         hitSlop={{ top: 8, bottom: 8 }}
-                        onPress={() => onProfilePress(patient)}
+                        onPress={() => onProfilePress?.(patient)}
                       >
                         <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
                       </TouchableOpacity>
@@ -870,6 +908,7 @@ export function PatientCardV2({
                     current={clinicNum == null ? 'None' : String(clinicNum)}
                     numeric
                     open={row === 'clinic'}
+                    readOnly={readOnly}
                     onToggle={() => toggleRow('clinic')}
                     onPick={pickClinic}
                   />
@@ -883,6 +922,7 @@ export function PatientCardV2({
                     options={COND_OPTS}
                     current={patient.condition || 'Condition'}
                     open={row === 'cond'}
+                    readOnly={readOnly}
                     onToggle={() => toggleRow('cond')}
                     onPick={(v) => pickField('condition', v)}
                   />
@@ -896,32 +936,45 @@ export function PatientCardV2({
                     options={TX_OPTS}
                     current={patient.treatment || 'Treatment'}
                     open={row === 'tx'}
+                    readOnly={readOnly}
                     onToggle={() => toggleRow('tx')}
                     onPick={(v) => pickField('treatment', v)}
                   />
-                  {needsDuration(patient.treatment) && (
+                  {readOnly && showTime && (
+                    <>
+                      <View style={s.rowSep} />
+                      <View style={s.rowHead}>
+                        <RowHead
+                          icon="time-outline"
+                          label="TIME"
+                          value={`${shownMin} min`}
+                          accent={C.teal}
+                        />
+                      </View>
+                    </>
+                  )}
+                  {!readOnly && needsDuration(patient.treatment) && (
                     <>
                       <View style={s.rowSep} />
                       <View>
                         <TouchableOpacity activeOpacity={0.7} onPress={() => toggleRow('dur')} style={s.rowHead}>
-                          <View style={[s.rowIc, { backgroundColor: C.teal + '26' }]}>
-                            <Ionicons name="time-outline" size={scale(15)} color={C.teal} />
-                          </View>
-                          <Text style={s.rowLabel}>TIME</Text>
-                          <Text style={[s.rowVal, { color: C.teal }]} numberOfLines={1}>
-                            {durOf(patient)} min{patient.appointment_min != null ? ` · ${fmtClock(patient.appointment_min)}` : ''}
-                          </Text>
-                          <Ionicons name={row === 'dur' ? 'chevron-up' : 'chevron-down'} size={scale(15)} color={C.muted} />
+                          <RowHead
+                            icon="time-outline"
+                            label="TIME"
+                            value={`${durOf(patient)} min${patient.appointment_min != null ? ` · ${fmtClock(patient.appointment_min)}` : ''}`}
+                            accent={C.teal}
+                            chevron={row === 'dur' ? 'up' : 'down'}
+                          />
                         </TouchableOpacity>
                         {row === 'dur' && (
                           <View style={s.rowBody}>
                             <Text style={s.subLabel}>DURATION</Text>
-                            <DurationDial key={`${patient.treatment}·${durOf(patient)}`} minutes={durOf(patient)} onCommit={(mnt) => onSetDuration(patient.id, mnt)} />
+                            <DurationDial key={`${patient.treatment}·${durOf(patient)}`} minutes={durOf(patient)} onCommit={(mnt) => onSetDuration?.(patient.id, mnt)} />
                             <ShiftNotice
                               minutes={durOf(patient)}
                               ctx={appointmentCtx}
                               selfId={patient.id}
-                              onShorten={(mnt) => onSetDuration(patient.id, mnt)}
+                              onShorten={(mnt) => onSetDuration?.(patient.id, mnt)}
                             />
                             <View style={s.subSep} />
                             <Text style={s.subLabel}>APPOINTMENT</Text>
@@ -930,68 +983,88 @@ export function PatientCardV2({
                               dur={durOf(patient)}
                               avail={appointmentCtx}
                               selfId={patient.id}
-                              onBook={(min) => onSetAppointment(patient.id, min)}
-                              onClear={() => onSetAppointment(patient.id, null)}
+                              onBook={(min) => onSetAppointment?.(patient.id, min)}
+                              onClear={() => onSetAppointment?.(patient.id, null)}
                             />
                           </View>
                         )}
                       </View>
                     </>
                   )}
-                  {/* flags live in the console too — it holds everything you SET */}
-                  <View style={s.rowSep} />
-                  <View>
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => toggleRow('flags')} style={s.rowHead}>
-                      <View style={[s.rowIc, { backgroundColor: C.elderly + '26' }]}>
-                        <Ionicons name="star-outline" size={scale(15)} color={C.elderly} />
+                  {/* flags live in the console too — it holds everything you SET.
+                      In the archive nothing is set, and the badges above already say it. */}
+                  {!readOnly && (
+                    <>
+                      <View style={s.rowSep} />
+                      <View>
+                        <TouchableOpacity activeOpacity={0.7} onPress={() => toggleRow('flags')} style={s.rowHead}>
+                          <View style={[s.rowIc, { backgroundColor: C.elderly + '26' }]}>
+                            <Ionicons name="star-outline" size={scale(15)} color={C.elderly} />
+                          </View>
+                          <Text style={s.rowLabel}>FLAGS</Text>
+                          <Text style={[s.rowVal, { color: flagList.length ? C.elderly : C.muted }]} numberOfLines={1}>
+                            {flagList.length ? flagList.join(', ') : '—'}
+                          </Text>
+                          <Ionicons name={row === 'flags' ? 'chevron-up' : 'chevron-down'} size={scale(15)} color={C.muted} />
+                        </TouchableOpacity>
+                        {row === 'flags' && (
+                          <View style={s.rowBody}>
+                            <View style={s.toggles}>
+                              <TouchableOpacity
+                                activeOpacity={0.8}
+                                onPress={() => onMenuAction?.(patient.id, 'elderly')}
+                                style={[s.tgl, patient.isElderly && { backgroundColor: C.elderly, borderColor: 'transparent' }]}
+                              >
+                                <View style={[s.pip, patient.isElderly && s.pipOn]} />
+                                <Text style={[s.tglTxt, patient.isElderly && s.tglTxtOn]}>Elderly</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                activeOpacity={0.8}
+                                onPress={() => onMenuAction?.(patient.id, 'special_needs')}
+                                style={[s.tgl, patient.isSpecialNeeds && { backgroundColor: C.special, borderColor: 'transparent' }]}
+                              >
+                                <View style={[s.pip, patient.isSpecialNeeds && s.pipOn]} />
+                                <Text style={[s.tglTxt, patient.isSpecialNeeds && s.tglTxtOn]}>Special needs</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
                       </View>
-                      <Text style={s.rowLabel}>FLAGS</Text>
-                      <Text style={[s.rowVal, { color: flagList.length ? C.elderly : C.muted }]} numberOfLines={1}>
-                        {flagList.length ? flagList.join(', ') : '—'}
-                      </Text>
-                      <Ionicons name={row === 'flags' ? 'chevron-up' : 'chevron-down'} size={scale(15)} color={C.muted} />
-                    </TouchableOpacity>
-                    {row === 'flags' && (
-                      <View style={s.rowBody}>
-                        <View style={s.toggles}>
-                          <TouchableOpacity
-                            activeOpacity={0.8}
-                            onPress={() => onMenuAction(patient.id, 'elderly')}
-                            style={[s.tgl, patient.isElderly && { backgroundColor: C.elderly, borderColor: 'transparent' }]}
-                          >
-                            <View style={[s.pip, patient.isElderly && s.pipOn]} />
-                            <Text style={[s.tglTxt, patient.isElderly && s.tglTxtOn]}>Elderly</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            activeOpacity={0.8}
-                            onPress={() => onMenuAction(patient.id, 'special_needs')}
-                            style={[s.tgl, patient.isSpecialNeeds && { backgroundColor: C.special, borderColor: 'transparent' }]}
-                          >
-                            <View style={[s.pip, patient.isSpecialNeeds && s.pipOn]} />
-                            <Text style={[s.tglTxt, patient.isSpecialNeeds && s.tglTxtOn]}>Special needs</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                <View style={s.acts}>
-                  {hasProfile && (
-                    <ActBtn
-                      icon="person-circle-outline"
-                      label="Profile"
-                      kind="profile"
-                      width={ACT_W}
-                      onPress={() => { animate(260); setShowProfile(true); }}
-                    />
+                    </>
                   )}
-                  <ActBtn icon="document-text-outline" label="Notes" kind="note" width={ACT_W} onPress={turnToNote} />
-                  <ActBtn icon="create-outline" label="Edit" kind="edit" width={ACT_W} onPress={() => onMenuAction(patient.id, 'edit')} />
-                  <ActBtn icon="trash-outline" label="Delete" kind="danger" width={ACT_W} onPress={() => onMenuAction(patient.id, 'delete')} />
                 </View>
 
-                <View style={s.hr} />
+                {/* الأرشيف: لا شيءَ يُفعَل. ويبقى الملفُّ وحدَه — فمريضُ الملفِّ له سابقةُ علاجٍ تُقرأ */}
+                {readOnly ? (
+                  hasProfile ? (
+                    <View style={s.acts}>
+                      <ActBtn
+                        icon="person-circle-outline"
+                        label="Record"
+                        kind="profile"
+                        width="33.33%"
+                        onPress={() => { animate(260); setShowProfile(true); }}
+                      />
+                    </View>
+                  ) : null
+                ) : (
+                  <View style={s.acts}>
+                    {hasProfile && (
+                      <ActBtn
+                        icon="person-circle-outline"
+                        label="Profile"
+                        kind="profile"
+                        width={ACT_W}
+                        onPress={() => { animate(260); setShowProfile(true); }}
+                      />
+                    )}
+                    <ActBtn icon="document-text-outline" label="Notes" kind="note" width={ACT_W} onPress={turnToNote} />
+                    <ActBtn icon="create-outline" label="Edit" kind="edit" width={ACT_W} onPress={() => onMenuAction?.(patient.id, 'edit')} />
+                    <ActBtn icon="trash-outline" label="Delete" kind="danger" width={ACT_W} onPress={() => onMenuAction?.(patient.id, 'delete')} />
+                  </View>
+                )}
+
+                <View style={[s.hr, readOnly && !hasProfile && { marginTop: 0 }]} />
                 <TouchableOpacity
                   activeOpacity={0.7}
                   onPress={() => { animate(200); setShowVisit((v) => !v); }}
@@ -1038,7 +1111,7 @@ export function PatientCardV2({
                   </View>
                 </View>
 
-                <View style={s.backWrite}>
+                <View style={[s.backWrite, readOnly && { marginBottom: scale(13) }]}>
                   {/* the ink rail fills as the note grows — a counter you feel, not read */}
                   <View style={s.rail}>
                     <View style={[s.railFill, { height: `${Math.min(100, (draft.length / NOTE_MAX) * 100)}%` }]} />
@@ -1048,7 +1121,8 @@ export function PatientCardV2({
                     style={s.noteInput}
                     value={draft}
                     onChangeText={setDraft}
-                    placeholder="What should the next doctor know?"
+                    editable={!readOnly}
+                    placeholder={readOnly ? '' : 'What should the next doctor know?'}
                     placeholderTextColor={C.muted}
                     multiline
                     maxLength={NOTE_MAX}
@@ -1057,6 +1131,7 @@ export function PatientCardV2({
                   />
                 </View>
 
+                {!readOnly && (
                 <View style={s.backFoot}>
                   {patient.note ? (
                     <TouchableOpacity activeOpacity={0.8} onPress={dropNote} style={s.kill}>
@@ -1072,6 +1147,7 @@ export function PatientCardV2({
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
+                )}
               </LinearGradient>
               <View style={s.border} pointerEvents="none" />
             </View>

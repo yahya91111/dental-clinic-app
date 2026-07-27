@@ -14,8 +14,11 @@ import { ExpandedPatientHeader } from './components/ExpandedPatientHeader';
 import { getCompleteDentalChart, getReferrals, getAllToothNotes, getScalingRecords, getGeneralNotes, getPermanentPatientById, getDayChart } from './lib/database';
 import { generateDentalSummary } from './screens/MainQueue/dentalHelpers';
 import { DayChartViewer } from './screens/MainQueue/QueueTimeline';
+import { DayChartCard } from './screens/MainQueue/DayChartCard';
+import { PatientCardV2 } from './screens/MainQueue/PatientCardV2';
 import { reviveChart } from './screens/MainQueue/queueLanes';
 import type { DayChart } from './screens/MainQueue/queueLanes';
+import type { Patient as QueuePatient } from './screens/MainQueue/constants';
 
 type Patient = {
   id: string;
@@ -28,13 +31,49 @@ type Patient = {
   note?: string;
   status: 'waiting' | 'complete' | 'na' | 'normal';
   is_elderly?: boolean;
+  is_special_needs?: boolean;
   timeline: TimelineEvent[];
   doctor_name?: string;
   assigned_by_doctor_name?: string;
   permanent_patient_id?: string;
   file_number?: string;
   patient_type?: 'walk-in' | 'permanent';
+  //  أوقاتُ الزيارة ومدّتُها — يقرؤها كرتُ الطابور نفسُه في وضعِ القراءة
+  registered_at?: Date;
+  clinic_entry_at?: Date;
+  completed_at?: Date;
+  na_at?: Date;
+  expected_minutes?: number;
+  appointment_min?: number;
 };
+
+// كرتُ الأرشيفِ هو كرتُ الطابورِ عينُه، فيُقدَّمُ له المريضُ بالشكلِ الذي يعرفُه.
+// حالةُ 'waiting' لا وجودَ لها هناك: المنتظِرُ عندَه 'normal'.
+const asQueuePatient = (p: Patient): QueuePatient => ({
+  id: p.id,
+  queue_number: p.queue_number,
+  name: p.name,
+  age: 0,
+  clinic: p.clinic,
+  condition: p.condition,
+  treatment: p.treatment,
+  timestamp: p.timestamp,
+  note: p.note,
+  status: p.status === 'waiting' ? 'normal' : p.status,
+  isElderly: p.is_elderly,
+  isSpecialNeeds: p.is_special_needs,
+  registered_at: p.registered_at,
+  clinic_entry_at: p.clinic_entry_at,
+  completed_at: p.completed_at,
+  na_at: p.na_at,
+  doctor_name: p.doctor_name,
+  assigned_by_doctor_name: p.assigned_by_doctor_name,
+  permanent_patient_id: p.permanent_patient_id,
+  file_number: p.file_number,
+  patient_type: p.patient_type,
+  expected_minutes: p.expected_minutes,
+  appointment_min: p.appointment_min,
+});
 
 type TimelineEvent = {
   type: string;
@@ -72,6 +111,8 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   const [archiveScalingDates, setArchiveScalingDates] = useState<{ [key: string]: string | null }>({});
   const [archiveConsents, setArchiveConsents] = useState<{ [key: string]: boolean }>({});
   const [archiveLoadingDental, setArchiveLoadingDental] = useState<{ [key: string]: boolean }>({});
+  //  يتغيّر مع كلّ تحميل، فتعيد الكروت دخولها المتحرّك كما في صفحة الدور
+  const [cardAnimKey, setCardAnimKey] = useState(0);
 
   // مخطّطُ اليومِ المحفوظ (لقطةٌ تُعرَضُ كما حُفِظَت، لا يُعادُ حسابُها)
   const [dayChart, setDayChart] = useState<DayChart | null>(null);
@@ -293,6 +334,13 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
           note: p.note,
           status: p.status,
           is_elderly: p.is_elderly || false,
+          is_special_needs: p.is_special_needs || false,
+          registered_at: p.registered_at ? new Date(p.registered_at) : undefined,
+          clinic_entry_at: p.clinic_entry_at ? new Date(p.clinic_entry_at) : undefined,
+          completed_at: p.completed_at ? new Date(p.completed_at) : undefined,
+          na_at: p.na_at ? new Date(p.na_at) : undefined,
+          expected_minutes: p.expected_minutes ?? undefined,
+          appointment_min: p.appointment_min ?? undefined,
           doctor_name: p.doctor_name,
           assigned_by_doctor_name: p.assigned_by_doctor_name,
           permanent_patient_id: p.permanent_patient_id || undefined,
@@ -324,6 +372,8 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
       } else {
         setArchivedPatients([]);
       }
+      setExpandedArchiveCardId(null);
+      setCardAnimKey((k) => k + 1);
     } catch (error) {
       Alert.alert('Error', 'Failed to load archived patients');
     } finally {
@@ -704,24 +754,11 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
               {/* مخطّطُ ذلك اليوم — لقطةٌ محفوظةٌ ساعةَ الأرشفة. تظهرُ فقط إن وُجدت،
                   فالأيّامُ التي سبقت هذه الميزةَ ليس لها مخطّط. */}
               {dayChart && (
-                <TouchableOpacity activeOpacity={0.85} onPress={() => setShowDayChart(true)} style={chartStyles.card}>
-                  <LinearGradient
-                    colors={['rgba(167,139,250,0.22)', 'rgba(125,211,252,0.18)']}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <View style={chartStyles.icon}>
-                    <Ionicons name="bar-chart-outline" size={scale(20)} color="#6D53C6" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={chartStyles.title}>Day chart</Text>
-                    <Text style={chartStyles.sub}>
-                      {dayChart.chairCount} clinic{dayChart.chairCount === 1 ? '' : 's'} ·{' '}
-                      {dayChart.lanes.reduce((n, l) => n + l.blocks.filter((b) => b.kind !== 'break').length, 0)} cards
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={scale(18)} color="#6D53C6" />
-                </TouchableOpacity>
+                <DayChartCard
+                  chart={dayChart}
+                  dateLabel={formatDate(selectedDate).split(',')[0]}
+                  onPress={() => setShowDayChart(true)}
+                />
               )}
 
               {/* Timeline Label */}
@@ -735,204 +772,43 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                   <Text style={styles.emptyText}>No archived patients for this date</Text>
                 </View>
               ) : (
-                filteredPatients.map((patient) => {
-                  const isPermanent = !!patient.permanent_patient_id;
-                  const isExpanded = expandedArchiveCardId === patient.id;
-                  const gradientColors: [string, string] = isPermanent
-                    ? (patient.status === 'complete' ? ['#BFDBFE', '#DBEAFE'] : ['rgba(191, 219, 254, 0.25)', 'rgba(219, 234, 254, 0.25)'])
-                    : (patient.status === 'complete' ? ['#B8D4F1', '#D4B8E8'] : ['rgba(184, 212, 241, 0.25)', 'rgba(212, 184, 232, 0.25)']);
-
-                  const textColor = '#2D3748';
-
-                  let eventText = (event: any) => {
-                    if (event.type === 'registered') return 'Patient registered';
-                    if (event.type === 'clinic_entry') return 'Entered clinic';
-                    if (event.type === 'clinic_assigned') return `Assigned to ${event.details}`;
-                    if (event.type === 'not_available') return 'Patient not available';
-                    if (event.type === 'completed') return 'Treatment completed';
-                    return event.details;
-                  };
-
-                  // ألوان رقم الدور - أزرق حيوي للمريض الدائم
-                  const queueNumberColors: [string, string] = isPermanent
-                    ? ['#60A5FA', '#93C5FD']
-                    : gradientColors;
-
-                  const isComplete = patient.status === 'complete';
-                  const cardTextColor = isComplete ? '#FFFFFF' : textColor;
-                  const tagBg = isComplete ? 'rgba(255, 255, 255, 0.3)' : (isPermanent ? 'rgba(191, 219, 254, 0.75)' : 'rgba(184, 212, 241, 0.75)');
-                  const tagTextStyle = isComplete
-                    ? { color: '#FFFFFF' }
-                    : (patient.clinic && patient.clinic !== 'Clinic' ? { color: '#C2410C', fontWeight: '700' as const } : { color: '#000000', fontWeight: '700' as const });
-
-                  return (
-                    <TouchableOpacity
-                      key={patient.id}
-                      activeOpacity={isPermanent ? 0.8 : 1}
-                      onPress={() => {
-                        if (isPermanent) handleToggleArchiveExpansion(patient);
-                      }}
-                    >
-                    <View style={[styles.patientCard, shadows.medium]}>
-                      <LinearGradient
-                        colors={gradientColors}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.patientCardContent}
-                      >
-                        {/* الكرت الموسع - للمرضى الدائمين فقط */}
-                        {isPermanent && isExpanded ? (
-                          <ExpandedPatientHeader
-                            patient={{
-                              ...patient,
-                              age: 0,
-                              isElderly: patient.is_elderly,
-                              isSpecialNeeds: false,
-                            } as any}
-                            dentalSummary={archiveDentalSummaries[patient.id] || null}
-                            loadingDentalData={archiveLoadingDental[patient.id] || false}
-                            patientReferrals={(archiveReferrals[patient.permanent_patient_id!] || []) as any}
-                            loadingReferrals={false}
-                            onLoadReferrals={() => {}}
-                            toothNotes={(archiveToothNotes[patient.permanent_patient_id!] || []) as any}
-                            loadingToothNotes={false}
-                            onLoadToothNotes={() => {}}
-                            lastScalingDate={archiveScalingDates[patient.id] ? new Date(archiveScalingDates[patient.id]!) : undefined}
-                            onFluoridePress={() => {}}
-                            onScalingPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                            patientConsents={archiveConsents[patient.id] ? [{ consent_type: 'general', signed: true }] : []}
-                            onConsentPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                            onOpenDentalChart={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                            onTogglePermanentExpansion={() => handleToggleArchiveExpansion(patient)}
-                            onToothEditPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                            doctorName={patient.doctor_name}
-                            readOnly={true}
-                          />
-                        ) : (
-                          <>
-                            {/* Badges */}
-                            <View style={styles.badgesContainer}>
-                              {isComplete && !isPermanent && (
-                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
-                                  <Text style={styles.statusBadgeText}>DONE</Text>
-                                </View>
-                              )}
-                              {patient.is_elderly && (
-                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(251, 191, 36, 0.75)' }]}>
-                                  <Text style={styles.statusBadgeText}>ELDR</Text>
-                                </View>
-                              )}
-                              {!isComplete && patient.status === 'na' && (
-                                <View style={[styles.statusBadge, { backgroundColor: 'rgba(75, 85, 99, 0.75)' }]}>
-                                  <Text style={styles.statusBadgeText}>N/A</Text>
-                                </View>
-                              )}
-                              {patient.note && (
-                                <TouchableOpacity
-                                  style={[styles.statusBadge, { backgroundColor: isComplete ? 'rgba(255, 255, 255, 0.3)' : 'rgba(59, 130, 246, 0.5)' }]}
-                                  onPress={() => {
-                                    setSelectedNote(patient.note || '');
-                                    setShowNoteModal(true);
-                                  }}
-                                >
-                                  <Text style={styles.statusBadgeText}>NOTE</Text>
-                                </TouchableOpacity>
-                              )}
-                            </View>
-
-                            {/* Header */}
-                            <View style={styles.cardHeader}>
-                              <View style={styles.leftSection}>
-                                {isPermanent && (
-                                  <View style={{
-                                    width: scale(32),
-                                    height: scale(32),
-                                    borderRadius: scale(16),
-                                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                                    borderWidth: scale(1.5),
-                                    borderColor: 'rgba(255, 255, 255, 0.4)',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    marginRight: scale(6),
-                                  }}>
-                                    <Ionicons name="chevron-down" size={scale(18)} color={isComplete ? '#FFFFFF' : '#1E3A8A'} />
-                                  </View>
-                                )}
-                                {isComplete && isPermanent && (
-                                  <View style={[styles.statusBadge, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}>
-                                    <Text style={styles.statusBadgeText}>DONE</Text>
-                                  </View>
-                                )}
-                              </View>
-                              <Text style={[styles.patientName, { color: cardTextColor }]}>{patient.name}</Text>
-                            </View>
-
-                            <View style={[styles.divider, isComplete && { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]} />
-
-                            {/* Tags */}
-                            <View style={styles.tagsRow}>
-                              <View style={[styles.tag, { backgroundColor: tagBg }]}>
-                                <Text style={[styles.tagText, isComplete ? { color: '#FFFFFF' } : tagTextStyle]} numberOfLines={1} ellipsizeMode="tail">{patient.clinic || 'Clinic'}</Text>
-                              </View>
-                              <View style={[styles.tag, { backgroundColor: isComplete ? 'rgba(255, 255, 255, 0.3)' : (isPermanent ? 'rgba(191, 219, 254, 0.75)' : 'rgba(200, 198, 236, 0.75)') }]}>
-                                <Text style={[styles.tagText, isComplete ? { color: '#FFFFFF' } : (patient.condition && patient.condition !== 'Condition' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' })]} numberOfLines={1} ellipsizeMode="tail">{patient.condition || 'Condition'}</Text>
-                              </View>
-                              <View style={[styles.tag, { backgroundColor: isComplete ? 'rgba(255, 255, 255, 0.3)' : (isPermanent ? 'rgba(191, 219, 254, 0.75)' : 'rgba(212, 184, 232, 0.75)') }]}>
-                                <Text style={[styles.tagText, isComplete ? { color: '#FFFFFF' } : (patient.treatment && patient.treatment !== 'Treatment' ? { color: '#C2410C', fontWeight: '700' } : { color: '#000000', fontWeight: '700' })]} numberOfLines={1} ellipsizeMode="tail">{patient.treatment || 'Treatment'}</Text>
-                              </View>
-                            </View>
-
-                            {/* Timeline */}
-                            <View style={{ marginTop: scale(8), paddingTop: scale(8), borderTopWidth: scale(1), borderTopColor: isComplete ? 'rgba(255, 255, 255, 0.3)' : '#E5E7EB' }}>
-                              {patient.timeline && patient.timeline.map((event, index) => (
-                                <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: scale(4) }}>
-                                  <Ionicons
-                                    name={
-                                      event.type === 'registered' ? 'add-circle-outline' :
-                                      event.type === 'clinic_entry' ? 'enter-outline' :
-                                      event.type === 'completed' ? 'checkmark-circle-outline' :
-                                      'ellipse-outline'
-                                    }
-                                    size={scale(14)}
-                                    color={isComplete ? '#FFFFFF' : '#9CA3AF'}
-                                  />
-                                  <View style={{ marginLeft: scale(6), flex: 1 }}>
-                                    <Text style={{ fontSize: scale(11), color: isComplete ? '#FFFFFF' : '#9CA3AF' }}>
-                                      {eventText(event)}: {formatTime(event.timestamp)}
-                                    </Text>
-                                    {event.doctor_name && event.type === 'completed' && (
-                                      <Text style={{ fontSize: scale(11), color: isComplete ? 'rgba(255, 255, 255, 0.9)' : '#4B5563', fontWeight: '600', marginTop: scale(2) }}>
-                                        Done by Dr. {event.doctor_name}
-                                      </Text>
-                                    )}
-                                    {patient.assigned_by_doctor_name && event.type === 'completed' && (
-                                      <Text style={{ fontSize: scale(11), color: isComplete ? 'rgba(255, 255, 255, 0.7)' : '#6B7280', fontStyle: 'italic', marginTop: scale(2) }}>
-                                        Assigned by Dr. {patient.assigned_by_doctor_name}
-                                      </Text>
-                                    )}
-                                  </View>
-                                </View>
-                              ))}
-                            </View>
-                          </>
-                        )}
-                      </LinearGradient>
-
-                      {/* رقم الدور - يختفي عند التوسيع */}
-                      {!isExpanded && (
-                        <LinearGradient
-                          colors={queueNumberColors}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={styles.queueNumberSection}
-                        >
-                          <Text style={styles.queueNumberText}>{patient.queue_number === 0 ? '-' : patient.queue_number}</Text>
-                        </LinearGradient>
-                      )}
-                    </View>
-                    </TouchableOpacity>
-                  );
-                })
+                filteredPatients.map((patient, index) => (
+                  <PatientCardV2
+                    key={`${patient.id}-${cardAnimKey}`}
+                    patient={asQueuePatient(patient)}
+                    index={index}
+                    animKey={cardAnimKey}
+                    isExpanded={expandedArchiveCardId === patient.id}
+                    onToggleExpand={() => handleToggleArchiveExpansion(patient)}
+                    hasProfile={!!patient.permanent_patient_id}
+                    readOnly
+                    renderProfile={(backRef) => (
+                      <ExpandedPatientHeader
+                        backRef={backRef}
+                        patient={patient as any}
+                        dentalSummary={archiveDentalSummaries[patient.id] || null}
+                        loadingDentalData={archiveLoadingDental[patient.id] || false}
+                        patientReferrals={(archiveReferrals[patient.permanent_patient_id!] || []) as any}
+                        loadingReferrals={false}
+                        onLoadReferrals={() => {}}
+                        toothNotes={(archiveToothNotes[patient.permanent_patient_id!] || []) as any}
+                        loadingToothNotes={false}
+                        onLoadToothNotes={() => {}}
+                        lastScalingDate={archiveScalingDates[patient.id] ? new Date(archiveScalingDates[patient.id]!) : undefined}
+                        onFluoridePress={() => {}}
+                        onScalingPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                        patientConsents={archiveConsents[patient.id] ? [{ consent_type: 'general', signed: true }] : []}
+                        onConsentPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                        onOpenDentalChart={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                        onTogglePermanentExpansion={() => handleToggleArchiveExpansion(patient)}
+                        onToothEditPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                        doctorName={patient.doctor_name}
+                        readOnly
+                        embedded
+                      />
+                    )}
+                  />
+                ))
               )}
 
               {/* Read-only Badge */}
@@ -2166,21 +2042,3 @@ const styles = scaledStyleSheet({
   },
 });
 
-// أنماطُ مدخلِ مخطّطِ اليوم — في StyleSheet.create مستقلٍّ عمدًا: كائنُ styles أعلاه
-// فيه مفاتيحُ مكرَّرةٌ قديمةٌ تُفسِدُ استنتاجَ الأنواعِ لكلِّ ما يُضافُ إليه.
-const chartStyles = StyleSheet.create({
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: scale(11),
-    paddingVertical: scale(13), paddingHorizontal: scale(14),
-    borderRadius: scale(16), overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(109,83,198,0.20)',
-    marginBottom: scale(16),
-  },
-  icon: {
-    width: scale(36), height: scale(36), borderRadius: scale(12),
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.60)',
-  },
-  title: { fontSize: scale(14.5), fontWeight: '800', color: '#3B2E63' },
-  sub: { marginTop: scale(2), fontSize: scale(11.5), fontWeight: '600', color: '#6D53C6' },
-});
