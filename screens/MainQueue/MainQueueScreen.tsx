@@ -28,6 +28,7 @@ const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane, Break } from './QueueTimeline';
 import { QueueStatsStrip } from './QueueStatsStrip';
+import { QueueTopHaze } from './QueueTopHaze';
 import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
 import { createScalingRecord, getScalingRecords } from '../../lib/database';
 
@@ -417,6 +418,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     }
     togglePermanentCardExpansion(patient);
   }, [expandedPermanentCardId, frozenY, togglePermanentCardExpansion]);
+
+  // ضبابُ الحدّ: يتكوّنُ في أوّلِ ثلاثينَ بكسلًا من التمرير ويزولُ بعودتِك إلى الرأس.
+  // قيمةٌ متحرّكةٌ تُكتَبُ من حدثِ التمرير نفسِه — رقمٌ واحدٌ لا إعادةَ رسمٍ للقائمة.
+  const hazeY = useRef(new Animated.Value(0)).current;
+  const hazeOpacity = useMemo(
+    () => hazeY.interpolate({ inputRange: [0, scale(30)], outputRange: [0, 1], extrapolate: 'clamp' }),
+    [hazeY]);
 
   // نافذةُ الدخول: تُفتَحُ عندَ أوّلِ رسمٍ للصفحةِ (ومع كلِّ animKey جديد) وتُغلَقُ بعدَها.
   // ما رُكِّبَ داخلَها فهو داخلٌ يتتابع، وما رُكِّبَ بعدَها فهو عائدٌ يظهرُ في مكانِه.
@@ -895,7 +903,11 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             ]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
-            onScroll={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
+            onScroll={(e) => {
+              const y = e.nativeEvent.contentOffset.y;
+              offsetY.current = y;
+              hazeY.setValue(y);
+            }}
             // آخرُ إطارٍ هو المهمّ: بالخنقِ وحدَه تفوتُ نهايةُ الاندفاعِ فتُحفَظُ إزاحةٌ
             // أقدمُ من الحقيقيّةِ ببضعِ عشراتِ البكسلات — فيُلتقَطُ المستقرُّ صراحةً.
             onScrollEndDrag={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
@@ -1080,6 +1092,11 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             )
           )}
         />
+
+          {/* الضبابُ آخرُ الإخوةِ فهو فوقَهم، وداخلَ هذه الطبقةِ فهو يصعدُ معها في الطيّ
+              ويبقى ملتصقًا بحدِّ القائمةِ في الحالَين. وكرتٌ موسَّعٌ يملكُ الصفحةَ وحدَه،
+              فلا حدَّ هناك يُخفى. */}
+          {!expandedPermanentCardId && <QueueTopHaze opacity={hazeOpacity} />}
           </Animated.View>
 
         {/* FAB */}
