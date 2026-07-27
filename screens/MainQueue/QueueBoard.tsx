@@ -34,19 +34,24 @@ const INK = '#12232A';
 const SUB = '#5A7079';
 const HAIR = 'rgba(18,35,42,0.10)';
 const DOT = { done: '#0E9F8C', cur: '#8A5CD6', wait: 'rgba(18,35,42,0.28)', away: '#93A5AD' };
+const TEAL = '#0E9F8C';
+const TEAL_D = '#0B7F71';
 
 const two = (n: number) => String(n).padStart(2, '0');
 const hhmm = (d: Date) => `${two(d.getHours())}:${two(d.getMinutes())}`;
 
 // النصُّ فوقَ الرقمِ لا بجانبِه: في صفٍّ واحدٍ كانت النقطةُ والرقمُ يقتسمانِ معه عرضَ نصفِ
 // عمودٍ فيُقَصُّ («IN CHAI…»)؛ ورأسيًّا يرثُ النصُّ العرضَ كلَّه فيظهرُ تامًّا مهما طال.
-function CellBody({ tone, n, label }: { tone: string; n: number; label: string }) {
+function CellBody({ tone, n, label, active }: { tone: string; n: number; label: string; active?: boolean }) {
   return (
     <>
-      <Text style={s.ccap} numberOfLines={1}>{label}</Text>
+      <Text style={[s.ccap, active && s.ccapOn]} numberOfLines={1}>{label}</Text>
       <View style={s.cellRow}>
-        <View style={[s.dot, { backgroundColor: tone }]} />
-        <Text style={s.cnum}>{n}</Text>
+        <View style={s.dotWrap}>
+          {active && <View style={s.dotHalo} />}
+          <View style={[s.dot, { backgroundColor: active ? TEAL : tone }]} />
+        </View>
+        <Text style={[s.cnum, active && s.cnumOn]}>{n}</Text>
       </View>
     </>
   );
@@ -143,9 +148,26 @@ export const QueueBoard = React.memo(function QueueBoard({
 
             {/* الصفُّ الأعلى هو الحيُّ (مَن ينتظرُ ومَن على الكرسيّ)، والأسفلُ سِجِلٌّ وقعَ وانتهى */}
             <View style={s.right}>
+              {/* الفلترُ مُشتَغِلًا: لا صندوقَ ولا حدَّ مرسوم — وَشْمٌ من ضوءٍ يذوبُ في القاعِ،
+                  وخيطٌ مضيءٌ تحتَه من جنسِ خيطِ اليومِ على حافّةِ اللوح، وهالةٌ حولَ النقطة. */}
               <TouchableOpacity style={s.slot} activeOpacity={0.75} onPress={onToggleFilter}>
-                <View style={[s.cellBox, filterWaitingOnly && s.cellOn]}>
-                  <CellBody tone={DOT.wait} n={m.waiting} label={filterWaitingOnly ? 'FILTERED' : 'WAITING'} />
+                <View style={s.cellBox}>
+                  {filterWaitingOnly && (
+                    <>
+                      <LinearGradient
+                        colors={['rgba(14,159,140,0.19)', 'rgba(14,159,140,0.02)']}
+                        start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }}
+                        style={s.cellWash} pointerEvents="none"
+                      />
+                      <LinearGradient
+                        colors={['rgba(14,159,140,0.10)', TEAL, 'rgba(14,159,140,0.10)']}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                        style={s.cellLine} pointerEvents="none"
+                      />
+                    </>
+                  )}
+                  <CellBody tone={DOT.wait} n={m.waiting} active={filterWaitingOnly}
+                    label={filterWaitingOnly ? 'FILTERED' : 'WAITING'} />
                 </View>
               </TouchableOpacity>
               <View style={s.slot}><View style={s.cellBox}><CellBody tone={DOT.cur} n={m.inChair} label="IN CHAIR" /></View></View>
@@ -213,17 +235,25 @@ const s = scaledStyleSheet({
     paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: HAIR,
   },
   // الخانةُ نصفُ العرض، والطوقُ حولَ «ينتظر» يلتفُّ على النصِّ والرقمِ معًا
-  slot: { width: '50%', paddingVertical: 4 },
+  slot: { width: '50%', paddingVertical: 3 },
   cellBox: {
-    borderRadius: 11, paddingHorizontal: 6, paddingVertical: 5,
-    borderWidth: 1.5, borderColor: 'transparent', alignSelf: 'flex-start',
+    borderRadius: 12, paddingHorizontal: 8, paddingVertical: 5,
+    alignSelf: 'flex-start', minWidth: 62,
   },
-  cellOn: { backgroundColor: 'rgba(14,159,140,0.14)', borderColor: 'rgba(14,159,140,0.55)' },
-  cellRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
-  // لا هالةَ حولَ النقطةِ في الوجهِ الفاتح: التوهُّجُ لا يُرى إلّا على سطحٍ داكن
+  // وَشْمُ الضوء: يبدأُ من أعلى اليسارِ ويفنى في أسفلِ اليمين، فلا حافّةَ له تُقرأُ صندوقًا
+  cellWash: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, borderRadius: 12 },
+  cellLine: {
+    position: 'absolute', left: 8, right: 8, bottom: 0, height: 2, borderRadius: 1,
+    shadowColor: TEAL, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.85, shadowRadius: 5, elevation: 3,
+  },
+  cellRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
+  dotWrap: { width: 7, height: 7, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 7, height: 7, borderRadius: 4 },
+  dotHalo: { position: 'absolute', width: 17, height: 17, borderRadius: 9, backgroundColor: 'rgba(14,159,140,0.20)' },
   cnum: { fontSize: 25, fontWeight: '800', letterSpacing: -1.1, lineHeight: 26, color: INK },
+  cnumOn: { color: TEAL_D },
   ccap: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.1, color: SUB },
+  ccapOn: { color: TEAL_D },
 
   tx: { flexDirection: 'row', gap: 13, paddingBottom: 14 },
   txLine: { flexShrink: 1, fontSize: 8, fontWeight: '800', letterSpacing: 1.2, color: SUB },
