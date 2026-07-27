@@ -127,8 +127,12 @@ const TROUGH_FOCUS: [string, string, string] = ['rgba(255,158,48,0)', 'rgba(255,
 const TROUGH_TOP: [string, string] = ['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)'];
 // غِلالةُ الغائرِ: ظلٌّ من أعلاه وضوءُ الحافّةِ ينطبقُ على قاعِه
 const SUNK_IN: [string, string, string] = ['rgba(10,35,45,0.22)', 'rgba(10,35,45,0)', 'rgba(255,255,255,0.30)'];
-// ظلُّ الحائمِ على الورقة: لطخةٌ تشتدُّ في وسطِها وتفنى عندَ حافّتَيها فتبدو ليّنةً بلا حدّ
-const LAND: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.22)', 'rgba(10,35,45,0)'];
+// ظلُّ الحائمِ على الورقة. الضبابُ الحقيقيُّ ثقيلٌ في الهاتف، فنصنعُه من ثلاثِ طبقاتٍ متراكزة:
+// كلُّ طبقةٍ تخفتُ إلى حافّتَيها **عموديًّا** بتدرّجٍ، وتضيقُ عن التي تحتَها **أفقيًّا** — فيتلاشى
+// الظلُّ في الاتّجاهَين معًا ويصيرُ لطخةً مستديرةً ليّنةً بلا حدٍّ يُرى.
+const LAND_1: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.06)', 'rgba(10,35,45,0)'];
+const LAND_2: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.08)', 'rgba(10,35,45,0)'];
+const LAND_3: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.10)', 'rgba(10,35,45,0)'];
 
 // ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
@@ -271,15 +275,16 @@ const CARD: { [k in Kind]?: CardVis } = {
               ink: '#22434C', sub: '#5A7079', badgeBg: 'rgba(255,255,255,0.72)',
               badgeDash: 'rgba(14,124,102,0.50)', badgeInk: '#0B7F71',
               trk: 'rgba(18,35,42,0.10)', fil: 'transparent' },
-  eld:      { depth: 'air', bg: 'rgba(255,250,240,0.50)', border: 'rgba(240,190,90,0.85)',
-              ink: '#22434C', sub: '#7A6134', badgeBg: 'rgba(255,255,255,0.72)',
-              badgeDash: 'rgba(200,150,40,0.70)', badgeInk: '#8A6212',
-              trk: 'rgba(122,97,52,0.12)', fil: 'transparent' },
-  // غيرُ المتاحِ: يحومُ كغيرِه من المنتظِرين — تتغيّرُ حافّتُه وشارتُه فقط، فلا يختفي ولا يخفت
-  na:       { depth: 'air', bg: 'rgba(248,248,255,0.44)', border: 'rgba(168,172,215,0.80)',
-              ink: '#3B3F63', sub: '#565B8E', badgeBg: 'rgba(255,255,255,0.72)',
-              badgeDash: 'rgba(120,125,175,0.65)', badgeInk: '#565B8E',
-              trk: 'rgba(59,63,99,0.12)', fil: 'transparent' },
+  // الأولويّة (كبيرُ السنّ / الاحتياجاتُ الخاصّة): ذهبيٌّ صريحٌ يُعرَفُ من بعيد — كانَ باهتًا فلا يُقرأ
+  eld:      { depth: 'air', bg: 'rgba(253,232,190,0.86)', border: 'rgba(222,163,44,0.95)',
+              ink: '#5A3E08', sub: '#87621A', badgeBg: 'rgba(255,255,255,0.78)',
+              badgeDash: 'rgba(176,126,18,0.85)', badgeInk: '#7A5410',
+              trk: 'rgba(122,84,16,0.18)', fil: 'transparent' },
+  // غيرُ المتاحِ: يحومُ كغيرِه من المنتظِرين — بنفسجيٌّ صريحٌ لا شبحيّ، فلا يختفي ولا يخفت
+  na:       { depth: 'air', bg: 'rgba(223,224,244,0.88)', border: 'rgba(122,127,188,0.92)',
+              ink: '#31355C', sub: '#575C93', badgeBg: 'rgba(255,255,255,0.78)',
+              badgeDash: 'rgba(92,97,157,0.85)', badgeInk: '#454A79',
+              trk: 'rgba(59,63,99,0.17)', fil: 'transparent' },
 };
 
 // وسمُ الحالةِ الناطق: نصٌّ يُغني عن قراءةِ اللون (متأخّرٌ +7، جارٍ 8 min left، إلخ)
@@ -304,6 +309,17 @@ const barInfo = (b: Blk, nowMin: number): { fill: number; tick: number; empty: b
   const total = Math.max(elapsed, est, 1);
   return { fill: Math.max(0, Math.min(100, (elapsed / total) * 100)), tick: Math.max(0, Math.min(100, (est / total) * 100)), empty: false };
 };
+
+// ظلٌّ ليّنٌ مستديرٌ يقعُ على الورقةِ تحتَ ما يحومُ فوقَها — والفُرجةُ بينَه وبينَ صاحبِه هي ما يجعلُه يُقرأُ طائرًا
+function SoftShadow({ left, width, top }: { left: number; width: number; top: number }) {
+  return (
+    <View pointerEvents="none" style={[cs.landWrap, { left, width, top }]}>
+      <LinearGradient colors={LAND_1} style={[cs.land1, { width }]} />
+      <LinearGradient colors={LAND_2} style={[cs.land2, { left: width * 0.10, width: width * 0.80 }]} />
+      <LinearGradient colors={LAND_3} style={[cs.land3, { left: width * 0.23, width: width * 0.54 }]} />
+    </View>
+  );
+}
 
 // تاريخُ اليومِ بالإنجليزيّةِ دونَ اعتمادٍ على locale (كي لا يتغيّرَ الشكلُ بين الأجهزة)
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -381,8 +397,7 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
     <>
       {/* ظلُّ الحائم: لطخةٌ ليّنةٌ **منفصلةٌ** أسفلَه، بينَه وبينَها فُرجة — بها يُقرأُ معلّقًا لا ملتصقًا */}
       {v.depth === 'air' ? (
-        <LinearGradient pointerEvents="none" colors={LAND} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-          style={[cs.land, { left: left + scale(11), width: Math.max(scale(10), width - scale(22)), top: top + height + scale(3) }]} />
+        <SoftShadow left={left + scale(9)} width={Math.max(scale(14), width - scale(18))} top={top + height + scale(3)} />
       ) : null}
     <TouchableOpacity activeOpacity={0.75} onPress={onPress}
       style={[cs.card, { left, width, top, height, borderColor: v.border },
@@ -612,16 +627,22 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     // خطوطُ تبديلِ الشفتِ في هذه العيادة — حواجزُ رسمٍ صلبة
     const walls = l.blocks.filter((b) => b.kind === 'break' && b.fixed).map((b) => b.start);
     const chipWall = l.blocks.find((b) => b.kind === 'break' && b.fixed);   // حيثُ تلتصقُ شارةُ «خلفَ الشفت»
+    // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
+    // خلفَه. ندفعُه فُرجةً صغيرةً إلى اليمين — دفعُ رسمٍ لا تغييرَ في جدولِه ولا في ساعتِه.
+    const base = l.blocks.map((b) => {
+      const x0 = xAt(b.start);
+      return (b.kind !== 'done' && b.kind !== 'lateDone' && b.kind !== 'break'
+        && x0 >= nowX - scale(2) && x0 < nowX + NOW_PAD) ? nowX + NOW_PAD : x0;
+    });
+    // والدفعُ لا يقفُ عندَ المدفوعِ وحدَه: مَن بعدَه يُدفَعُ مثلَه إن ضاقتِ الفُرجة، وإلّا تلاصقا.
+    // floor = أقصى يسارٍ مسموحٍ للتالي = يمينُ سابقِه وفُرجةٌ. لا يعملُ إلّا حيثُ يلزم.
+    let floor = -Infinity;
     return l.blocks.map((b, i) => {
-      let left = xAt(b.start);
-      // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
-      // خلفَه. ندفعُه فُرجةً صغيرةً إلى اليمين — دفعُ رسمٍ لا تغييرَ في جدولِه ولا في ساعتِه.
-      if (b.kind !== 'done' && b.kind !== 'lateDone' && b.kind !== 'break'
-        && left >= nowX - scale(2) && left < nowX + NOW_PAD) left = nowX + NOW_PAD;
+      const left = Math.max(base[i], floor);
       const succ = l.blocks[i + 1];
       const rawW = Math.max(minWOf(b), xAt(b.end) - left);
       const chipRoom = (succ && succ === chipWall && l.beyond.length > 0) ? CHIP_W + GAP : 0;
-      const capW = succ ? (xAt(succ.start) - GAP - chipRoom - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
+      const capW = succ ? (base[i + 1] - GAP - chipRoom - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
       let width = Math.max(minWOf(b), Math.min(rawW, capW));
       // ── حائطُ الرسم ──
       // الكرتُ يُرسَمُ بعرضٍ أدنى مقروءٍ مهما قصُرَت مدّتُه، فكرتُ نصفِ ساعةٍ يُطلى أعرضَ من
@@ -632,9 +653,10 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
         const wall = walls.find((w) => b.start < w);
         if (wall != null) width = Math.min(width, Math.max(scale(1), xAt(wall) - GAP - left));
       }
+      floor = left + width + GAP + chipRoom;
       const prev = i > 0 ? l.blocks[i - 1] : null;
       const prevEnd = prev ? ((prev.kind === 'cur' || prev.kind === 'over') ? Math.max(prev.end, prev.start + estMinutes(prev.p)) : prev.end) : -Infinity;
-      const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لخيطِ الفراغِ المنقّط)
+      const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لمَجْرى الفراغ)
       return { b, left, width, idle };
     });
   });
@@ -726,6 +748,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             ) : null}
           </>
         ) : null}
+        <SoftShadow left={left + scale(9)} width={Math.max(scale(14), width - scale(18))} top={tTop + TROUGH_H + scale(3)} />
         <TouchableOpacity activeOpacity={0.85} style={[full.trough, { left, width, top: tTop, height: TROUGH_H }]}
           onPress={() => { if (!readOnly) setBreakActionOrig(b.orig ?? b.start); }}>
           <LinearGradient colors={TROUGH_BASE} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -1928,7 +1951,10 @@ const cs = scaledStyleSheet({
   card: { position: 'absolute', borderRadius: 16, paddingTop: 6, paddingBottom: 6, paddingLeft: 12, paddingRight: 10, borderWidth: 1, justifyContent: 'center' },
   sunk: { transform: [{ scale: 0.965 }] },        // الغائرُ ينحسرُ قليلًا عن حدودِه فيبدو داخلَ السطح
   // ظلُّ الحائمِ على الورقة: مفصولٌ عنه بفُرجةٍ فيبدو معلَّقًا فوقَها لا واقعًا عليها
-  land: { position: 'absolute', height: 11, borderRadius: 6 },
+  landWrap: { position: 'absolute', height: 16 },
+  land1: { position: 'absolute', left: 0, top: 0, height: 16, borderRadius: 8 },
+  land2: { position: 'absolute', top: 2.5, height: 11, borderRadius: 5.5 },
+  land3: { position: 'absolute', top: 4.5, height: 7, borderRadius: 3.5 },
   clip: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 15, overflow: 'hidden' },
   gloss: { position: 'absolute', top: 0, left: 8, right: 8, height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
   row1: { flexDirection: 'row', alignItems: 'center', gap: 6 },
