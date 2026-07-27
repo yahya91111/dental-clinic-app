@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, StatusBar, Modal, Alert, Platform, Dimensions, Animated } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, FlatList, TouchableOpacity, StatusBar, Modal, Alert, Platform, Dimensions, Animated } from 'react-native';
 import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -697,122 +697,136 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
         {/* Divider */}
         <View style={styles.headerDivider} />
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {activeTab === 'archive' ? (
-            <>
-              {/* Timeline Style Selector */}
-              <View style={styles.timelineContainer}>
-                {/* Step 1: Date */}
-                <View style={styles.timelineStep}>
-                  <TouchableOpacity onPress={() => setShowDatePicker(true)}>
-                    <LinearGradient
-                      colors={['#A78BFA', '#A78BFA']}
-                      style={styles.timelineDot}
-                    >
-                      <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  <Text style={styles.timelineLabel}>Date</Text>
-                  <Text style={styles.timelineValue}>{formatDate(selectedDate).split(',')[0]}</Text>
+        {activeTab === 'archive' ? (
+          /* قائمةٌ مُنافَذة: يومٌ فيه ثمانون مريضًا يُركّبُ ثمانينَ كرتًا دفعةً واحدةً في ScrollView.
+             الكرتُ هنا هو كرتُ الطابورِ نفسُه، فيرثُ ثقلَه — والعلاجُ هو العلاجُ نفسُه. */
+          <FlatList
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+            data={loading ? [] : filteredPatients}
+            keyExtractor={(patient) => `${patient.id}-${cardAnimKey}`}
+            initialNumToRender={7}
+            maxToRenderPerBatch={4}
+            updateCellsBatchingPeriod={60}
+            windowSize={5}
+            removeClippedSubviews={false}
+            ListHeaderComponent={
+              <>
+                {/* Timeline Style Selector */}
+                <View style={styles.timelineContainer}>
+                  {/* Step 1: Date */}
+                  <View style={styles.timelineStep}>
+                    <TouchableOpacity onPress={() => setShowDatePicker(true)}>
+                      <LinearGradient
+                        colors={['#A78BFA', '#A78BFA']}
+                        style={styles.timelineDot}
+                      >
+                        <Ionicons name="calendar" size={scale(24)} color="#FFFFFF" />
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    <Text style={styles.timelineLabel}>Date</Text>
+                    <Text style={styles.timelineValue}>{formatDate(selectedDate).split(',')[0]}</Text>
+                  </View>
+
+                  {/* Line */}
+                  <View style={styles.timelineLine} />
+
+                  {/* Step 2: Clinic */}
+                  <View style={styles.timelineStep}>
+                    <TouchableOpacity onPress={() => setShowClinicDropdown(true)}>
+                      <View style={[styles.timelineDot, styles.timelineDotInactive]}>
+                        <Ionicons name="medkit" size={scale(24)} color="#7DD3FC" />
+                      </View>
+                    </TouchableOpacity>
+                    <Text style={styles.timelineLabel}>Clinic</Text>
+                    <Text style={styles.timelineValue}>{selectedClinic}</Text>
+                  </View>
+
+                  {/* Line */}
+                  <View style={styles.timelineLine} />
+
+                  {/* Step 3: Load */}
+                  <View style={styles.timelineStep}>
+                    <TouchableOpacity onPress={() => loadArchivedPatients(selectedDate)}>
+                      <View style={[styles.timelineDot, styles.timelineDotInactive]}>
+                        <Ionicons name="checkmark-circle" size={scale(24)} color="#F687B3" />
+                      </View>
+                    </TouchableOpacity>
+                    <Text style={styles.timelineLabel}>Load</Text>
+                    <Text style={styles.timelineValue}>Tap</Text>
+                  </View>
                 </View>
 
-                {/* Line */}
-                <View style={styles.timelineLine} />
-
-                {/* Step 2: Clinic */}
-                <View style={styles.timelineStep}>
-                  <TouchableOpacity onPress={() => setShowClinicDropdown(true)}>
-                    <View style={[styles.timelineDot, styles.timelineDotInactive]}>
-                      <Ionicons name="medkit" size={scale(24)} color="#7DD3FC" />
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.timelineLabel}>Clinic</Text>
-                  <Text style={styles.timelineValue}>{selectedClinic}</Text>
-                </View>
-
-                {/* Line */}
-                <View style={styles.timelineLine} />
-
-                {/* Step 3: Load */}
-                <View style={styles.timelineStep}>
-                  <TouchableOpacity onPress={() => loadArchivedPatients(selectedDate)}>
-                    <View style={[styles.timelineDot, styles.timelineDotInactive]}>
-                      <Ionicons name="checkmark-circle" size={scale(24)} color="#F687B3" />
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.timelineLabel}>Load</Text>
-                  <Text style={styles.timelineValue}>Tap</Text>
-                </View>
-              </View>
-
-              {/* مخطّطُ ذلك اليوم — لقطةٌ محفوظةٌ ساعةَ الأرشفة. تظهرُ فقط إن وُجدت،
-                  فالأيّامُ التي سبقت هذه الميزةَ ليس لها مخطّط. */}
-              {dayChart && (
-                <DayChartCard
-                  chart={dayChart}
-                  dateLabel={formatDate(selectedDate).split(',')[0]}
-                  onPress={() => setShowDayChart(true)}
-                />
-              )}
-
-              {/* Timeline Label */}
-              <Text style={styles.sectionLabel}>Timeline:</Text>
-
-              {/* Patient Cards */}
-              {loading ? (
-                <Text style={styles.loadingText}>Loading...</Text>
-              ) : filteredPatients.length === 0 ? (
-                <View style={[styles.card, shadows.medium]}>
-                  <Text style={styles.emptyText}>No archived patients for this date</Text>
-                </View>
-              ) : (
-                filteredPatients.map((patient, index) => (
-                  <PatientCardV2
-                    key={`${patient.id}-${cardAnimKey}`}
-                    patient={asQueuePatient(patient)}
-                    index={index}
-                    animKey={cardAnimKey}
-                    isExpanded={expandedArchiveCardId === patient.id}
-                    onToggleExpand={() => handleToggleArchiveExpansion(patient)}
-                    hasProfile={!!patient.permanent_patient_id}
-                    readOnly
-                    renderProfile={(backRef) => (
-                      <ExpandedPatientHeader
-                        backRef={backRef}
-                        patient={patient as any}
-                        dentalSummary={archiveDentalSummaries[patient.id] || null}
-                        loadingDentalData={archiveLoadingDental[patient.id] || false}
-                        patientReferrals={(archiveReferrals[patient.permanent_patient_id!] || []) as any}
-                        loadingReferrals={false}
-                        onLoadReferrals={() => {}}
-                        toothNotes={(archiveToothNotes[patient.permanent_patient_id!] || []) as any}
-                        loadingToothNotes={false}
-                        onLoadToothNotes={() => {}}
-                        lastScalingDate={archiveScalingDates[patient.id] ? new Date(archiveScalingDates[patient.id]!) : undefined}
-                        onFluoridePress={() => {}}
-                        onScalingPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                        patientConsents={archiveConsents[patient.id] ? [{ consent_type: 'general', signed: true }] : []}
-                        onConsentPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                        onOpenDentalChart={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                        onTogglePermanentExpansion={() => handleToggleArchiveExpansion(patient)}
-                        onToothEditPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
-                        doctorName={patient.doctor_name}
-                        readOnly
-                        embedded
-                      />
-                    )}
+                {/* مخطّطُ ذلك اليوم — لقطةٌ محفوظةٌ ساعةَ الأرشفة. تظهرُ فقط إن وُجدت،
+                    فالأيّامُ التي سبقت هذه الميزةَ ليس لها مخطّط. */}
+                {dayChart && (
+                  <DayChartCard
+                    chart={dayChart}
+                    dateLabel={formatDate(selectedDate).split(',')[0]}
+                    onPress={() => setShowDayChart(true)}
                   />
-                ))
-              )}
+                )}
 
-              {/* Read-only Badge */}
-              {filteredPatients.length > 0 && (
+                {/* Timeline Label */}
+                <Text style={styles.sectionLabel}>Timeline:</Text>
+
+                {/* Patient Cards */}
+                {loading ? (
+                  <Text style={styles.loadingText}>Loading...</Text>
+                ) : filteredPatients.length === 0 ? (
+                  <View style={[styles.card, shadows.medium]}>
+                    <Text style={styles.emptyText}>No archived patients for this date</Text>
+                  </View>
+                ) : null}
+              </>
+            }
+            ListFooterComponent={
+              filteredPatients.length > 0 ? (
                 <View style={styles.readonlyBadge}>
                   <Text style={styles.readonlyText}>🔒 Read-only view</Text>
                 </View>
-              )}
-            </>
-          ) : (
+              ) : null
+            }
+            renderItem={({ item: patient, index }) => (
+              <PatientCardV2
+                key={`${patient.id}-${cardAnimKey}`}
+                patient={asQueuePatient(patient)}
+                index={index}
+                animKey={cardAnimKey}
+                isExpanded={expandedArchiveCardId === patient.id}
+                onToggleExpand={() => handleToggleArchiveExpansion(patient)}
+                hasProfile={!!patient.permanent_patient_id}
+                readOnly
+                renderProfile={(backRef) => (
+                  <ExpandedPatientHeader
+                    backRef={backRef}
+                    patient={patient as any}
+                    dentalSummary={archiveDentalSummaries[patient.id] || null}
+                    loadingDentalData={archiveLoadingDental[patient.id] || false}
+                    patientReferrals={(archiveReferrals[patient.permanent_patient_id!] || []) as any}
+                    loadingReferrals={false}
+                    onLoadReferrals={() => {}}
+                    toothNotes={(archiveToothNotes[patient.permanent_patient_id!] || []) as any}
+                    loadingToothNotes={false}
+                    onLoadToothNotes={() => {}}
+                    lastScalingDate={archiveScalingDates[patient.id] ? new Date(archiveScalingDates[patient.id]!) : undefined}
+                    onFluoridePress={() => {}}
+                    onScalingPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                    patientConsents={archiveConsents[patient.id] ? [{ consent_type: 'general', signed: true }] : []}
+                    onConsentPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                    onOpenDentalChart={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                    onTogglePermanentExpansion={() => handleToggleArchiveExpansion(patient)}
+                    onToothEditPress={() => Alert.alert('أرشيف', 'لا يمكن التعديل في الأرشيف')}
+                    doctorName={patient.doctor_name}
+                    readOnly
+                    embedded
+                  />
+                )}
+              />
+            )}
+          />
+        ) : (
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <>
               {/* Timeline Style: Date Range Selector */}
               <View style={styles.timelineContainer}>
@@ -1028,8 +1042,8 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                 </>
               ) : null}
             </>
-          )}
-        </ScrollView>
+          </ScrollView>
+        )}
 
         {/* Date Picker Modals */}
         {showDatePicker && Platform.OS === 'ios' && (
