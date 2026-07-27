@@ -38,12 +38,16 @@ const DOT = { done: '#0E9F8C', cur: '#8A5CD6', wait: 'rgba(18,35,42,0.28)', away
 const two = (n: number) => String(n).padStart(2, '0');
 const hhmm = (d: Date) => `${two(d.getHours())}:${two(d.getMinutes())}`;
 
+// النصُّ فوقَ الرقمِ لا بجانبِه: في صفٍّ واحدٍ كانت النقطةُ والرقمُ يقتسمانِ معه عرضَ نصفِ
+// عمودٍ فيُقَصُّ («IN CHAI…»)؛ ورأسيًّا يرثُ النصُّ العرضَ كلَّه فيظهرُ تامًّا مهما طال.
 function CellBody({ tone, n, label }: { tone: string; n: number; label: string }) {
   return (
     <>
-      <View style={[s.dot, { backgroundColor: tone }]} />
-      <Text style={s.cnum}>{n}</Text>
       <Text style={s.ccap} numberOfLines={1}>{label}</Text>
+      <View style={s.cellRow}>
+        <View style={[s.dot, { backgroundColor: tone }]} />
+        <Text style={s.cnum}>{n}</Text>
+      </View>
     </>
   );
 }
@@ -107,11 +111,13 @@ export const QueueBoard = React.memo(function QueueBoard({
       <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)']} style={s.floor} pointerEvents="none" />
       <LinearGradient colors={['rgba(255,255,255,0.50)', 'rgba(255,255,255,0)']} style={s.gloss} pointerEvents="none" />
 
-      <Text style={s.clock}>{clock}</Text>
+      <View style={s.head}>
+        <Text style={s.eyebrow}>{showTreatments ? 'TREATMENTS' : 'TODAY'}</Text>
+        <Text style={s.clock}>{clock}</Text>
+      </View>
 
       {showTreatments ? (
         <View style={s.txFace}>
-          <Text style={s.txTitle}>TREATMENTS TODAY</Text>
           {tops.length ? (
             <View style={s.txGrid}>
               {tops.slice(0, 6).map(([k, v]) => (
@@ -130,18 +136,20 @@ export const QueueBoard = React.memo(function QueueBoard({
         <>
           <View style={s.body}>
             <View style={s.left}>
-              <Text style={s.num}>{m.total}</Text>
-              <Text style={s.cap}>PATIENTS TODAY</Text>
+              {/* ثلاثةُ أرقامٍ لا تسعُ في هذا العرضِ بحجمِها الكامل، فينكمشُ الحرفُ ولا يُقَصّ */}
+              <Text style={s.num} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{m.total}</Text>
+              <Text style={s.cap}>PATIENTS</Text>
             </View>
 
+            {/* الصفُّ الأعلى هو الحيُّ (مَن ينتظرُ ومَن على الكرسيّ)، والأسفلُ سِجِلٌّ وقعَ وانتهى */}
             <View style={s.right}>
-              <View style={s.slot}><View style={s.cellBox}><CellBody tone={DOT.done} n={m.done} label="SEEN" /></View></View>
-              <View style={s.slot}><View style={s.cellBox}><CellBody tone={DOT.cur} n={m.inChair} label="IN CHAIR" /></View></View>
               <TouchableOpacity style={s.slot} activeOpacity={0.75} onPress={onToggleFilter}>
                 <View style={[s.cellBox, filterWaitingOnly && s.cellOn]}>
                   <CellBody tone={DOT.wait} n={m.waiting} label={filterWaitingOnly ? 'FILTERED' : 'WAITING'} />
                 </View>
               </TouchableOpacity>
+              <View style={s.slot}><View style={s.cellBox}><CellBody tone={DOT.cur} n={m.inChair} label="IN CHAIR" /></View></View>
+              <View style={s.slot}><View style={s.cellBox}><CellBody tone={DOT.done} n={m.done} label="SEEN" /></View></View>
               <View style={s.slot}><View style={s.cellBox}><CellBody tone={DOT.away} n={m.away} label="AWAY" /></View></View>
             </View>
           </View>
@@ -188,43 +196,41 @@ const s = scaledStyleSheet({
   },
   floor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 54 },
   gloss: { position: 'absolute', left: 0, right: 0, top: 0, height: 20 },
-  clock: {
-    position: 'absolute', top: 18, right: 20, zIndex: 3,
-    fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4, color: SUB,
-  },
+  head: { flexDirection: 'row', alignItems: 'center', zIndex: 3 },
+  eyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 1.9, color: SUB },
+  clock: { marginLeft: 'auto', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4, color: SUB },
 
-  body: { flex: 1, flexDirection: 'row' },
-  left: { width: '40%', justifyContent: 'center', paddingRight: 10 },
+  body: { flex: 1, flexDirection: 'row', paddingTop: 2 },
+  left: { width: '38%', justifyContent: 'center', paddingRight: 12 },
   // ارتفاعُ السطرِ لا ينزلُ تحتَ حجمِ الحرف: أندرويد يقصُّ الرقمَ حينَ ينزل
   num: {
-    fontSize: 74, fontWeight: '800', letterSpacing: -5.2, lineHeight: 74, color: INK,
+    fontSize: 72, fontWeight: '800', letterSpacing: -5, lineHeight: 72, color: INK,
   },
-  cap: { marginTop: 8, fontSize: 8.5, fontWeight: '800', letterSpacing: 1.9, color: SUB },
+  cap: { marginTop: 6, fontSize: 8.5, fontWeight: '800', letterSpacing: 1.9, color: SUB },
 
   right: {
     flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'center',
-    paddingLeft: 15, borderLeftWidth: 1, borderLeftColor: HAIR,
+    paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: HAIR,
   },
-  // الخانةُ تملأُ نصفَ العرضِ فلا يفيضُ محتواها، وعليه يستقيمُ الطوقُ حولَ «ينتظر» كحبّة
-  slot: { width: '50%', paddingVertical: 9 },
+  // الخانةُ نصفُ العرض، والطوقُ حولَ «ينتظر» يلتفُّ على النصِّ والرقمِ معًا
+  slot: { width: '50%', paddingVertical: 4 },
   cellBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    borderRadius: 10, paddingHorizontal: 5, paddingVertical: 4,
-    borderWidth: 1.5, borderColor: 'transparent',
+    borderRadius: 11, paddingHorizontal: 6, paddingVertical: 5,
+    borderWidth: 1.5, borderColor: 'transparent', alignSelf: 'flex-start',
   },
   cellOn: { backgroundColor: 'rgba(14,159,140,0.14)', borderColor: 'rgba(14,159,140,0.55)' },
+  cellRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
   // لا هالةَ حولَ النقطةِ في الوجهِ الفاتح: التوهُّجُ لا يُرى إلّا على سطحٍ داكن
-  dot: { width: 6.5, height: 6.5, borderRadius: 4 },
-  cnum: { fontSize: 22, fontWeight: '800', letterSpacing: -0.9, color: INK },
-  ccap: { flexShrink: 1, fontSize: 8, fontWeight: '800', letterSpacing: 1.1, color: SUB },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  cnum: { fontSize: 25, fontWeight: '800', letterSpacing: -1.1, lineHeight: 26, color: INK },
+  ccap: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.1, color: SUB },
 
-  tx: { flexDirection: 'row', gap: 13, paddingBottom: 16 },
-  txLine: { fontSize: 8, fontWeight: '800', letterSpacing: 1.2, color: SUB },
+  tx: { flexDirection: 'row', gap: 13, paddingBottom: 14 },
+  txLine: { flexShrink: 1, fontSize: 8, fontWeight: '800', letterSpacing: 1.2, color: SUB },
   txLineNum: { color: INK },
 
   // ── الوجهُ الآخر: العلاجاتُ كلُّها ──
-  txFace: { flex: 1, paddingBottom: 16 },
-  txTitle: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.9, color: SUB },
+  txFace: { flex: 1, paddingBottom: 14 },
   txGrid: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'center' },
   txRow: { width: '50%', flexDirection: 'row', alignItems: 'baseline', gap: 9, paddingVertical: 5 },
   txNum: { fontSize: 19, fontWeight: '800', letterSpacing: -0.8, color: INK, minWidth: 22 },
