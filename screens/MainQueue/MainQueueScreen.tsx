@@ -362,6 +362,30 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   const stripFade = useMemo(
     () => foldT.interpolate({ inputRange: [0.35, 0.9], outputRange: [0, 1], extrapolate: 'clamp' }), [foldT]);
 
+  // ── الرجوعُ إلى حيثُ كنت ──
+  // توسيعُ كرتٍ يُخلي القائمةَ إلّا منه، فينكمشُ المحتوى وتُقصَرُ إزاحةُ التمريرِ إلى صفر
+  // قسرًا. وعندَ الإغلاقِ تعودُ الكروتُ كلُّها والإزاحةُ صفر — فتجدُ نفسَك في رأسِ الصفحة
+  // وكنتَ عندَ الخامسِ والعشرين. فنحفظُ الإزاحةَ قبلَ التوسيعِ ونُعيدُها بعدَ الإغلاق.
+  const listRef = useRef<FlatList<Patient>>(null);
+  const offsetY = useRef(0);
+  const parked = useRef(0);
+
+  const toggleCard = useCallback((patient: Patient) => {
+    const closing = expandedPermanentCardId === patient.id;
+    if (!closing) parked.current = offsetY.current;
+    togglePermanentCardExpansion(patient);
+    if (!closing) return;
+    // القائمةُ مُنافَذة: لا تعرفُ ارتفاعَ ما لم تُركِّبْه بعد، فأوّلُ قفزةٍ قد تقصُر.
+    // نُكرِّرُها إطاراتٍ قليلةً حتّى يستقرَّ المحتوى على ارتفاعِه.
+    const back = parked.current;
+    let n = 4;
+    const again = () => {
+      listRef.current?.scrollToOffset({ offset: back, animated: false });
+      if (--n > 0) requestAnimationFrame(again);
+    };
+    requestAnimationFrame(again);
+  }, [expandedPermanentCardId, togglePermanentCardExpansion]);
+
   const settle = useCallback((to: 0 | 1) => {
     foldAt.current = to;
     foldedRef.current = to === 1;
@@ -820,10 +844,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               removeClippedSubviews مُطفأٌ عمدًا: وجها الكرتِ (الوجهُ والظهر) مطلقانِ
               فوقَ بعضِهما، وقصُّ الأبناءِ على أندرويد يُفرِّغُ مثلَ هذه البِنى. */}
           <FlatList
+            ref={listRef}
             style={styles.scrollView}
             contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
+            onScroll={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
+            scrollEventThrottle={32}
             initialNumToRender={7}
             maxToRenderPerBatch={4}
             updateCellsBatchingPeriod={60}
@@ -847,7 +874,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 setSelectedPatientForProfile({ id: pp.permanent_patient_id || pp.id, fileNumber: pp.file_number || '' });
                 setShowPatientFile(true);
               }}
-              onToggleExpand={() => togglePermanentCardExpansion(patient)}
+              onToggleExpand={() => toggleCard(patient)}
               hasProfile={!!patient.permanent_patient_id}
               appointmentCtx={appointmentCtx}
               renderProfile={(backRef) => (
@@ -890,7 +917,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                     setSelectedPatientForProfile({ id: patient.permanent_patient_id, fileNumber: patient.file_number || '' });
                     setShowPatientFile(true);
                   }}
-                  onTogglePermanentExpansion={() => togglePermanentCardExpansion(patient)}
+                  onTogglePermanentExpansion={() => toggleCard(patient)}
                   onToothEditPress={(_pid, tooth) => {
                     if (!patient.permanent_patient_id) return;
                     setToothModalPatientId(patient.permanent_patient_id);
@@ -941,7 +968,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               }}
               expandedPermanentCardId={expandedPermanentCardId}
               appointmentCtx={appointmentCtx}
-              onTogglePermanentExpansion={togglePermanentCardExpansion}
+              onTogglePermanentExpansion={toggleCard}
               activeDentalTab={activeDentalTab[patient.id] || 'treatment'}
               onDentalTabChange={(tab) => setActiveDentalTab(prev => ({ ...prev, [patient.id]: tab }))}
               dentalSummary={dentalSummaries[patient.id]}

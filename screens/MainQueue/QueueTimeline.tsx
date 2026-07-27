@@ -1041,6 +1041,12 @@ export function DayChartViewer({ visible, onClose, chart, dateLabel }:
   );
 }
 
+// ── الصفحةُ تبقى حيثُ تركتَها ──
+// إن خرجتَ والمخطّطُ معروضٌ فالمخطّطُ هو ما يستقبلُك عندَ العودة، لا الإحصاءُ من جديد.
+// وتُحفَظُ في الذاكرةِ لا في التخزينِ الدائم: قراءةُ التخزينِ غيرُ متزامنة، فتُرى الصفحةُ
+// الأولى لحظةً ثمّ تقفز — وقفزةٌ مع كلِّ دخولٍ أسوأُ من نسيانٍ عندَ إعادةِ تشغيلِ التطبيق.
+const lastPage: { [clinic: string]: number } = {};
+
 export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone }:
   { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
     onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
@@ -1051,7 +1057,10 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   const W = SCREEN.width;
   const insets = useSafeAreaInsets();
   const [nowMin, setNowMin] = useState(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); });
-  const [page, setPage] = useState(0);
+  const pageKey = clinicId || '·';
+  const [page, setPage] = useState(() => lastPage[pageKey] ?? 0);
+  const pagerRef = useRef<ScrollView>(null);
+  const restored = useRef(false);
   const [showFull, setShowFull] = useState(false);
   const [clinicCount, setClinicCount] = useState(0);
   // تجاوزٌ محلّيٌّ لعددِ الكراسي: المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ
@@ -1197,10 +1206,21 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   return (
     <View>
       <ScrollView
+        ref={pagerRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / W))}
+        // الاستعادةُ عندَ قياسِ المحتوى لا عندَ التركيب: قبلَ القياسِ لا عرضَ يُقفَزُ إليه
+        onContentSizeChange={() => {
+          if (restored.current) return;
+          restored.current = true;
+          if (page > 0) pagerRef.current?.scrollTo({ x: page * W, animated: false });
+        }}
+        onMomentumScrollEnd={(e) => {
+          const p = Math.round(e.nativeEvent.contentOffset.x / W);
+          lastPage[pageKey] = p;
+          setPage(p);
+        }}
       >
         <View style={{ width: W, paddingHorizontal: scale(24) }}>
           <View style={{ flexDirection: 'row', gap: scale(16) }}>{statsNode}</View>
