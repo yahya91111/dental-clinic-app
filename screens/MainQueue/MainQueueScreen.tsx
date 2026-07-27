@@ -384,31 +384,24 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   const stripFade = useMemo(
     () => foldT.interpolate({ inputRange: [0.35, 0.9], outputRange: [0, 1], extrapolate: 'clamp' }), [foldT]);
 
-  // ── الرجوعُ إلى حيثُ كنت ──
-  // الكرتُ الموسَّعُ يبقى وحدَه في الصفحة كما هو التصميم. وثمنُ ذلك أنَّ المحتوى ينكمشُ
-  // إلى كرتٍ واحدٍ فتُقصَرُ إزاحةُ التمريرِ إلى صفرٍ قسرًا، ولا سبيلَ إلى منعِ ذلك — إنّما
-  // إلى إعادتِها بعدَ أن يمتلئَ المحتوى ثانيةً.
+  // ── الإزاحةُ لا تُعاد، لأنّها لا تضيع ──
+  // الكرتُ الموسَّعُ وحدَه في الصفحةِ كما هو التصميم، فينكمشُ المحتوى إلى كرتٍ واحد.
+  // وكنتُ أُعالِجُ ما يترتّبُ على ذلك: تُقصَرُ الإزاحةُ إلى صفرٍ قسرًا (لم يبقَ محتوًى
+  // تُقاسُ عليه)، فأُعيدُها عندَ الإغلاق. والعلاجُ نفسُه كان هو الثقل: القائمةُ تجدُ
+  // نفسَها عندَ الصفرِ فتبني نافذةَ الرأسِ كلَّها، ثمّ تُقفَزُ إلى الخامسِ والعشرينَ فتبني
+  // نافذةً ثانية — أربعَ عشرةَ بطاقةً بدلَ سبع، وكلُّها في مشهدٍ واحد.
   //
-  // والمرّةُ الأولى جرّبتُ الإعادةَ على أربعةِ إطاراتٍ متتالية، فكانت أربعَ قفزاتٍ تُرى
-  // تقطيعًا. والصوابُ قفزةٌ واحدةٌ في لحظتِها: القائمةُ تُخبِرُ بارتفاعِ محتواها
-  // (onContentSizeChange)، فننتظرُ حتّى يبلغَ الارتفاعُ ما نقصدُه ثمّ نعودُ مرّةً واحدة.
-  const listRef = useRef<FlatList<Patient>>(null);
+  // فالأصلحُ ألّا تُقصَرَ الإزاحةُ من أوّلِها: يبقى المحتوى بطولِه (minHeight) وينزلُ
+  // الكرتُ الموسَّعُ إلى موضعِ إزاحتِك (paddingTop)، فتراه في رأسِ الشاشةِ والقائمةُ لم
+  // تبرحْ مكانَها. وعندَ الإغلاقِ لا قفزةَ ولا انتظار: هي حيثُ كانت، وتبني نافذتَها
+  // الصحيحةَ من أوّلِ مرّة.
   const offsetY = useRef(0);
-  const parked = useRef(0);
-  const wantY = useRef<number | null>(null);
+  const [frozenY, setFrozenY] = useState(0);   // الإزاحةُ التي جُمِّدت عليها الصفحةُ وهي موسَّعة
+  const [listH, setListH] = useState(0);       // ارتفاعُ نافذةِ القائمة — به يُحسَبُ أدنى محتوًى يُبقي الإزاحةَ صالحة
 
   const toggleCard = useCallback((patient: Patient) => {
-    const closing = expandedPermanentCardId === patient.id;
-    if (!closing) { parked.current = offsetY.current; wantY.current = null; }
+    if (expandedPermanentCardId !== patient.id) setFrozenY(offsetY.current);
     togglePermanentCardExpansion(patient);
-    if (!closing) return;
-    wantY.current = parked.current;
-    // شبكةُ أمانٍ لا أكثر: إن لم يصلْ نداءُ القياسِ لسببٍ ما عُدنا على أيّةِ حال
-    setTimeout(() => {
-      if (wantY.current == null) return;
-      const y = wantY.current; wantY.current = null;
-      listRef.current?.scrollToOffset({ offset: y, animated: false });
-    }, 260);
   }, [expandedPermanentCardId, togglePermanentCardExpansion]);
 
   const settle = useCallback((to: 0 | 1) => {
@@ -872,20 +865,19 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               removeClippedSubviews مُطفأٌ عمدًا: وجها الكرتِ (الوجهُ والظهر) مطلقانِ
               فوقَ بعضِهما، وقصُّ الأبناءِ على أندرويد يُفرِّغُ مثلَ هذه البِنى. */}
           <FlatList
-            ref={listRef}
             style={styles.scrollView}
-            contentContainerStyle={[styles.scrollContent, expandedPermanentCardId && { paddingTop: scale(52) }]}
+            contentContainerStyle={[
+              styles.scrollContent,
+              // موسَّعٌ: الكرتُ ينزلُ إلى موضعِ إزاحتِك، والمحتوى يبقى بطولٍ يُبقيها صالحة
+              expandedPermanentCardId
+                ? { paddingTop: frozenY + scale(52), minHeight: frozenY + listH }
+                : null,
+            ]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
+            onLayout={(e) => setListH(Math.round(e.nativeEvent.layout.height))}
             onScroll={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
             scrollEventThrottle={32}
-            onContentSizeChange={(_w, h) => {
-              // القفزةُ الواحدةُ في لحظتِها: حينَ يصيرُ في المحتوى ما يبلغُ ما نقصد
-              const want = wantY.current;
-              if (want == null || h < want) return;
-              wantY.current = null;
-              listRef.current?.scrollToOffset({ offset: want, animated: false });
-            }}
             initialNumToRender={7}
             maxToRenderPerBatch={4}
             updateCellsBatchingPeriod={60}
