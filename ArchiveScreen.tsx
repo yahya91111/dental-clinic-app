@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, FlatList, TouchableOpacity, StatusBar, Modal, Alert, Platform, Dimensions, Animated } from 'react-native';
 import { scaledStyleSheet, scale } from './lib/scale';
 // Swipe gesture removed
@@ -111,6 +111,10 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   const [archiveLoadingDental, setArchiveLoadingDental] = useState<{ [key: string]: boolean }>({});
   //  يتغيّر مع كلّ تحميل، فتعيد الكروت دخولها المتحرّك كما في صفحة الدور
   const [cardAnimKey, setCardAnimKey] = useState(0);
+  // ونافذةُ الدخولِ تُغلَقُ بعدَ أوّلِ رسم: القائمةُ مُنافَذة، فما يُركَّبُ بعدَها إنّما
+  // يُركَّبُ لأنّه دخلَ حقلَ الرؤيةِ في التمرير — وذاك يظهرُ في مكانِه لا متتابعًا متأخّرًا.
+  const enterUntil = useRef(0);
+  useEffect(() => { enterUntil.current = Date.now() + 700; }, [cardAnimKey]);
 
   // مخطّطُ اليومِ المحفوظ (لقطةٌ تُعرَضُ كما حُفِظَت، لا يُعادُ حسابُها)
   const [dayChart, setDayChart] = useState<DayChart | null>(null);
@@ -793,6 +797,7 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
                 patient={asQueuePatient(patient)}
                 index={index}
                 animKey={cardAnimKey}
+                animate={Date.now() < enterUntil.current}
                 isExpanded={expandedArchiveCardId === patient.id}
                 onToggleExpand={() => handleToggleArchiveExpansion(patient)}
                 hasProfile={!!patient.permanent_patient_id}

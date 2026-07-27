@@ -605,6 +605,9 @@ export interface PatientCardV2Props {
   // لقطةُ المخطّطِ نفسِه (عبرَ onSchedule) فيطابقُ فحصُ الحجزِ ما تراه على الشاشة
   appointmentCtx?: ApptCtx;
   renderProfile?: (backRef: React.MutableRefObject<(() => boolean) | null>) => React.ReactNode;
+  // هل هذا الظهورُ دخولٌ حقًّا؟ الكرتُ يُركَّبُ أيضًا وهو يمرُّ في التمرير، أو حينَ تعودُ
+  // القائمةُ بعدَ إغلاقِ كرتٍ موسَّع — وتلك ليست دخولًا بل استئنافٌ لِما كان قائمًا.
+  animate?: boolean;
 }
 
 export function PatientCardV2({
@@ -623,6 +626,7 @@ export function PatientCardV2({
   hasProfile,
   appointmentCtx,
   renderProfile,
+  animate: doEnter = true,
 }: PatientCardV2Props) {
   // Expansion is driven by the parent: one card open at a time, isolated on the page
   // (the header collapses with the same animation the old card used).
@@ -754,8 +758,15 @@ export function PatientCardV2({
   // التتابعُ زينةٌ لأوّلِ ما تقعُ عليه العين. وكان كلُّ كرتٍ يتأخّرُ تسعينَ مِلِّي عن سابقِه
   // بلا سقف، فالكرتُ الستّون يبدأُ بعدَ خمسِ ثوانٍ والمئتانِ بعدَ ثمانيَ عشرة — فيُرى
   // تقطيعًا لا أناقة. الآن يتتابعُ ما تراه الشاشةُ وحدَه، وما بعدَه يدخلُ فورًا.
+  //
+  // ولا يتتابعُ إلّا في دخولٍ حقيقيّ. فالقائمةُ مُنافَذة: الكرتُ يُركَّبُ حينَ يدخلُ حقلَ
+  // الرؤيةِ في التمرير، ويُركَّبُ كلُّ ما يُرى من جديدٍ حينَ يُغلَقُ الكرتُ الموسَّعُ فتعودُ
+  // القائمة. ولو تتابعَ في هاتَينِ لكان الكرتُ الخامسُ والعشرونَ ينزلقُ داخلًا بعدَ ثلثِ
+  // ثانيةٍ من مكانِه الذي لم يبرحْه أصلًا — وهذا هو اللاقُ بعينِه لا علاجُه. فما لم يكنْ
+  // دخولًا يظهرُ مستقرًّا كما تركتَه.
   const slide = useRef(new Animated.Value(0)).current;
   useEffect(() => {
+    if (!doEnter) { slide.setValue(1); return; }
     slide.setValue(0);
     Animated.spring(slide, {
       toValue: 1,

@@ -9,6 +9,7 @@ import {
   Animated,
   Easing,
   PanResponder,
+  Dimensions,
   Alert,
 } from 'react-native';
 import { scale } from '../../lib/scale';
@@ -395,14 +396,32 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   // الكرتُ الموسَّعُ إلى موضعِ إزاحتِك (paddingTop)، فتراه في رأسِ الشاشةِ والقائمةُ لم
   // تبرحْ مكانَها. وعندَ الإغلاقِ لا قفزةَ ولا انتظار: هي حيثُ كانت، وتبني نافذتَها
   // الصحيحةَ من أوّلِ مرّة.
+  //
+  // ويُقاسُ الأدنى بارتفاعِ الشاشةِ لا بارتفاعِ القائمة. فالقائمةُ تطولُ وتقصرُ في أثناءِ
+  // ذلك (رأسُ الصفحةِ ينطوي بـ LayoutAnimation، وهامشُها السالبُ يُلغى)، وقياسُها يصلُ
+  // متأخّرًا إطارًا أو إطارَين — ففي تلك الفجوةِ يصيرُ المحتوى أقصرَ ممّا يلزم فتُقصَرُ
+  // الإزاحةُ عشراتِ البكسلات، وهي التي كنتَ تراها «تعودُ للأعلى قليلًا». وارتفاعُ الشاشةِ
+  // سقفٌ لا تبلغُه القائمةُ أبدًا، فلا فجوةَ ولا قياسَ ولا إعادةَ رسم.
+  const WIN_H = Dimensions.get('window').height;
+  const listRef = useRef<FlatList<Patient>>(null);
   const offsetY = useRef(0);
   const [frozenY, setFrozenY] = useState(0);   // الإزاحةُ التي جُمِّدت عليها الصفحةُ وهي موسَّعة
-  const [listH, setListH] = useState(0);       // ارتفاعُ نافذةِ القائمة — به يُحسَبُ أدنى محتوًى يُبقي الإزاحةَ صالحة
 
   const toggleCard = useCallback((patient: Patient) => {
-    if (expandedPermanentCardId !== patient.id) setFrozenY(offsetY.current);
+    if (expandedPermanentCardId !== patient.id) { setFrozenY(offsetY.current); }
+    // وإن قرأتَ في الكرتِ الموسَّعِ فتمرّرت، فالإغلاقُ يردُّكَ إلى موضعِك لا إلى موضعِ
+    // قراءتِك. والردُّ هنا رخيص: القائمةُ ما زالت كرتًا واحدًا، فلا نافذةَ تُبنى.
+    else if (Math.abs(offsetY.current - frozenY) > 1) {
+      listRef.current?.scrollToOffset({ offset: frozenY, animated: false });
+      offsetY.current = frozenY;
+    }
     togglePermanentCardExpansion(patient);
-  }, [expandedPermanentCardId, togglePermanentCardExpansion]);
+  }, [expandedPermanentCardId, frozenY, togglePermanentCardExpansion]);
+
+  // نافذةُ الدخول: تُفتَحُ عندَ أوّلِ رسمٍ للصفحةِ (ومع كلِّ animKey جديد) وتُغلَقُ بعدَها.
+  // ما رُكِّبَ داخلَها فهو داخلٌ يتتابع، وما رُكِّبَ بعدَها فهو عائدٌ يظهرُ في مكانِه.
+  const enterUntil = useRef(0);
+  React.useEffect(() => { enterUntil.current = Date.now() + 700; }, [animKey]);
 
   const settle = useCallback((to: 0 | 1) => {
     foldAt.current = to;
@@ -865,19 +884,23 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               removeClippedSubviews مُطفأٌ عمدًا: وجها الكرتِ (الوجهُ والظهر) مطلقانِ
               فوقَ بعضِهما، وقصُّ الأبناءِ على أندرويد يُفرِّغُ مثلَ هذه البِنى. */}
           <FlatList
+            ref={listRef}
             style={styles.scrollView}
             contentContainerStyle={[
               styles.scrollContent,
               // موسَّعٌ: الكرتُ ينزلُ إلى موضعِ إزاحتِك، والمحتوى يبقى بطولٍ يُبقيها صالحة
               expandedPermanentCardId
-                ? { paddingTop: frozenY + scale(52), minHeight: frozenY + listH }
+                ? { paddingTop: frozenY + scale(52), minHeight: frozenY + WIN_H }
                 : null,
             ]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
-            onLayout={(e) => setListH(Math.round(e.nativeEvent.layout.height))}
             onScroll={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
-            scrollEventThrottle={32}
+            // آخرُ إطارٍ هو المهمّ: بالخنقِ وحدَه تفوتُ نهايةُ الاندفاعِ فتُحفَظُ إزاحةٌ
+            // أقدمُ من الحقيقيّةِ ببضعِ عشراتِ البكسلات — فيُلتقَطُ المستقرُّ صراحةً.
+            onScrollEndDrag={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
+            onMomentumScrollEnd={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
+            scrollEventThrottle={16}
             initialNumToRender={7}
             maxToRenderPerBatch={4}
             updateCellsBatchingPeriod={60}
@@ -891,6 +914,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               patient={patient}
               index={index}
               animKey={animKey}
+              animate={Date.now() < enterUntil.current}
               isExpanded={expandedPermanentCardId === patient.id}
               onUpdateField={props.handleUpdateField}
               onSetDuration={props.handleSetExpectedMinutes}
