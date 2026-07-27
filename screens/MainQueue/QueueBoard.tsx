@@ -15,7 +15,7 @@ import { Patient } from './constants';
 //
 // وسطحُه زجاجٌ مدخّنٌ لا لونٌ مصمت: يُموِّهُ ما خلفَه فتمرُّ فقاعاتُ الخلفيّةِ من ورائِه، فيبدو
 // **نافذةً في الصفحةِ لا لوحًا فوقَها**. ولا حاويةَ حولَه: هو الكرتُ نفسُه، بحافّةٍ عُليا مضيئةٍ
-// وظلٍّ يرفعُه.
+// وظلٍّ يرفعُه. وهو دخانٌ فاتحٌ لا داكن، فيبقى في عائلةِ زجاجِ الصفحةِ ولا يقطعُها.
 //
 // وعلى حافّتِه السفلى خيطُ ضوءٍ يمتدُّ بامتدادِ اليوم — لا نسبةَ مئويّةَ ولا شريطَ تقدُّم، بل
 // حافّةُ اللوحِ تُضيء.
@@ -24,14 +24,16 @@ import { Patient } from './constants';
 // إلى وجهِ العلاجاتِ الكامل.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// «مدخّن · عمق ٨٠» — مأخوذةٌ من البروتوتايبِ بأرقامِها
-const SURF_A = 'rgba(84,120,130,0.69)';
-const SURF_B = 'rgba(61,87,95,0.69)';
-const RIM = 'rgba(255,255,255,0.34)';
-const INK = '#EAF6F3';
-const SUB = 'rgba(181,203,207,0.85)';
-const HAIR = 'rgba(255,255,255,0.10)';
-const DOT = { done: '#3EE0C4', cur: '#B18BF0', wait: '#93AEB7', away: '#5E747E' };
+// «مدخّن · عمق ٣٥» — مأخوذةٌ من البروتوتايبِ بأرقامِها.
+// وهذا العمقُ دونَ نقطةِ الانقلاب (٤٨)، فاللوحُ في وجهِه الفاتح: حروفٌ حبريّةٌ لا مضيئة،
+// ونقاطٌ بألوانِ الصفحةِ لا بتوهُّجِها، وضوءٌ خافتٌ في القاعِ لا بئرٌ ساطع.
+const SURF_A = 'rgba(178,194,199,0.54)';
+const SURF_B = 'rgba(158,174,180,0.54)';
+const RIM = 'rgba(255,255,255,0.68)';
+const INK = '#12232A';
+const SUB = '#5A7079';
+const HAIR = 'rgba(18,35,42,0.10)';
+const DOT = { done: '#0E9F8C', cur: '#8A5CD6', wait: 'rgba(18,35,42,0.28)', away: '#93A5AD' };
 
 const two = (n: number) => String(n).padStart(2, '0');
 const hhmm = (d: Date) => `${two(d.getHours())}:${two(d.getMinutes())}`;
@@ -39,7 +41,7 @@ const hhmm = (d: Date) => `${two(d.getHours())}:${two(d.getMinutes())}`;
 function CellBody({ tone, n, label }: { tone: string; n: number; label: string }) {
   return (
     <>
-      <View style={[s.dot, { backgroundColor: tone, shadowColor: tone }]} />
+      <View style={[s.dot, { backgroundColor: tone }]} />
       <Text style={s.cnum}>{n}</Text>
       <Text style={s.ccap} numberOfLines={1}>{label}</Text>
     </>
@@ -87,23 +89,23 @@ export const QueueBoard = React.memo(function QueueBoard({
   return (
     <TouchableOpacity style={s.card} activeOpacity={0.94} onPress={onToggleTreatments}>
       {/* ── السطح: تمويهٌ ثمّ زجاجٌ مدخّنٌ فوقَه ── */}
-      <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+      <BlurView intensity={26} tint="light" style={StyleSheet.absoluteFill} />
       <LinearGradient
         colors={[SURF_A, SURF_B]}
         start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      {/* بئرُ الضوءِ من أسفلِ اليسار */}
+      {/* بئرُ الضوءِ من أسفلِ اليسار — خافتٌ هنا، فالسطحُ فاتحٌ أصلًا */}
       <LinearGradient
-        colors={['rgba(22,192,166,0.26)', 'rgba(22,192,166,0.07)', 'rgba(22,192,166,0)']}
+        colors={['rgba(22,192,166,0.17)', 'rgba(22,192,166,0.05)', 'rgba(22,192,166,0)']}
         locations={[0, 0.45, 0.8]}
         start={{ x: 0, y: 1 }} end={{ x: 0.85, y: 0.05 }}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      {/* عتمةٌ في القاعِ تُعمِّقُ اللوح، وبريقُ الزجاجِ على حافّتِه العليا */}
-      <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.13)']} style={s.floor} pointerEvents="none" />
-      <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0)']} style={s.gloss} pointerEvents="none" />
+      {/* ضوءٌ يتجمّعُ في القاعِ (لا عتمة، فاللوحُ فاتح)، وبريقُ الزجاجِ على حافّتِه العليا */}
+      <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)']} style={s.floor} pointerEvents="none" />
+      <LinearGradient colors={['rgba(255,255,255,0.50)', 'rgba(255,255,255,0)']} style={s.gloss} pointerEvents="none" />
 
       <Text style={s.clock}>{clock}</Text>
 
@@ -157,7 +159,7 @@ export const QueueBoard = React.memo(function QueueBoard({
       {/* خيطُ اليومِ على الحافّةِ السفلى */}
       {pct > 0 && (
         <LinearGradient
-          colors={['rgba(22,192,166,0.4)', '#3EE0C4']}
+          colors={['rgba(14,159,140,0.35)', '#0E9F8C']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={[s.led, { width: `${pct}%` }]}
           pointerEvents="none"
@@ -178,10 +180,10 @@ const s = scaledStyleSheet({
     borderWidth: 1.5,
     borderColor: RIM,
     shadowColor: '#08202A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.42,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.30,
+    shadowRadius: 15,
+    elevation: 6,
   },
   floor: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 46 },
   gloss: { position: 'absolute', left: 0, right: 0, top: 0, height: 18 },
@@ -195,9 +197,6 @@ const s = scaledStyleSheet({
   // ارتفاعُ السطرِ لا ينزلُ تحتَ حجمِ الحرف: أندرويد يقصُّ الرقمَ حينَ ينزل
   num: {
     fontSize: 62, fontWeight: '800', letterSpacing: -4.4, lineHeight: 62, color: INK,
-    textShadowColor: 'rgba(22,192,166,0.36)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 27,
   },
   cap: { marginTop: 7, fontSize: 8, fontWeight: '800', letterSpacing: 1.8, color: SUB },
 
@@ -212,11 +211,9 @@ const s = scaledStyleSheet({
     borderRadius: 9, paddingHorizontal: 4, paddingVertical: 3,
     borderWidth: 1.5, borderColor: 'transparent',
   },
-  cellOn: { backgroundColor: 'rgba(22,192,166,0.16)', borderColor: 'rgba(22,192,166,0.55)' },
-  dot: {
-    width: 6, height: 6, borderRadius: 3,
-    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 4, elevation: 3,
-  },
+  cellOn: { backgroundColor: 'rgba(14,159,140,0.14)', borderColor: 'rgba(14,159,140,0.55)' },
+  // لا هالةَ حولَ النقطةِ في الوجهِ الفاتح: التوهُّجُ لا يُرى إلّا على سطحٍ داكن
+  dot: { width: 6, height: 6, borderRadius: 3 },
   cnum: { fontSize: 19, fontWeight: '800', letterSpacing: -0.8, color: INK },
   ccap: { flexShrink: 1, fontSize: 7.5, fontWeight: '800', letterSpacing: 1.1, color: SUB },
 
