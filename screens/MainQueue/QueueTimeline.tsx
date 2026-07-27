@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import Svg, { Defs, Pattern, Line as SvgLine, Rect as SvgRect } from 'react-native-svg';
 import { scale, scaledStyleSheet, SCREEN } from '../../lib/scale';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getScheduleSettings, updateScheduleBreaks } from '../../lib/database';
@@ -103,6 +102,28 @@ const AMBER_G: [string, string] = ['#F0A93C', '#C97D14'];
 const MINI_TEAL_W: [string, string] = ['rgba(18,192,166,0.20)', 'rgba(18,192,166,0.02)'];
 const MINI_AMBER_W: [string, string] = ['rgba(240,169,60,0.22)', 'rgba(240,169,60,0.02)'];
 
+// ═══════════════ الورقةُ المطويّة — مادّةُ المخطّطِ المكبّر ═══════════════
+// الزمنُ عُمق: ما مضى غاصَ في السطحِ وانطبقَ عليه، والجاري مستقرٌّ عليه، وما لم يأتِ يحومُ فوقَه.
+// وخطُّ الآنَ ليس خطًّا مرسومًا بل **حافّةُ سطحٍ**: شفةٌ تلتقطُ الضوءَ وظلٌّ تُلقيه إلى الوراء،
+// وحجابٌ فاتحٌ على كلِّ ما بعدَها. وتبديلُ الشفتِ **طيّةٌ** في الورقةِ لا كرتٌ يتكرّر.
+const HEAD_G: [string, string] = ['rgba(255,255,255,0.66)', 'rgba(255,255,255,0.22)'];
+const HOUR_ON: [string, string] = ['rgba(14,159,140,0.16)', 'rgba(14,159,140,0.02)'];
+const CREASE = 'rgba(255,255,255,0.95)';
+const HEAD_SHADE: [string, string] = ['rgba(10,35,45,0.13)', 'rgba(10,35,45,0)'];
+// الحجاب: المستقبلُ نصفُ ورقةٍ أعلى — يفتحُ الأرضَ بعدَ الآنَ ولا يُغرِقُها
+const VEIL: [string, string, string] = ['rgba(255,255,255,0.40)', 'rgba(255,255,255,0.13)', 'rgba(255,255,255,0.07)'];
+const BLOOM: [string, string, string] = ['rgba(14,159,140,0)', 'rgba(14,159,140,0.20)', 'rgba(14,159,140,0)'];
+const FOLD_PRE: [string, string] = ['rgba(10,35,45,0.20)', 'rgba(10,35,45,0)'];
+const FOLD_BAND: [string, string] = ['rgba(10,35,45,0.17)', 'rgba(255,255,255,0.55)'];
+const FOLD_POST: [string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.13)'];
+// المَجْرى (البريكُ المرن): حفرةٌ في الورقةِ يصعدُ منها دفءٌ كهرمانيّ — بلا أيقونة
+const TROUGH_BASE: [string, string] = ['#54401C', '#2C1F0A'];
+const TROUGH_LIGHT: [string, string, string] = ['rgba(255,201,116,0)', 'rgba(255,175,72,0.42)', 'rgba(255,214,150,0.92)'];
+const TROUGH_FOCUS: [string, string, string] = ['rgba(255,158,48,0)', 'rgba(255,201,116,0.22)', 'rgba(255,158,48,0)'];
+const TROUGH_TOP: [string, string] = ['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)'];
+// غِلالةُ الغائرِ: ظلٌّ من أعلاه وضوءُ الحافّةِ ينطبقُ على قاعِه
+const SUNK_IN: [string, string, string] = ['rgba(10,35,45,0.22)', 'rgba(10,35,45,0)', 'rgba(255,255,255,0.30)'];
+
 // ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
   const { lanes } = data;
@@ -112,7 +133,10 @@ function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: num
   const naCount = flat.filter((x) => x.b.kind === 'na').length;
   const next = upcoming[0] ?? null;                 // التاليَ في الدور (أبكرُ منتظِرٍ متوقَّع)
   const then = upcoming.slice(1, 3);                // الذين بعده (اثنان)
-  const nextBreak = flat.filter((x) => x.b.kind === 'break' && x.b.end > nowMin).sort((a, b) => a.b.start - b.b.start)[0]?.b ?? null;
+  // متى يُغلَقُ البابُ فعلًا: نهايةُ آخرِ علاجٍ على أيِّ كرسيّ. البريكُ ليس علاجًا،
+  // و«غيرُ المتاح» لم يُعالَجْ أصلًا — فلا يمدُّ أحدُهما اليومَ ولا يُحسَبُ آخِرَه.
+  const lastEnd = flat.reduce(
+    (m, x) => (x.b.kind === 'break' || x.b.kind === 'na') ? m : Math.max(m, x.b.end), -1);
   const caseOf = (p: Patient) => (p.treatment && p.treatment !== 'Treatment') ? p.treatment : 'Treatment';
 
   const eld = next?.b.kind === 'eld';
@@ -177,7 +201,7 @@ function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: num
       <View style={mini.statsRow}>
         <View style={mini.stat}><View style={[mini.dot, mini.dotServing]} /><Text style={mini.statTxt}>{serving.length} IN CHAIR</Text></View>
         <View style={mini.stat}><View style={[mini.dot, mini.dotWait]} /><Text style={mini.statTxt}>{upcoming.length} WAITING</Text></View>
-        {nextBreak ? <View style={mini.stat}><View style={[mini.dot, mini.dotBreak]} /><Text style={mini.statTxt}>{fmtHM(nextBreak.start)}</Text></View> : null}
+        {lastEnd >= 0 ? <View style={mini.stat}><View style={[mini.dot, mini.dotEnd]} /><Text style={mini.statTxt} numberOfLines={1}>ENDS {fmtHM(lastEnd)}</Text></View> : null}
         {naCount ? <View style={mini.stat}><View style={[mini.dot, mini.dotAway]} /><Text style={mini.statTxt}>{naCount} AWAY</Text></View> : null}
       </View>
     </View>
@@ -203,20 +227,47 @@ export type BlockActions = {
   onDone: (patientId: string) => void;
 };
 
-// ═══════════════ نظامُ ألوانِ الكروت المكبّرة ═══════════════
-// grad = خلفيّةٌ متدرّجة، bg = خلفيّةٌ مصمتة، ink = لونُ النصّ، badge = شارةُ الدور،
-// trk/fil = مسارُ التقدّمِ وامتلاؤه، shadow = ظلٌّ ملوَّنٌ للحالاتِ البارزة.
-type CardVis = { grad?: string[]; bg?: string; ink: string; badgeBg: string; badgeInk: string;
-  trk: string; fil: string; border?: string; dashed?: boolean; shadow?: string };
+// ═══════════════ الكروت: ثلاثةُ أعماقٍ لا ثمانيةُ ألوان ═══════════════
+// depth = موضعُ الكرتِ من سطحِ الورقة، وهو الفرقُ الأوّلُ الذي تراه العين:
+//   sunk = غاصَ في السطحِ وانطبقَ عليه ضوءُ الحافّة (ما مضى)
+//   rest = مستقرٌّ على السطحِ بظلٍّ قصيرٍ ووهجٍ من حالتِه (ما يجري الآن)
+//   air  = يحومُ فوقَه شفّافًا، وكلّما بَعُدَ دورُه ارتفعَ أكثرَ وخفَّ ظلُّه (ما لم يأتِ)
+// والحبرُ واحدٌ في الثلاثة، فالاسمُ يُقرأُ في كلِّ حال — واللونُ للحالةِ لا للخلفيّة.
+type Depth = 'sunk' | 'rest' | 'air';
+type CardVis = {
+  depth: Depth; bg?: string; grad?: [string, string]; glow?: [string, string];
+  border: string; ink: string; sub: string;
+  badgeBg?: string; badgeGrad?: [string, string]; badgeDash?: string; badgeInk: string;
+  trk: string; fil: string;
+};
 const CARD: { [k in Kind]?: CardVis } = {
-  done:     { bg: 'rgba(255,255,255,0.42)', ink: '#5A7079', badgeBg: 'rgba(90,112,121,0.55)', badgeInk: '#F3F7F8', trk: 'rgba(90,112,121,0.18)', fil: 'rgba(90,112,121,0.5)' },
-  lateDone: { grad: ['rgba(239,68,68,0.20)', 'rgba(239,68,68,0.11)'], ink: '#7E1D18', border: 'rgba(239,68,68,0.32)', badgeBg: 'rgba(126,29,24,0.65)', badgeInk: '#FDECEA', trk: 'rgba(126,29,24,0.16)', fil: 'rgba(126,29,24,0.55)' },
-  cur:      { grad: ['rgba(140,222,204,0.95)', 'rgba(104,197,177,0.82)'], ink: '#05302A', border: 'rgba(255,255,255,0.75)', badgeBg: 'rgba(5,48,42,0.85)', badgeInk: '#CFF3EA', trk: 'rgba(5,48,42,0.16)', fil: 'rgba(5,48,42,0.6)', shadow: '#09705C' },
-  over:     { grad: ['#F46057', '#E13A30'], ink: '#FFFFFF', border: 'rgba(255,255,255,0.35)', badgeBg: 'rgba(255,255,255,0.92)', badgeInk: '#C6362D', trk: 'rgba(255,255,255,0.28)', fil: 'rgba(255,255,255,0.92)', shadow: '#E13A30' },
-  fut:      { bg: 'rgba(255,255,255,0.26)', ink: '#093F36', border: 'rgba(14,124,102,0.42)', dashed: true, badgeBg: 'transparent', badgeInk: '#093F36', trk: 'rgba(14,124,102,0.18)', fil: 'transparent' },
-  eld:      { grad: ['rgba(252,198,60,0.92)', 'rgba(240,168,26,0.80)'], ink: '#6B3E0B', border: 'rgba(107,62,11,0.42)', dashed: true, badgeBg: 'transparent', badgeInk: '#6B3E0B', trk: 'rgba(107,62,11,0.18)', fil: 'transparent', shadow: '#BF830A' },
-  // غيرُ المتاحِ: كرتٌ مصمتٌ بلونٍ رماديٍّ-بنفسجيٍّ مميَّزٍ (تغيُّرُ لونٍ فقط، لا خفوتٌ ولا اختفاء) — يبقى حاضرًا كبقيّةِ الكروت
-  na:       { grad: ['#CBCDE6', '#B4B7D8'], ink: '#3B3F63', border: 'rgba(96,100,140,0.6)', badgeBg: 'rgba(59,63,99,0.85)', badgeInk: '#EEEFF8', trk: 'rgba(59,63,99,0.16)', fil: 'transparent' },
+  done:     { depth: 'sunk', bg: 'rgba(176,190,196,0.55)', border: 'rgba(255,255,255,0.35)',
+              ink: '#43585F', sub: '#6C838B', badgeBg: 'rgba(255,255,255,0.55)', badgeInk: '#5A7079',
+              trk: 'rgba(10,35,45,0.13)', fil: 'rgba(90,112,121,0.55)' },
+  lateDone: { depth: 'sunk', bg: 'rgba(206,160,155,0.52)', border: 'rgba(255,255,255,0.40)',
+              ink: '#6E2B26', sub: '#8A5A54', badgeBg: 'rgba(217,83,79,0.80)', badgeInk: '#FFFFFF',
+              trk: 'rgba(110,43,38,0.14)', fil: 'rgba(178,60,54,0.60)' },
+  cur:      { depth: 'rest', grad: ['rgba(255,255,255,0.94)', 'rgba(238,247,246,0.88)'],
+              glow: ['rgba(18,192,166,0.22)', 'rgba(18,192,166,0)'], border: 'rgba(255,255,255,0.95)',
+              ink: '#06322A', sub: '#3F6B62', badgeGrad: ['#12B39D', '#0B7F71'], badgeInk: '#FFFFFF',
+              trk: 'rgba(6,50,42,0.12)', fil: '#0E9F8C' },
+  over:     { depth: 'rest', grad: ['rgba(255,255,255,0.94)', 'rgba(250,240,238,0.90)'],
+              glow: ['rgba(238,84,68,0.26)', 'rgba(238,84,68,0)'], border: 'rgba(255,255,255,0.95)',
+              ink: '#5E1710', sub: '#8A4238', badgeGrad: ['#F4695C', '#C3311F'], badgeInk: '#FFFFFF',
+              trk: 'rgba(94,23,16,0.14)', fil: '#D9534F' },
+  fut:      { depth: 'air', bg: 'rgba(255,255,255,0.42)', border: 'rgba(255,255,255,0.92)',
+              ink: '#22434C', sub: '#5A7079', badgeBg: 'rgba(255,255,255,0.72)',
+              badgeDash: 'rgba(14,124,102,0.50)', badgeInk: '#0B7F71',
+              trk: 'rgba(18,35,42,0.10)', fil: 'transparent' },
+  eld:      { depth: 'air', bg: 'rgba(255,250,240,0.50)', border: 'rgba(240,190,90,0.85)',
+              ink: '#22434C', sub: '#7A6134', badgeBg: 'rgba(255,255,255,0.72)',
+              badgeDash: 'rgba(200,150,40,0.70)', badgeInk: '#8A6212',
+              trk: 'rgba(122,97,52,0.12)', fil: 'transparent' },
+  // غيرُ المتاحِ: يحومُ كغيرِه من المنتظِرين — تتغيّرُ حافّتُه وشارتُه فقط، فلا يختفي ولا يخفت
+  na:       { depth: 'air', bg: 'rgba(248,248,255,0.44)', border: 'rgba(168,172,215,0.80)',
+              ink: '#3B3F63', sub: '#565B8E', badgeBg: 'rgba(255,255,255,0.72)',
+              badgeDash: 'rgba(120,125,175,0.65)', badgeInk: '#565B8E',
+              trk: 'rgba(59,63,99,0.12)', fil: 'transparent' },
 };
 
 // وسمُ الحالةِ الناطق: نصٌّ يُغني عن قراءةِ اللون (متأخّرٌ +7، جارٍ 8 min left، إلخ)
@@ -286,10 +337,11 @@ function BlobField() {
 }
 
 // ═══════════════ كرتُ المريضِ في المخطّطِ المكبّر ═══════════════
-function Card({ b, left, width, nowMin, onPress }:
-  { b: Blk; left: number; width: number; nowMin: number; onPress: () => void }) {
+// lift = كم يرتفعُ الكرتُ عن السطحِ (للحائمِ وحدَه): يزدادُ مع بُعدِ الدور، ومعه يطولُ ظلُّه ويخفت.
+function Card({ b, left, width, top, height, lift, nowMin, onPress }:
+  { b: Blk; left: number; width: number; top: number; height: number; lift: number;
+    nowMin: number; onPress: () => void }) {
   const v = CARD[b.kind]!;
-  const pending = b.kind === 'fut' || b.kind === 'eld';   // شارةٌ مجوّفةٌ للمنتظِر
   const est = estMinutes(b.p);
   const dur = est;
   const caseType = (b.p.treatment && b.p.treatment !== 'Treatment') ? b.p.treatment : 'Treatment';
@@ -304,59 +356,67 @@ function Card({ b, left, width, nowMin, onPress }:
   // «غيرُ المتاح»: بدلَ وقتِ الانتهاء نعرضُ وقتَ ندائِه (لحظةَ صيرورتِه غيرَ متاح) — نُودِيَ ولم يكنْ حاضرًا
   const naMin = b.kind === 'na' ? minutesOfDay(b.p.na_at) : null;
   const bar = barInfo(b, nowMin);
+  // الظلُّ يقولُ الارتفاع: الغائرُ بلا ظلٍّ أصلًا، والمستقرُّ ظلُّه قصيرٌ كثيف، والحائمُ ظلُّه
+  // يطولُ ويخفتُ كلّما ارتفع. ونُخفّتُ الحائمَ البعيدَ قليلًا كي يُقرأَ الارتفاعُ على أندرويد أيضًا.
+  const shade = v.depth === 'sunk'
+    ? { shadowOpacity: 0, elevation: 0 }
+    : v.depth === 'rest'
+      ? { shadowColor: '#08202A', shadowOpacity: 0.30, shadowRadius: scale(22), shadowOffset: { width: 0, height: scale(12) }, elevation: 8 }
+      : { shadowColor: '#08202A', shadowOpacity: Math.max(0.08, 0.20 - lift * 0.006),
+          shadowRadius: scale(22) + lift, shadowOffset: { width: 0, height: scale(16) + lift }, elevation: 4 };
   return (
     <TouchableOpacity activeOpacity={0.75} onPress={onPress}
-      style={[cs.card, { left, width, borderColor: v.border ?? 'rgba(255,255,255,0.6)' },
-        v.dashed ? { borderStyle: 'dashed', borderWidth: scale(1.5) } : null,
-        v.shadow ? { shadowColor: v.shadow, shadowOpacity: 0.5, shadowRadius: scale(12), shadowOffset: { width: 0, height: scale(8) }, elevation: 6 }
-                 : { shadowColor: '#0A2834', shadowOpacity: 0.14, shadowRadius: scale(10), shadowOffset: { width: 0, height: scale(6) }, elevation: 3 }]}>
-      {/* طبقةٌ داخليّةٌ تُقصُّ (overflow) لتحتضنَ الخلفيّةَ والأقواسَ دونَ أن تبتلعَ ظلَّ الكرتِ الخارجيّ */}
+      style={[cs.card, { left, width, top, height, borderColor: v.border },
+        v.depth === 'sunk' ? cs.sunk : null,
+        v.depth === 'air' ? { opacity: Math.max(0.82, 1 - lift * 0.006) } : null,
+        shade]}>
+      {/* طبقةٌ داخليّةٌ تُقصُّ (overflow) لتحتضنَ الخلفيّةَ دونَ أن تبتلعَ ظلَّ الكرتِ الخارجيّ */}
       <View pointerEvents="none" style={[cs.clip, v.bg ? { backgroundColor: v.bg } : null]}>
-        {v.grad ? <LinearGradient colors={v.grad as any} start={{ x: 0, y: 0 }} end={{ x: 0.35, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
-        {/* أقواسُ الركنِ المتراكزة (نسيجُ الهويّة) */}
-        <View style={[cs.arc, { width: scale(44), height: scale(44), right: scale(-22), bottom: scale(-22), borderColor: v.ink, opacity: 0.16 }]} />
-        <View style={[cs.arc, { width: scale(74), height: scale(74), right: scale(-37), bottom: scale(-37), borderColor: v.ink, opacity: 0.11 }]} />
-        <View style={[cs.arc, { width: scale(108), height: scale(108), right: scale(-54), bottom: scale(-54), borderColor: v.ink, opacity: 0.07 }]} />
-        {/* التأثيرُ الضوئيّ: بريقٌ يتلاشى عندَ الحافّةِ العليا + وميضٌ زاويٌّ خفيفٌ من الأعلى */}
-        <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0)']} start={{ x: 0.2, y: 0 }} end={{ x: 0.7, y: 0.9 }} style={StyleSheet.absoluteFill} />
-        <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)', 'rgba(255,255,255,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={cs.gloss} />
-        <View style={[cs.spine, { backgroundColor: v.ink, opacity: v.grad ? 0.7 : 0.55 }]} />
+        {v.grad ? <LinearGradient colors={v.grad} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
+        {/* الغائرُ: ظلٌّ ينسكبُ من حافّتِه العليا، وضوءُ السطحِ ينطبقُ على قاعِه */}
+        {v.depth === 'sunk'
+          ? <LinearGradient colors={SUNK_IN} locations={[0, 0.42, 1]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+          : null}
+        {/* المستقرُّ: وهجُ حالتِه من ركنِه الأعلى */}
+        {v.glow ? <LinearGradient colors={v.glow} start={{ x: 0.1, y: 0 }} end={{ x: 0.72, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
+        {v.depth !== 'sunk' ? <View style={cs.gloss} /> : null}
       </View>
       <View style={cs.row1}>
-        <View style={[cs.badge, pending ? { borderWidth: scale(1.5), borderColor: v.badgeInk, borderStyle: 'dashed' } : { backgroundColor: v.badgeBg }]}>
+        <Text style={[cs.name, { color: v.ink }]} numberOfLines={1}>{b.p.name}</Text>
+        {/* الرقمُ يمينَ الاسمِ كما في كرتِ الدورِ واللوح */}
+        <View style={[cs.badge, v.badgeDash
+          ? { borderWidth: scale(1.3), borderStyle: 'dashed', borderColor: v.badgeDash, backgroundColor: v.badgeBg }
+          : v.badgeGrad ? null : { backgroundColor: v.badgeBg }]}>
+          {v.badgeGrad ? <LinearGradient colors={v.badgeGrad} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={cs.badgeFill} /> : null}
           <Text style={[cs.badgeTxt, { color: v.badgeInk }]}>{b.p.queue_number}</Text>
         </View>
-        <Text style={[cs.name, { color: v.ink }]} numberOfLines={1}>{b.p.name}</Text>
-        {/* أعلى يمينِ الكرت بجانبِ الاسم: وسمُ الوقتِ الفعليِّ بعدَ الإنجاز (أخضرُ = المستغرَق، أحمرُ = +التأخير)، وإلّا شارةُ الهويّةِ لكبيرِ السنّ/غيرِ المتاح */}
+      </View>
+      {/* تحتَ الاسم: حاويةُ الوقتِ أمامَ نوعِ الحالة (Filling / Extraction …) — وسطرُ End time يبقى مكانَه بالأسفل. */}
+      <View style={cs.metaRow}>
+        <Text style={[cs.mCase, { color: v.sub }]} numberOfLines={1}>{caseType}</Text>
+        {/* بعدَ الإنجاز: الوقتُ الفعليُّ المستغرَقُ (أو +التأخير) بدلَ المدّةِ المقدَّرة */}
         {showActual ? (
           <View style={[cs.tPill, b.kind === 'lateDone' ? cs.actualLate : cs.actualEarly]}>
             <Text style={[cs.tPillTxt, { color: '#FFFFFF' }]} numberOfLines={1}>{actualTagText}</Text>
           </View>
-        ) : (b.kind === 'eld') ? (
-          <View style={cs.chip}>
-            <Text style={[cs.chipTxt, { color: v.ink }]} numberOfLines={1}>{chipOf(b, nowMin)}</Text>
+        ) : (
+          <View style={[cs.tPill, { backgroundColor: v.trk }]}>
+            <Text style={[cs.tPillTxt, { color: v.sub }]} numberOfLines={1}>{pillText}</Text>
           </View>
-        ) : null}
+        )}
       </View>
-      {/* تحتَ الاسم: حاويةُ الوقتِ أمامَ نوعِ الحالة (Filling / Extraction …) — وسطرُ End time يبقى مكانَه بالأسفل.
-          «غيرُ المتاح» يعرضُ نفسَ معلوماتِ المنتظِر — يتغيّرُ لونُ الكرتِ فقط. */}
-      <View style={cs.metaRow}>
-        <Text style={[cs.mCase, { color: v.ink }]} numberOfLines={1}>{caseType}</Text>
-        <View style={[cs.tPill, { backgroundColor: v.trk }]}>
-          <Text style={[cs.tPillTxt, { color: v.ink }]} numberOfLines={1}>{pillText}</Text>
-        </View>
-      </View>
+      {/* شريطُ الوقتِ المتبقّي — كما هو */}
       <View style={[cs.bar, { backgroundColor: v.trk }]}>
         {!bar.empty ? <View style={[cs.barFill, { width: `${bar.fill}%` as any, backgroundColor: v.fil }]} /> : null}
         {!bar.empty && bar.tick >= 0 && bar.tick < 99.5 ? <View style={[cs.barTick, { left: `${bar.tick}%` as any, backgroundColor: v.ink }]} /> : null}
       </View>
       {b.kind === 'na'
-        ? <Text style={[cs.time, { color: v.ink }]} numberOfLines={1}>{naMin != null ? `Called ${fmtHM(naMin)}` : 'Not available'}</Text>
-        : <Text style={[cs.time, { color: v.ink }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}End time {fmtHM(endMin)}</Text>}
+        ? <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{naMin != null ? `Called ${fmtHM(naMin)}` : 'Not available'}</Text>
+        : <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}End time {fmtHM(endMin)}</Text>}
       {b.p.doctor_name ? (
         <View style={cs.docRow}>
-          <Ionicons name="person" size={scale(9)} color={v.ink} />
-          <Text style={[cs.doc, { color: v.ink }]} numberOfLines={1}>{b.p.doctor_name}</Text>
+          <Ionicons name="person" size={scale(9)} color={v.sub} />
+          <Text style={[cs.doc, { color: v.sub }]} numberOfLines={1}>{b.p.doctor_name}</Text>
         </View>
       ) : null}
     </TouchableOpacity>
@@ -402,12 +462,20 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     setBreakActionOrig(null);
   };
   const HOUR_W = scale(200);                        // اتّساعُ الساعةِ الواحدة — أوسعُ كي يقتربَ عرضُ الكرتِ من امتدادِه الزمنيِّ الحقيقيّ (فيبقى داخلَ نطاقِ ساعتِه)
-  // topH = رأسُ الجدول: شريطٌ عريضٌ يحملُ محورَ الأوقاتِ الثابت (7:00 8:00 …) مرجعًا للكلِّ العيادات
-  const laneH = scale(96), stripH = scale(17), topH = scale(38), labelW = scale(64);
+  // topH = رأسُ الجدول: حافّةٌ مطويّةٌ فوقَ الورقةِ تحملُ محورَ الأوقاتِ الثابت (7:00 8:00 …) مرجعًا لكلِّ العيادات
+  // laneH اتّسعَ عن ٩٦: الكرتُ الحائمُ يرتفعُ عن مستقرِّه، فيلزمُه فراغٌ فوقَه لا يخرجُ منه إلى صفِّ الأوقات
+  const laneH = scale(114), stripH = scale(17), topH = scale(46), labelW = scale(64);
+  const CARD_H = scale(84);                          // ارتفاعُ الكرتِ ثابتٌ، وموضعُه في الصفِّ يقولُ عمقَه
+  const TROUGH_H = scale(38);                        // المَجْرى أقصرُ من الكرتِ فيُقرأُ حفرًا لا صندوقًا
+  const liftOf = (rank: number) => scale(2) + Math.min(rank, 3) * scale(4);   // ارتفاعُ الحائمِ بحسبِ بُعدِ دورِه
   const unitH = stripH + laneH;                    // شريطُ الأوقات + كروتُ العيادة = وحدةٌ واحدة
   const GAP = scale(8);                             // فجوةٌ دنيا بين كلِّ كرتَين متجاورَين (كي لا تلتصقَ الكروت)
   const MIN_IDLE = scale(12);                       // حدٌّ أدنى مرئيٌّ لخيطِ الفراغِ (للفجواتِ الصغيرةِ جدًّا فقط) — لا يُضافُ فوقَ المتناسبِ، فتبقى المسافةُ دقيقةً للأكبر
-  const minWOf = (k: Kind): number => (k === 'cur' || k === 'over') ? scale(120) : scale(132);   // الجاري صارَ كرتًا كاملًا (يمشي عليه الخطُّ) فيحتاجُ عرضًا مقروءًا
+  // العرضُ الأدنى المقروء. البريكُ الثابتُ صارَ طيّةً رفيعةً لا كرتًا، فلا يحجزُ عرضَ كرتٍ كاملٍ
+  // بعدَه (وإلّا انفتحَ خلفَ الطيّةِ فراغٌ زائفٌ)؛ والمرنُ مَجْرًى يسعُ وقتَه ومدّتَه.
+  const minWOf = (b: Blk): number =>
+    b.kind === 'break' ? (b.fixed ? scale(30) : scale(96))
+      : (b.kind === 'cur' || b.kind === 'over') ? scale(120) : scale(132);   // الجاري صارَ كرتًا كاملًا (يمشي عليه الخطُّ) فيحتاجُ عرضًا مقروءًا
   const hours: number[] = [];
   for (let h = dayStart / 60; h <= dayEnd / 60; h++) hours.push(h);
 
@@ -446,10 +514,10 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
         const cand = p.end < t
           ? (pDone
               ? (xm.get(p.end) as number) + Math.max(GAP, idleFloor)
-              : Math.max(xpS + minWOf(p.kind) + GAP, (xm.get(p.end) as number) + Math.max(GAP, idleFloor)))
+              : Math.max(xpS + minWOf(p) + GAP, (xm.get(p.end) as number) + Math.max(GAP, idleFloor)))
           : (pDone
               ? xpS                                          // منجَزٌ متتالٍ بلا فراغ — لا قيدَ يمينَه، والفجوةُ الدنيا (GAP) تُدارُ في الرسمِ (rightBound)
-              : Math.max(xpS + minWOf(p.kind) + GAP, xpS + ((p.end - p.start) / 60) * HOUR_W + GAP));
+              : Math.max(xpS + minWOf(p) + GAP, xpS + ((p.end - p.start) / 60) * HOUR_W + GAP));
         if (cand > xx) xx = cand;
       }
       xm.set(t, xx);
@@ -527,10 +595,10 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     return l.blocks.map((b, i) => {
       const left = xAt(b.start);
       const succ = l.blocks[i + 1];
-      const rawW = Math.max(minWOf(b.kind), xAt(b.end) - left);
+      const rawW = Math.max(minWOf(b), xAt(b.end) - left);
       const chipRoom = (succ && succ === chipWall && l.beyond.length > 0) ? CHIP_W + GAP : 0;
       const capW = succ ? (xAt(succ.start) - GAP - chipRoom - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
-      let width = Math.max(minWOf(b.kind), Math.min(rawW, capW));
+      let width = Math.max(minWOf(b), Math.min(rawW, capW));
       // ── حائطُ الرسم ──
       // الكرتُ يُرسَمُ بعرضٍ أدنى مقروءٍ مهما قصُرَت مدّتُه، فكرتُ نصفِ ساعةٍ يُطلى أعرضَ من
       // نصفِ ساعة. ولهذا كانت كروتُ الانتظارِ تعبرُ خطَّ التبديلِ **رسمًا** وإن كان جدولُها
@@ -555,7 +623,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     for (let i = laid.length - 1; i >= 0; i--) {
       const o = laid[i];
       if (o.b.kind !== 'done' && o.b.kind !== 'lateDone') { rightBound = o.left - GAP; continue; }
-      const desiredW = Math.max(minWOf(o.b.kind), (estMinutes(o.b.p) / 60) * HOUR_W);   // حجمُه الطبيعيُّ (بالمدّةِ المحدَّدة) فلا ينكمشُ بعدَ الإنجاز
+      const desiredW = Math.max(minWOf(o.b), (estMinutes(o.b.p) / 60) * HOUR_W);   // حجمُه الطبيعيُّ (بالمدّةِ المحدَّدة) فلا ينكمشُ بعدَ الإنجاز
       const right = Math.min(xAt(o.b.end), rightBound);                      // يمينُه = وقتُ إنجازِه، أو ما قبلَ تاليه
       const left = Math.max(0, right - desiredW);                            // لا يُدفَعُ خارجَ الحافّةِ اليسرى — يتقلّصُ بدلَ أن يختفي
       o.left = left; o.width = Math.max(scale(1), right - left);
@@ -579,6 +647,49 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     }
     return ticks;
   });
+
+  // طيّاتُ الورقة: البريكُ الثابتُ (تبديلُ الشفت) واحدٌ لكلِّ العياداتِ في وقتِه نفسِه، فلا معنى
+  // لرسمِه كرتًا يتكرّرُ في كلِّ صفّ — هو **حدٌّ** لا استراحة. نأخذُه من أوّلِ عيادةٍ ونرسمُه
+  // عمودًا واحدًا يعبرُ الصفوفَ كلَّها كطيّةٍ في الورقة.
+  const folds = (lanes[0]?.blocks ?? []).filter((b) => b.kind === 'break' && b.fixed);
+
+  // ── المَجْرى: البريكُ المرن ──
+  // حفرةٌ في الورقةِ لا كرت، وأقصرُ من الكروتِ فيُقرأُ حفرًا: شفةٌ مظلمةٌ أعلاها، وضوءٌ كهرمانيٌّ
+  // يصعدُ من قاعِها، وشفةٌ مضيئةٌ في أسفلِها حيثُ يقعُ الضوء. ولا أيقونةَ فيها — وقتُها محفورٌ في وسطِها.
+  // وإن أزاحَه انشغالٌ حقيقيٌّ بقيَ خيالُه منقّطًا في موضعِه الأوّلِ وسهمٌ رفيعٌ يقولُ إلى أينَ ذهب.
+  const renderTrough = (b: Blk, left: number, width: number, key: number) => {
+    const tTop = (laneH - TROUGH_H) / 2;
+    const moved = b.orig != null && b.orig !== b.start;
+    const gx = moved ? xAt(b.orig as number) : 0;
+    const slideX = gx + width + scale(4);
+    const slideW = left - slideX - scale(7);
+    return (
+      <React.Fragment key={key}>
+        {moved ? (
+          <>
+            <View pointerEvents="none" style={[full.ghost, { left: gx, width, top: tTop, height: TROUGH_H }]} />
+            <Text pointerEvents="none" numberOfLines={1} style={[full.ghostT, { left: gx, width, top: tTop - scale(13) }]}>was {fmtHM(b.orig as number)}</Text>
+            {slideW > scale(8) ? (
+              <>
+                <View pointerEvents="none" style={[full.slide, { left: slideX, width: slideW, top: tTop + TROUGH_H / 2 }]} />
+                <View pointerEvents="none" style={[full.slideHead, { left: left - scale(7), top: tTop + TROUGH_H / 2 - scale(3.5) }]} />
+              </>
+            ) : null}
+          </>
+        ) : null}
+        <TouchableOpacity activeOpacity={0.85} style={[full.trough, { left, width, top: tTop, height: TROUGH_H }]}
+          onPress={() => { if (!readOnly) setBreakActionOrig(b.orig ?? b.start); }}>
+          <LinearGradient colors={TROUGH_BASE} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={TROUGH_LIGHT} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={TROUGH_FOCUS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={TROUGH_TOP} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.troughTop} />
+          <View pointerEvents="none" style={full.lipT} />
+          <View pointerEvents="none" style={full.lipB} />
+          <Text style={full.troughTxt} numberOfLines={1}>{fmtHM(b.start)}   ·   {Math.round(b.end - b.start)} min</Text>
+        </TouchableOpacity>
+      </React.Fragment>
+    );
+  };
 
   // حِملُ كلِّ عيادة (نسبةُ امتلاءِ اليوم) + هل هي مشغولةٌ الآن — لعمودِ العياداتِ الأيسر
   const laneMeta = lanes.map((l) => {
@@ -652,15 +763,24 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               وإن كثُرتِ العياداتُ حتّى تجاوزتِ الشاشةَ يتقيّدُ بارتفاعِها ويعملُ التمريرُ العموديّ. */}
           <View style={[full.panelShadow, { maxHeight: topH + lanes.length * unitH + scale(2) }]}>
           <View style={full.panel}>
+            <LinearGradient colors={MINI_SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} />
             <View pointerEvents="none" style={full.panelTopHi} />
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
             <View style={{ flexDirection: 'row', height: Math.max(topH + lanes.length * unitH, scale(1)) }}>
               {/* عمودُ العيادات: رقمٌ شبحيٌّ كبيرٌ + نقطةُ انشغالٍ + شريطُ امتلاء — بفاصلٍ رأسيٍّ عن الجدول */}
               <View style={[full.railCol, { width: labelW }]}>
-                {/* ركنُ الرأس: نفسُ خلفيّةِ محورِ الأوقات كي يمتدَّ الرأسُ عرضَ الجدولِ كلِّه (يبقى ثابتًا عند التمرير) */}
+                {/* ركنُ الرأس: نفسُ حافّةِ الأوقاتِ المطويّةِ كي يمتدَّ الرأسُ عرضَ الجدولِ كلِّه (يبقى ثابتًا عند التمرير) */}
                 <View style={[full.railHead, { height: topH }]}>
-                  <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.12)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <LinearGradient colors={HEAD_G} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <Text style={full.cornerL}>CHAIRS</Text>
+                  <View style={full.cornerRow}>
+                    <Text style={full.cornerN}>{lanes.length}</Text>
+                    <Text style={full.cornerS}>today</Text>
+                  </View>
+                  <View pointerEvents="none" style={full.headCrease} />
                 </View>
+                <LinearGradient pointerEvents="none" colors={HEAD_SHADE} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                  style={[full.headShade, { top: topH }]} />
                 {lanes.map((l, li) => (
                   <View key={l.clinic} style={[full.railCell, { height: unitH }]}>
                     <View style={[full.railDot, !laneMeta[li].busy && full.railDotFree]} />
@@ -680,28 +800,42 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                 contentContainerStyle={{ width: contentW }}
               >
                 <View style={{ width: contentW, height: topH + lanes.length * unitH }}>
-                  {/* خلفيّةُ المستقبل: نقشٌ قطريٌّ يمينَ خطِّ الآنَ (تنبّؤٌ لا واقع) */}
+                  {/* المستقبلُ نصفُ ورقةٍ أعلى: حجابٌ فاتحٌ يبدأُ عندَ الآنَ ويخفُّ سريعًا — يُفتِّحُ الأرضَ ولا يُغرِقُها */}
                   {contentW > nowX + 2 ? (
-                    <Svg pointerEvents="none" style={{ position: 'absolute', top: topH, left: nowX }} width={contentW - nowX} height={lanes.length * unitH}>
-                      <Defs>
-                        <Pattern id="futHatch" width={7} height={7} patternUnits="userSpaceOnUse">
-                          <SvgLine x1={0} y1={7} x2={7} y2={0} stroke="rgba(18,58,68,0.06)" strokeWidth={1} />
-                        </Pattern>
-                      </Defs>
-                      <SvgRect x={0} y={0} width={contentW - nowX} height={lanes.length * unitH} fill="url(#futHatch)" />
-                    </Svg>
+                    <LinearGradient pointerEvents="none" colors={VEIL} locations={[0, 0.14, 1]}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                      style={{ position: 'absolute', top: topH, left: nowX, width: contentW - nowX, height: lanes.length * unitH }} />
                   ) : null}
-                  {/* رأسُ الجدول: محورُ أوقاتٍ ثابتٌ (7:00 8:00 …) يمتدُّ عرضَ الجدولِ كلِّه؛ والأعمدةُ الزمنيّةُ تنزلُ خلالَه */}
+                  {/* رأسُ الجدول: حافّةٌ مطويّةٌ تحملُ الساعاتِ الثابتة — رقمٌ محفورٌ كبيرٌ ودقائقُه مرفوعةٌ بجانبِه،
+                      ومسطرةٌ تحتَه: علامةٌ للساعةِ وأقصرُ للنصفِ وأخفتُ للرُّبع، والساعةُ التي أنتَ فيها مُضاءة. */}
                   <View pointerEvents="none" style={[full.ruler, { width: contentW, height: topH }]}>
-                    <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.12)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-                    {hours.map((h) => (
-                      <React.Fragment key={'r' + h}>
-                        <Text style={[full.rTick, { left: xAt(h * 60) }]} numberOfLines={1}>{h}:00</Text>
-                        <View pointerEvents="none" style={[full.rTickMark, { left: xAt(h * 60) }]} />
-                        {h * 60 + 30 <= dayEnd ? <View pointerEvents="none" style={[full.rHalf, { left: xAt(h * 60 + 30) }]} /> : null}
-                      </React.Fragment>
-                    ))}
+                    <LinearGradient colors={HEAD_G} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                    {hours.map((h) => {
+                      const on = h === Math.floor(nowMin / 60);
+                      const hx = xAt(h * 60);
+                      return (
+                        <React.Fragment key={'r' + h}>
+                          {on ? (
+                            <LinearGradient colors={HOUR_ON} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                              style={[full.hourOn, { left: hx, width: Math.max(scale(20), xAt(Math.min(h * 60 + 60, dayEnd)) - hx) }]} />
+                          ) : null}
+                          <View style={[full.hNumWrap, { left: hx - scale(22) }]}>
+                            <Text style={[full.hNum, on && full.hNumOn]} numberOfLines={1}>{h}</Text>
+                            <Text style={[full.hMin, on && full.hMinOn]} numberOfLines={1}>00</Text>
+                          </View>
+                          {on ? <View style={[full.hUnder, { left: hx - scale(13) }]} /> : null}
+                          <View style={[full.tickH, { left: hx }]} />
+                          {h * 60 + 30 <= dayEnd ? <View style={[full.tickM, { left: xAt(h * 60 + 30) }]} /> : null}
+                          {h * 60 + 15 <= dayEnd ? <View style={[full.tickQ, { left: xAt(h * 60 + 15) }]} /> : null}
+                          {h * 60 + 45 <= dayEnd ? <View style={[full.tickQ, { left: xAt(h * 60 + 45) }]} /> : null}
+                        </React.Fragment>
+                      );
+                    })}
                   </View>
+                  {/* الكسرةُ وظلُّها: بها يبدو الرأسُ مطويًّا فوقَ الجدولِ لا مرسومًا عليه */}
+                  <View pointerEvents="none" style={[full.creaseLine, { top: topH - 1, width: contentW }]} />
+                  <LinearGradient pointerEvents="none" colors={HEAD_SHADE} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                    style={[full.shadeBand, { top: topH, width: contentW }]} />
                   {/* خطوطُ التقسيم: أعمدةُ الساعاتِ الرأسيّةُ تمتدُّ من الرأسِ إلى أسفلِ الجدول (top:0) + فواصلُ العيادات الأفقيّة */}
                   {hours.map((h) => <View key={'gv' + h} pointerEvents="none" style={[full.gridV, { left: xAt(h * 60), top: 0 }]} />)}
                   {lanes.map((l, li) => <View key={'gh' + li} pointerEvents="none" style={[full.gridH, { top: topH + li * unitH, width: contentW }]} />)}
@@ -756,52 +890,81 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                               </View>
                             </View>
                           ) : null}
-                          {/* خيوطُ الفراغِ الصامتةُ بين مريضَين — تظهرُ لأيِّ فراغٍ ≥ دقيقةٍ واحدة، وطولُها متناسبٌ مع الوقتِ الحقيقيّ */}
+                          {/* الفراغُ محفورٌ في الورقة: مَجْرًى رفيعٌ يلمعُ قاعُه، ومدّتُه فوقَه — لأيِّ فراغٍ ≥ دقيقة */}
                           {laid.map((o, i) => {
                             if (i === 0 || o.idle < 1) return null;
                             const prev = laid[i - 1];
                             const gx = prev.left + prev.width;
                             const gw = o.left - gx;
                             if (gw < scale(5)) return null;
-                            const lineW = Math.max(scale(1), gw - scale(8));
                             return (
                               <React.Fragment key={'idle' + i}>
-                                {/* الوقتُ الحقيقيُّ المتاحُ فوقَ الخيط (بين مريضَين، أو بين آخرِ مريضٍ والبريك) — يظهرُ دائمًا ولو دقيقة */}
-                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + gw / 2 - scale(28), width: scale(56), top: laneH / 2 - scale(15) }]}>{fmtGap(o.idle)}</Text>
-                                {/* خيطُ النقطِ المتّصلُ عبرَ كاملِ المسافة (svg — لا ينقطعُ مهما بَعُدت) */}
-                                <Svg pointerEvents="none" style={{ position: 'absolute', left: gx + scale(4), top: laneH / 2 - scale(1), width: lineW, height: scale(3) }} width={lineW} height={scale(3)}>
-                                  <SvgLine x1={0} y1={scale(1.5)} x2={lineW} y2={scale(1.5)} stroke="rgba(140,160,168,0.75)" strokeWidth={scale(2)} strokeDasharray={`${scale(2)} ${scale(5)}`} strokeLinecap="round" />
-                                </Svg>
+                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + gw / 2 - scale(28), width: scale(56), top: laneH / 2 - scale(17) }]}>{fmtGap(o.idle)}</Text>
+                                <View pointerEvents="none" style={[full.groove, { left: gx + scale(6), width: Math.max(scale(1), gw - scale(12)), top: laneH / 2 - scale(2.5) }]} />
                               </React.Fragment>
                             );
                           })}
-                          {/* الكتل: استراحةٌ كريميّةٌ أو كرتُ مريض */}
-                          {laid.map(({ b, left, width }, i) => {
-                            if (b.kind === 'break') {
-                              const moved = b.orig != null && b.orig !== b.start;
+                          {/* الكتل: مَجْرى الاستراحةِ المرنةِ أو كرتُ مريض — والبريكُ الثابتُ طيّةٌ تُرسَمُ فوقَ الصفوفِ كلِّها */}
+                          {(() => {
+                            let air = 0;                       // ترتيبُ الحائمِ في هذه العيادة (يرفعُه أكثرَ كلّما بَعُد)
+                            return laid.map(({ b, left, width }, i) => {
+                              if (b.kind === 'break') {
+                                if (b.fixed) return null;      // الطيّةُ تُرسَمُ مرّةً واحدةً بعدَ الصفوف
+                                return renderTrough(b, left, width, i);
+                              }
+                              const lift = CARD[b.kind]!.depth === 'air' ? liftOf(++air) : 0;
                               return (
-                                <TouchableOpacity key={i} activeOpacity={0.8} style={[full.brk, b.fixed && full.brkFixed, { left, width }]}
-                                  onPress={() => { if (!readOnly) setBreakActionOrig(b.orig ?? b.start); }}>
-                                  <View style={[full.brkChip, b.fixed && full.brkChipFixed]}><Text style={full.brkChipTxt}>{b.fixed ? '🔒' : '☕'}</Text></View>
-                                  <Text style={[full.brkS, b.fixed && full.brkSFixed]}>{fmtHM(b.start)} · {Math.round(b.end - b.start)} min</Text>
-                                  {b.fixed
-                                    ? <Text style={full.brkFixedTag}>Fixed</Text>
-                                    : moved ? <Text style={full.brkMoved}>was <Text style={full.brkMovedOld}>{fmtHM(b.orig!)}</Text></Text> : null}
-                                </TouchableOpacity>
+                                <Card key={i} b={b} left={left} width={width}
+                                  top={(laneH - CARD_H) / 2 - lift} height={CARD_H} lift={lift}
+                                  nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }} />
                               );
-                            }
-                            return <Card key={i} b={b} left={left} width={width} nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }} />;
-                          })}
+                            });
+                          })()}
                         </View>
                       </React.Fragment>
                     );
                   })}
-                  {/* هالةُ خطِّ الآنَ ثمّ الخطُّ ثمّ الوسم */}
-                  <LinearGradient pointerEvents="none" colors={['rgba(125,211,192,0)', 'rgba(125,211,192,0.34)', 'rgba(125,211,192,0)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ position: 'absolute', top: topH, bottom: 0, left: nowX - scale(32), width: scale(64) }} />
-                  <View pointerEvents="none" style={{ position: 'absolute', top: topH, bottom: 0, left: nowX, width: scale(2), backgroundColor: TEAL_INK, shadowColor: TEAL_INK, shadowOpacity: 0.5, shadowRadius: scale(6), shadowOffset: { width: 0, height: 0 }, elevation: 4 }} />
-                  <View pointerEvents="none" style={[full.nowPill, { left: Math.max(0, nowX - scale(26)) }]}>
-                    <Text style={full.nowPillTxt}>Now {fmtHM(nowMin)}</Text>
-                  </View>
+                  {/* ═══ الطيّة: تبديلُ الشفت ═══
+                      ظلٌّ يسبقُها، ثمّ الورقةُ تنكسرُ، ثمّ كسرةٌ بيضاءُ تلتقطُ الضوءَ وظلٌّ بعدَها —
+                      فيُرى بلمحةٍ لماذا وقفَ الدورُ عندها. وبالنقرِ تُفتَحُ نافذةُ نوعِ البريك. */}
+                  {folds.map((fb, fi) => {
+                    const fx = xAt(fb.start), fw = Math.max(scale(14), xAt(fb.end) - fx);
+                    return (
+                      <React.Fragment key={'fold' + fi}>
+                        <LinearGradient pointerEvents="none" colors={FOLD_PRE} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                          style={{ position: 'absolute', left: Math.max(0, fx - scale(28)), width: scale(28), top: topH, height: lanes.length * unitH }} />
+                        <TouchableOpacity activeOpacity={0.85} disabled={!!readOnly}
+                          onPress={() => setBreakActionOrig(fb.orig ?? fb.start)}
+                          style={{ position: 'absolute', left: fx, width: fw, top: topH, height: lanes.length * unitH }}>
+                          <LinearGradient colors={FOLD_BAND} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
+                          <Text numberOfLines={1} style={[full.foldTx, { left: (fw - scale(96)) / 2, width: scale(96) }]}>SHIFT · {fmtHM(fb.start)}</Text>
+                        </TouchableOpacity>
+                        <View pointerEvents="none" style={[full.foldLine, { left: fx + fw, height: topH + lanes.length * unitH }]} />
+                        <LinearGradient pointerEvents="none" colors={FOLD_POST} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                          style={{ position: 'absolute', left: fx + fw, width: scale(36), top: topH, height: lanes.length * unitH }} />
+                      </React.Fragment>
+                    );
+                  })}
+
+                  {/* ═══ حدُّ الماء (الخطُّ الزمنيّ) ═══
+                      ليس خطًّا مرسومًا بل حافّةَ سطح: وهجٌ حولَها، وحلقاتُ تموُّجٍ في كلِّ صفّ،
+                      ثمّ ظلُّها الرفيعُ إلى الوراءِ وشفتُها البيضاءُ تلتقطُ الضوء. */}
+                  <LinearGradient pointerEvents="none" colors={BLOOM} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={{ position: 'absolute', top: topH, height: lanes.length * unitH, left: nowX - scale(30), width: scale(60) }} />
+                  {lanes.map((l, li) => {
+                    const mid = topH + li * unitH + stripH + laneH / 2;
+                    return [scale(20), scale(34), scale(50)].map((r, ri) => (
+                      <View key={`rp${li}-${ri}`} pointerEvents="none"
+                        style={[full.ripple, { left: nowX - r / 2, top: mid - r / 2, width: r, height: r, borderRadius: r / 2, opacity: 0.9 - ri * 0.26 }]} />
+                    ));
+                  })}
+                  <View pointerEvents="none" style={[full.wBack, { left: nowX - scale(1.5), top: topH, height: lanes.length * unitH }]} />
+                  <View pointerEvents="none" style={[full.wLip, { left: nowX, top: topH, height: lanes.length * unitH }]} />
+                  <View pointerEvents="none" style={[full.wTip, { left: nowX - scale(4.5), top: topH - scale(11) }]} />
+                  <LinearGradient pointerEvents="none" colors={['#12B39D', '#0B7A6C']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}
+                    style={[full.wMark, { left: Math.max(0, nowX - scale(27)), top: topH - scale(28) }]}>
+                    <Text style={full.wMarkTxt}>{fmtHM(nowMin)}</Text>
+                  </LinearGradient>
                 </View>
               </ScrollView>
             </View>
@@ -1347,15 +1510,16 @@ const mini = scaledStyleSheet({
   emptyBig: { fontSize: 17, fontWeight: '800', color: '#12232A', letterSpacing: -0.4 },
   emptySub: { marginTop: 4, fontSize: 11.5, fontWeight: '600', color: '#5A7079' },
 
+  // الفجوةُ ١١ لا ١٣: «ENDS 17:40» أطولُ ممّا كان مكانَه، والسطرُ لا يحتملُ التفافًا
   statsRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 'auto',
+    flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 'auto',
     paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(18,35,42,0.10)',
   },
   stat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   dot: { width: 6.5, height: 6.5, borderRadius: 4 },
   dotServing: { backgroundColor: '#8A5CD6' },
   dotWait: { backgroundColor: 'rgba(18,35,42,0.28)' },
-  dotBreak: { backgroundColor: '#D08A1E' },
+  dotEnd: { backgroundColor: '#D08A1E' },
   dotAway: { backgroundColor: '#93A5AD' },
   statTxt: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.1, color: '#5A7079' },
 }) as any;
@@ -1393,18 +1557,40 @@ const full = scaledStyleSheet({
   simHint: { fontSize: 11, fontWeight: '700', color: '#0E7C66', textAlign: 'center', paddingHorizontal: 22, paddingBottom: 8 },
   // ── اللوحُ الزجاجيّ + عمودُ العيادات ──
   panelShadow: { flex: 1, marginHorizontal: 14, marginBottom: 12, borderRadius: 28, shadowColor: '#0A2834', shadowOpacity: 0.32, shadowRadius: 22, shadowOffset: { width: 0, height: 16 }, elevation: 10 },
-  panel: { flex: 1, borderRadius: 28, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.34)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.75)' },
+  panel: { flex: 1, borderRadius: 28, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.80)' },
   panelTopHi: { position: 'absolute', top: 0, left: 22, right: 22, height: 1, backgroundColor: 'rgba(255,255,255,0.9)', zIndex: 5 },
   gridV: { position: 'absolute', bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(18,58,68,0.05)' },
   // فاصلٌ أفقيٌّ واضحٌ بين العيادات (كان خافتًا جدًّا فلا يُرى) — يمتدُّ عرضَ الجدولِ فوقَ كلِّ عيادة
   gridH: { position: 'absolute', left: 0, height: 1, backgroundColor: 'rgba(18,58,68,0.13)' },
-  // ── رأسُ الجدول: محورُ الأوقاتِ الثابت (7:00 8:00 …) ──
+
+  // ── رأسُ الجدول: حافّةٌ مطويّةٌ تحملُ الساعاتِ الثابتة ──
+  // الساعةُ رقمٌ محفورٌ (حبرٌ داكنٌ وضوءٌ أبيضُ تحتَه) ودقائقُها صغيرةٌ مرفوعةٌ بجانبِه، فتُقرأُ في لمحة.
   ruler: { position: 'absolute', top: 0, left: 0 },
-  rTick: { position: 'absolute', top: 8, fontSize: 10.5, fontWeight: '800', color: '#8CA0A8' },
-  rTickMark: { position: 'absolute', top: 25, width: 1, height: 11, backgroundColor: 'rgba(18,58,68,0.09)' },
-  rHalf: { position: 'absolute', top: 30, width: 1, height: 6, backgroundColor: 'rgba(18,58,68,0.05)' },
+  hourOn: { position: 'absolute', top: 0, bottom: 0, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
+  hNumWrap: { position: 'absolute', top: 7, width: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start' },
+  hNum: { fontSize: 15, lineHeight: 17, fontWeight: '800', letterSpacing: -0.6, color: '#2A3E46',
+    textShadowColor: 'rgba(255,255,255,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+  hNumOn: { color: '#0B7F71' },
+  hMin: { marginLeft: 1.5, fontSize: 8.5, lineHeight: 10, fontWeight: '800', letterSpacing: 0.3, color: '#93A6AD' },
+  hMinOn: { color: '#4FA898' },
+  hUnder: { position: 'absolute', top: 27, width: 26, height: 2.5, borderRadius: 2, backgroundColor: 'rgba(14,159,140,0.55)' },
+  tickH: { position: 'absolute', top: 33, width: 1, height: 11, backgroundColor: 'rgba(18,58,68,0.26)' },
+  tickM: { position: 'absolute', top: 37, width: 1, height: 7, backgroundColor: 'rgba(18,58,68,0.13)' },
+  tickQ: { position: 'absolute', top: 40, width: 1, height: 4, backgroundColor: 'rgba(18,58,68,0.07)' },
+  // الكسرةُ وظلُّها — بها يبدو الرأسُ مطويًّا فوقَ الورقةِ لا مرسومًا عليها
+  creaseLine: { position: 'absolute', left: 0, height: 1, backgroundColor: CREASE, zIndex: 2 },
+  shadeBand: { position: 'absolute', left: 0, height: 6, zIndex: 2 },
+  headCrease: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, backgroundColor: CREASE },
+  headShade: { position: 'absolute', left: 0, right: 0, height: 6, zIndex: 2 },
+  // ركنُ الرأس: كم كرسيًّا يعملُ اليوم
+  cornerL: { marginTop: 9, marginLeft: 12, fontSize: 6.5, fontWeight: '800', letterSpacing: 1.5, color: '#93A6AD' },
+  cornerRow: { flexDirection: 'row', alignItems: 'baseline', marginLeft: 12, marginTop: 2 },
+  cornerN: { fontSize: 15, lineHeight: 17, fontWeight: '800', letterSpacing: -0.5, color: '#2A3E46',
+    textShadowColor: 'rgba(255,255,255,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+  cornerS: { marginLeft: 3, fontSize: 8, lineHeight: 10, fontWeight: '800', letterSpacing: 0.6, color: '#93A6AD' },
+
   railCol: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: 'rgba(18,58,68,0.09)' },
-  railHead: { overflow: 'hidden', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(18,58,68,0.06)' },
+  railHead: { overflow: 'hidden' },
   railCell: { paddingTop: 12, paddingLeft: 13, paddingRight: 8, borderTopWidth: 1, borderTopColor: 'rgba(18,58,68,0.13)' },
   railDot: { position: 'absolute', top: 13, right: 9, width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(140,160,168,0.5)' },
   // العيادةُ الفارغةُ (لا مريضَ فيها الآن): نقطةٌ خضراءُ مضيئةٌ تدلُّ على أنّها متاحةٌ لاستقبالِ مريض
@@ -1415,9 +1601,10 @@ const full = scaledStyleSheet({
   railBar: { marginTop: 8, width: 26, height: 3, borderRadius: 2, backgroundColor: 'rgba(18,58,68,0.1)', overflow: 'hidden' },
   railBarFill: { height: '100%', borderRadius: 2, backgroundColor: '#7DD3C0' },
   // ── شريطُ الأوقاتِ والصفّ ──
+  // بداياتُ المرضى خفتَتْ عمدًا: الساعاتُ الثابتةُ في الرأسِ هي المرجع، وهذه تفصيلٌ تحتَها لا يزاحمُها
   strip: { position: 'absolute', left: 0 },
-  startTick: { position: 'absolute', top: 1, fontSize: 9.5, fontWeight: '800', color: '#0E7C66' },
-  startTickMark: { position: 'absolute', top: 13, width: 1, height: 4, backgroundColor: 'rgba(14,124,102,0.45)' },
+  startTick: { position: 'absolute', top: 1, fontSize: 8, fontWeight: '800', color: 'rgba(11,127,113,0.62)' },
+  startTickMark: { position: 'absolute', top: 12, width: 1, height: 4, backgroundColor: 'rgba(14,124,102,0.22)' },
   hourTick: { position: 'absolute', top: 2, fontSize: 10, fontWeight: '800', color: '#8CA0A8' },
   laneRow: { position: 'absolute', left: 0, right: 0 },
   // ── عيادةٌ فارغة + خيطُ الفراغ ──
@@ -1425,8 +1612,45 @@ const full = scaledStyleSheet({
   vacantPill: { position: 'absolute', top: '50%', marginTop: -14, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
   vacantTxt: { fontSize: 10.5, fontWeight: '800', color: '#5A7079' },
   idleDot: { width: 2, height: 2, borderRadius: 1, marginRight: 5, backgroundColor: 'rgba(140,160,168,0.6)' },
-  // الوقتُ المتاحُ فوقَ نقاطِ الفراغ — رماديٌّ بسيطٌ في الوسط
-  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2, color: '#9AA8AF' },
+  // الوقتُ المتاحُ فوقَ مَجْرى الفراغ — محفورٌ في الورقةِ كغيرِه
+  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2, color: '#93A3AA',
+    textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+  // الفراغُ محفور: مَجْرًى داكنٌ يلمعُ قاعُه — لا خيطٌ منقَّطٌ مرسومٌ فوقَ السطح
+  groove: { position: 'absolute', height: 5, borderRadius: 3, backgroundColor: 'rgba(10,35,45,0.10)',
+    borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.65)' },
+
+  // ── ④ المَجْرى: البريكُ المرن (بلا أيقونة) ──
+  trough: { position: 'absolute', borderRadius: 19, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  troughTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 12 },
+  lipT: { position: 'absolute', top: 0, left: 8, right: 8, height: 1, backgroundColor: 'rgba(0,0,0,0.40)' },
+  lipB: { position: 'absolute', bottom: 0, left: 10, right: 10, height: 1.5, backgroundColor: 'rgba(255,236,198,0.55)' },
+  troughTxt: { fontSize: 10, lineHeight: 12, fontWeight: '800', letterSpacing: 0.6, color: '#FFE6BB',
+    textShadowColor: 'rgba(48,26,0,0.85)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  // خيالُه في موضعِه الأوّلِ إن أزاحَه انشغالٌ حقيقيّ
+  ghost: { position: 'absolute', borderRadius: 19, borderWidth: 1.5, borderStyle: 'dashed',
+    borderColor: 'rgba(196,150,74,0.55)', backgroundColor: 'rgba(224,178,96,0.07)' },
+  ghostT: { position: 'absolute', textAlign: 'center', fontSize: 8, fontWeight: '800', letterSpacing: 0.4, color: '#9A7C46',
+    textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+  slide: { position: 'absolute', height: 0, borderTopWidth: 1, borderStyle: 'dashed', borderTopColor: 'rgba(154,124,70,0.75)' },
+  slideHead: { position: 'absolute', width: 0, height: 0, borderTopWidth: 3.5, borderBottomWidth: 3.5, borderLeftWidth: 5,
+    borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: 'rgba(154,124,70,0.85)' },
+
+  // ── ③ الطيّة: تبديلُ الشفت ──
+  foldLine: { position: 'absolute', top: 0, width: 2, backgroundColor: 'rgba(255,255,255,0.97)', zIndex: 4,
+    shadowColor: '#FFFFFF', shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
+  foldTx: { position: 'absolute', top: '42%', textAlign: 'center', fontSize: 7.5, lineHeight: 10, fontWeight: '800',
+    letterSpacing: 1.8, color: '#63757D', transform: [{ rotate: '90deg' }],
+    textShadowColor: 'rgba(255,255,255,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+
+  // ── ① حدُّ الماء: الخطُّ الزمنيّ ──
+  ripple: { position: 'absolute', borderWidth: 1, borderColor: 'rgba(14,159,140,0.26)', borderLeftColor: 'transparent' },
+  wBack: { position: 'absolute', width: 1.5, backgroundColor: 'rgba(10,35,45,0.24)' },
+  wLip: { position: 'absolute', width: 1.5, backgroundColor: 'rgba(255,255,255,0.97)',
+    shadowColor: '#FFFFFF', shadowOpacity: 0.75, shadowRadius: 5, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
+  wTip: { position: 'absolute', width: 9, height: 9, borderRadius: 2, backgroundColor: '#0B7A6C', transform: [{ rotate: '45deg' }], zIndex: 6 },
+  wMark: { position: 'absolute', height: 22, borderRadius: 11, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', zIndex: 7,
+    shadowColor: '#09705C', shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  wMarkTxt: { fontSize: 10, lineHeight: 12, fontWeight: '800', letterSpacing: 0.2, color: '#FFFFFF' },
   // ── الاستراحة (كريميّة) ──
   brk: { position: 'absolute', top: 13, bottom: 13, borderRadius: 15, alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', backgroundColor: 'rgba(250,239,220,0.82)', borderWidth: 1, borderColor: 'rgba(212,186,148,0.5)' },
   brkChip: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.82)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
@@ -1588,14 +1812,15 @@ const full = scaledStyleSheet({
 
 // ── كرتُ المريضِ في المخطّطِ المكبّر ──
 const cs = scaledStyleSheet({
-  card: { position: 'absolute', top: 6, bottom: 6, borderRadius: 14, paddingTop: 6, paddingBottom: 6, paddingLeft: 13, paddingRight: 10, borderWidth: 1, justifyContent: 'center' },
-  clip: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 13, overflow: 'hidden' },
-  spine: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
-  arc: { position: 'absolute', borderWidth: 1.5, borderRadius: 999 },
+  // موضعُ الكرتِ في صفِّه يقولُ عمقَه (top يُحسَبُ في الصفّ)، وارتفاعُه ثابتٌ في الحالاتِ كلِّها
+  card: { position: 'absolute', borderRadius: 16, paddingTop: 6, paddingBottom: 6, paddingLeft: 12, paddingRight: 10, borderWidth: 1, justifyContent: 'center' },
+  sunk: { transform: [{ scale: 0.965 }] },        // الغائرُ ينحسرُ قليلًا عن حدودِه فيبدو داخلَ السطح
+  clip: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 15, overflow: 'hidden' },
   gloss: { position: 'absolute', top: 0, left: 8, right: 8, height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
   row1: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  badge: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  badgeTxt: { fontSize: 9, fontWeight: '800' },
+  badge: { minWidth: 20, height: 20, paddingHorizontal: 4, borderRadius: 7, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  badgeFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  badgeTxt: { fontSize: 9.5, lineHeight: 11, fontWeight: '800' },
   name: { flex: 1, fontSize: 12, fontWeight: '800', letterSpacing: -0.1 },
   chip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.5)' },
   chipTxt: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.3 },
