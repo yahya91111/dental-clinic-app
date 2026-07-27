@@ -129,6 +129,10 @@ const halfway = (a: string, b: string) => {
 };
 const TRAY_TINT: Record<string, [string, string]> = {};
 for (const k of Object.keys(TINT)) TRAY_TINT[k] = [halfway(TINT[k][0], TINT[k][1]), TINT[k][1]];
+// وحافّتُه اليسرى تقرأُ النصفَ الأوّلَ من القُطر: من لونِه الأوّلِ إلى منتصفِه — فلوحُ
+// «Done / NA» يواصلُ الكرتَ من يسارِه كما تواصلُه صينيّةُ العياداتِ من يمينِه.
+const TRAY_TINT_L: Record<string, [string, string]> = {};
+for (const k of Object.keys(TINT)) TRAY_TINT_L[k] = [TINT[k][0], halfway(TINT[k][0], TINT[k][1])];
 
 // action-tile gradients (iOS app-icon look): [top-light, bottom-dark]
 const ACT_G: Record<string, [string, string]> = {
@@ -723,20 +727,33 @@ export function PatientCardV2({
   const revealFade = (progress: Animated.AnimatedInterpolation<number>) =>
     progress.interpolate({ inputRange: [0, 0.45, 1], outputRange: [0, 0.06, 1], extrapolate: 'clamp' });
 
+  // ── «Done / NA»: بلاطتانِ على مادّةِ الكرتِ لا شريحتانِ ملوّنتان ──
+  // كانتا لوحَينِ مصمتَينِ يملآنِ ما انكشف: أخضرُ وكاملُ الرمادِ من الحافّةِ إلى الحافّة،
+  // فيبدوانِ شيئًا آخرَ أُلصِقَ خلفَ الكرت. والصوابُ ما تفعلُه صينيّةُ العياداتِ في الجهةِ
+  // الأخرى: **المادّةُ تُواصَل**، ويقفُ الفعلُ عليها بلاطةً — وهي بلاطةُ الدُّرجِ نفسُها
+  // (تدرّجٌ ولمعةٌ وظلٌّ من لونِها) مُصغَّرةً، فلا لغةَ جديدةَ في الكرت.
+  const swipeAct = (g: [string, string], icon: any, label: string, act: string) => (
+    <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn}
+      onPress={() => { closeSwipe(); onMenuAction?.(patient.id, act); }}>
+      <View style={[s.swipeTile, { shadowColor: g[1], backgroundColor: g[1] }]}>
+        <LinearGradient colors={g} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeTileFill}>
+          <LinearGradient colors={SHEEN} locations={SHEEN_LOC} start={{ x: 0.12, y: 0 }} end={{ x: 0.82, y: 1 }} style={s.swipeSheen} />
+          <Ionicons name={icon} size={scale(18)} color="#fff" style={s.actGlyph} />
+        </LinearGradient>
+      </View>
+      <Text style={s.swipeTxt}>{label}</Text>
+    </TouchableOpacity>
+  );
+
   const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>) => (
     <Animated.View style={[s.actions, { opacity: revealFade(progress) }]}>
-      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction?.(patient.id, 'complete'); }}>
-        <LinearGradient colors={G.done} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
-          <Ionicons name="checkmark-sharp" size={scale(22)} color="#fff" />
-          <Text style={s.swipeTxt}>Done</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-      <TouchableOpacity activeOpacity={0.85} style={s.swipeBtn} onPress={() => { closeSwipe(); onMenuAction?.(patient.id, 'na'); }}>
-        <LinearGradient colors={G.away} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={s.swipeFill}>
-          <Ionicons name="person-remove-outline" size={scale(20)} color="#fff" />
-          <Text style={s.swipeTxt}>NA</Text>
-        </LinearGradient>
-      </TouchableOpacity>
+      {/* المادّةُ نفسُها متّصلة: قاعدةُ الدخانِ ثمّ نصفُ الوَشْمِ الأيسر، ثمّ ضوءُ الحافّتَين */}
+      <LinearGradient colors={SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <LinearGradient colors={trayTintL} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <LinearGradient colors={GLOSS} style={s.gloss} pointerEvents="none" />
+      <LinearGradient colors={FLOOR} style={s.floor} pointerEvents="none" />
+      {swipeAct(G.done, 'checkmark-sharp', 'DONE', 'complete')}
+      {swipeAct(G.away, 'person-remove-outline', 'NA', 'na')}
     </Animated.View>
   );
 
@@ -794,6 +811,7 @@ export function PatientCardV2({
   const kind = kindOf(patient);
   const tint = TINT[kind === 'na' ? 'away' : kind]; // NA reuses the grey "away" wash
   const trayTint = TRAY_TINT[kind === 'na' ? 'away' : kind] as [string, string];
+  const trayTintL = TRAY_TINT_L[kind === 'na' ? 'away' : kind] as [string, string];
   const qn = patient.queue_number === 0 ? '-' : String(patient.queue_number);
   const clinicNum = clinicNumOf(patient.clinic);
   const dotColor = kind === 'done' ? C.done : kind === 'inclinic' ? C.violet : kind === 'na' ? C.away : C.blue;
@@ -1305,9 +1323,15 @@ const s = StyleSheet.create({
 
   // swipe actions (Done / NA) — revealed to the left, clipped to the card's rounded corners
   actions: { width: ACTIONS_W, flexDirection: 'row' },
-  swipeBtn: { flex: 1 },
-  swipeFill: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: scale(5) },
-  swipeTxt: { color: '#fff', fontSize: scale(11), fontWeight: '800', letterSpacing: 0.4 },
+  swipeBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: scale(6) },
+  // بلاطةُ الدُّرجِ نفسُها مُصغَّرة: طبقةُ ظلٍّ بقاعدةٍ مصمتة، ثمّ الوجهُ المتدرّجُ يقصُّ اللمعة
+  swipeTile: {
+    width: scale(38), height: scale(38), borderRadius: scale(12),
+    shadowOffset: { width: 0, height: scale(5) }, shadowOpacity: 0.45, shadowRadius: scale(7), elevation: 5,
+  },
+  swipeTileFill: { flex: 1, borderRadius: scale(12), alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  swipeSheen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  swipeTxt: { color: C.ink, fontSize: scale(9.5), fontWeight: '800', letterSpacing: 0.9 },
 
   // the clinic picker on the other side — the queue chip, once per chair
   clinics: {
