@@ -28,7 +28,6 @@ const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane, Break } from './QueueTimeline';
 import { QueueStatsStrip } from './QueueStatsStrip';
-import { QueueTopHaze } from './QueueTopHaze';
 import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
 import { createScalingRecord, getScalingRecords } from '../../lib/database';
 
@@ -230,6 +229,47 @@ export interface MainQueueScreenProps {
   setDentalSummaries: React.Dispatch<React.SetStateAction<{ [key: string]: DentalSummary }>>;
 }
 
+// قائمةٌ متحرّكة: بها وحدَها يُربَطُ حدثُ التمريرِ بعقدةٍ أصليّةٍ فتُحسَبُ الشفافيّاتُ هناك.
+// وهي FlatList نفسُها في كلِّ شيءٍ آخر، فيبقى النوعُ كما هو والمرجعُ يمرُّ إلى داخلِها.
+const AnimatedFlatList = Animated.FlatList as unknown as typeof FlatList;
+
+// ── ذوبانُ الكرتِ عندَ حدِّ القائمة ──
+// t = موضعُ رأسِ الكرتِ من حدِّ القائمة: صفرٌ عندَ الحدِّ، وسالبٌ كلّما مضى خلفَه.
+// عندَ الصفرِ تامٌّ — وهذا شرطٌ لا بدَّ منه، فالكرتُ الأوّلُ يستقرُّ ملاصقًا للحدِّ ولا
+// يجوزُ أن يُرى باهتًا وهو ساكن. ثمّ ينحدرُ سريعًا فور مُضيِّه: عندَ سبعةَ عشرَ بكسلًا
+// صارَ ثُلثَينِ، وعندَ ستّةٍ وثلاثينَ خُمسًا، ويفنى قبلَ أن يُقطَعَ نصفُه. فما يصلُ خطَّ
+// القصِّ لا لونَ فيه يُرسمُ به خطّ.
+//
+// ويصغُرُ معَ بهوتِه قليلًا — ستّةٌ في المئة — فيُقرأُ مبتعِدًا إلى الخلفِ لا ذائبًا في
+// مكانِه. وهي الفارقُ بينَ «اختفى» و«ذهبَ خلفَه».
+const FADE_T = [-scale(52), -scale(36), -scale(17), 0];
+const FADE_O = [0, 0.2, 0.66, 1];
+
+// ما تُمرِّرُه القائمةُ للخليّةِ (onFocusCapture منها، وليس في أنواعِ View) يُمرَّرُ كما جاء
+type CellProps = { children?: React.ReactNode; style?: any; onLayout?: (e: any) => void; onFocusCapture?: (e: any) => void };
+
+const PlainCell = ({ children, style, onLayout, onFocusCapture }: CellProps) => {
+  const pass: any = { style, onLayout, onFocusCapture };
+  return <View {...pass}>{children}</View>;
+};
+
+const makeFadingCell = (scrollY: Animated.Value) =>
+  function QueueCell({ children, style, onLayout, onFocusCapture }: CellProps) {
+    // موضعُ الكرتِ في المحتوى، يُعرَفُ بالقياس. وقبلَ أن يُقاسَ فهو بعيدٌ جدًّا — أي تامٌّ.
+    const top = useRef(new Animated.Value(99999)).current;
+    const t = useMemo(() => Animated.subtract(top, scrollY), [top, scrollY]);
+    const opacity = useMemo(
+      () => t.interpolate({ inputRange: FADE_T, outputRange: FADE_O, extrapolate: 'clamp' }), [t]);
+    const shrink = useMemo(
+      () => t.interpolate({ inputRange: [FADE_T[0], 0], outputRange: [0.94, 1], extrapolate: 'clamp' }), [t]);
+    const pass: any = {
+      style: [style, { opacity, transform: [{ scale: shrink }] }],
+      onLayout: (e: any) => { top.setValue(e.nativeEvent.layout.y); onLayout?.(e); },
+      onFocusCapture,
+    };
+    return <Animated.View {...pass}>{children}</Animated.View>;
+  };
+
 export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   const {
     timelineBlob1Anim,
@@ -419,12 +459,26 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     togglePermanentCardExpansion(patient);
   }, [expandedPermanentCardId, frozenY, togglePermanentCardExpansion]);
 
-  // ضبابُ الحدّ: يتكوّنُ في أوّلِ ثلاثينَ بكسلًا من التمرير ويزولُ بعودتِك إلى الرأس.
-  // قيمةٌ متحرّكةٌ تُكتَبُ من حدثِ التمرير نفسِه — رقمٌ واحدٌ لا إعادةَ رسمٍ للقائمة.
-  const hazeY = useRef(new Animated.Value(0)).current;
-  const hazeOpacity = useMemo(
-    () => hazeY.interpolate({ inputRange: [0, scale(30)], outputRange: [0, 1], extrapolate: 'clamp' }),
-    [hazeY]);
+  // ── لا يُقطَعُ إلّا ما بقيَ ظاهرًا ──
+  // كان الضبابُ يُغطّي الحدَّ من فوق: جسمٌ يُوضَعُ على الصفحةِ ليَستُرَ ما تحتَه، فيُرى هو.
+  // والصوابُ ألّا يكونَ عندَ الحدِّ ما يُستَر: الكرتُ يبهُتُ وهو يمضي خلفَه، فلا يبلغُ خطَّ
+  // القصِّ منه إلّا شبح. لا طبقةَ فوقَ الصفحة، ولا شيءَ يظهرُ ويختفي، ولا لونَ يُطمَسُ به
+  // ما تحتَه — الأثرُ في الكرتِ نفسِه.
+  //
+  // والإزاحةُ تُقادُ بالمحرّكِ الأصليّ: حدثُ التمريرِ يكتبُ scrollY في العقدةِ الأصليّةِ
+  // مباشرةً، فتُحسَبُ شفافيّةُ كلِّ كرتٍ هناك ولا يعبرُ الجسرَ في الإطارِ شيء.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const onListScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+      useNativeDriver: true,
+      listener: (e: any) => { offsetY.current = e.nativeEvent.contentOffset.y; },
+    }),
+    [scrollY]);
+  // كرتٌ موسَّعٌ طويلٌ لا يُبهَت: رأسُه يعلو الحدَّ وأنتَ تقرأُ ذيلَه، فلو رُبِطَ البهوتُ
+  // برأسِه لغابَ كلُّه وأنتَ فيه. والبهوتُ لقصيرٍ منتظمٍ فحسب.
+  const Cell = useMemo(
+    () => (expandedPermanentCardId ? PlainCell : makeFadingCell(scrollY)),
+    [expandedPermanentCardId, scrollY]);
 
   // نافذةُ الدخول: تُفتَحُ عندَ أوّلِ رسمٍ للصفحةِ (ومع كلِّ animKey جديد) وتُغلَقُ بعدَها.
   // ما رُكِّبَ داخلَها فهو داخلٌ يتتابع، وما رُكِّبَ بعدَها فهو عائدٌ يظهرُ في مكانِه.
@@ -891,8 +945,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               يُرى وما يليه، ويأتي الباقي مع التمرير.
               removeClippedSubviews مُطفأٌ عمدًا: وجها الكرتِ (الوجهُ والظهر) مطلقانِ
               فوقَ بعضِهما، وقصُّ الأبناءِ على أندرويد يُفرِّغُ مثلَ هذه البِنى. */}
-          <FlatList
+          <AnimatedFlatList
             ref={listRef}
+            CellRendererComponent={Cell}
             style={styles.scrollView}
             contentContainerStyle={[
               styles.scrollContent,
@@ -903,11 +958,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             ]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
-            onScroll={(e) => {
-              const y = e.nativeEvent.contentOffset.y;
-              offsetY.current = y;
-              hazeY.setValue(y);
-            }}
+            onScroll={onListScroll}
             // آخرُ إطارٍ هو المهمّ: بالخنقِ وحدَه تفوتُ نهايةُ الاندفاعِ فتُحفَظُ إزاحةٌ
             // أقدمُ من الحقيقيّةِ ببضعِ عشراتِ البكسلات — فيُلتقَطُ المستقرُّ صراحةً.
             onScrollEndDrag={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
@@ -1093,10 +1144,6 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           )}
         />
 
-          {/* الضبابُ آخرُ الإخوةِ فهو فوقَهم، وداخلَ هذه الطبقةِ فهو يصعدُ معها في الطيّ
-              ويبقى ملتصقًا بحدِّ القائمةِ في الحالَين. وكرتٌ موسَّعٌ يملكُ الصفحةَ وحدَه،
-              فلا حدَّ هناك يُخفى. */}
-          {!expandedPermanentCardId && <QueueTopHaze opacity={hazeOpacity} />}
           </Animated.View>
 
         {/* FAB */}
