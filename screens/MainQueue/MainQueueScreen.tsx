@@ -67,10 +67,8 @@ export interface MainQueueScreenProps {
   setShowTreatmentStats: (val: boolean) => void;
 
   // Filters/display
+  // showTimeline يبقى: يمرُّ إلى الكرتِ الكلاسيكيِّ (خلفَ USE_V2_CARD). ومفاتيحُه ذهبتْ مع لوحِ الخيارات.
   showTimeline: boolean;
-  setShowTimeline: (val: boolean) => void;
-  showNAPatients: boolean;
-  setShowNAPatients: (val: boolean) => void;
   filterWaitingOnly: boolean;
   setFilterWaitingOnly: (val: boolean) => void;
 
@@ -297,9 +295,6 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     showTreatmentStats,
     setShowTreatmentStats,
     showTimeline,
-    setShowTimeline,
-    showNAPatients,
-    setShowNAPatients,
     filterWaitingOnly,
     setFilterWaitingOnly,
     expandedCardId,
@@ -879,43 +874,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
         </Animated.View>
         </Animated.View>
 
-        {/* Expandable Options */}
-        {!expandedPermanentCardId && expandedCardId === 'header' && (
-          <Animated.View
-            style={[
-              styles.headerExpandableSection,
-              {
-                transform: [{ translateY: headerTranslateY }],
-              }
-            ]}
-          >
-            <TouchableOpacity
-              style={[styles.headerOptionButton, showTimeline && styles.headerOptionButtonActive]}
-              onPress={() => {
-                setShowTimeline(!showTimeline);
-                setExpandedCardId(null);
-              }}
-            >
-              <Ionicons name="time-outline" size={scale(20)} color={showTimeline ? '#7DD3C0' : '#6B7280'} />
-              <Text style={[styles.headerOptionText, showTimeline && styles.headerOptionTextActive]}>
-                {showTimeline ? 'Hide Timeline' : 'Show Timeline'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.headerOptionButton, showNAPatients && styles.headerOptionButtonActive]}
-              onPress={() => {
-                setShowNAPatients(!showNAPatients);
-                setExpandedCardId(null);
-              }}
-            >
-              <Ionicons name="eye-outline" size={scale(20)} color={showNAPatients ? '#7DD3C0' : '#6B7280'} />
-              <Text style={[styles.headerOptionText, showNAPatients && styles.headerOptionTextActive]}>
-                {showNAPatients ? 'Hide NA Patient' : 'Show NA Patient'}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
+        {/* (حُذفَ لوحُ «Expandable Options»: كان يُفتَحُ بزرِّ «▼ View Details» في الرأس، وقد
+            ذهبَ الزرُّ فلم يبقَ ما يضعُ expandedCardId='header' — لوحٌ بلا يدٍ تفتحُه.
+            وفيه كان مفتاحا Show Timeline و Show NA Patient؛ والاثنانِ سقطا معه.) */}
 
         {/* Content Wrapper - Animated with marginTop */}
         <Animated.View

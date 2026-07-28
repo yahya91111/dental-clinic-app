@@ -100,72 +100,10 @@ export const styles = scaledStyleSheet({
     borderRadius: 16,
     backgroundColor: 'transparent', // إزالة Inner Glow
   },
-  // Header View Details button
-  viewDetailsHeaderButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Glass effect
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
-    shadowRadius: Platform.OS === 'android' ? 0 : 8,
-    elevation: Platform.OS === 'android' ? 0 : 4,
-  },
-  viewDetailsHeaderText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
-  // Expandable section in header
-  headerExpandableSection: {
-    alignSelf: 'flex-end',
-    marginRight: 24,
-    marginBottom: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    borderRadius: 16,
-    padding: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
-    shadowRadius: Platform.OS === 'android' ? 0 : 8,
-    elevation: Platform.OS === 'android' ? 0 : 4,
-  },
-  headerOptionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // زجاجي شفاف
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // حدود بيضاء لامعة
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#000',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 2 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.1,
-    shadowRadius: Platform.OS === 'android' ? 0 : 4,
-    elevation: Platform.OS === 'android' ? 0 : 3,
-  },
-  headerOptionButtonActive: {
-    backgroundColor: 'rgba(125, 211, 192, 0.3)', // زجاجي فيروزي عند التفعيل
-    borderWidth: 2.5,
-    borderColor: 'rgba(125, 211, 192, 0.9)', // حدود فيروزية لامعة
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 3 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.3,
-    shadowRadius: Platform.OS === 'android' ? 0 : 6,
-    elevation: Platform.OS === 'android' ? 0 : 5,
-  },
-  headerOptionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  headerOptionTextActive: {
-    color: '#7DD3C0',
-  },
+  // ── حُذفَ هنا زرُّ «View Details» ولوحُ خياراتِه ──
+  // viewDetailsHeaderButton/Text · headerExpandableSection · headerOptionButton(Active) ·
+  // headerOptionText(Active): ذهبَ الزرُّ فذهبَ اللوحُ، فذهبَ لباسُهما.
+  // (لِـ MyTimelineScreen أسماءٌ مطابقةٌ في styles الخاصِّ به داخلَ ملفِّه — لم تُمَسّ.)
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingTop: 0, paddingBottom: 120 },
   patientCardWrapper: {

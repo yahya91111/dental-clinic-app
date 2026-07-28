@@ -56,14 +56,12 @@ import { usePatientHandlers } from './usePatientHandlers';
 export function AppContent() {
   const { user, isLoading, logout } = useAuth();
   
-  const [showTimeline, setShowTimeline] = useState(false);
+  // لم يبقَ ما يقلبُه (ذهبَ لوحُ خياراتِ الرأس)؛ يبقى لأنّه يمرُّ إلى الكرتِ الكلاسيكيِّ خلفَ USE_V2_CARD
+  const [showTimeline] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTreatmentStats, setShowTreatmentStats] = useState(false);
   const [filterWaitingOnly, setFilterWaitingOnly] = useState(false);
-  // NA patients stay visible by default — marking someone NA recolors the card in place
-  // (grey) instead of hiding it. The header toggle can still hide them on demand.
-  const [showNAPatients, setShowNAPatients] = useState(true);
-  
+
   // Navigation states
   const [showDoctorProfile, setShowDoctorProfile] = useState(false);
   const [showArchiveScreen, setShowArchiveScreen] = useState(false);
@@ -467,10 +465,8 @@ export function AppContent() {
     filteredPatients = filteredPatients.filter(p => p.status !== 'complete');
   }
   
-  // 2. NA toggle (optional): NA patients show by default; the header button can hide them.
-  if (!showNAPatients) {
-    filteredPatients = filteredPatients.filter(p => p.status !== 'na');
-  }
+  // (حُذفَ مِصفاةُ «غيرِ المتاح»: كانت خلفَ مفتاحٍ في لوحِ خيارات الرأس، وقد ذهبَ اللوح.
+  //  «غيرُ المتاح» يُعرَضُ دائمًا — يبقى في دورِه ملوَّنًا، وهو القرارُ المستقرُّ منذ مدّة.)
 
   // Show login if not authenticated
   if (isLoading) {
@@ -870,9 +866,6 @@ export function AppContent() {
       showTreatmentStats={showTreatmentStats}
       setShowTreatmentStats={setShowTreatmentStats}
       showTimeline={showTimeline}
-      setShowTimeline={setShowTimeline}
-      showNAPatients={showNAPatients}
-      setShowNAPatients={setShowNAPatients}
       filterWaitingOnly={filterWaitingOnly}
       setFilterWaitingOnly={setFilterWaitingOnly}
       expandedCardId={expandedCardId}
