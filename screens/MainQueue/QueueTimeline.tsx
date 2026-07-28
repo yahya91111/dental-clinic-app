@@ -1152,16 +1152,21 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
 
                 {/* ٤ — الملفُّ الدائم: يظهرُ لمن له ملفٌّ فقط، ويفتحُه كما يفتحُه كرتُ الدور */}
                 {actP.permanent_patient_id && actions.onProfile ? (
-                  <TouchableOpacity style={full.actProfile} activeOpacity={0.85}
+                  <TouchableOpacity style={full.actProfile} activeOpacity={0.88}
                     onPress={() => { const id = actP.id; setActionId(null); actions.onProfile?.(id); }}>
-                    <View style={full.actProfileIcon}><Ionicons name="folder-open" size={scale(14)} color="#0B7F71" /></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={full.actProfileTxt}>Show profile</Text>
+                    <LinearGradient colors={['rgba(125,211,192,0.22)', 'rgba(125,211,192,0)']}
+                      start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 1 }} style={StyleSheet.absoluteFill} />
+                    <LinearGradient colors={['#12B39D', '#0B7F71']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}
+                      style={full.actProfileIcon}>
+                      <Ionicons name="document-text" size={scale(17)} color="#FFFFFF" />
+                    </LinearGradient>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={full.actProfileTxt} numberOfLines={1}>Patient file</Text>
                       <Text style={full.actProfileSub} numberOfLines={1}>
-                        {actP.file_number ? `File ${actP.file_number}` : 'Permanent patient file'}
+                        {actP.file_number ? `No. ${actP.file_number} · open the full record` : 'Open the full record'}
                       </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={scale(14)} color="#8CA0A8" />
+                    <View style={full.actProfileGo}><Ionicons name="arrow-forward" size={scale(13)} color={TEAL_INK} /></View>
                   </TouchableOpacity>
                 ) : null}
 
@@ -1252,17 +1257,32 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     <View style={full.shDivider} />
                     <Text style={full.shLabel}>TAP A NAME FOR ACTIONS</Text>
                     <ScrollView style={{ maxHeight: scale(230) }} showsVerticalScrollIndicator={false}>
-                      {l.beyond.map((p) => (
-                        <TouchableOpacity key={p.id} activeOpacity={0.8} style={full.byRow}
-                          onPress={() => { setBeyondLane(null); setActionId(p.id); }}>
-                          <View style={full.byNo}><Text style={full.byNoTxt}>{p.queue_number}</Text></View>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={full.byName} numberOfLines={1}>{p.name}</Text>
-                            <Text style={full.byTx} numberOfLines={1}>{(p.treatment && p.treatment !== 'Treatment') ? p.treatment : 'Treatment'} · {estMinutes(p)} min</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={scale(14)} color="#9AACB3" />
-                        </TouchableOpacity>
-                      ))}
+                      {l.beyond.map((p) => {
+                        // مَن جعلتَه «غيرَ متاح» يقولُ ذلك تحتَ اسمِه — فالقائمةُ تعكسُ ما فعلتَ لا ما كان
+                        const na = p.status === 'na';
+                        return (
+                          <TouchableOpacity key={p.id} activeOpacity={0.8} style={[full.byRow, na && full.byRowNA]}
+                            onPress={() => { setBeyondLane(null); setActionId(p.id); }}>
+                            <View style={[full.byNo, na && full.byNoNA]}>
+                              <Text style={[full.byNoTxt, na && full.byNoTxtNA]}>{p.queue_number}</Text>
+                            </View>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={full.byName} numberOfLines={1}>{p.name}</Text>
+                              {na ? (
+                                <View style={full.byNaRow}>
+                                  <View style={full.byNaDot} />
+                                  <Text style={full.byNaTxt} numberOfLines={1}>Patient not available</Text>
+                                </View>
+                              ) : (
+                                <Text style={full.byTx} numberOfLines={1}>
+                                  {(p.treatment && p.treatment !== 'Treatment') ? p.treatment : 'Treatment'} · {estMinutes(p)} min
+                                </Text>
+                              )}
+                            </View>
+                            <Ionicons name="chevron-forward" size={scale(14)} color="#9AACB3" />
+                          </TouchableOpacity>
+                        );
+                      })}
                     </ScrollView>
                     <TouchableOpacity style={full.actClose} onPress={() => setBeyondLane(null)}>
                       <Text style={full.actCloseTxt}>Close</Text>
@@ -1392,6 +1412,12 @@ export function DayChartViewer({ visible, onClose, chart, dateLabel }:
 // الأولى لحظةً ثمّ تقفز — وقفزةٌ مع كلِّ دخولٍ أسوأُ من نسيانٍ عندَ إعادةِ تشغيلِ التطبيق.
 const lastPage: { [clinic: string]: number } = {};
 
+// ── ويعودُ بك «رجوع» إلى حيثُ دخلت ──
+// ملفُّ المريضِ صفحةٌ تحلُّ محلَّ الصفحةِ كلِّها، فتُهدَمُ هذه الشجرةُ وتُفقَدُ حالتُها. فلو دخلتَ
+// الملفَّ من المخطّطِ ثمّ رجعتَ، لعُدتَ إلى صفحةِ الدورِ لا إلى المخطّطِ الذي جئتَ منه. نحفظُ
+// النيّةَ خارجَ الشجرةِ (كما نحفظُ الصفحةَ الحاليّة) فيُستأنَفُ المخطّطُ عندَ العودةِ مفتوحًا.
+const reopenChart: { [clinic: string]: boolean } = {};
+
 export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone, onProfile }:
   { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
     onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
@@ -1414,7 +1440,9 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
     const id = setTimeout(() => setReady(true), 60);
     return () => clearTimeout(id);
   }, [ready]);
-  const [showFull, setShowFull] = useState(false);
+  // إن كنتَ خرجتَ من هنا إلى ملفِّ مريضٍ، فالمخطّطُ هو ما يستقبلُك عندَ الرجوع
+  const [showFull, setShowFull] = useState(() => !!reopenChart[clinicId || '·']);
+  useEffect(() => { delete reopenChart[pageKey]; }, [pageKey]);
   const [clinicCount, setClinicCount] = useState(0);
   // تجاوزٌ محلّيٌّ لعددِ الكراسي: المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ
   // إضافيّةٌ اليومَ أو تُغلَقُ واحدةٌ — ولا ينبغي أن ينتظرَ تعديلَ الجدولِ الأسبوعيِّ ليقولَ ذلك.
@@ -1546,9 +1574,10 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
       // ونُمهِلُ إغلاقَه قبلَ فتحِها لأنّ فتحَ نافذةٍ في اللحظةِ نفسِها التي تُغلَقُ فيها أخرى قد يبتلِعُها.
       else { setShowFull(false); setTimeout(() => onDone?.(id), 350); }
     },
-    // الملفُّ صفحةٌ كاملةٌ تُفتَحُ فوقَ الصفحة، فنُغلقُ المخطّطَ أوّلًا ثمّ نفتحُه — كما في الإنهاء
-    onProfile: (id) => { setShowFull(false); setTimeout(() => onProfile?.(id), 350); },
-  }), [simOn, simNowMin, simActs, simChairs.length, patients, onEnterClinic, onToggleNA, onDone, onProfile]);
+    // الملفُّ صفحةٌ تحلُّ محلَّ الصفحةِ كلِّها، فنُغلقُ المخطّطَ أوّلًا ثمّ نفتحُه — كما في الإنهاء.
+    // ونُسجّلُ أنّنا خرجنا من المخطّطِ كي يستقبلَنا مفتوحًا حينَ نضغطُ «رجوع» في الملفّ.
+    onProfile: (id) => { reopenChart[pageKey] = true; setShowFull(false); setTimeout(() => onProfile?.(id), 350); },
+  }), [simOn, simNowMin, simActs, simChairs.length, patients, onEnterClinic, onToggleNA, onDone, onProfile, pageKey]);
 
   const simApi = {
     on: simOn, playing: simPlaying, speed: simSpeed,
@@ -1894,15 +1923,21 @@ const full = scaledStyleSheet({
   hint: { marginTop: 8, fontSize: 10, fontWeight: '700', textAlign: 'center', color: '#8CA0A8' },
   // ملفُّ المريضِ الدائم — يظهرُ لمن له ملفٌّ وحدَه
   actProfile: {
-    flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 11, padding: 11, borderRadius: 16,
-    backgroundColor: 'rgba(125,211,192,0.16)', borderWidth: 1.5, borderColor: 'rgba(14,124,102,0.34)',
+    flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 12, padding: 10, borderRadius: 18,
+    overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.62)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#08202A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 3,
   },
   actProfileIcon: {
-    width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.85)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)',
+    width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#09705C', shadowOpacity: 0.42, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
-  actProfileTxt: { fontSize: 13.5, fontWeight: '800', color: '#06322A' },
-  actProfileSub: { marginTop: 1.5, fontSize: 10, fontWeight: '700', color: '#5A7079' },
+  actProfileTxt: { fontSize: 14, lineHeight: 16, fontWeight: '800', color: '#06322A', letterSpacing: -0.2 },
+  actProfileSub: { marginTop: 2, fontSize: 10, lineHeight: 12, fontWeight: '700', color: '#5A7079' },
+  actProfileGo: {
+    width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(14,159,140,0.16)', borderWidth: 1, borderColor: 'rgba(14,124,102,0.24)',
+  },
   actClose: { marginTop: 11, paddingVertical: 9, alignItems: 'center' },
   actCloseTxt: { fontSize: 13.5, fontWeight: '800', color: '#6B7280', letterSpacing: 0.3 },
   // ── نافذةُ نوعِ البريك (ثابت/متحرّك) ──
@@ -1958,6 +1993,13 @@ const full = scaledStyleSheet({
   byNoTxt: { fontSize: 13, fontWeight: '800', color: '#5A7079' },
   byName: { fontSize: 13.5, fontWeight: '800', color: '#12232A' },
   byTx: { marginTop: 1.5, fontSize: 10.5, fontWeight: '600', color: '#8CA0A8' },
+  // «غيرُ متاح» في قائمةِ خلفَ الشفت — بنفسجيُّ الكرتِ نفسُه، فالحالةُ واحدةٌ أينما قُرِئت
+  byRowNA: { backgroundColor: 'rgba(223,224,244,0.78)', borderColor: 'rgba(122,127,188,0.55)' },
+  byNoNA: { backgroundColor: 'rgba(122,127,188,0.22)' },
+  byNoTxtNA: { color: '#454A79' },
+  byNaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  byNaDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#7A7FBC' },
+  byNaTxt: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.2, color: '#575C93' },
 
   // عددُ العيادات — صفٌّ واحدٌ بارزٌ فوقَ فتراتِ الاستراحة
   cntRow: {
