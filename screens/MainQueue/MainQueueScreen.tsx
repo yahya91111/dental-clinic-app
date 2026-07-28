@@ -16,7 +16,7 @@ import {
 import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { shadows } from '../../theme';
 import { Patient, TimelineEvent } from './constants';
 import { Referral, ToothNote, DentalSummary } from '../../types';

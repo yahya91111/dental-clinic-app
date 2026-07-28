@@ -60,57 +60,11 @@ export const styles = scaledStyleSheet({
     shadowRadius: 8,
     elevation: 4,
   },
-  statsContainer: { flexDirection: 'row', paddingHorizontal: 24, gap: 16, marginBottom: 24 },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // زجاجي شفاف
-    borderRadius: 20,
-    padding: 20,
-    alignItems: 'center',
-    minHeight: 150,
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // حواف بيضاء
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
-    shadowRadius: Platform.OS === 'android' ? 0 : 12,
-    elevation: Platform.OS === 'android' ? 0 : 5,
-  },
-  statCardActive: {
-    backgroundColor: 'rgba(125, 211, 192, 0.3)', // زجاجي فيروزي عند التفعيل
-    borderWidth: 2.5,
-    borderColor: 'rgba(125, 211, 192, 0.9)', // حواف فيروزية
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#7DD3C0',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 0 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.4,
-    shadowRadius: Platform.OS === 'android' ? 0 : 16,
-    elevation: Platform.OS === 'android' ? 0 : 0,
-  },
-  statCardExpanded: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)', // زجاجي شفاف
-    borderRadius: 20,
-    padding: 20,
-    minHeight: 200,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)', // حواف بيضاء
-    shadowColor: Platform.OS === 'android' ? 'transparent' : '#5B9FED',
-    shadowOffset: { width: 0, height: Platform.OS === 'android' ? 0 : 4 },
-    shadowOpacity: Platform.OS === 'android' ? 0 : 0.2,
-    shadowRadius: Platform.OS === 'android' ? 0 : 12,
-    elevation: Platform.OS === 'android' ? 0 : 5,
-  },
-  expandedHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  expandedTitle: { fontSize: 18, fontWeight: '700', color: '#4A5568' },
-  treatmentStatsList: { gap: 4 },
-  treatmentStatRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 12 },
-  treatmentStatCount: { fontSize: 24, fontWeight: '700', color: '#7DD3C0', minWidth: 40 },
-  treatmentStatName: { fontSize: 16, fontWeight: '500', color: '#4A5568' },
-  statLabel: { fontSize: 14, color: '#6B7280', fontWeight: '400', marginBottom: 4 },
-  statLabelActive: { color: '#7DD3C0', fontWeight: '600' },
-  statValue: { fontSize: 52, fontWeight: '600', color: '#4A5568' },
-  statValueActive: { color: '#7DD3C0' },
+  // ── حُذفَ هنا لوحُ البطاقتَين ──
+  // statsContainer · statCard(Active/Expanded) · statLabel(Active) · statValue(Active) ·
+  // expandedHeader · expandedTitle · treatmentStats(List/Row/Count/Name):
+  // كلُّها لباسُ البطاقتَينِ اللتَين حلَّ محلَّهما QueueBoard، وماتَتْ بموتِهما.
+  // (لِـ MyTimelineScreen أسماءٌ مطابقةٌ في styles الخاصِّ به داخلَ ملفِّه — لم تُمَسّ.)
   queueHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

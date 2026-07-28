@@ -1776,11 +1776,7 @@ const full = scaledStyleSheet({
   headTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.6, color: '#8CA0A8' },
   iconBtn: { height: 34, minWidth: 34, paddingHorizontal: 12, borderRadius: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
-  breakBtn: { paddingHorizontal: 11, gap: 5, backgroundColor: 'rgba(248,236,214,0.9)', borderColor: 'rgba(206,178,132,0.75)', shadowColor: '#B98A3E', shadowOpacity: 0.22, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
-  breakBtnFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 17 },
-  breakBtnDot: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.9)' },
-  breakBtnIcon: { fontSize: 10.5 },
-  breakBtnTxt: { fontSize: 12, fontWeight: '800', color: '#7A5A2E', letterSpacing: 0.2 },
+  // (حُذفَ breakBtn وأخواتُه: زرُّ البريكِ الكهرمانيُّ في الرأس — صارَ التحريرُ كلُّه خلفَ الترس)
   closeTxt: { fontSize: 15, fontWeight: '800', color: '#4A5568' },
   titleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginTop: 8 },
   title: { fontSize: 28, fontWeight: '800', letterSpacing: -1, color: '#12232A' },
@@ -1856,7 +1852,6 @@ const full = scaledStyleSheet({
   vacant: { position: 'absolute', top: 7, bottom: 7, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.36)', borderStyle: 'dashed' },
   vacantPill: { position: 'absolute', top: '50%', marginTop: -14, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
   vacantTxt: { fontSize: 10.5, fontWeight: '800', color: '#5A7079' },
-  idleDot: { width: 2, height: 2, borderRadius: 1, marginRight: 5, backgroundColor: 'rgba(140,160,168,0.6)' },
   // الوقتُ المتاحُ فوقَ مَجْرى الفراغ — محفورٌ في الورقةِ كغيرِه
   idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2, color: '#93A3AA',
     textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
@@ -1922,21 +1917,8 @@ const full = scaledStyleSheet({
   wMark: { position: 'absolute', height: 22, borderRadius: 11, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', zIndex: 7,
     shadowColor: '#09705C', shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   wMarkTxt: { fontSize: 10, lineHeight: 12, fontWeight: '800', letterSpacing: 0.2, color: '#FFFFFF' },
-  // ── الاستراحة (كريميّة) ──
-  brk: { position: 'absolute', top: 13, bottom: 13, borderRadius: 15, alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', backgroundColor: 'rgba(250,239,220,0.82)', borderWidth: 1, borderColor: 'rgba(212,186,148,0.5)' },
-  brkChip: { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.82)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  brkChipTxt: { fontSize: 11 },
-  brkS: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#7A6446' },
-  brkMoved: { fontSize: 7.5, fontWeight: '800', color: '#6B3E0B', backgroundColor: 'rgba(251,191,36,0.34)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
-  brkMovedOld: { textDecorationLine: 'line-through', color: '#8A6A2E' },
-  // البريكُ الثابت (تبديلُ شفت): مظهرٌ فولاذيٌّ مميّزٌ عن العسليِّ المتحرّك
-  brkFixed: { backgroundColor: 'rgba(228,233,242,0.9)', borderColor: 'rgba(99,116,152,0.55)' },
-  brkChipFixed: { backgroundColor: 'rgba(255,255,255,0.9)', borderColor: 'rgba(255,255,255,0.95)' },
-  brkSFixed: { color: '#4A5570' },
-  brkFixedTag: { fontSize: 7.5, fontWeight: '800', letterSpacing: 0.5, color: '#3E4763', backgroundColor: 'rgba(99,116,152,0.24)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
-  // ── خطُّ الآن ──
-  nowPill: { position: 'absolute', top: 4, borderRadius: 9, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: '#0E7C66' },
-  nowPillTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  // (حُذفَ لباسُ الاستراحةِ الكريميِّ القديم — brk وأخواتُها: صارَ المرنُ مَجْرًى والثابتُ طيّة.
+  //  ومعه nowPill: خطُّ الآنَ صارَ حافّةَ سطحٍ بوسمِها لا حبّةً فوقَ خطّ.)
   // ── نافذةُ الإجراءات (لوحٌ سفليّ) ──
   sheetScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'rgba(10,32,38,0.24)' },
   sheet: { paddingHorizontal: 17, paddingTop: 13, paddingBottom: 20, marginHorizontal: 11, marginBottom: 11, borderRadius: 32, borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)', shadowColor: '#0A2834', shadowOpacity: 0.24, shadowRadius: 30, shadowOffset: { width: 0, height: 18 }, elevation: 18 },
@@ -2023,7 +2005,7 @@ const full = scaledStyleSheet({
   brkCancel: { marginTop: 13, paddingVertical: 12, borderRadius: 15, alignItems: 'center', backgroundColor: 'rgba(220,38,38,0.09)', borderWidth: 1.5, borderColor: 'rgba(220,38,38,0.34)' },
   brkCancelTxt: { fontSize: 13, fontWeight: '800', color: '#DC2626', letterSpacing: 0.2 },
   // ── إعداداتُ المخطّط (لوحٌ سفليٌّ كلوحِ المريض) ──
-  editScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(10,32,38,0.26)' },
+  // (حُذفَ editScrim: كان اللوحُ في وسطِ الشاشةِ خلفَ عتمة، فصارَ يصعدُ من أسفلِها كأخيه)
   setChip: {
     width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(125,211,192,0.28)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
@@ -2120,9 +2102,6 @@ const cs = scaledStyleSheet({
   badgeFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   badgeTxt: { fontSize: 9.5, lineHeight: 11, fontWeight: '800' },
   name: { flex: 1, fontSize: 12, fontWeight: '800', letterSpacing: -0.1 },
-  chip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.5)' },
-  chipTxt: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.3 },
-  meta: { marginTop: 2, fontSize: 9, fontWeight: '600', opacity: 0.8 },
   // حاويةُ الوقتِ أمامَ الحالة — خلفيّتُها من لونِ الكرتِ نفسِه (v.trk) فتنسجمُ معه
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   tPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7 },
@@ -2139,8 +2118,4 @@ const cs = scaledStyleSheet({
   doc: { flex: 1, fontSize: 8.5, fontWeight: '800', opacity: 0.82 },
 }) as any;
 
-const dots = scaledStyleSheet({
-  row: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(74,85,104,0.25)' },
-  on: { width: 18, backgroundColor: '#7DD3C0' },
-}) as any;
+// (حُذفَ dots: نُقَطُ الصفحاتِ تحتَ اللوح — مساحتُها صارت له، والصفحةُ الثانيةُ تُعرَفُ بالسحب)
