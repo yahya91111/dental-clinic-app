@@ -272,6 +272,13 @@ const makeFadingCell = (scrollY: Animated.Value) =>
     return <Animated.View {...pass}>{children}</Animated.View>;
   };
 
+// ── ذاكرةُ اللوحِ خارجَ الشجرة ──
+// كما تُحفَظُ صفحةُ الصفّاحةِ في QueueTimeline (lastPage): في الذاكرةِ لا في التخزينِ الدائم،
+// لأنّ قراءةَ التخزينِ غيرُ متزامنة، فتُرى الحالُ الأولى لحظةً ثمّ تقفز — وقفزةٌ مع كلِّ
+// دخولٍ أسوأُ من نسيانٍ عندَ إعادةِ تشغيلِ التطبيق. لكلِّ مركزٍ مفتاحُه.
+const lastFold: { [clinic: string]: 0 | 1 } = {};
+const lastStatsH: { [clinic: string]: number } = {};
+
 export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   const {
     timelineBlob1Anim,
@@ -385,11 +392,18 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   // تنزلقُ معه بالقدرِ المتحرَّر. إزاحةٌ وشفافيّةٌ فقط — وكلتاهما تعملُ على المحرّكِ الأصليّ،
   // فالحركةُ كلُّها على خيطِ الواجهةِ ولا تمسُّ جافاسكربت.
   const STRIP_H = scale(50);
-  const [statsH, setStatsH] = useState(0);      // ارتفاعُ البطاقتَين — منه تُشتَقُّ مسافاتُ الإزاحة
-  const foldedRef = useRef(false);
+  // ── والطيُّ يبقى كما تركتَه ──
+  // صفحةُ الدورِ تُهدَمُ كلَّما حلَّ محلَّها ملفُّ مريضٍ أو صفحةٌ أخرى، فتُفقَدُ حالتُها.
+  // وقد كانت صفحةُ الصفّاحةِ تبقى (lastPage في QueueTimeline) بينما يعودُ اللوحُ منشورًا
+  // وإن تركتَه مطويًّا — فيرجعُ نصفُ ما تركتَ. نحفظُ الطيَّ حيثُ نحفظُها: خارجَ الشجرة.
+  // ومعه ارتفاعُ البطاقتَينِ المقيس، لأنّ مسافةَ الطيِّ تُشتَقُّ منه — ولا يُقاسُ وهو مطويّ،
+  // فلولا حفظُه لعادَ مطويًّا بمسافةِ صفر. فيُستأنَفُ مكانَه من أوّلِ إطارٍ بلا قفزة.
+  const foldKey = selectedClinicId || '·';
+  const [statsH, setStatsH] = useState(() => lastStatsH[foldKey] ?? 0);   // ارتفاعُ البطاقتَين — منه تُشتَقُّ مسافاتُ الإزاحة
+  const foldedRef = useRef(!!lastFold[foldKey]);
 
-  const foldT = useRef(new Animated.Value(0)).current;   // ٠ مفتوح · ١ مطويّ
-  const foldAt = useRef(0);                              // الطرفُ المستقرُّ الذي تبدأُ منه السحبةُ التالية
+  const foldT = useRef(new Animated.Value(lastFold[foldKey] ? 1 : 0)).current;   // ٠ مفتوح · ١ مطويّ
+  const foldAt = useRef<0 | 1>(lastFold[foldKey] ? 1 : 0);                       // الطرفُ المستقرُّ الذي تبدأُ منه السحبةُ التالية
   const rangeRef = useRef(1);                            // ما تقطعُه السحبةُ بالبكسل
   rangeRef.current = Math.max(1, statsH - STRIP_H);
 
@@ -499,8 +513,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   const settle = useCallback((to: 0 | 1) => {
     foldAt.current = to;
     foldedRef.current = to === 1;
+    lastFold[foldKey] = to;                                // يُستأنَفُ عليه عندَ العودة
     Animated.spring(foldT, { toValue: to, useNativeDriver: true, speed: 15, bounciness: 0 }).start();
-  }, [foldT]);
+  }, [foldT, foldKey]);
 
   // عموديًّا فقط، وإلّا فالسحبُ الأفقيُّ يبقى لصفحاتِ المخطّط
   const statsPan = useRef(
@@ -827,7 +842,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             // re-measured whenever the cards themselves change height (the
             // statistics card is taller than the two counters)
             const h = Math.round(e.nativeEvent.layout.height);
-            if (h > 0 && h !== statsH && !foldedRef.current) setStatsH(h);
+            if (h > 0 && h !== statsH && !foldedRef.current) { setStatsH(h); lastStatsH[foldKey] = h; }
           }}
         >
           <QueueTimelinePager
