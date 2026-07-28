@@ -828,6 +828,13 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             onEnterClinic={tlEnterClinic}
             onToggleNA={tlToggleNA}
             onDone={tlDone}
+            // «Show profile» من نافذةِ المخطّط — نفسُ مسارِ فتحِ الملفِّ من كرتِ الدور
+            onProfile={(id) => {
+              const p = patients.find((x) => x.id === id);
+              if (!p?.permanent_patient_id) return;
+              setSelectedPatientForProfile({ id: p.permanent_patient_id, fileNumber: p.file_number || '' });
+              setShowPatientFile(true);
+            }}
             // بطاقتانِ لا تحملانِ إلّا رقمَين صارتا لوحًا واحدًا يحملُ اليومَ كلَّه — والعلاجاتُ
             // التي كانت خلفَ لمسةٍ لا يعرفُها أحدٌ صارت سطرًا ظاهرًا فيه.
             statsNode={

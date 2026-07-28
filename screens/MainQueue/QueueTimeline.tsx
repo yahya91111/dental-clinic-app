@@ -235,6 +235,8 @@ export type BlockActions = {
   onEnterClinic: (patientId: string, chair: string) => void;
   onToggleNA: (patientId: string) => void;
   onDone: (patientId: string) => void;
+  // مريضٌ له ملفٌّ دائم: يُفتَحُ ملفُّه من المخطّطِ مباشرةً كما يُفتَحُ من كرتِ الدور
+  onProfile?: (patientId: string) => void;
 };
 
 // ═══════════════ الكروت: ثلاثةُ أعماقٍ لا ثمانيةُ ألوان ═══════════════
@@ -394,11 +396,6 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
       ? { shadowColor: '#08202A', shadowOpacity: 0.30, shadowRadius: scale(20), shadowOffset: { width: 0, height: scale(11) }, elevation: 8 }
       : { shadowColor: '#08202A', shadowOpacity: 0.22, shadowRadius: scale(26), shadowOffset: { width: 0, height: scale(20) }, elevation: 5 };
   return (
-    <>
-      {/* ظلُّ الحائم: لطخةٌ ليّنةٌ **منفصلةٌ** أسفلَه، بينَه وبينَها فُرجة — بها يُقرأُ معلّقًا لا ملتصقًا */}
-      {v.depth === 'air' ? (
-        <SoftShadow left={left + scale(9)} width={Math.max(scale(14), width - scale(18))} top={top + height + scale(3)} />
-      ) : null}
     <TouchableOpacity activeOpacity={0.75} onPress={onPress}
       style={[cs.card, { left, width, top, height, borderColor: v.border },
         v.depth === 'sunk' ? cs.sunk : null, shade]}>
@@ -452,7 +449,6 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
         </View>
       ) : null}
     </TouchableOpacity>
-    </>
   );
 }
 
@@ -585,9 +581,12 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   }, [visible]);
 
   // الكتلةُ (والمريضُ) المفتوحةُ نافذتُها — تُقرأُ من المساراتِ الحيّةِ لا من لقطة، فتعكسُ الحالةَ اللحظيّة.
+  // ومَن كان «خلفَ الشفت» لا كتلةَ له في الجدول، فنقرؤه من قائمةِ الراحلين — كي تُفتَحَ له
+  // النافذةُ نفسُها بإجراءاتِها كلِّها حينَ تنقرُ اسمَه في شارةِ «+N».
   const actBlk = actionId ? (lanes.flatMap((l) => l.blocks).find((b) => b.p.id === actionId) ?? null) : null;
-  const actP = actBlk?.p ?? null;
-  const actNA = actBlk?.kind === 'na';
+  const actBeyond = (!actBlk && actionId) ? (lanes.flatMap((l) => l.beyond).find((p) => p.id === actionId) ?? null) : null;
+  const actP = actBlk?.p ?? actBeyond ?? null;
+  const actNA = actBlk ? actBlk.kind === 'na' : actP?.status === 'na';
   const actEntered = actBlk ? (actBlk.kind === 'cur' || actBlk.kind === 'over') : false;
 
   // حالُ كلِّ كرسيٍّ الآنَ (لِشرائحِ الاختيارِ في النافذة): مشغولٌ إن كان فيه مريضٌ جارٍ، وإلّا فارغ
@@ -782,10 +781,9 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
               <Text style={full.eyebrow}>{title ?? fmtToday()}</Text>
               <View style={{ flex: 1 }} />
               {!readOnly && (
-                <TouchableOpacity style={[full.iconBtn, full.breakBtn]} activeOpacity={0.85} onPress={openEditor}>
-                  <LinearGradient colors={['rgba(253,246,231,0.97)', 'rgba(243,223,183,0.94)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={full.breakBtnFill} />
-                  <View style={full.breakBtnDot}><Text style={full.breakBtnIcon}>⚙︎</Text></View>
-                  <Text style={full.breakBtnTxt}>Edit</Text>
+                <TouchableOpacity style={full.iconBtn} activeOpacity={0.85} onPress={openEditor}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="settings-outline" size={scale(16)} color="#4A5568" />
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={full.iconBtn} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Text style={full.closeTxt}>✕</Text></TouchableOpacity>
@@ -1149,8 +1147,23 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                   {!(!actEntered || actNA) ? <LinearGradient colors={['#12B58C', '#0B7A5E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={full.actDoneFill} /> : null}
                   <Text style={full.actDoneTxt}>Done</Text>
                 </TouchableOpacity>
-                {!actEntered && !actNA ? <Text style={full.hint}>اختَرْ عيادةً لإدخالِ المريضِ أوّلًا</Text> : null}
-                {actNA ? <Text style={full.hint}>المريضُ خارجَ الدورِ الآن</Text> : null}
+                {!actEntered && !actNA ? <Text style={full.hint}>Choose a chair to seat the patient first</Text> : null}
+                {actNA ? <Text style={full.hint}>This patient is out of the queue right now</Text> : null}
+
+                {/* ٤ — الملفُّ الدائم: يظهرُ لمن له ملفٌّ فقط، ويفتحُه كما يفتحُه كرتُ الدور */}
+                {actP.permanent_patient_id && actions.onProfile ? (
+                  <TouchableOpacity style={full.actProfile} activeOpacity={0.85}
+                    onPress={() => { const id = actP.id; setActionId(null); actions.onProfile?.(id); }}>
+                    <View style={full.actProfileIcon}><Ionicons name="folder-open" size={scale(14)} color="#0B7F71" /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={full.actProfileTxt}>Show profile</Text>
+                      <Text style={full.actProfileSub} numberOfLines={1}>
+                        {actP.file_number ? `File ${actP.file_number}` : 'Permanent patient file'}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={scale(14)} color="#8CA0A8" />
+                  </TouchableOpacity>
+                ) : null}
 
                 <TouchableOpacity style={full.actClose} onPress={() => setActionId(null)}><Text style={full.actCloseTxt}>Close</Text></TouchableOpacity>
               </Animated.View>
@@ -1211,27 +1224,44 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             </View>
           )}
 
-          {/* «خلفَ الشفت»: أسماءُ مَن لن يُدرِكَهم هذا الشفتُ في هذه العيادة */}
+          {/* «خلفَ الشفت»: أسماءُ مَن لن يُدرِكَهم هذا الشفتُ في هذه العيادة.
+              وليست قائمةَ خبرٍ فحسب: انقرِ اسمًا فتُفتَحَ نافذةُ إجراءاتِه نفسُها — لعلّه لم يعُدْ
+              موجودًا، أو لعلّك أدخلتَه وأنهيتَه رغمَ التبديل. */}
           {beyondLane && (() => {
             const l = lanes.find((x) => x.clinic === beyondLane);
             if (!l) return null;
             return (
               <View style={StyleSheet.absoluteFill}>
-                <BlurView intensity={20} tint="light" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
-                <View style={full.editScrim}>
+                <BlurView intensity={24} tint="light" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
+                <View style={full.sheetScrim}>
                   <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setBeyondLane(null)} />
-                  <View style={full.byCard}>
-                    <Text style={full.byT}>خلفَ تبديلِ الشفت</Text>
-                    <Text style={full.byS}>{l.clinic} · لن يُدرِكَهم هذا الشفت</Text>
-                    <ScrollView style={{ maxHeight: scale(220) }} showsVerticalScrollIndicator={false}>
+                  <View style={full.sheet}>
+                    <View style={full.sheetGlass}>
+                      <LinearGradient colors={['rgba(255,255,255,0.82)', 'rgba(240,247,250,0.6)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                      <LinearGradient colors={['rgba(122,140,150,0.16)', 'rgba(122,140,150,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.55 }} style={StyleSheet.absoluteFill} />
+                    </View>
+                    <View pointerEvents="none" style={full.sheetTopHi} />
+                    <View style={full.grab} />
+                    <View style={full.shHead}>
+                      <View style={full.byChip}><Text style={full.byChipTxt}>+{l.beyond.length}</Text></View>
+                      <View style={{ flexShrink: 1 }}>
+                        <Text style={full.shName} numberOfLines={1}>Beyond the shift</Text>
+                        <Text style={full.shMeta} numberOfLines={1}>Clinic {clinicNum(l.clinic) || l.short} · this shift won't reach them</Text>
+                      </View>
+                    </View>
+                    <View style={full.shDivider} />
+                    <Text style={full.shLabel}>TAP A NAME FOR ACTIONS</Text>
+                    <ScrollView style={{ maxHeight: scale(230) }} showsVerticalScrollIndicator={false}>
                       {l.beyond.map((p) => (
-                        <View key={p.id} style={full.byRow}>
+                        <TouchableOpacity key={p.id} activeOpacity={0.8} style={full.byRow}
+                          onPress={() => { setBeyondLane(null); setActionId(p.id); }}>
                           <View style={full.byNo}><Text style={full.byNoTxt}>{p.queue_number}</Text></View>
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <Text style={full.byName} numberOfLines={1}>{p.name}</Text>
-                            <Text style={full.byTx} numberOfLines={1}>{p.treatment || '—'} · {estMinutes(p)} min</Text>
+                            <Text style={full.byTx} numberOfLines={1}>{(p.treatment && p.treatment !== 'Treatment') ? p.treatment : 'Treatment'} · {estMinutes(p)} min</Text>
                           </View>
-                        </View>
+                          <Ionicons name="chevron-forward" size={scale(14)} color="#9AACB3" />
+                        </TouchableOpacity>
                       ))}
                     </ScrollView>
                     <TouchableOpacity style={full.actClose} onPress={() => setBeyondLane(null)}>
@@ -1243,64 +1273,75 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             );
           })()}
 
-          {/* محرِّرُ أوقاتِ البريك (لوحٌ كريميٌّ في القلب — إعدادٌ لا إجراءٌ على مريض) */}
+          {/* إعداداتُ المخطّط — نفسُ لوحِ المريضِ مادّةً وشكلًا: إعدادٌ لا إجراءٌ على مريض، لكنّه
+              يخرجُ من المكانِ نفسِه ويُغلَقُ كما يُغلَق. */}
           {editingBreaks && (
             <View style={StyleSheet.absoluteFill}>
               <BlurView intensity={24} tint="light" experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill} />
-              <View style={full.editScrim}>
+              <View style={full.sheetScrim}>
               <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setEditingBreaks(false)} />
-              <Animated.View style={[full.editCard, { opacity: editAnim, transform: [{ translateY: editAnim.interpolate({ inputRange: [0, 1], outputRange: [scale(14), 0] }) }] }]}>
-                <View style={full.editHd}>
-                  <View style={full.editHdIcon}><Text style={{ fontSize: scale(14) }}>⚙︎</Text></View>
-                  <View>
-                    <Text style={full.editHdT}>إعداداتُ المخطّط</Text>
-                    <Text style={full.editHdS}>لكلِّ العيادات · تُطبَّقُ فورًا</Text>
+              <Animated.View style={[full.sheet, { opacity: editAnim, transform: [{ translateY: editAnim.interpolate({ inputRange: [0, 1], outputRange: [scale(340), 0] }) }] }]}>
+                <View style={full.sheetGlass}>
+                  <LinearGradient colors={['rgba(255,255,255,0.82)', 'rgba(240,247,250,0.6)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                  <LinearGradient colors={['rgba(125,211,192,0.18)', 'rgba(125,211,192,0)']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.55 }} style={StyleSheet.absoluteFill} />
+                </View>
+                <View pointerEvents="none" style={full.sheetTopHi} />
+                <View style={full.grab} />
+                <View style={full.shHead}>
+                  <View style={full.setChip}><Ionicons name="settings-outline" size={scale(17)} color={TEAL_INK} /></View>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={full.shName} numberOfLines={1}>Chart setup</Text>
+                    <Text style={full.shMeta} numberOfLines={1}>Applies to every clinic · saved at once</Text>
                   </View>
                 </View>
+                <View style={full.shDivider} />
 
                 {/* عددُ الكراسي — لِمخطّطِ الدورِ وحدَه. الجدولُ الأسبوعيُّ شيءٌ آخر:
                     قد تفتحُ عيادةً إضافيّةً اليومَ أو تُغلقَ واحدةً، وليس على المخطّطِ
                     أن ينتظرَ تعديلَ الجدولِ كي يعكسَ ما هو قائمٌ فعلًا. */}
+                <Text style={full.shLabel}>OPEN CHAIRS</Text>
                 <View style={full.cntRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={full.cntT}>عددُ العيادات</Text>
-                    <Text style={full.cntS}>مستقلٌّ عن الجدول</Text>
+                    <Text style={full.cntT}>Chairs working today</Text>
+                    <Text style={full.cntS}>Independent of the weekly schedule</Text>
                   </View>
-                  <TouchableOpacity
-                    style={[full.cntBtn, chairDraft <= 1 && full.cntBtnOff]}
-                    activeOpacity={0.8}
-                    disabled={chairDraft <= 1}
-                    onPress={() => setChairDraft((n) => Math.max(1, n - 1))}
-                  >
+                  <TouchableOpacity style={[full.cntBtn, chairDraft <= 1 && full.cntBtnOff]} activeOpacity={0.8}
+                    disabled={chairDraft <= 1} onPress={() => setChairDraft((n) => Math.max(1, n - 1))}>
                     <Text style={full.cntBtnTxt}>−</Text>
                   </TouchableOpacity>
                   <Text style={full.cntNum}>{chairDraft || 1}</Text>
-                  <TouchableOpacity
-                    style={[full.cntBtn, chairDraft >= 12 && full.cntBtnOff]}
-                    activeOpacity={0.8}
-                    disabled={chairDraft >= 12}
-                    onPress={() => setChairDraft((n) => Math.min(12, (n || 1) + 1))}
-                  >
+                  <TouchableOpacity style={[full.cntBtn, chairDraft >= 12 && full.cntBtnOff]} activeOpacity={0.8}
+                    disabled={chairDraft >= 12} onPress={() => setChairDraft((n) => Math.min(12, (n || 1) + 1))}>
                     <Text style={full.cntBtnTxt}>＋</Text>
                   </TouchableOpacity>
                 </View>
 
-                <Text style={full.editGroup}>أوقاتُ الاستراحة</Text>
-                <ScrollView style={{ maxHeight: scale(176) }}>
-                  {draft.length === 0 && <Text style={full.editEmpty}>لا فتراتٍ بعد — أضِفْ فترة.</Text>}
+                <Text style={full.shLabel}>BREAK TIMES</Text>
+                <ScrollView style={{ maxHeight: scale(168) }} showsVerticalScrollIndicator={false}>
+                  {draft.length === 0 && <Text style={full.editEmpty}>No breaks yet — add one below.</Text>}
                   {draft.map((b, i) => (
                     <View key={i} style={full.brRow}>
                       <TimeStepper value={b.start} onChange={(v) => setDraft((d) => d.map((x2, j) => (j === i ? { ...x2, start: v } : x2)))} />
                       <Text style={full.brArrow}>→</Text>
                       <TimeStepper value={b.end} onChange={(v) => setDraft((d) => d.map((x2, j) => (j === i ? { ...x2, end: v } : x2)))} />
-                      <TouchableOpacity style={full.brDel} onPress={() => setDraft((d) => d.filter((_, j) => j !== i))}><Text style={full.brDelTxt}>✕</Text></TouchableOpacity>
+                      <TouchableOpacity style={full.brDel} activeOpacity={0.8} onPress={() => setDraft((d) => d.filter((_, j) => j !== i))}>
+                        <Ionicons name="close" size={scale(13)} color="#DC2626" />
+                      </TouchableOpacity>
                     </View>
                   ))}
                 </ScrollView>
-                <TouchableOpacity style={full.brAdd} onPress={() => setDraft((d) => [...d, { start: 12 * 60, end: 12 * 60 + 30 }])}><Text style={full.brAddTxt}>＋ إضافةُ فترة</Text></TouchableOpacity>
+                <TouchableOpacity style={full.brAdd} activeOpacity={0.85} onPress={() => setDraft((d) => [...d, { start: 12 * 60, end: 12 * 60 + 30 }])}>
+                  <Ionicons name="add" size={scale(14)} color={TEAL_INK} />
+                  <Text style={full.brAddTxt}>Add a break</Text>
+                </TouchableOpacity>
                 <View style={full.editBtns}>
-                  <TouchableOpacity style={full.editCancel} onPress={() => setEditingBreaks(false)}><Text style={full.editCancelTxt}>إلغاء</Text></TouchableOpacity>
-                  <TouchableOpacity style={full.editSave} onPress={saveEditor}><Text style={full.editSaveTxt}>حفظ</Text></TouchableOpacity>
+                  <TouchableOpacity style={full.editCancel} activeOpacity={0.85} onPress={() => setEditingBreaks(false)}>
+                    <Text style={full.editCancelTxt}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={full.editSave} activeOpacity={0.9} onPress={saveEditor}>
+                    <LinearGradient colors={['#12B58C', '#0B7A5E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={full.actDoneFill} />
+                    <Text style={full.editSaveTxt}>Save</Text>
+                  </TouchableOpacity>
                 </View>
               </Animated.View>
               </View>
@@ -1351,13 +1392,14 @@ export function DayChartViewer({ visible, onClose, chart, dateLabel }:
 // الأولى لحظةً ثمّ تقفز — وقفزةٌ مع كلِّ دخولٍ أسوأُ من نسيانٍ عندَ إعادةِ تشغيلِ التطبيق.
 const lastPage: { [clinic: string]: number } = {};
 
-export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone }:
+export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone, onProfile }:
   { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
     onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
     // إجراءاتُ صفحةِ الدور الحقيقيّة (نفسُها على الكرت) — تُستدعى خارجَ المحاكاة
     onEnterClinic?: (patientId: string, clinic: string) => void;
     onToggleNA?: (patientId: string) => void;
-    onDone?: (patientId: string) => void }) {
+    onDone?: (patientId: string) => void;
+    onProfile?: (patientId: string) => void }) {
   const W = SCREEN.width;
   const insets = useSafeAreaInsets();
   const [nowMin, setNowMin] = useState(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); });
@@ -1504,7 +1546,9 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
       // ونُمهِلُ إغلاقَه قبلَ فتحِها لأنّ فتحَ نافذةٍ في اللحظةِ نفسِها التي تُغلَقُ فيها أخرى قد يبتلِعُها.
       else { setShowFull(false); setTimeout(() => onDone?.(id), 350); }
     },
-  }), [simOn, simNowMin, simActs, simChairs.length, patients, onEnterClinic, onToggleNA, onDone]);
+    // الملفُّ صفحةٌ كاملةٌ تُفتَحُ فوقَ الصفحة، فنُغلقُ المخطّطَ أوّلًا ثمّ نفتحُه — كما في الإنهاء
+    onProfile: (id) => { setShowFull(false); setTimeout(() => onProfile?.(id), 350); },
+  }), [simOn, simNowMin, simActs, simChairs.length, patients, onEnterClinic, onToggleNA, onDone, onProfile]);
 
   const simApi = {
     on: simOn, playing: simPlaying, speed: simSpeed,
@@ -1848,6 +1892,17 @@ const full = scaledStyleSheet({
   actDoneOff: { backgroundColor: 'rgba(140,160,168,0.32)', shadowOpacity: 0, elevation: 0 },
   actDoneTxt: { fontSize: 15, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
   hint: { marginTop: 8, fontSize: 10, fontWeight: '700', textAlign: 'center', color: '#8CA0A8' },
+  // ملفُّ المريضِ الدائم — يظهرُ لمن له ملفٌّ وحدَه
+  actProfile: {
+    flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 11, padding: 11, borderRadius: 16,
+    backgroundColor: 'rgba(125,211,192,0.16)', borderWidth: 1.5, borderColor: 'rgba(14,124,102,0.34)',
+  },
+  actProfileIcon: {
+    width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.85)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)',
+  },
+  actProfileTxt: { fontSize: 13.5, fontWeight: '800', color: '#06322A' },
+  actProfileSub: { marginTop: 1.5, fontSize: 10, fontWeight: '700', color: '#5A7079' },
   actClose: { marginTop: 11, paddingVertical: 9, alignItems: 'center' },
   actCloseTxt: { fontSize: 13.5, fontWeight: '800', color: '#6B7280', letterSpacing: 0.3 },
   // ── نافذةُ نوعِ البريك (ثابت/متحرّك) ──
@@ -1869,14 +1924,13 @@ const full = scaledStyleSheet({
   brkOptRing: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.4)' },
   brkCancel: { marginTop: 13, paddingVertical: 12, borderRadius: 15, alignItems: 'center', backgroundColor: 'rgba(220,38,38,0.09)', borderWidth: 1.5, borderColor: 'rgba(220,38,38,0.34)' },
   brkCancelTxt: { fontSize: 13, fontWeight: '800', color: '#DC2626', letterSpacing: 0.2 },
-  // ── محرِّرُ البريك (كريميّ في القلب) ──
+  // ── إعداداتُ المخطّط (لوحٌ سفليٌّ كلوحِ المريض) ──
   editScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(10,32,38,0.26)' },
-  editCard: { width: '100%', maxWidth: 360, padding: 17, borderRadius: 26, backgroundColor: 'rgba(253,247,238,0.97)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)' },
-  editHd: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 14 },
-  editHdIcon: { width: 32, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.8)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  editHdT: { fontSize: 15, fontWeight: '800', color: '#5F4E36' },
-  editHdS: { marginTop: 1, fontSize: 9.5, fontWeight: '700', color: '#9A8564' },
-  editEmpty: { fontSize: 12, color: '#A8926F', textAlign: 'center', paddingVertical: 22 },
+  setChip: {
+    width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(125,211,192,0.28)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
+  },
+  editEmpty: { fontSize: 11.5, fontWeight: '600', color: '#8CA0A8', textAlign: 'center', paddingVertical: 20 },
 
   // شارةُ «خلفَ الشفت» ولوحُ أسمائِها — رماديّةٌ هادئة: هؤلاء ليسوا جدولًا، بل تنبيهٌ
   beyond: {
@@ -1887,62 +1941,61 @@ const full = scaledStyleSheet({
   },
   beyondN: { fontSize: 15, fontWeight: '800', color: '#5A7079', letterSpacing: -0.4 },
   beyondL: { marginTop: 1, fontSize: 7.5, fontWeight: '800', letterSpacing: 0.8, color: '#8CA0A8' },
-  byCard: {
-    width: '86%', maxWidth: 380, borderRadius: 22, padding: 18,
-    backgroundColor: 'rgba(252,253,255,0.98)',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.9)',
-    shadowColor: '#1E2D4B', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 12,
+  byChip: {
+    width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(122,140,150,0.20)', borderWidth: 1.5, borderColor: 'rgba(122,140,150,0.45)', borderStyle: 'dashed',
   },
-  byT: { fontSize: 16, fontWeight: '800', color: '#12232A' },
-  byS: { marginTop: 2, marginBottom: 12, fontSize: 11.5, fontWeight: '600', color: '#8CA0A8' },
+  byChipTxt: { fontSize: 14, fontWeight: '800', color: '#5A7079', letterSpacing: -0.4 },
   byRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 11,
-    paddingVertical: 9, borderTopWidth: 1, borderTopColor: 'rgba(40,54,82,0.07)',
+    flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 7,
+    paddingVertical: 9, paddingHorizontal: 10, borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)',
   },
   byNo: {
     width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(122,140,150,0.14)',
+    backgroundColor: 'rgba(122,140,150,0.16)',
   },
   byNoTxt: { fontSize: 13, fontWeight: '800', color: '#5A7079' },
-  byName: { fontSize: 14, fontWeight: '700', color: '#12232A' },
-  byTx: { marginTop: 1, fontSize: 11, fontWeight: '600', color: '#8CA0A8' },
+  byName: { fontSize: 13.5, fontWeight: '800', color: '#12232A' },
+  byTx: { marginTop: 1.5, fontSize: 10.5, fontWeight: '600', color: '#8CA0A8' },
 
   // عددُ العيادات — صفٌّ واحدٌ بارزٌ فوقَ فتراتِ الاستراحة
   cntRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginTop: 12, paddingHorizontal: 12, paddingVertical: 10,
-    borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.46)',
-    borderWidth: 1.5, borderColor: 'rgba(212,186,148,0.55)',
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.30)',
   },
-  cntT: { fontSize: 13, fontWeight: '800', color: '#6B5735' },
-  cntS: { marginTop: 1, fontSize: 9.5, fontWeight: '700', color: '#9A8564' },
+  cntT: { fontSize: 13, fontWeight: '800', color: '#22434C' },
+  cntS: { marginTop: 1.5, fontSize: 9.5, fontWeight: '700', color: '#8CA0A8' },
   cntBtn: {
     width: 32, height: 32, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderWidth: 1.5, borderColor: 'rgba(212,186,148,0.7)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderWidth: 1.5, borderColor: 'rgba(14,124,102,0.30)',
   },
-  cntBtnOff: { opacity: 0.35 },
-  cntBtnTxt: { fontSize: 17, fontWeight: '800', color: '#6B5735', marginTop: -1 },
-  cntNum: { minWidth: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', color: '#4E3F24', letterSpacing: -0.5 },
+  cntBtnOff: { opacity: 0.32 },
+  cntBtnTxt: { fontSize: 17, lineHeight: 19, fontWeight: '800', color: TEAL_INK, marginTop: -1 },
+  cntNum: { minWidth: 26, textAlign: 'center', fontSize: 19, lineHeight: 21, fontWeight: '800', color: '#12232A', letterSpacing: -0.5 },
 
-  editGroup: { marginTop: 14, marginBottom: 4, fontSize: 10, fontWeight: '800', letterSpacing: 1, color: '#9A8564' },
-  brRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8, padding: 8, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
-  brArrow: { fontSize: 12, fontWeight: '800', color: '#B49A72' },
-  brDel: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(239,68,68,0.1)' },
-  brDelTxt: { fontSize: 13, fontWeight: '800', color: '#DC2626' },
-  brAdd: { marginTop: 10, paddingVertical: 11, borderRadius: 14, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.4)', borderWidth: 1.5, borderColor: 'rgba(212,186,148,0.7)', borderStyle: 'dashed' },
-  brAddTxt: { fontSize: 12.5, fontWeight: '800', color: '#7A6446' },
+  brRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8, padding: 7, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
+  brArrow: { fontSize: 12, fontWeight: '800', color: '#9AACB3' },
+  brDel: { width: 30, height: 30, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(220,38,38,0.10)' },
+  brAdd: { marginTop: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 15, backgroundColor: 'rgba(125,211,192,0.14)', borderWidth: 1.5, borderColor: 'rgba(14,124,102,0.34)', borderStyle: 'dashed' },
+  brAddTxt: { fontSize: 12.5, fontWeight: '800', color: TEAL_INK, letterSpacing: 0.2 },
   editBtns: { flexDirection: 'row', gap: 9, marginTop: 14 },
-  editCancel: { flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.42)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
-  editCancelTxt: { fontSize: 13.5, fontWeight: '800', color: '#7A6446' },
-  editSave: { flex: 1.4, paddingVertical: 12, borderRadius: 14, alignItems: 'center', backgroundColor: '#9A6E32' },
-  editSaveTxt: { fontSize: 13.5, fontWeight: '800', color: '#fff' },
+  editCancel: { flex: 1, paddingVertical: 13, borderRadius: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.34)' },
+  editCancelTxt: { fontSize: 13.5, fontWeight: '800', color: '#31454D' },
+  editSave: {
+    flex: 1.4, paddingVertical: 13, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    shadowColor: '#0B7A5E', shadowOpacity: 0.32, shadowRadius: 12, shadowOffset: { width: 0, height: 7 }, elevation: 5,
+  },
+  editSaveTxt: { fontSize: 14, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
   // ── منتقي الوقت (البريك) ──
-  stepper: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 3, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.62)', borderWidth: 1, borderColor: 'rgba(212,186,148,0.4)' },
-  stepBtn: { width: 28, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.7)' },
-  stepSign: { fontSize: 16, fontWeight: '800', color: '#7A6446' },
-  stepVal: { fontSize: 14, fontWeight: '800', color: '#5F4E36' },
+  stepper: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 3, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(140,160,168,0.26)' },
+  stepBtn: { width: 28, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: 'rgba(125,211,192,0.20)' },
+  stepSign: { fontSize: 15, lineHeight: 17, fontWeight: '800', color: TEAL_INK },
+  stepVal: { fontSize: 14, lineHeight: 16, fontWeight: '800', color: '#12232A', letterSpacing: -0.3 },
 }) as any;
 
 // ── كرتُ المريضِ في المخطّطِ المكبّر ──
