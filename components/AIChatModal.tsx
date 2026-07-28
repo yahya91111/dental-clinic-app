@@ -133,56 +133,11 @@ function coverageDays(d: Record<string, any>): SeedDay[] {
   return [];
 }
 
-function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
+function buildCoverageSeed(n: ConvoNotif): string {
   const d = n.data || {};
-  // كرت «عودة تحتاج مكانًا»: أُلغيت حالةٌ ومكان صاحبها مُغطًّى — الذكاء يسأل القائد
-  // أين يوضَع العائد (بلا اقتراحات) وينفّذ أمره كما هو. العائد قد يكون القائد نفسه
-  // (ألغى حالته بنفسه) — حينها يُخاطَب مباشرةً: «أين تريد أن تعود؟».
-  if (d.placement) {
-    const p = d.placement as { day?: string; doctor_id?: string; doctor_name?: string; status_ar?: string; converted?: boolean };
-    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
-    const self = !!selfId && p.doctor_id === selfId;
-    // تحويل مرضيّةٍ/تفرّغٍ مُغطًّى إلى استئذان: حاضرٌ معظم اليوم لكن بلا مركز —
-    // نفس سؤال «أين يوضَع؟» بصياغة التحويل لا الإلغاء.
-    if (p.converted) {
-      return [
-        'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): طبيبٌ حوّل حالة غيابه (مرضية/تفرّغ) إلى',
-        'استئذانٍ — أي أنّه حاضرٌ معظم اليوم — لكنّ مكانه السابق غُطّي وقت غيابه فلا',
-        'يُعاد إليه تلقائيًّا. ابدأ أنت الحديث مع القائد كأنّك لاحظتَ ذلك بنفسك:',
-        self
-          ? 'وهو نفسه المحوِّل — أخبره أنّ مكانه السابق مُغطًّى واسأله **سطرًا واحدًا** أين'
-          : `أخبره أنّ ${dr(p.doctor_name)} حوّل حالته إلى استئذانٍ يوم ${dayAr} ومكانه السابق`,
-        self
-          ? 'يعود — **بلا اقتراحات ولا خيارات**.'
-          : 'مُغطًّى، واسأله **سطرًا واحدًا** أين يضعه — **بلا اقتراحات ولا خيارات**.',
-        'ثمّ نفّذ ما يطلبه كما هو بأدواتك (ومرّر اليوم والأسبوع أدناه). أكّد بسطرٍ بعد التنفيذ.',
-        '',
-        `الأسبوع: ${d.week_start || ''}`,
-        `اليوم: ${p.day || ''} (${dayAr})`,
-        `الطبيب المستأذن: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
-      ].join('\n');
-    }
-    return [
-      self
-        ? 'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): القائد الذي تخاطبه ألغى حالته بنفسه،'
-        : 'حدثٌ داخليّ (لا تذكر أنّه مُعطى لك): أُلغيت حالة طبيب، ومكانه السابق صار مُغطًّى',
-      self
-        ? 'ومكانه السابق صار مُغطًّى فلم يُعَد إليه تلقائيًّا. ابدأ أنت الحديث وخاطبه'
-        : 'فلم يُعَد إليه تلقائيًّا. ابدأ أنت الحديث مع القائد كأنّك لاحظتَ ذلك بنفسك:',
-      self
-        ? `مباشرةً (هو نفسه العائد): أخبره أنّ مكانه السابق مُغطًّى، واسأله **سطرًا واحدًا**`
-        : `أخبره أنّ ${p.status_ar || 'حالة'} ${dr(p.doctor_name)} يوم ${dayAr} أُلغيت وأنّ مكانه`,
-      self
-        ? 'أين يريد أن يعود — **بلا اقتراحات ولا خيارات**.'
-        : 'السابق مُغطًّى، واسأله **سطرًا واحدًا** أين يضعه — **بلا اقتراحات ولا خيارات**.',
-      'ثمّ نفّذ ما يطلبه كما هو (قد يكون مركّبًا بأكثر من نقلة — نفّذها كلّها بأدواتك،',
-      'ومرّر اليوم والأسبوع أدناه). أكّد بسطرٍ بعد التنفيذ.',
-      '',
-      `الأسبوع: ${d.week_start || ''}`,
-      `اليوم: ${p.day || ''} (${dayAr})`,
-      `الطبيب العائد: ${dr(p.doctor_name)}${self ? ' (هو القائد المخاطَب نفسه)' : ''}`,
-    ].join('\n');
-  }
+  // (حُذفَ كرت «عودة تحتاج مكانًا»: صارَ العائدُ يستردُّ مقاعدَه تلقائيًّا ويرجعُ المغطّي
+  //  إلى الاحتياط، فلا سؤالَ للقائد ولا كرت. مُنتِجُه alertLeaderPlacement أُزيلَ منذ ٢٠٢٦-٠٦-٢٦،
+  //  وهذا كان قارئَه وحدَه. تبقى resolvePlacementV2 لإغلاقِ صفوفٍ قديمةٍ في قاعدةِ البيانات.)
   // كرت «تغطية نقص — قرارك»: بقي مقعدٌ بلا بديلٍ معتاد، والمتاح فئةٌ لا تُستدعى
   // تلقائيًّا (بورد/متدرّب). الذكاء يعرض الأسماء على القائد ويسأله: مَن يُستدعى أو لا أحد.
   if (d.reserve_choice) {
@@ -220,11 +175,6 @@ function buildCoverageSeed(n: ConvoNotif, selfId?: string): string {
 /** عنوان الكرت الثابت: الطبيب الغائب + أيّام النقص (بلا حلول وبلا فترات). */
 function coverageTitle(n: ConvoNotif): string {
   const d = n.data || {};
-  if (d.placement) {
-    const p = d.placement as { day?: string; doctor_name?: string };
-    const dayAr = DAY_AR_SEED[p.day || ''] || p.day || '';
-    return `عودة تحتاج مكانًا — ${dr(p.doctor_name)}${dayAr ? `: ${dayAr}` : ''}`;
-  }
   if (d.reserve_choice) {
     const rc = d.reserve_choice as { day?: string; absent_names?: string[] };
     const dayAr = DAY_AR_SEED[rc.day || ''] || rc.day || '';
@@ -444,7 +394,7 @@ function CoverageCard({ notif, user, clinicId, onSeen }: {
       const res = await sendMessageV2({
         messages: h, user: v2User,
         clinicId: clinicId || user.clinicId || undefined,
-        contextData: buildCoverageSeed(notif, user.id), task: 'requests',
+        contextData: buildCoverageSeed(notif), task: 'requests',
       });
       const text = res.success ? res.message : (res.error || 'تعذّر تنفيذ الطلب.');
       const next: V2Message[] = [...h, { role: 'assistant', content: text }];
@@ -918,7 +868,8 @@ export function AICardsView({ user, clinicId }: {
         if (isDecisionCard(n) && n.id !== activeDecisionId) return null;
         if (n.type === 'gap_alert') {
           if (n.data?.v !== 2) return null;
-          if (coverageDays(n.data).length === 0 && !n.data?.placement && !n.data?.reserve_choice) return null;
+          // صفٌّ قديمٌ لا يحملُ إلّا placement = كرتٌ متقاعدٌ لا قارئَ له → لا يُرسَمُ أصلًا
+          if (coverageDays(n.data).length === 0 && !n.data?.reserve_choice) return null;
           return (
             <CoverageCard key={n.id} notif={n} user={user} clinicId={clinicId ?? user.clinicId} onSeen={loadConvo} />
           );
