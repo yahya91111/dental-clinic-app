@@ -1,6 +1,6 @@
 {
   "name": "dental-clinic-mobile",
-  "version": "1.0.9",
+  "version": "1.0.11",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
