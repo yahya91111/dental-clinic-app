@@ -455,12 +455,14 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
 // readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا محاكاةَ ولا
 // تحريرَ بريكاتٍ ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
-function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle }:
+// instant: فُتِحَ استئنافًا (عائدًا من ملفِّ مريضٍ دخلتَه من هنا) — فلا مقدّماتٍ ولا تلاشٍ:
+// يُرسَمُ في مكانِه من أوّلِ إطارٍ كأنّك لم تغادرْه.
+function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle, instant }:
   { visible: boolean; onClose: () => void; data: TimelineData; nowMin: number; topInset: number; bottomInset: number;
     sim: { on: boolean; playing: boolean; speed: number; toggle: () => void; playPause: () => void; cycleSpeed: () => void; reset: () => void };
     breaks: Break[]; onSaveBreaks: (b: Break[]) => void;
     chairCount: number; onSetChairCount: (n: number) => void; actions: BlockActions;
-    readOnly?: boolean; title?: string; subtitle?: string }) {
+    readOnly?: boolean; title?: string; subtitle?: string; instant?: boolean }) {
   const { lanes, dayStart, dayEnd } = data;
   const [actionId, setActionId] = useState<string | null>(null);   // المريضُ المفتوحةُ نافذتُه
   const [editingBreaks, setEditingBreaks] = useState(false);
@@ -579,6 +581,9 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     return () => clearTimeout(id);
     // عندَ الفتحِ فقط: بعدَ ذلك التمريرُ لك، فلا يُخطَفُ منك مع كلِّ دقيقة
   }, [visible]);
+  // في الاستئنافِ لا يكفي أن نمرّرَ بعدَ الرسم — يُرى إطارٌ عندَ الحافّةِ اليسرى ثمّ يقفز. فنضعُ
+  // الإزاحةَ **قبلَ أوّلِ رسمة**. ومرجعٌ لا يتغيّرُ كي لا تُخطَفَ يدُك مع كلِّ دقيقةٍ بعدَ ذلك.
+  const bootX = useRef(Math.max(0, nowX - scale(90)));
 
   // الكتلةُ (والمريضُ) المفتوحةُ نافذتُها — تُقرأُ من المساراتِ الحيّةِ لا من لقطة، فتعكسُ الحالةَ اللحظيّة.
   // ومَن كان «خلفَ الشفت» لا كتلةَ له في الجدول، فنقرؤه من قائمةِ الراحلين — كي تُفتَحَ له
@@ -771,7 +776,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   });
 
   return (
-    <Modal visible={visible} animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible={visible} animationType={instant ? 'none' : 'fade'} statusBarTranslucent onRequestClose={onClose}>
       <LinearGradient colors={BG_COLORS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
         <BlobField />
         <View style={{ flex: 1, paddingTop: Math.max(topInset, scale(24)), paddingBottom: Math.max(bottomInset, scale(8)) }}>
@@ -872,6 +877,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                 onScroll={onHScroll as any}
                 scrollEventThrottle={16}
                 onLayout={(e) => setPortW(e.nativeEvent.layout.width)}
+                contentOffset={instant ? { x: bootX.current, y: 0 } : undefined}
               >
                 <View style={{ width: contentW, height: topH + lanes.length * unitH }}>
                   {/* المستقبلُ نصفُ ورقةٍ أعلى: حجابٌ فاتحٌ يبدأُ عندَ الآنَ ويخفُّ سريعًا — يُفتِّحُ الأرضَ ولا يُغرِقُها */}
@@ -1440,9 +1446,12 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
     const id = setTimeout(() => setReady(true), 60);
     return () => clearTimeout(id);
   }, [ready]);
-  // إن كنتَ خرجتَ من هنا إلى ملفِّ مريضٍ، فالمخطّطُ هو ما يستقبلُك عندَ الرجوع
-  const [showFull, setShowFull] = useState(() => !!reopenChart[clinicId || '·']);
+  // إن كنتَ خرجتَ من هنا إلى ملفِّ مريضٍ، فالمخطّطُ هو ما يستقبلُك عندَ الرجوع — **بلا تلاشٍ
+  // ولا تمريرٍ يُرى**: استئنافٌ لا فتحٌ جديد. وإلّا لمحتَ صفحةَ الدورِ بينهما فبدا الأمرُ تعثُّرًا.
+  const resumed = useRef(!!reopenChart[clinicId || '·']);
+  const [showFull, setShowFull] = useState(() => resumed.current);
   useEffect(() => { delete reopenChart[pageKey]; }, [pageKey]);
+  const closeFull = () => { resumed.current = false; setShowFull(false); };
   const [clinicCount, setClinicCount] = useState(0);
   // تجاوزٌ محلّيٌّ لعددِ الكراسي: المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ
   // إضافيّةٌ اليومَ أو تُغلَقُ واحدةٌ — ولا ينبغي أن ينتظرَ تعديلَ الجدولِ الأسبوعيِّ ليقولَ ذلك.
@@ -1572,11 +1581,12 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
       if (simOn) setSimActs((prev) => ({ ...prev, [id]: { ...prev[id], done: Math.round(simNowMin) } }));
       // الوضعُ الحقيقيّ: نُغلقُ المخطّطَ أوّلًا لتظهرَ نافذةُ اختيارِ الطبيبِ الحاليّةُ دونَ تراكُمِ نافذتين،
       // ونُمهِلُ إغلاقَه قبلَ فتحِها لأنّ فتحَ نافذةٍ في اللحظةِ نفسِها التي تُغلَقُ فيها أخرى قد يبتلِعُها.
-      else { setShowFull(false); setTimeout(() => onDone?.(id), 350); }
+      else { closeFull(); setTimeout(() => onDone?.(id), 350); }
     },
-    // الملفُّ صفحةٌ تحلُّ محلَّ الصفحةِ كلِّها، فنُغلقُ المخطّطَ أوّلًا ثمّ نفتحُه — كما في الإنهاء.
+    // الملفُّ صفحةٌ **تحلُّ محلَّ** الصفحةِ كلِّها، فهذه الشجرةُ — والمخطّطُ معها — تُهدَمُ في الحال.
+    // فلا نُغلِقُه أوّلًا ثمّ ننتظرُ: الإغلاقُ ثمّ الانتظارُ هو ما كان يُظهِرُ صفحةَ الدورِ بينهما.
     // ونُسجّلُ أنّنا خرجنا من المخطّطِ كي يستقبلَنا مفتوحًا حينَ نضغطُ «رجوع» في الملفّ.
-    onProfile: (id) => { reopenChart[pageKey] = true; setShowFull(false); setTimeout(() => onProfile?.(id), 350); },
+    onProfile: (id) => { reopenChart[pageKey] = true; onProfile?.(id); },
   }), [simOn, simNowMin, simActs, simChairs.length, patients, onEnterClinic, onToggleNA, onDone, onProfile, pageKey]);
 
   const simApi = {
@@ -1621,7 +1631,7 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 
       {/* لا نُقَطَ صفحاتٍ تحتَ اللوح: مساحتُها صارت له، والصفحةُ الثانيةُ تُعرَفُ بالسحب */}
 
-      <FullTimeline visible={showFull} onClose={() => setShowFull(false)} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} />
+      <FullTimeline visible={showFull} onClose={closeFull} instant={resumed.current} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} />
     </View>
   );
 }
