@@ -81,6 +81,8 @@ export interface MainQueueScreenProps {
   // Patients
   filteredPatients: Patient[];
   patients: Patient[];
+  // إعادةُ الجلبِ من الخادم (السحبُ للتحديث في صفحةِ المخطّط)
+  reloadPatients?: (silent?: boolean) => Promise<void>;
   animKey: number;
 
   // Navigation handlers
@@ -304,6 +306,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
     expandedPermanentCardId,
     filteredPatients,
     patients,
+    reloadPatients,
     animKey,
     setSavedClinicId,
     setSavedClinicName,
@@ -828,6 +831,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             onEnterClinic={tlEnterClinic}
             onToggleNA={tlToggleNA}
             onDone={tlDone}
+            // سحبُ المخطّطِ إلى الأسفل: نفسُ الجلبِ الذي يستدعيه الحيُّ (وهو باقٍ كما هو).
+            // نمرّرُها كما هي — مرجعٌ ثابتٌ لا يُعادُ بناؤه مع كلِّ رسمة.
+            onReload={reloadPatients}
             // «Show profile» من نافذةِ المخطّط — نفسُ مسارِ فتحِ الملفِّ من كرتِ الدور
             onProfile={(id) => {
               const p = patients.find((x) => x.id === id);

@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../../lib/scale';
 import { Patient } from './constants';
+import { isPriority } from './queueLanes';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QueueStatsStrip — ما يصيرُ إليه لوحُ اليومِ حينَ يُطوى بالسحب.
@@ -44,9 +45,13 @@ export const QueueStatsStrip = React.memo(function QueueStatsStrip({
     const live = patients.filter((p) => p.status !== 'complete' && p.status !== 'na');
     return {
       inChair: live.filter((p) => !!p.clinic && p.clinic !== 'Clinic').length,
+      // «التالي» أحقُّ مَن ينتظر: كبيرُ السنِّ وذو الاحتياجِ الخاصِّ يتقدّمانِ على رقمِ الدور،
+      // وإن اجتمعَ أكثرُ من واحدٍ فليس بينهم إلّا رقمُه. (القاعدةُ نفسُها في بطاقةِ المخطّط.)
       next: live
         .filter((p) => !p.clinic || p.clinic === 'Clinic')
-        .sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0))[0] ?? null,
+        .sort((a, b) =>
+          (isPriority(b) ? 1 : 0) - (isPriority(a) ? 1 : 0) ||
+          (a.queue_number || 0) - (b.queue_number || 0))[0] ?? null,
     };
   }, [patients]);
 

@@ -880,6 +880,8 @@ export function AppContent() {
       expandedPermanentCardId={expandedPermanentCardId}
       filteredPatients={filteredPatients}
       patients={patients}
+      // السحبُ للتحديث في صفحةِ المخطّط: نفسُ الجلبِ الذي يستدعيه الحيُّ، بيدِك
+      reloadPatients={loadPatients}
       animKey={animKey}
       setSavedClinicId={setSavedClinicId}
       setSavedClinicName={setSavedClinicName}

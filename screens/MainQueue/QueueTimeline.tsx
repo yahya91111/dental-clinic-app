@@ -9,8 +9,8 @@
  *
  * التوزيعُ هنا نسخةٌ أساسيّةٌ للمعاينة — الخوارزميّةُ التفاعليّةُ الكاملةُ تأتي في المرحلةِ التالية.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Modal, StyleSheet, Animated, Easing } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Modal, StyleSheet, Animated, Easing, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -50,6 +50,11 @@ const BG_COLORS: [string, string, string] = ['#F0F4F8', '#E8EDF3', '#F5F0F8'];
 // عالَمٌ افتراضيٌّ قائمٌ بذاته يأخذُ مرضاك **الحقيقيّين** (أسماؤهم/علاجُهم/مدّتُهم) ويتجاهلُ
 // أوقاتَهم الحقيقيّةَ تمامًا. **لا شيءَ تلقائيّ**: المريضُ يبقى منتظِرًا حتّى تُدخِلَه أنتَ للعيادةِ
 // (بنقرِه على المخطّط) ثمّ تُنهيه — كالعملِ الحقيقيّ لكن بساعةٍ مسرَّعة. (الربطُ الحيُّ لاحقًا، بنفسِ المنطق.)
+//
+// وهي **بيئةُ عملٍ لنا لا ميزةٌ للطبيب**: أدَّتْ ما بُنيَتْ له، فطُويَ شريطُها عن الإصدار.
+// مفتاحٌ واحدٌ لا حذف — يبقى عملُها كاملًا في الملفّ، واقلبْه إلى true فيعودُ الشريطُ كما كان.
+const SIM_ENABLED: boolean = false;
+
 export type SimAct = { enter?: number; chair?: number; done?: number; na?: boolean; naAt?: number };
 
 // نأخذُ تاريخَ اليومِ فقط لبناءِ Date؛ الساعةُ/الدقيقةُ افتراضيّةٌ بالكامل (buildLanes يقرأُ الدقائقَ فقط).
@@ -141,8 +146,18 @@ function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: num
   const serving = flat.filter((x) => x.b.kind === 'cur' || x.b.kind === 'over');
   const upcoming = flat.filter((x) => x.b.kind === 'fut' || x.b.kind === 'eld').sort((a, b) => a.b.start - b.b.start);
   const naCount = flat.filter((x) => x.b.kind === 'na').length;
-  const next = upcoming[0] ?? null;                 // التاليَ في الدور (أبكرُ منتظِرٍ متوقَّع)
-  const then = upcoming.slice(1, 3);                // الذين بعده (اثنان)
+  // ── «التالي» أحقُّ مَن ينتظرُ لا أبكرُ مَن يبدأ ──
+  // كبيرُ السنِّ وذو الاحتياجِ الخاصِّ يتقدّمانِ على الساعة: هما مَن يُنادى اسمُه أوّلًا وإن
+  // فرغَ لسواهما كرسيٌّ قبلَ كرسيِّهما. وإن اجتمعَ أكثرُ من واحدٍ فليس بينهم إلّا رقمُ الدور.
+  // ثمّ البقيّةُ بأوقاتِهم المتوقَّعةِ كما هي.
+  const order = [...upcoming].sort((a, b) => {
+    const pa = isPriority(a.b.p) ? 0 : 1, pb = isPriority(b.b.p) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    if (pa === 0) return (a.b.p.queue_number || 0) - (b.b.p.queue_number || 0);
+    return a.b.start - b.b.start;
+  });
+  const next = order[0] ?? null;                    // التاليَ في الدور
+  const then = order.slice(1, 3);                   // الذين بعده (اثنان)
   // متى يُغلَقُ البابُ فعلًا: نهايةُ آخرِ علاجٍ على أيِّ كرسيّ. البريكُ ليس علاجًا،
   // و«غيرُ المتاح» لم يُعالَجْ أصلًا — فلا يمدُّ أحدُهما اليومَ ولا يُحسَبُ آخِرَه.
   const lastEnd = flat.reduce(
@@ -457,12 +472,14 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
 // تحريرَ بريكاتٍ ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
 // instant: فُتِحَ استئنافًا (عائدًا من ملفِّ مريضٍ دخلتَه من هنا) — فلا مقدّماتٍ ولا تلاشٍ:
 // يُرسَمُ في مكانِه من أوّلِ إطارٍ كأنّك لم تغادرْه.
-function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle, instant }:
+// pull: سحبٌ إلى الأسفلِ فيُسألُ الخادمُ الآن. اليومُ المحفوظُ لا يُسأل.
+function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle, instant, pull }:
   { visible: boolean; onClose: () => void; data: TimelineData; nowMin: number; topInset: number; bottomInset: number;
     sim: { on: boolean; playing: boolean; speed: number; toggle: () => void; playPause: () => void; cycleSpeed: () => void; reset: () => void };
     breaks: Break[]; onSaveBreaks: (b: Break[]) => void;
     chairCount: number; onSetChairCount: (n: number) => void; actions: BlockActions;
-    readOnly?: boolean; title?: string; subtitle?: string; instant?: boolean }) {
+    readOnly?: boolean; title?: string; subtitle?: string; instant?: boolean;
+    pull?: { refreshing: boolean; onRefresh: () => void } }) {
   const { lanes, dayStart, dayEnd } = data;
   const [actionId, setActionId] = useState<string | null>(null);   // المريضُ المفتوحةُ نافذتُه
   const [editingBreaks, setEditingBreaks] = useState(false);
@@ -813,8 +830,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
             </View>
           </View>
 
-          {/* شريطُ المحاكاة (مسرِّعٌ زمنيّ للاختبار) — لا معنى له في يومٍ مضى */}
-          {!readOnly && (
+          {/* شريطُ المحاكاة (مسرِّعٌ زمنيّ للاختبار) — لا معنى له في يومٍ مضى، ولا في الإصدار (SIM_ENABLED) */}
+          {!readOnly && SIM_ENABLED && (
           <View style={full.simBar}>
             <TouchableOpacity onPress={sim.toggle} style={[full.simMain, sim.on && full.simMainOn]}>
               <Text style={[full.simMainTxt, sim.on && { color: '#fff' }]}>{sim.on ? '● محاكاة' : '▶ محاكاة يوم'}</Text>
@@ -841,7 +858,23 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
           <View style={full.panel}>
             <LinearGradient colors={MINI_SMOKE} start={{ x: 0.16, y: 0 }} end={{ x: 0.84, y: 1 }} style={StyleSheet.absoluteFill} />
             <View pointerEvents="none" style={full.panelTopHi} />
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+            {/* ── سحبٌ إلى الأسفل: سؤالٌ مباشرٌ للخادمِ الآن ──
+                الحيُّ (Realtime) لم يُمَسَّ ويبقى هو الأصل؛ وهذا لِلَحظةِ الشكِّ وحدَها — حينَ
+                تعلمُ أنّ شيئًا وقعَ ولا تريدُ أن تنتظرَ أن يبلغَك. سحبُ اللوحِ عموديًّا لا يُنازِعُ
+                تمريرَ المساراتِ أفقيًّا: لكلِّ اتّجاهٍ حارسُه. */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ flexGrow: 1 }}
+              refreshControl={pull && !readOnly ? (
+                <RefreshControl
+                  refreshing={pull.refreshing}
+                  onRefresh={pull.onRefresh}
+                  tintColor={TEAL_INK}
+                  colors={[TEAL_INK]}
+                  progressBackgroundColor="#FFFFFF"
+                />
+              ) : undefined}
+            >
             <View style={{ flexDirection: 'row', height: Math.max(topH + lanes.length * unitH, scale(1)) }}>
               {/* عمودُ العيادات: رقمٌ شبحيٌّ كبيرٌ + نقطةُ انشغالٍ + شريطُ امتلاء — بفاصلٍ رأسيٍّ عن الجدول */}
               <View style={[full.railCol, { width: labelW }]}>
@@ -1424,14 +1457,16 @@ const lastPage: { [clinic: string]: number } = {};
 // النيّةَ خارجَ الشجرةِ (كما نحفظُ الصفحةَ الحاليّة) فيُستأنَفُ المخطّطُ عندَ العودةِ مفتوحًا.
 const reopenChart: { [clinic: string]: boolean } = {};
 
-export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone, onProfile }:
+export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone, onProfile, onReload }:
   { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
     onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
     // إجراءاتُ صفحةِ الدور الحقيقيّة (نفسُها على الكرت) — تُستدعى خارجَ المحاكاة
     onEnterClinic?: (patientId: string, clinic: string) => void;
     onToggleNA?: (patientId: string) => void;
     onDone?: (patientId: string) => void;
-    onProfile?: (patientId: string) => void }) {
+    onProfile?: (patientId: string) => void;
+    // إعادةُ جلبِ المرضى من الخادم (السحبُ للتحديث) — الحيُّ باقٍ، وهذا سؤالٌ بيدِك
+    onReload?: () => Promise<void> | void }) {
   const W = SCREEN.width;
   const insets = useSafeAreaInsets();
   const [nowMin, setNowMin] = useState(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); });
@@ -1479,24 +1514,38 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   const [simActs, setSimActs] = useState<{ [id: string]: SimAct }>({});
 
   // عددُ العياداتِ من إعداداتِ المركز (نفسُ الرقمِ في صفحةِ الجداول). قراءةٌ فقط،
-  // ويُحدَّثُ كلَّ نصفِ دقيقةٍ ليظهرَ أيُّ تغييرٍ في العددِ فورًا تقريبًا.
+  // ويُحدَّثُ كلَّ نصفِ دقيقةٍ ليظهرَ أيُّ تغييرٍ في العددِ فورًا تقريبًا — ومع كلِّ سحبةِ تحديث.
+  // آخرُ نداءٍ هو الذي يُكتَب: الأقدمُ إن تأخّرَ ردُّه سقطَ، فلا يعودُ مركزٌ سابقٌ فوقَ الحاليّ.
+  const setRun = useRef(0);
+  const loadSettings = useCallback(async () => {
+    const run = ++setRun.current;
+    const put = (count: number, brs: Break[]) => { if (setRun.current === run) { setClinicCount(count); setBreaks(brs); } };
+    if (!clinicId) { put(0, []); return; }
+    try {
+      const { data } = await getScheduleSettings(clinicId);
+      put(Number(data?.clinic_count) || 0, Array.isArray(data?.breaks) ? data.breaks : []);
+    } catch { put(0, []); }
+  }, [clinicId]);
+  const tick = useCallback(() => { const d = new Date(); setNowMin(d.getHours() * 60 + d.getMinutes()); }, []);
   useEffect(() => {
-    let alive = true;
-    const loadSettings = async () => {
-      if (!clinicId) { if (alive) { setClinicCount(0); setBreaks([]); } return; }
-      try {
-        const { data } = await getScheduleSettings(clinicId);
-        if (alive) {
-          setClinicCount(Number(data?.clinic_count) || 0);
-          setBreaks(Array.isArray(data?.breaks) ? data.breaks : []);
-        }
-      } catch { if (alive) { setClinicCount(0); setBreaks([]); } }
-    };
-    const tick = () => { const d = new Date(); setNowMin(d.getHours() * 60 + d.getMinutes()); };
     loadSettings(); tick();
     const id = setInterval(() => { tick(); loadSettings(); }, 30000);
-    return () => { alive = false; clearInterval(id); };
-  }, [clinicId]);
+    return () => clearInterval(id);
+  }, [loadSettings, tick]);
+
+  // ── السحبُ للتحديث ──
+  // الاشتراكُ الحيُّ (Realtime) لم يُمَسَّ وهو الأصل. وهذه يدُك حينَ لا تريدُ أن تنتظرَ:
+  // المرضى من الخادم، وإعداداتُ المركز، والساعةُ — في نداءٍ واحد. ولها أرضيّةٌ زمنيّةٌ
+  // قصيرة: ردٌّ يعودُ في مئةِ جزءٍ من الثانيةِ يجعلُ الدوّارَ ومضةً تُقرأُ عطلًا لا تحديثًا.
+  const [refreshing, setRefreshing] = useState(false);
+  const doRefresh = useCallback(async () => {
+    setRefreshing(true);
+    tick();
+    const floor = new Promise((r) => setTimeout(r, 350));
+    try { await Promise.all([Promise.resolve(onReload?.()), loadSettings(), floor]); } catch {}
+    setRefreshing(false);
+  }, [onReload, loadSettings, tick]);
+  const pull = useMemo(() => ({ refreshing, onRefresh: doRefresh }), [refreshing, doRefresh]);
 
   // الكراسي = عددُ العيادات (عيادة ١ .. عيادة N)؛ وإن لم يتوفّر تُشتَقُّ من عياداتِ المرضى.
   const chairs = useMemo(() =>
@@ -1591,7 +1640,10 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 
   const simApi = {
     on: simOn, playing: simPlaying, speed: simSpeed,
-    toggle: () => { setSimOn((v) => { const nx = !v; if (nx) { setSimNowMin(7 * 60); setSimPlaying(true); setSimActs({}); } return nx; }); },
+    toggle: () => {
+      if (!SIM_ENABLED) return;   // مطفأةٌ من مفتاحٍ واحد: لا بابَ إليها ولو نُوديَ عليها
+      setSimOn((v) => { const nx = !v; if (nx) { setSimNowMin(7 * 60); setSimPlaying(true); setSimActs({}); } return nx; });
+    },
     playPause: () => setSimPlaying((v) => !v),
     cycleSpeed: () => setSimSpeedIdx((i) => (i + 1) % SIM_SPEEDS.length),
     reset: () => { setSimNowMin(7 * 60); setSimActs({}); },
@@ -1631,7 +1683,7 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
 
       {/* لا نُقَطَ صفحاتٍ تحتَ اللوح: مساحتُها صارت له، والصفحةُ الثانيةُ تُعرَفُ بالسحب */}
 
-      <FullTimeline visible={showFull} onClose={closeFull} instant={resumed.current} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} />
+      <FullTimeline visible={showFull} onClose={closeFull} instant={resumed.current} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} pull={pull} />
     </View>
   );
 }
@@ -1750,7 +1802,8 @@ const full = scaledStyleSheet({
   simTag: { fontSize: 9, fontWeight: '800', letterSpacing: 1, color: '#8CA0A8' },
   simHint: { fontSize: 11, fontWeight: '700', color: '#0E7C66', textAlign: 'center', paddingHorizontal: 22, paddingBottom: 8 },
   // ── اللوحُ الزجاجيّ + عمودُ العيادات ──
-  panelShadow: { flex: 1, marginHorizontal: 14, marginBottom: 12, borderRadius: 28, shadowColor: '#0A2834', shadowOpacity: 0.32, shadowRadius: 22, shadowOffset: { width: 0, height: 16 }, elevation: 10 },
+  // marginTop: كان شريطُ المحاكاةِ يفصلُ اللوحَ عن الرأسِ بجسمِه؛ وقد طُويَ، فالفصلُ الآنَ فراغٌ مقصود
+  panelShadow: { flex: 1, marginHorizontal: 14, marginTop: 14, marginBottom: 12, borderRadius: 28, shadowColor: '#0A2834', shadowOpacity: 0.32, shadowRadius: 22, shadowOffset: { width: 0, height: 16 }, elevation: 10 },
   panel: { flex: 1, borderRadius: 28, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.80)' },
   panelTopHi: { position: 'absolute', top: 0, left: 22, right: 22, height: 1, backgroundColor: 'rgba(255,255,255,0.9)', zIndex: 5 },
   gridV: { position: 'absolute', bottom: 0, width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(18,58,68,0.05)' },
