@@ -11,11 +11,17 @@ export type SupMap = Map<string, string | null>;
 const isSwapRole = (s: ScheduleSlot) =>
   s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator');
 
-// الخاناتُ القابلةُ للتبديل: عيادة/دليقيتر نشطة، **أو الاحتياطيّ** (EX: extra + period 0).
+// صفُّ الاحتياطيّ (EX) في الصيغةِ الموحّدة: status='extra' وفترتُه 0 — ودورُه يُكتَبُ 'clinic'
+// لا 'ex' (انظر saveSlots في lib/algorithms/schedule.ts). **مصدرٌ واحدٌ للتعريف**: الشبكةُ
+// تُقرِّرُ به قابليّةَ النقر، والمحرّكُ يُقرِّرُ به قابليّةَ التبديل. افتراقُهما هو ما جعلَ نقرَ
+// الاحتياطيِّ لا يعمل — كانت الشبكةُ تسألُ role==='ex' وهي صيغةٌ قديمةٌ لا تكتبُها اليوم.
+export const isReserveSlot = (s: ScheduleSlot) => s.status === 'extra' && s.period === 0;
+
+// الخاناتُ القابلةُ للتبديل: عيادة/دليقيتر نشطة، **أو الاحتياطيّ**.
 // أوسعُ من isSwapRole عمدًا — كي يشملَ السوابُ الاحتياطيَّ. الظلال تبقى على isSwapRole الضيّق.
 export const isSwappable = (s: ScheduleSlot) =>
   (s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator')) ||
-  (s.status === 'extra' && s.period === 0);
+  isReserveSlot(s);
 
 // شفتُ الطبيبِ ذلكَ اليوم من خاناته: عيادة/دليقيتر بالفترة (١،٢=صباح / ٣،٤=مساء)، أو
 // احتياطيّ بعموده (١=صباح / ٢=مساء). للتحقّقِ من تطابقِ الشفتِ عند تبديلِ الاحتياطيّ.
@@ -23,14 +29,14 @@ export function shiftOfDoctor(slots: ScheduleSlot[], day: string, id: string): '
   for (const s of slots) {
     if (s.day !== day || s.doctorId !== id) continue;
     if (s.status === 'active' && (s.role === 'clinic' || s.role === 'delegator')) return s.period <= 2 ? 'morning' : 'evening';
-    if (s.status === 'extra' && s.period === 0) return s.clinicNumber === 2 ? 'evening' : 'morning';
+    if (isReserveSlot(s)) return s.clinicNumber === 2 ? 'evening' : 'morning';
   }
   return null;
 }
 
 // هل هذا الطبيبُ محتاطٌ (له صفُّ EX) ذلكَ اليوم؟
 export function isReserveDoctor(slots: ScheduleSlot[], day: string, id: string): boolean {
-  return slots.some((s) => s.day === day && s.doctorId === id && s.status === 'extra' && s.period === 0);
+  return slots.some((s) => s.day === day && s.doctorId === id && isReserveSlot(s));
 }
 
 // المتدرّبُ المبتدئ (الظلّ) نقرُه يُحسَبُ على مدرّبه إن كان حاضرًا في نفسِ اليوم — فالاختيارُ

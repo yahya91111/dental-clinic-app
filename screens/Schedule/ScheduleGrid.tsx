@@ -4,6 +4,7 @@ import { scale } from '../../lib/scale';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { DAYS, PERIODS, ScheduleSlot, DayOfWeek, STATUS_CONFIG, ROLE_CONFIG } from './types';
+import { isReserveSlot } from './swap';
 
 // عرض الفرق فقط (كرت «طرأ تغييرٌ على جدولك»، للرؤية): حاويةُ خانة العيادة/الدليقيتر
 // نفسُها هي التي **تُضيء** (المكان الجديد) أو **تنطفئ** (المكان السابق) — لا حاويةٌ
@@ -509,11 +510,14 @@ export function ScheduleGrid({ slots, clinicCount, onCellPress, userId, onDoctor
                       // للـ EX: لون بنفسجي ثابت + ليبل "EX". لو الطبيب حالته
                       // غير active (غياب)، نستخدم لون الحالة بدلاً.
                       const statusConfig = STATUS_CONFIG[slot.status];
-                      const isExRole = slot.role === 'ex';
+                      // الاحتياطيّ: الصيغةُ الموحّدة (status='extra' + فترة 0) — والقديمةُ role='ex'.
+                      const isExRole = slot.role === 'ex' || isReserveSlot(slot);
                       if (!isExRole && !statusConfig) return null; // حالةٌ غير معروفة — لا تُعطِب العرض
                       const color = isExRole ? '#7C3AED' : statusConfig.color;
                       const shortLabel = isExRole ? 'EX' : statusConfig.shortLabel;
-                      const exTappable = swapMode && isExRole;   // EX قابلٌ للتبديل (لا بطاقاتُ الغياب)
+                      // قابلٌ للنقرِ بالشرطِ نفسِه الذي يقبلُه محرّكُ السواب (isSwappable) — لا أوسع،
+                      // كي لا يُحدَّدَ صفٌّ لا يستطيعُ المحرّكُ تبديلَه فيبدو النقرُ عاطلًا.
+                      const exTappable = swapMode && isReserveSlot(slot);   // (لا بطاقاتُ الغياب)
                       const Root: any = exTappable ? TouchableOpacity : View;
                       const rootProps: any = exTappable ? { activeOpacity: 0.7, onPress: () => onDoctorPress!(day.key, slot.doctorId) } : {};
                       return (
