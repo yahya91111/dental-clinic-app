@@ -255,7 +255,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId, viewOnly, hea
     setSwapSaving(true);
     setSwapError(null);
     const weekStr = formatWeekStart(selectedWeekStart);
-    try {
+    const writeDays = async () => {
       for (const day of days) {
         const rows = swapEdit
           .filter((s) => s.day === day && isSwappable(s))   // عيادة/دليقيتر نشطة + الاحتياطيّ (EX)
@@ -271,6 +271,23 @@ export default function ScheduleScreen({ onBack, clinicId, userId, viewOnly, hea
           }));
         const { error } = await replaceDayClinicSlots(clinicId, weekStr, day, rows);
         if (error) throw error;
+      }
+    };
+    try {
+      // ── مَن تحرّكَ يعلم ──
+      // تبديلُ الذكاءِ يمرُّ بطبقةِ الفرق، فيصلُ كلَّ مَن تغيّرَ مقعدُه كرتُ «تغيّرَ مكانُك».
+      // وتبديلُك بيدِك على الشبكةِ كان يكتبُ الصفوفَ وحدَها، فيكتشفانِه حينَ يفتحانِ الجدول.
+      // نلفُّ الكتابةَ بالطبقةِ نفسِها: تلتقطُ المواضعَ قبلُ وبعدُ فتُخبِرُ مَن انتقل — والمتدرّبُ
+      // الذي تبعَ مدرّبَه يصلُه كرتُه موسومًا بالسبب. ولا يُستثنى إلّا أنتَ في أيّامِ تبديلِك،
+      // كما يفعلُ الذكاءُ حرفيًّا (seatChangeSuppress): مَن تصرّفَ يعلمُ تصرّفَه.
+      // والإشعارُ تحسينٌ لا شرط: إن تعذّرَ استيرادُ الطبقةِ كُتِبَ التبديلُ كما هو.
+      let wrap: null | (<T>(a: any, r: () => Promise<T>) => Promise<T>) = null;
+      try { wrap = (await import('../../lib/algorithms/requests_v2')).withSeatChangeDiff; } catch { wrap = null; }
+      if (wrap) {
+        const suppress = new Set(user?.id ? days.map((d) => `${user.id}|${weekStr}|${d}`) : []);
+        await wrap({ clinicId, weekStart: weekStr, senderId: user?.id, senderName: user?.name, suppress }, writeDays);
+      } else {
+        await writeDays();
       }
       setSwapMode(false);
       setSwapSel(null);
