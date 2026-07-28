@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { scale, scaledStyleSheet, SCREEN } from '../../lib/scale';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getScheduleSettings, updateScheduleBreaks } from '../../lib/database';
+import { getScheduleSettings, updateScheduleBreaks, updateChartChairs } from '../../lib/database';
 import { Patient, TREATMENT_DURATIONS } from './constants';
 
 // قلبُ الترتيب في ملفٍّ مستقلٍّ بلا React — كي يُشغَّلَ ويُختبَرَ وحدَه.
@@ -1488,8 +1488,13 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   useEffect(() => { delete reopenChart[pageKey]; }, [pageKey]);
   const closeFull = () => { resumed.current = false; setShowFull(false); };
   const [clinicCount, setClinicCount] = useState(0);
-  // تجاوزٌ محلّيٌّ لعددِ الكراسي: المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ
-  // إضافيّةٌ اليومَ أو تُغلَقُ واحدةٌ — ولا ينبغي أن ينتظرَ تعديلَ الجدولِ الأسبوعيِّ ليقولَ ذلك.
+  // ── عددُ كراسي المخطّط: رقمُ **المركز** لا رقمُ الهاتف ──
+  // المخطّطُ يصفُ اليومَ كما هو قائمٌ فعلًا — قد تُفتَحُ عيادةٌ إضافيّةٌ اليومَ أو تُغلَقُ واحدةٌ —
+  // ولا ينبغي أن ينتظرَ تعديلَ الجدولِ الأسبوعيِّ ليقولَ ذلك. فرقمُه رقمُه (`chart_chairs`)،
+  // **ولا يمسُّ `clinic_count`** الذي يُبنى عليه جدولُ الدوام: كتابةٌ هنا لا تُغيّرُ هناك شيئًا.
+  // ومن كتبَه رآه كلُّ مَن في المركز — تصلُه القراءةُ الدوريّةُ (٣٠ث) أو سحبةُ التحديث.
+  // والتخزينُ المحلّيُّ باقٍ **مرآةً** لا مصدرًا: يُرسَمُ منه قبلَ أن يصلَ ردُّ الخادمِ (وإن
+  // تعذّرَتِ الكتابةُ — قبلَ تشغيلِ المهاجرةِ أو بلا شبكةٍ — بقيَ الرقمُ عندَك ولم يضِعْ عملُك).
   const [chairOverride, setChairOverride] = useState<number | null>(null);
   const chairKey = clinicId ? `queue_chairs_${clinicId}` : null;
   useEffect(() => {
@@ -1500,9 +1505,16 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
     });
     return () => { alive = false; };
   }, [chairKey]);
-  const setChairCount = (n: number) => {
-    setChairOverride(n);
+  // رقمُ المركزِ إن وصلَ يَجُبُّ المرآةَ ويُثبَّتُ فيها، فلا يبقى رقمانِ يتنازعان
+  const adoptCentreChairs = (n: number | null) => {
+    if (!n || n < 1) return;
+    setChairOverride((cur) => (cur === n ? cur : n));
     if (chairKey) AsyncStorage.setItem(chairKey, String(n));
+  };
+  const setChairCount = (n: number) => {
+    setChairOverride(n);                                   // تفاؤليّ: يُرسَمُ الآن
+    if (chairKey) AsyncStorage.setItem(chairKey, String(n));
+    if (clinicId) { updateChartChairs(clinicId, n).catch(() => {}); }   // وللمركز
   };
   const [breaks, setBreaks] = useState<Break[]>([]);   // أوقاتُ البريك لكلِّ العيادات (من إعداداتِ المركز)
   // محاكاة (مسرِّعٌ زمنيّ): ساعةٌ افتراضيّةٌ من 7ص إلى 9م + مرضى مولَّدون
@@ -1524,6 +1536,8 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
     try {
       const { data } = await getScheduleSettings(clinicId);
       put(Number(data?.clinic_count) || 0, Array.isArray(data?.breaks) ? data.breaks : []);
+      // رقمُ كراسي المخطّطِ للمركز (إن وُجد؛ وقبلَ المهاجرةِ يعودُ undefined فلا يتغيّرُ شيء)
+      if (setRun.current === run) adoptCentreChairs(Number(data?.chart_chairs) || null);
     } catch { put(0, []); }
   }, [clinicId]);
   const tick = useCallback(() => { const d = new Date(); setNowMin(d.getHours() * 60 + d.getMinutes()); }, []);

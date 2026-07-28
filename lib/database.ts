@@ -2081,6 +2081,31 @@ export async function updateScheduleBreaks(
   }
 }
 
+// عددُ كراسي **مخطّطِ الدور** للمركز (sql/add_chart_chairs.sql). رقمُ المركزِ لا رقمُ الهاتف:
+// مَن كتبَه رآه كلُّ مَن في المركز. وهو عمودٌ مستقلٌّ عن clinic_count — **لا يُغيّرُ جدولَ الدوام**
+// ولا يُقرأُ عندَ بنائِه. الحمولةُ تحملُ chart_chairs وحدَه، فالأعمدةُ الأخرى لا تُمَسُّ في التحديث.
+export async function updateChartChairs(
+  clinicId: string,
+  chairs: number | null
+): Promise<DatabaseResponse<any>> {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_settings')
+      .upsert(
+        { clinic_id: clinicId, chart_chairs: chairs, updated_at: new Date().toISOString() },
+        { onConflict: 'clinic_id' }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error updating chart chairs:', error);
+    return { data: null, error: error as Error };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Queue day charts — لقطةُ مخطّطِ الدورِ لكلِّ يوم (sql/queue_day_charts.sql)
 // ═══════════════════════════════════════════════════════════════
