@@ -11,6 +11,7 @@ import {
   PanResponder,
   Dimensions,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { scale } from '../../lib/scale';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -489,6 +490,17 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   const enterUntil = useRef(0);
   React.useEffect(() => { enterUntil.current = Date.now() + 700; }, [animKey]);
 
+  // ── سحبُ الطابورِ إلى الأسفل ──
+  // كالمخطّط: الحيُّ (Realtime) هو الأصلُ ولم يُمَسَّ، وهذه يدُك للحظةِ الشكِّ وحدَها.
+  // وأرضيّةٌ قصيرةٌ للدوّار: ردٌّ يعودُ في لمحةٍ يجعلُه ومضةً تُقرأُ عطلًا لا تحديثًا.
+  const [refreshing, setRefreshing] = useState(false);
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const floor = new Promise((r) => setTimeout(r, 350));
+    try { await Promise.all([Promise.resolve(reloadPatients?.()), floor]); } catch {}
+    setRefreshing(false);
+  }, [reloadPatients]);
+
   const settle = useCallback((to: 0 | 1) => {
     foldAt.current = to;
     foldedRef.current = to === 1;
@@ -949,6 +961,17 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
             onScrollEndDrag={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
             onMomentumScrollEnd={(e) => { offsetY.current = e.nativeEvent.contentOffset.y; }}
             scrollEventThrottle={16}
+            // السحبُ للتحديث — لا وأنتَ داخلَ كرتٍ موسَّع: القائمةُ حينَها مجمَّدةٌ على
+            // إزاحتِك بحشوةٍ عليا، فسحبُها ليس طلبَ خبرٍ بل خروجٌ من قراءتِك.
+            refreshControl={expandedPermanentCardId ? undefined : (
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onPullRefresh}
+                tintColor="#0E7C66"
+                colors={['#0E7C66']}
+                progressBackgroundColor="#FFFFFF"
+              />
+            )}
             initialNumToRender={7}
             maxToRenderPerBatch={4}
             updateCellsBatchingPeriod={60}

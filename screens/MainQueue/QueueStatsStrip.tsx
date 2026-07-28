@@ -23,6 +23,8 @@ const INK = '#12232A';
 const MUTED = '#5A7079';
 const TEAL = '#0E9F8C';
 const TEAL_G: [string, string] = ['#12B39D', '#0B7F71'];
+// كهرمانُ الأولويّة — القيمتانِ نفسُهما في بطاقةِ المخطّط، فالوسمُ واحدٌ أينما وقعَ عليه بصرُك
+const AMBER_G: [string, string] = ['#F0A93C', '#C97D14'];
 
 // «مدخّن · عمق ٢٠» — القيمُ نفسُها في QueueBoard وPatientCardV2
 const SMOKE: [string, string] = ['rgba(209,219,222,0.49)', 'rgba(190,203,208,0.49)'];
@@ -84,7 +86,8 @@ export const QueueStatsStrip = React.memo(function QueueStatsStrip({
           {m.next ? (
             // الرقمُ يمينَ الاسمِ كما هو في كرتِ المريض: صفٌّ معكوسٌ يضعُ أوّلَ أبنائِه آخرَه
             <View style={s.next}>
-              <LinearGradient colors={TEAL_G} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={s.qn}>
+              {/* رقمُه كهرمانيٌّ إن كان صاحبَ أولويّة: تعرفُ لِمَ تقدّمَ قبلَ أن تقرأَ اسمَه */}
+              <LinearGradient colors={isPriority(m.next) ? AMBER_G : TEAL_G} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={s.qn}>
                 <Text style={s.qnTxt}>{m.next.queue_number}</Text>
               </LinearGradient>
               <View style={s.nextTxt}>
