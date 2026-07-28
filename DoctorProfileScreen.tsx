@@ -179,7 +179,8 @@ export default function DoctorProfileScreen({ onBack, doctorData, onOpenTimeline
     if (!['team_leader', 'coordinator', 'super_admin', 'manager'].includes(user.role)) return;
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekStart || '');
     const pretty = m ? ` ${Number(m[3])}/${Number(m[2])}` : '';
-    const announce: AnnounceOffer = { weekStart, day: '', message: `نُشِر جدولُ الأسبوع${pretty}.`, subjectId: user.id, subjectName: user.name };
+    // scope:'schedule' → خبرٌ يصلُ الجميعَ ومنهم القادةُ الآخرون (خلافَ إبلاغِ الغياب)
+    const announce: AnnounceOffer = { weekStart, day: '', message: `نُشِر جدولُ الأسبوع${pretty}.`, subjectId: user.id, subjectName: user.name, scope: 'schedule' };
     const msg: ChatMessage = { id: `schedann${Date.now()}`, role: 'assistant', content: `حُفِظ جدولُ الأسبوع${pretty}.`, announceOffer: announce, timestamp: Date.now() };
     aiChat.pushAssistant(msg);
     setAiOpenChatSignal((n) => n + 1);   // افتح المحادثةَ ليرى القائدُ سؤالَ الإبلاغ

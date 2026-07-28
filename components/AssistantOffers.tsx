@@ -78,13 +78,20 @@ export default function AssistantOffers({ message, user, clinicId, onResolved, o
     } else {
       setBusy(true);
       try {
-        const { announceAbsence } = await import('../lib/ai_v2/tools_requests_v2');
+        const mod = await import('../lib/ai_v2/tools_requests_v2');
         const cid = clinicId || user.clinicId;
         if (!cid) throw new Error('لا توجد عيادة مرتبطة.');
-        const res = await announceAbsence({
-          clinicId: cid, sender: { id: user.id, name: user.name },
-          audience: choice, message: cur.message, subjectId: cur.subjectId,
-        });
+        // صدورُ الجدولِ خبرٌ للجميع — ومنهم القادةُ الآخرون: لا إشعارَ تلقائيَّ لهم عنه
+        // كما في الغياب، فاستثناؤهم يعني ألّا يعلموا أصلًا. ويُرسَلُ نصُّ الإبلاغِ وحدَه.
+        const res = cur.scope === 'schedule'
+          ? await mod.broadcastAnnouncement({
+            clinicId: cid, sender: { id: user.id, name: user.name },
+            audience: choice, message: cur.message, title: 'الجدول',
+          })
+          : await mod.announceAbsence({
+            clinicId: cid, sender: { id: user.id, name: user.name },
+            audience: choice, message: cur.message, subjectId: cur.subjectId,
+          });
         result = { name: cur.subjectName, announced: true, ok: !!res.success, text: res.success ? (res.info || 'تمّ الإبلاغ.') : `تعذّر الإبلاغ: ${res.error || ''}` };
       } catch (e) {
         result = { name: cur.subjectName, announced: true, ok: false, text: e instanceof Error ? e.message : 'خطأ غير متوقّع.' };

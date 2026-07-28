@@ -535,7 +535,7 @@ export default function ScheduleScreen({ onBack, clinicId, userId, viewOnly, hea
     const announce: AnnounceOffer = {
       weekStart, day: '',
       message: `نُشِر جدولُ الأسبوع${pretty}.`,
-      subjectId: user.id, subjectName: user.name,   // قروبُ القائد للشفت، ويُستثنى هو من المستلمين
+      subjectId: user.id, subjectName: user.name, scope: 'schedule',   // قروبُ القائد للشفت، ويُستثنى هو من المستلمين
     };
     const msg: ChatMessage = {
       id: `schedann${Date.now()}`, role: 'assistant',

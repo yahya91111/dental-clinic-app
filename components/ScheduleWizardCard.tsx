@@ -414,6 +414,10 @@ function ClarifyStep({ c, idx, total, onResolve }: { c: Clarification; idx: numb
     <>
       {total > 1 && <Text style={st.hint}>توضيح {idx + 1} من {total}</Text>}
       <Text style={st.q}>«{c.mention}» — {kindLabel}</Text>
+      {/* بطاقةٌ واحدةٌ لأيّامٍ عدّة: جوابُك يسري عليها كلِّها */}
+      {c.days && c.days.length > 1 ? (
+        <Text style={st.sub}>{c.days.map((d) => DAY_AR[d as WeekDay] ?? d).join('، ')}</Text>
+      ) : null}
       {ambiguous && (
         <>
           <Text style={st.sub}>من تقصد؟</Text>

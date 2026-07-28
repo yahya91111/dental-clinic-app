@@ -880,6 +880,12 @@ export async function dispatchRequestToolV2(
   const r = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   const reqMod = await import('../algorithms/requests_v2');
   const { requestsV2 } = reqMod;
+  // ── اليومُ المعنيُّ بتاريخِه في كلِّ ردّ ──
+  // «الأربعاء 29/7» لا «الأربعاء» وحدَه، ولا تاريخُ أوّلِ الأسبوع. كلُّ الأدواتِ هنا
+  // تأخذُ weekStart في مدخلِها، فتاريخُ أيِّ يومٍ محسوبٌ منه. وإن غابَ أو فسدَ سقطَ
+  // التاريخُ بهدوءٍ وبقيَ اسمُ اليوم. (قوائمُ الخياراتِ بين قوسَينِ تُترَكُ كما هي —
+  // نصُّها يُقرَأُ أزرارًا.)
+  const dAr = (day: unknown): string => dayWithDate(String(r.weekStart || ''), String(day || ''));
 
   const exec = async (): Promise<string> => {
   try {
@@ -900,7 +906,7 @@ export async function dispatchRequestToolV2(
             doctorId: doc.id, doctorName: doc.name,
             ...(r.shift === 'evening' || r.shift === 'morning' ? { shift: r.shift } : {}),
           });
-          return final(`استئذانُ ${doc.name} يوم ${DAY_AR[r.day]}: بدايةَ الدوام أم نهايتَه؟ اختر من الزرّين.`);
+          return final(`استئذانُ ${doc.name} يوم ${dAr(r.day)}: بدايةَ الدوام أم نهايتَه؟ اختر من الزرّين.`);
         }
         if (!['sick_leave', 'vacation', 'permission_start', 'permission_end', 'extra'].includes(status)) {
           return 'Tool error: الحالة غير صالحة.';
@@ -920,7 +926,7 @@ export async function dispatchRequestToolV2(
         // نفس الحالة مسجّلة أصلًا → تذكيرٌ بالتكرار، بلا إشعاراتٍ جديدة للقادة
         if ((res as { duplicate?: boolean }).duplicate) {
           return final(
-            `تنبيه: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} مسجّلٌ ` +
+            `تنبيه: ${STATUS_AR[status]} لـ${doc.name} يوم ${dAr(r.day)} مسجّلٌ ` +
             'مسبقًا — الطلب مكرّر ولم يتغيّر شيء.',
           );
         }
@@ -1079,17 +1085,17 @@ export async function dispatchRequestToolV2(
         // ظلٌّ استأذن → يظهر غائبًا بسببه في خانة الاحتياط (لا تغطية ولا أزرار) — رسالة خاصّة
         if (perm?.shadowToReserve) {
           return final(actor.id === doc.id
-            ? `سُجّل ${STATUS_AR[status]} لك يوم ${DAY_AR[r.day]} — أنت ظلٌّ لمدرّبك فلا يحتاج ` +
+            ? `سُجّل ${STATUS_AR[status]} لك يوم ${dAr(r.day)} — أنت ظلٌّ لمدرّبك فلا يحتاج ` +
               'تغطية؛ يظهر اسمُك في الاحتياط بعلامتك ومدرّبك في مكانه. عند الإلغاء تعود إلى جانبه تلقائيًّا.'
-            : `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} — ظلٌّ لمدرّبه فلا تغطية؛ ` +
+            : `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${dAr(r.day)} — ظلٌّ لمدرّبه فلا تغطية؛ ` +
               'يظهر في الاحتياط بعلامته ومدرّبه في مكانه. عند الإلغاء يعود إلى جانبه تلقائيًّا.');
         }
         // تحويلٌ ومكانه مُغطًّى → صار مستأذنًا بلا مركز، والقادة وصلهم كرت تحديد المكان
         if (perm?.covered) {
           return final(actor.id === doc.id
-            ? `تمّ التحويل إلى ${STATUS_AR[status]} يوم ${DAY_AR[r.day]} — مكانك السابق ` +
+            ? `تمّ التحويل إلى ${STATUS_AR[status]} يوم ${dAr(r.day)} — مكانك السابق ` +
               'مُغطًّى، وسيحدّد القائد أين تعود.'
-            : `تمّ التحويل إلى ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} — ` +
+            : `تمّ التحويل إلى ${STATUS_AR[status]} لـ${doc.name} يوم ${dAr(r.day)} — ` +
               'مكانه السابق مُغطًّى، حدّد مكانه من كرت الذكاء.');
         }
 
@@ -1115,7 +1121,7 @@ export async function dispatchRequestToolV2(
               : (self ? ' — ولا زميل متاح لتبديل فترتك، وأُبلغ القائد' : ' — ولا بديل يغطّي فترته');
           }
         }
-        const base = `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${DAY_AR[r.day]} (${wsEff})` +
+        const base = `تمّ: ${STATUS_AR[status]} لـ${doc.name} يوم ${dAr(r.day)}` +
           `${perm?.wasReserve ? ` — ${perm.wasReserveNoteAr || 'لا يزال احتياطًا ولن يُستدعى وقتَ استئذانه'}` : ''}` +
           `${keptPermAr ? ` — وهو ${keptPermAr}` : ''}` +
           `${permSwapAr}` +
@@ -1126,7 +1132,7 @@ export async function dispatchRequestToolV2(
         if (['sick_leave', 'vacation', 'permission_start', 'permission_end'].includes(status)) {
           ctx.onAnnounceOffer?.({
             weekStart: wsEff, day: r.day,
-            message: `${doc.name} ${STATUS_AR[status]} يوم ${DAY_AR[r.day]}.`,
+            message: `${doc.name} ${STATUS_AR[status]} يوم ${dAr(r.day)}.`,
             subjectId: doc.id, subjectName: doc.name,
           });
         }
@@ -1185,7 +1191,7 @@ export async function dispatchRequestToolV2(
         if (!opened.success) return `Tool error: ${opened.error}`;
 
         const sent = (opened.sentDays && opened.sentDays.length ? opened.sentDays : daysList);
-        const daysAr = sent.map((d) => DAY_AR[d]).join(' و');
+        const daysAr = sent.map((d) => dAr(d)).join(' و');
         const dayPhrase = sent.length === 1 ? `يوم ${daysAr}` : `أيّام ${daysAr}`;
         const targetPhrase = scope === 'person'
           ? `إلى ${docName}`
@@ -1201,7 +1207,7 @@ export async function dispatchRequestToolV2(
         const { groups } = await notifications.swapGroupsStatus({ requesterId: actor.id });
         if (groups.length === 0) return final('لا طلبات تبديلٍ مفتوحة لك.');
         const lines = groups.map((g) => {
-          const dayAr = DAY_AR[g.day] || g.day;
+          const dayAr = dayWithDate(String((g as { weekStart?: string }).weekStart || r.weekStart || ''), g.day) || g.day;
           if (g.acceptedBy) return `يوم ${dayAr}: وافق ${g.acceptedBy} — تمّ التبديل.`;
           if (g.expired || g.pending === 0) {
             return g.rejected > 0
@@ -1220,7 +1226,7 @@ export async function dispatchRequestToolV2(
           day: isDay(r.day) ? r.day : undefined,
         });
         if (!res.success) return `Tool error: ${res.error}`;
-        const days = (res.canceledDays || []).map((d) => DAY_AR[d] || d).join('، ');
+        const days = (res.canceledDays || []).map((d) => dAr(d) || d).join('، ');
         return final(`أُلغي طلب التبديل${days ? ` (يوم ${days})` : ''}.`);
       }
 
@@ -1332,7 +1338,7 @@ export async function dispatchRequestToolV2(
           const stAr = (STATUS_AR as Record<string, string>)[String(res.canceledStatus)] || 'الطلب';
           ctx.onAnnounceOffer?.({
             weekStart: String(r.weekStart), day: r.day,
-            message: `إلغاء ${stAr} ${doc.name} يوم ${DAY_AR[r.day]}.`,
+            message: `إلغاء ${stAr} ${doc.name} يوم ${dAr(r.day)}.`,
             subjectId: doc.id, subjectName: doc.name,
           });
         }
@@ -1345,11 +1351,11 @@ export async function dispatchRequestToolV2(
         // مقعده: عكسٌ حرفيّ (عالمٌ ثابت) أو إعادة حسابٍ للشفت (مُضيف/عالمٌ متغيّر).
         if (rcf.permissionCanceled) {
           return final(rcf.permSwapReverted || rcf.permSwapRecompute
-            ? `تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — وعاد إلى مقعده${rcf.permSwapRecompute ? ' وأُعيد ترتيب الشفت' : ''}.`
-            : `تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — أُزيلت العلامة ومكانه في الجدول كما هو.`);
+            ? `تمّ إلغاء استئذان ${doc.name} يوم ${dAr(r.day)} — وعاد إلى مقعده${rcf.permSwapRecompute ? ' وأُعيد ترتيب الشفت' : ''}.`
+            : `تمّ إلغاء استئذان ${doc.name} يوم ${dAr(r.day)} — أُزيلت العلامة ومكانه في الجدول كما هو.`);
         }
         if (rcf.returnedToReserve) {
-          return final(`تمّ إلغاء استئذان ${doc.name} يوم ${DAY_AR[r.day]} — يبقى احتياطًا كما كان.`);
+          return final(`تمّ إلغاء استئذان ${doc.name} يوم ${dAr(r.day)} — يبقى احتياطًا كما كان.`);
         }
         if (rcf.shadowReturned) {
           return final(`تمّ الإلغاء — عاد ${doc.name} إلى جانب مدرّبه في العيادة.`);
@@ -1358,7 +1364,7 @@ export async function dispatchRequestToolV2(
           return final(`تمّ الإلغاء — مدرّبه غائبٌ هذا اليوم فبقي ${doc.name} في الاحتياط، ويعود معه عند عودته.`);
         }
 
-        const cancelBase = `تمّ إلغاء حالة ${doc.name} يوم ${DAY_AR[r.day]}.`;
+        const cancelBase = `تمّ إلغاء حالة ${doc.name} يوم ${dAr(r.day)}.`;
         // مكانه السابق مُغطًّى ولا مقعدَ محفوظًا يُستردّ (كان احتياطًا) — أبلِغ بصدق، يحدّد القائد مكانه.
         if (res.covered) {
           return final(cancelBase + ' مكانه السابق مُغطًّى وتعذّر الترتيب التلقائيّ — أُبلغ القادة.');
@@ -1392,7 +1398,7 @@ export async function dispatchRequestToolV2(
           fromDay = days[0];
         }
         const srcStatus = cands.find((c) => c.day === fromDay)?.status;
-        if (!srcStatus) return final(`لا حالة لـ${doc.name} يوم ${DAY_AR[fromDay]} لنقلها.`);
+        if (!srcStatus) return final(`لا حالة لـ${doc.name} يوم ${dAr(fromDay)} لنقلها.`);
 
         // الوجهة: المُمرَّرة أو نفس نوع المصدر. وجهةٌ استئذانٌ مبهمة (`permission`):
         //  • المصدر استئذانٌ أصلًا → احفظ نوعه (بداية/نهاية) — نقلٌ لنفس الحالة بلا سؤال.
@@ -1400,13 +1406,13 @@ export async function dispatchRequestToolV2(
         let toStatus = typeof r.toStatus === 'string' && r.toStatus ? r.toStatus : srcStatus;
         if (toStatus === 'permission') {
           if (srcStatus === 'permission_start' || srcStatus === 'permission_end') toStatus = srcStatus;
-          else return final(`استئذانُ ${doc.name} يوم ${DAY_AR[r.toDay]}: بدايةَ الدوام أم نهايتَه؟ [بداية الدوام] [نهاية الدوام]`);
+          else return final(`استئذانُ ${doc.name} يوم ${dAr(r.toDay)}: بدايةَ الدوام أم نهايتَه؟ [بداية الدوام] [نهاية الدوام]`);
         }
         if (!['sick_leave', 'vacation', 'permission_start', 'permission_end'].includes(toStatus)) {
           return 'Tool error: نوع الوجهة غير صالح.';
         }
         if (fromDay === r.toDay && toStatus === srcStatus) {
-          return final(`${STATUS_AR[srcStatus]} ${doc.name} يوم ${DAY_AR[fromDay]} كما هي — لا نقل.`);
+          return final(`${STATUS_AR[srcStatus]} ${doc.name} يوم ${dAr(fromDay)} كما هي — لا نقل.`);
         }
 
         // إلغاء المصدر ثمّ تسجيل الوجهة بإشعارٍ **مكتوم** (لا إشعارَي علمٍ منفصلَين ولا
@@ -1440,7 +1446,7 @@ export async function dispatchRequestToolV2(
           console.log('[notify-move] failed', e instanceof Error ? e.message : e);
         }
 
-        return final(`تمّ النقل: ${doc.name} — ${STATUS_AR[srcStatus]} ${DAY_AR[fromDay]} أصبحت ${STATUS_AR[toStatus]} ${DAY_AR[r.toDay]}.`);
+        return final(`تمّ النقل: ${doc.name} — ${STATUS_AR[srcStatus]} ${dAr(fromDay)} أصبحت ${STATUS_AR[toStatus]} ${dAr(r.toDay)}.`);
       }
 
       case 'place_in_clinic': {
@@ -1467,7 +1473,7 @@ export async function dispatchRequestToolV2(
           .join('، و');
         const permNote = (res as { permissionNoteAr?: string }).permissionNoteAr;
         return final(`تمّ وضع ${doc.name} في عيادة ${r.clinicNumber} (الفترات ${periods.join('، ')}) ` +
-          `يوم ${DAY_AR[r.day]}${permNote ? ` — ${permNote}` : ''}.${moved ? ` و${moved}.` : ''}`);
+          `يوم ${dAr(r.day)}${permNote ? ` — ${permNote}` : ''}.${moved ? ` و${moved}.` : ''}`);
       }
 
       case 'cover_gap_with_reserve': {
@@ -1480,7 +1486,7 @@ export async function dispatchRequestToolV2(
           // (نفسُ منطق زرّ «لا أحد» في الكرت — declineReserveChoiceByCode بالكود).
           const res = await declineReserveChoiceByCode({ clinicId: ctx.clinicId, weekStart: ws, day: r.day });
           if (!res.success) return `Tool error: ${res.error ?? 'تعذّر إكمال التغطية.'}`;
-          return final(`تمّ — لن نستدعي أحدًا، وسأتكفّل أنا بترتيب التغطية يوم ${DAY_AR[r.day]}.`);
+          return final(`تمّ — لن نستدعي أحدًا، وسأتكفّل أنا بترتيب التغطية يوم ${dAr(r.day)}.`);
         }
         const pick = resolveDoctor(ctx, r.doctorIndex);
         if (!pick) return 'Tool error: رقم الطبيب غير صالح.';
@@ -1490,7 +1496,7 @@ export async function dispatchRequestToolV2(
         const pr = await placeReserveByCode({ clinicId: ctx.clinicId, weekStart: ws, day: r.day, clinicNumber: cNum, period: per, doctorId: pick.id, closeCard: true });
         if (!pr.success) return `Tool error: تعذّر وضع الاحتياطيّ (${pr.error ?? ''}).`;
         // إبلاغ الاحتياطيّ المختار بمقعده الجديد تتولّاه طبقةُ الفرق (كرت «طرأ تغييرٌ على جدولك»).
-        return final(`تمّ: ${pick.name} يغطّي عيادة ${cNum} الفترة ${per} يوم ${DAY_AR[r.day]}.`);
+        return final(`تمّ: ${pick.name} يغطّي عيادة ${cNum} الفترة ${per} يوم ${dAr(r.day)}.`);
       }
 
       case 'announce_to': {
@@ -1587,7 +1593,7 @@ export async function dispatchRequestToolV2(
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
         // أعِد شفتَ من لم يُضَف إلى أصله: لا تغييرَ ولا إشعارَ لأطبائه.
         if (who) await preserveUnaffectedShift(ctx.clinicId, ws2, daysFromA, who.id, snapA);
-        return final(`تمّ — أُدخِل ${who ? who.name : 'الطبيب الجديد'} من يوم ${DAY_AR[r.day]}، وأُعيد توزيعُ شفتِه بعدلٍ (الشفتُ الآخرُ والأيّامُ السابقةُ كما هي).`);
+        return final(`تمّ — أُدخِل ${who ? who.name : 'الطبيب الجديد'} من يوم ${dAr(r.day)}، وأُعيد توزيعُ شفتِه بعدلٍ (الشفتُ الآخرُ والأيّامُ السابقةُ كما هي).`);
       }
 
       case 'replace_doctor_in_schedule': {
@@ -1608,7 +1614,7 @@ export async function dispatchRequestToolV2(
           if (outGid && inGid && outGid !== inGid) await requestsV2.moveDoctorGroup(actor, inD.id, inD.name, inGid, outGid);
           if (outGid) await supabase.from('doctor_group_members').delete().eq('doctor_id', outD.id).eq('group_id', outGid);
         }
-        return final(`تمّ — ${inD.name} حلّ مكان ${outD.name} حرفيًّا من يوم ${DAY_AR[day]} (${rep.replaced} خانة)${r.permanent ? ' · ودائمًا في القائمة' : ''}.`);
+        return final(`تمّ — ${inD.name} حلّ مكان ${outD.name} حرفيًّا من يوم ${dAr(day)} (${rep.replaced} خانة)${r.permanent ? ' · ودائمًا في القائمة' : ''}.`);
       }
 
       case 'remove_doctor_from_schedule': {
@@ -1638,7 +1644,7 @@ export async function dispatchRequestToolV2(
         }
         const built = await schedule.build({ ...recipeForBuild, clinicId: ctx.clinicId, weekStart: ws2, fromDay: day, dryRun: false } as Parameters<typeof schedule.build>[0]);
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
-        return final(`تمّ — حُذف ${doc.name} وأُعيد توزيعُ الباقين بعدلٍ من يوم ${DAY_AR[day]}${r.permanent ? ' · وأُزيل من القائمة (الأسابيع القادمة بلا اسمه)' : ' (هذا الأسبوع فقط)'}.`);
+        return final(`تمّ — حُذف ${doc.name} وأُعيد توزيعُ الباقين بعدلٍ من يوم ${dAr(day)}${r.permanent ? ' · وأُزيل من القائمة (الأسابيع القادمة بلا اسمه)' : ' (هذا الأسبوع فقط)'}.`);
       }
 
       case 'promote_trainee_independent': {
@@ -1662,7 +1668,7 @@ export async function dispatchRequestToolV2(
         const built = await schedule.build({ ...newRecipe, clinicId: ctx.clinicId, weekStart: ws2, fromDay: day, dryRun: false } as Parameters<typeof schedule.build>[0]);
         if (!built.success) return `Tool error: ${built.summary || (built.errors || []).join('، ') || 'تعذّرت إعادة التوزيع.'}`;
         await preserveUnaffectedShift(ctx.clinicId, ws2, daysFromP, doc.id, snapP);
-        return final(`تمّ — ${doc.name} صار مستقلًّا وأُعيد توزيعُ شفتِه من يوم ${DAY_AR[day]} (الشفتُ الآخرُ كما هو).`);
+        return final(`تمّ — ${doc.name} صار مستقلًّا وأُعيد توزيعُ شفتِه من يوم ${dAr(day)} (الشفتُ الآخرُ كما هو).`);
       }
 
       case 'leader_apply': {
@@ -1692,7 +1698,7 @@ export async function dispatchRequestToolV2(
                 clinicNumber: Number(op.clinicNumber), periods,
               });
               if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
-              done.push(`${doc.name} → عيادة ${op.clinicNumber} (ف${periods.join('،')}) ${DAY_AR[day]}`);
+              done.push(`${doc.name} → عيادة ${op.clinicNumber} (ف${periods.join('،')}) ${dAr(day)}`);
             } else if (kind === 'delegator') {
               const doc = resolveDoctor(ctx, op.doctorIndex);
               if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
@@ -1702,7 +1708,7 @@ export async function dispatchRequestToolV2(
                 period: op.period != null ? Number(op.period) : undefined,
               });
               if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
-              done.push(`${doc.name} دليقيتر (ف${res.period}) ${DAY_AR[day]}`);
+              done.push(`${doc.name} دليقيتر (ف${res.period}) ${dAr(day)}`);
             } else if (kind === 'set_status') {
               const doc = resolveDoctor(ctx, op.doctorIndex);
               if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
@@ -1717,7 +1723,7 @@ export async function dispatchRequestToolV2(
                 status: status as 'sick_leave' | 'vacation' | 'permission_start' | 'permission_end' | 'extra', shift,
               });
               if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
-              done.push(`${doc.name} ${STATUS_AR[status]} ${DAY_AR[day]}`);
+              done.push(`${doc.name} ${STATUS_AR[status]} ${dAr(day)}`);
             } else if (kind === 'cancel_status') {
               const doc = resolveDoctor(ctx, op.doctorIndex);
               if (!doc) { failed.push(`${tag} رقم طبيب غير صالح`); continue; }
@@ -1738,7 +1744,7 @@ export async function dispatchRequestToolV2(
               });
               if (!res.success) { failed.push(`${tag} ${doc.name}: ${res.error}`); continue; }
               opDay = cday; // يومُ الإلغاء (قد يكون استُنبط) — لوسمِ التعديل
-              done.push(`إلغاء حالة ${doc.name} ${DAY_AR[cday]}`);
+              done.push(`إلغاء حالة ${doc.name} ${dAr(cday)}`);
             } else if (kind === 'swap') {
               if (!day) { failed.push(`${tag} اليوم مفقود`); continue; }
               const idxs = Array.isArray(op.doctorIndexes) ? op.doctorIndexes : [];
@@ -1761,7 +1767,7 @@ export async function dispatchRequestToolV2(
                 });
                 if (!res.success) { failed.push(`${tag} ${res.error}`); continue; }
               }
-              done.push(`تبديل ${docs.map((d) => d.name).join(' ⇄ ')} ${DAY_AR[day]}`);
+              done.push(`تبديل ${docs.map((d) => d.name).join(' ⇄ ')} ${dAr(day)}`);
             } else if (kind === 'attach_trainee') {
               const trainee = resolveDoctor(ctx, op.traineeDoctorIndex);
               const sup = resolveDoctor(ctx, op.supervisorDoctorIndex);
@@ -1772,7 +1778,7 @@ export async function dispatchRequestToolV2(
                 supervisorId: sup.id, supervisorName: sup.name,
               });
               if (!res.success) { failed.push(`${tag} ${res.error}`); continue; }
-              done.push(`${trainee.name} مع ${sup.name} ${DAY_AR[day]}`);
+              done.push(`${trainee.name} مع ${sup.name} ${dAr(day)}`);
             } else {
               failed.push(`${tag} عمليّة غير معروفة "${kind}"`);
             }

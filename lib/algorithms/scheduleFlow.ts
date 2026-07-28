@@ -75,10 +75,15 @@ export function applyResolved(parsed: ParsedExceptions, resolved: ResolvedClarif
   const extraAbsences = [...parsed.extraAbsences];
   const extraPermissions = [...parsed.extraPermissions];
   for (const r of resolved) {
-    if (r.clar.kind === 'absence') {
-      extraAbsences.push({ doctorId: r.doctorId, day: r.day, scope: r.clar.scope ?? 'full', status: r.clar.status ?? 'vacation' });
-    } else {
-      extraPermissions.push({ doctorId: r.doctorId, day: r.day, kind: r.clar.permKind ?? 'end' });
+    // بطاقةٌ واحدةٌ قد تحملُ أيّامًا («من الاثنين إلى الأربعاء») — جوابٌ واحدٌ يسري عليها كلِّها.
+    // وإلّا فاليومُ المختارُ وحدَه (وهو الحالُ حينَ سُئلَ عن اليوم أصلًا).
+    const days = (r.clar.days && r.clar.days.length) ? r.clar.days : [r.day];
+    for (const day of days) {
+      if (r.clar.kind === 'absence') {
+        extraAbsences.push({ doctorId: r.doctorId, day, scope: r.clar.scope ?? 'full', status: r.clar.status ?? 'vacation' });
+      } else {
+        extraPermissions.push({ doctorId: r.doctorId, day, kind: r.clar.permKind ?? 'end' });
+      }
     }
   }
   return { ...parsed, extraAbsences, extraPermissions };

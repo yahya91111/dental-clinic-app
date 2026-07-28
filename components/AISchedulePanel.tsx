@@ -612,6 +612,12 @@ function ClarifyCard({ c, onResolve }: { c: Clarification; onResolve: (c: Clarif
           <Text style={{ fontSize: scale(13.5), color: '#F4F1FF', textAlign: 'right', lineHeight: scale(21), fontWeight: '600' }}>
             «{c.mention}» — {kindLabel}
           </Text>
+          {/* أيّامُ البطاقةِ الواحدة: جوابُك يسري عليها كلِّها، فلْتُقرَأْ قبلَ أن تُجيب */}
+          {c.days && c.days.length > 1 ? (
+            <Text style={{ fontSize: scale(11.5), color: 'rgba(214,196,255,0.72)', textAlign: 'right', marginTop: scale(4), fontWeight: '700' }}>
+              {c.days.map((d) => DAY_AR[d as DayKey] ?? d).join('، ')}
+            </Text>
+          ) : null}
 
           {ambiguous && (
             <>
@@ -651,8 +657,12 @@ function ClarifyCards({ clarifications, onResolve }: {
   // بلا رأسٍ منفصل — كلُّ بطاقةٍ قائمةٌ بذاتها (شارة + عنوان + حبّة) كما في كروتِ الإبلاغ
   return (
     <View>
-      {clarifications.map((c, i) => (
-        <ClarifyCard key={`${c.mention}-${c.kind}-${i}`} c={c} onResolve={onResolve} />
+      {/* المفتاحُ هُويّةُ البطاقةِ لا موضعُها. كان `${mention}-${kind}-${i}`: ثلاثُ بطاقاتٍ
+          لاسمٍ واحدٍ = مفاتيحُ تختلفُ بالترتيبِ وحدَه، فإذا حُلَّتْ واحدةٌ وانكمشَ الطابورُ
+          ورثَتِ الباقيةُ مفتاحَ المحلولةِ — ومعه نسختَها الحيّةَ وقد رُفِعَ فيها done —
+          فلا تستجيبُ للنقر. المفتاحُ الثابتُ يُنهي ذلك من أصلِه. */}
+      {clarifications.map((c) => (
+        <ClarifyCard key={c.id} c={c} onResolve={onResolve} />
       ))}
     </View>
   );

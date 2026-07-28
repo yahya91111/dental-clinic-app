@@ -22,9 +22,15 @@ export type RosterEntry = { id: string; name: string };
  * الاستثناء كي يتحوّل (عند اختيار المرشّح) إلى غياب/استئذان كامل.
  */
 export type Clarification = {
+  /** هُويّةٌ ثابتةٌ للبطاقة — المفتاحُ في الرسم. بلا ثباتٍ تُعادُ حالةُ بطاقةٍ محلولةٍ
+   *  لبطاقةٍ باقيةٍ حينَ ينكمشُ الطابور (اسمٌ واحدٌ في ثلاثِ بطاقاتٍ = مفاتيحُ متطابقة). */
+  id: string;
   mention: string;                          // الاسم كما كتبه المستخدم
   kind: 'absence' | 'permission';
   day?: WeekDay;                            // معلومٌ إن حدّده المستخدم؛ وإلّا يُسأل عنه (needsDay)
+  /** أيّامٌ متعدّدةٌ لنفسِ الاسمِ ونفسِ الحالة («من الاثنين إلى الأربعاء») — سؤالٌ واحدٌ
+   *  يحسمُها كلَّها. أوّلُها هو `day`. غيرُ معرَّفٍ = يومٌ واحدٌ فقط. */
+  days?: WeekDay[];
   needsDay?: boolean;                       // true إن لم يُذكر يومٌ صريح → نسأل «أيّ يوم؟»
   scope?: 'full' | 'morning' | 'evening';   // للغياب
   permKind?: 'start' | 'end';               // للاستئذان
@@ -290,7 +296,8 @@ export async function parseExceptions(
 }
 
 /** يُنقّي مخرجات النموذج: يترجم أرقام الأطباء إلى ids ويتحقّق من الأيام ويُسقِط غير الصالح */
-function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
+// مُصدَّرٌ للاختبار وحدَه (scripts/test-clarify-merge.ts) — لا نداءَ له خارجَ هذا الملفّ في التطبيق.
+export function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
   const dayOk = (d: any): d is WeekDay => VALID_DAYS.includes(d);
   // النموذج يُرجِع رقم الطبيب (1-based) من القائمة — نترجمه هنا حتميّاً إلى id.
   // (لا نُحمّل النموذج نسخ UUID — نسخ الأرقام أدقّ بكثير.)
@@ -316,6 +323,25 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
 
   // التوضيحات (مبهمُ الاسمِ أو ناقصُ اليوم) تُبنى حتميّاً من الغياب/الاستئذان أدناه.
   const clarifications: Clarification[] = [];
+  // ── سؤالٌ واحدٌ لا سؤالٌ لكلِّ يوم ──
+  // «إسراء تفرّغ من الاثنين إلى الأربعاء» = ثلاثةُ غياباتٍ باسمٍ واحدٍ مبهم، وكانت
+  // ثلاثَ بطاقاتٍ تسألُ السؤالَ نفسَه ثلاثًا. فمَن اتّحدَ اسمُه وحالتُه ومرشّحوه يُجمَعُ
+  // في بطاقةٍ واحدةٍ تحملُ أيّامَه، وجوابُك الواحدُ يسري عليها كلِّها.
+  // (لا نجمعُ ناقصَ اليومِ: لا يومَ يميّزُه، فجمعُه يُضيعُ غيابًا.)
+  const clarKey = (c: Clarification) =>
+    [c.mention, c.kind, c.scope ?? '', c.status ?? '', c.permKind ?? '',
+      c.candidates.map((x) => x.id).sort().join(',')].join('|');
+  const pushClar = (c: Omit<Clarification, 'id'>) => {
+    if (c.day && !c.needsDay) {
+      const twin = clarifications.find((x) => x.day && !x.needsDay && clarKey(x) === clarKey(c as Clarification));
+      if (twin) {
+        const days = twin.days ?? [twin.day!];
+        if (!days.includes(c.day)) { days.push(c.day); twin.days = days; }
+        return;
+      }
+    }
+    clarifications.push({ ...c, id: `c${clarifications.length + 1}` });
+  };
 
   const extraAbsences: ExtraAbsence[] = [];
   if (Array.isArray(raw.extraAbsences)) {
@@ -338,7 +364,7 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
       const ambiguous = candidates.length >= 2;   // اسمٌ مكرّر → «أيّ فلان؟»
       const needsDay = !daySpecified;              // لا يومَ صريح → «أيّ يوم؟»
       if (ambiguous || needsDay) {
-        clarifications.push({ mention: mention || candidates[0]!.name, kind: 'absence', day, needsDay, scope, status, candidates });
+        pushClar({ mention: mention || candidates[0]!.name, kind: 'absence', day, needsDay, scope, status, candidates });
         continue;
       }
       extraAbsences.push({ doctorId: candidates[0]!.id, day: day!, scope, status });
@@ -388,7 +414,7 @@ function sanitize(raw: any, roster: RosterEntry[]): ParsedExceptions {
       const ambiguous = candidates.length >= 2;
       const needsDay = !daySpecified;
       if (ambiguous || needsDay) {
-        clarifications.push({ mention: mention || candidates[0]!.name, kind: 'permission', day, needsDay, permKind, candidates });
+        pushClar({ mention: mention || candidates[0]!.name, kind: 'permission', day, needsDay, permKind, candidates });
         continue;
       }
       extraPermissions.push({ doctorId: candidates[0]!.id, day: day!, kind: permKind });
