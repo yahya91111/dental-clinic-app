@@ -51,9 +51,9 @@ const BG_COLORS: [string, string, string] = ['#F0F4F8', '#E8EDF3', '#F5F0F8'];
 // أوقاتَهم الحقيقيّةَ تمامًا. **لا شيءَ تلقائيّ**: المريضُ يبقى منتظِرًا حتّى تُدخِلَه أنتَ للعيادةِ
 // (بنقرِه على المخطّط) ثمّ تُنهيه — كالعملِ الحقيقيّ لكن بساعةٍ مسرَّعة. (الربطُ الحيُّ لاحقًا، بنفسِ المنطق.)
 //
-// وهي **بيئةُ عملٍ لنا لا ميزةٌ للطبيب**: أدَّتْ ما بُنيَتْ له، فطُويَ شريطُها عن الإصدار.
-// مفتاحٌ واحدٌ لا حذف — يبقى عملُها كاملًا في الملفّ، واقلبْه إلى true فيعودُ الشريطُ كما كان.
-const SIM_ENABLED: boolean = false;
+// وهي **بيئةُ عملٍ لنا لا ميزةٌ للطبيب**: يُطوى شريطُها عن الإصدارِ حينَ لا نحتاجُه.
+// مفتاحٌ واحدٌ لا حذف — يبقى عملُها كاملًا في الملفّ. (مفتوحٌ الآنَ لتجربةِ تصميمِ المخطّط.)
+const SIM_ENABLED: boolean = true;
 
 export type SimAct = { enter?: number; chair?: number; done?: number; na?: boolean; naAt?: number };
 
@@ -387,9 +387,9 @@ function BlobField() {
 // الكروتُ كلُّها على سطرٍ واحدٍ وارتفاعٍ واحد. العمقُ يقولُه الظلُّ والمادّة:
 // الغائرُ بلا ظلٍّ أصلًا، والمستقرُّ ظلُّه قصيرٌ كثيف، والحائمُ له **ظلٌّ منفصلٌ تحتَه** يبعدُ عنه
 // فيبدو معلَّقًا في الهواءِ فوقَ الورقة.
-function Card({ b, left, width, top, height, nowMin, onPress }:
+function Card({ b, left, width, top, height, nowMin, onPress, onBarY }:
   { b: Blk; left: number; width: number; top: number; height: number;
-    nowMin: number; onPress: () => void }) {
+    nowMin: number; onPress: () => void; onBarY?: (y: number) => void }) {
   const v = CARD[b.kind]!;
   const est = estMinutes(b.p);
   const dur = est;
@@ -440,31 +440,36 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
       {/* تحتَ الاسم: حاويةُ الوقتِ أمامَ نوعِ الحالة (Filling / Extraction …) — وسطرُ End time يبقى مكانَه بالأسفل. */}
       <View style={cs.metaRow}>
         <Text style={[cs.mCase, { color: v.sub }]} numberOfLines={1}>{caseType}</Text>
-        {/* بعدَ الإنجاز: الوقتُ الفعليُّ المستغرَقُ (أو +التأخير) بدلَ المدّةِ المقدَّرة */}
+        {/* بعدَ الإنجاز: الوقتُ المستغرَقُ فعلًا (أو +التأخير) **أمامَ** المدّةِ المحدَّدة لا بدلًا منها —
+            فمقارنةُ «كم قدّرتُ» بـ«كم استغرقتُ» هي الفائدةُ كلُّها، وحذفُ أحدِهما يُلغيها. */}
         {showActual ? (
           <View style={[cs.tPill, b.kind === 'lateDone' ? cs.actualLate : cs.actualEarly]}>
             <Text style={[cs.tPillTxt, { color: '#FFFFFF' }]} numberOfLines={1}>{actualTagText}</Text>
           </View>
-        ) : (
-          <View style={[cs.tPill, { backgroundColor: v.trk }]}>
-            <Text style={[cs.tPillTxt, { color: v.sub }]} numberOfLines={1}>{pillText}</Text>
-          </View>
-        )}
+        ) : null}
+        <View style={[cs.tPill, { backgroundColor: v.trk }]}>
+          <Text style={[cs.tPillTxt, { color: v.sub }]} numberOfLines={1}>{pillText}</Text>
+        </View>
       </View>
-      {/* شريطُ الوقتِ المتبقّي — كما هو */}
-      <View style={[cs.bar, { backgroundColor: v.trk }]}>
+      {/* شريطُ الوقتِ المتبقّي — ويُبلِّغُ ارتفاعَه مرّةً واحدةً كي يمتدَّ خيطُ الفراغِ على استقامتِه */}
+      <View style={[cs.bar, { backgroundColor: v.trk }]}
+        onLayout={onBarY ? (e) => onBarY(e.nativeEvent.layout.y) : undefined}>
         {!bar.empty ? <View style={[cs.barFill, { width: `${bar.fill}%` as any, backgroundColor: v.fil }]} /> : null}
         {!bar.empty && bar.tick >= 0 && bar.tick < 99.5 ? <View style={[cs.barTick, { left: `${bar.tick}%` as any, backgroundColor: v.ink }]} /> : null}
       </View>
       {b.kind === 'na'
         ? <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{naMin != null ? `Called ${fmtHM(naMin)}` : 'Not available'}</Text>
         : <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}End time {fmtHM(endMin)}</Text>}
-      {b.p.doctor_name ? (
-        <View style={cs.docRow}>
-          <Ionicons name="person" size={scale(9)} color={v.sub} />
-          <Text style={[cs.doc, { color: v.sub }]} numberOfLines={1}>{b.p.doctor_name}</Text>
-        </View>
-      ) : null}
+      {/* صفُّ الطبيبِ يُحجَزُ دائمًا وإن خلا: الكروتُ متساويةُ المحتوى فيقعُ شريطُها كلِّها
+          على ارتفاعٍ واحد — وعليه يستقيمُ خيطُ الفراغِ بينها امتدادًا لا كسرًا. */}
+      <View style={cs.docRow}>
+        {b.p.doctor_name ? (
+          <>
+            <Ionicons name="person" size={scale(9)} color={v.sub} />
+            <Text style={[cs.doc, { color: v.sub }]} numberOfLines={1}>{b.p.doctor_name}</Text>
+          </>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -548,10 +553,24 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // topH = رأسُ الجدول: حافّةٌ مطويّةٌ فوقَ الورقةِ تحملُ الساعاتِ — وهي الآنَ **علاماتٌ تطفو**
   // حيثُ تقعُ فعلًا (تتقاربُ في الهدوءِ وتتباعدُ في الزحام)، لا شبكةً متساويةً مفروضةً على الكروت
   // laneH اتّسعَ عن ٩٦: الكرتُ الحائمُ يرتفعُ عن مستقرِّه، فيلزمُه فراغٌ فوقَه لا يخرجُ منه إلى صفِّ الأوقات
-  const laneH = scale(106), stripH = scale(17), topH = scale(46), labelW = scale(64);
+  // stripH ضاقَ عن ١٧: وقتُ الدخولِ يُقرأُ مع كرتِه، فكلّما قرُبَ منه كان أوضحَ نسبةً إليه
+  const laneH = scale(106), stripH = scale(13), topH = scale(46), labelW = scale(64);
   // كلُّ الكروتِ على سطرٍ واحدٍ وارتفاعٍ واحد — العمقُ يقولُه الظلُّ والمادّةُ لا موضعُ الكرتِ في صفِّه
   const CARD_H = scale(84);
   const CARD_TOP = (laneH - CARD_H) / 2;
+  // ── خيطُ الفراغِ امتدادٌ لشريطِ الكرت ──
+  // ارتفاعُ الشريطِ داخلَ الكرتِ يعتمدُ على ارتفاعِ نصوصِه، وهو يختلفُ بين المنصّات — فلا
+  // يُحسَبُ بالحسابِ بل يُقاسُ: أوّلُ كرتٍ يُرسَمُ يُبلِّغُ موضعَ شريطِه مرّةً واحدة، ثمّ يمتدُّ
+  // الخيطُ على استقامتِه. (كلُّ الكروتِ متساويةُ المحتوى فقياسُ واحدٍ يكفيها.)
+  const BAR_H = scale(3.5);
+  const barYRef = useRef<number | null>(null);
+  const [barY, setBarY] = useState<number | null>(null);
+  const reportBarY = useCallback((y: number) => {
+    if (barYRef.current != null) return;
+    barYRef.current = y;
+    setBarY(y);
+  }, []);
+  const threadTop = CARD_TOP + (barY ?? (CARD_H * 0.57));
   const TROUGH_H = scale(44);                        // المَجْرى أقصرُ من الكرتِ فيُقرأُ حفرًا لا صندوقًا
   const NOW_PAD = scale(12);                         // فُرجةٌ بينَ حدِّ الماءِ ومَن يبدأُ عنده، كي يُقرأَ وقتُ دخولِه
   const unitH = stripH + laneH;                    // شريطُ الأوقات + كروتُ العيادة = وحدةٌ واحدة
@@ -709,13 +728,19 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // تُرسَمُ حيثُ تقعُ فعلًا على المحور: تتباعدُ حيثُ ازدحمَ الشغلُ وتتقاربُ حيثُ هدأ. وحينَ
   // تتلاصقُ في الساعاتِ الخاويةِ يُخفى المتزاحمُ ويبقى واحدٌ يدلُّ — وهي القاعدةُ نفسُها التي
   // يمشي عليها شريطُ كلِّ عيادةٍ (LBL_GAP). و`wide` = هل بعدَها متّسعٌ لعلاماتِ الرُّبعِ والنصف.
+  // وساعةٌ تقعُ **داخلَ** تبديلِ الشفتِ لا تُرسَمُ أصلًا: ذلك الوقتُ مطويٌّ في عمودٍ رفيع،
+  // فرقمُها يسقطُ فوقَ العمودِ ووسمِه فيبدو وكأنّ في التبديلِ ساعةَ دخول.
+  const seamRanges = (lanes[0]?.blocks ?? [])
+    .filter((b) => b.kind === 'break' && b.fixed)
+    .map((b) => [b.start, b.end] as [number, number]);
+  const inSeam = (t: number) => seamRanges.some(([s, e]) => t > s && t < e);
   const HOUR_GAP = scale(48);
   const hourMarks: { h: number; x: number; wide: boolean }[] = [];
   {
     let lastX = -Infinity;
     for (let i = 0; i < hours.length; i++) {
       const h = hours[i], x = xAt(h * 60);
-      if (x - lastX < HOUR_GAP) continue;
+      if (inSeam(h * 60) || x - lastX < HOUR_GAP) continue;
       const nx = i + 1 < hours.length ? xAt(hours[i + 1] * 60) : x;
       hourMarks.push({ h, x, wide: nx - x >= scale(96) });
       lastX = x;
@@ -750,12 +775,15 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // شريطُ أوقاتٍ خاصٌّ بكلِّ عيادة: بداياتُ كروتِها فوقَها (متحرِّكةٌ مع الدور)، أو الساعاتُ الافتراضيّة إن كانت فارغة.
   // ومَن أزاحَه تبديلُ الشفتِ (دخلَ داخلَه فرُسِمَ بعدَه) **لا يُسقَطُ وسمُه أبدًا** ولو تزاحمَ:
   // موضعُه لم يعُدْ يقولُ ساعتَه، فالرقمُ وحدَه يقولُها — وهو أحقُّ ما يُعرَض.
+  // والبريكُ لا وقتَ دخولٍ له: وقتُ التبديلِ مكتوبٌ في وسمِه فوقَ العمود، ووقتُ الاستراحةِ
+  // المرنةِ محفورٌ في مَجْراها — فإقحامُه هنا يُقرأُ «مريضٌ دخلَ في البريك».
   const LBL_GAP = scale(40);
   const strips = laidLanes.map((laid) => {
     if (!laid.length) return null;
     const ticks: { left: number; label: string; moved: boolean }[] = [];
     let lastR = -Infinity;
     for (const { b, left, moved } of laid) {
+      if (b.kind === 'break') continue;
       if (!moved && left < lastR + LBL_GAP) continue;
       ticks.push({ left, label: fmtHM(b.start), moved });
       lastR = left;
@@ -1052,8 +1080,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                             const lw = Math.max(gw, IDLE_LBL);
                             return (
                               <React.Fragment key={'idle' + i}>
-                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + (gw - lw) / 2, width: lw, top: laneH / 2 - scale(17) }]}>{fmtGap(o.idle)}</Text>
-                                <View pointerEvents="none" style={[full.groove, { left: gx, width: gw, top: laneH / 2 - scale(2.5) }]} />
+                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + (gw - lw) / 2, width: lw, top: threadTop - scale(14) }]}>{fmtGap(o.idle)}</Text>
+                                <View pointerEvents="none" style={[full.groove, { left: gx, width: gw, top: threadTop, height: BAR_H }]} />
                               </React.Fragment>
                             );
                           })}
@@ -1065,7 +1093,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                             }
                             return (
                               <Card key={i} b={b} left={left} width={width} top={CARD_TOP} height={CARD_H}
-                                nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }} />
+                                nowMin={nowMin} onPress={() => { if (!readOnly) setActionId(b.p.id); }}
+                                onBarY={barY == null ? reportBarY : undefined} />
                             );
                           })}
                         </View>
@@ -1903,11 +1932,12 @@ const full = scaledStyleSheet({
   // ── شريطُ الأوقاتِ والصفّ ──
   // بداياتُ المرضى خفتَتْ عمدًا: الساعاتُ الثابتةُ في الرأسِ هي المرجع، وهذه تفصيلٌ تحتَها لا يزاحمُها
   strip: { position: 'absolute', left: 0 },
-  startTick: { position: 'absolute', top: 1, fontSize: 8, fontWeight: '800', color: 'rgba(11,127,113,0.62)' },
+  // وقتُ دخولِ المريض: يقفُ فوقَ كرتِه مباشرةً، وخطٌّ واضحٌ ينزلُ منه إليه فيُعرَفُ لأيِّهما هو
+  startTick: { position: 'absolute', top: 0, fontSize: 8.5, fontWeight: '800', color: 'rgba(11,127,113,0.82)' },
   // مَن أزاحَه التبديل: موضعُه لا يقولُ ساعتَه، فرقمُه أوضحُ وعلامتُه أظهر
-  startTickMoved: { color: 'rgba(11,127,113,0.95)' },
-  startTickMarkMoved: { height: 7, backgroundColor: 'rgba(14,124,102,0.55)' },
-  startTickMark: { position: 'absolute', top: 12, width: 1, height: 4, backgroundColor: 'rgba(14,124,102,0.22)' },
+  startTickMoved: { color: 'rgba(11,127,113,1)' },
+  startTickMarkMoved: { width: 2, backgroundColor: 'rgba(14,124,102,0.72)' },
+  startTickMark: { position: 'absolute', top: 9, width: 1.5, height: 4, backgroundColor: 'rgba(14,124,102,0.45)' },
   hourTick: { position: 'absolute', top: 2, fontSize: 10, fontWeight: '800', color: '#8CA0A8' },
   laneRow: { position: 'absolute', left: 0, right: 0 },
   // ── عيادةٌ فارغة + خيطُ الفراغ ──
@@ -1917,9 +1947,9 @@ const full = scaledStyleSheet({
   // مدّةُ الفراغِ فوقَ خيطِه — لا يضيقُ عن رقمِه كاملًا مهما ضاقتِ الفجوة
   idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '800', letterSpacing: 0.2, color: '#93A3AA',
     textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
-  // الفراغُ محفور: مَجْرًى يلمعُ قاعُه — متّصلٌ من كرتٍ إلى كرتٍ ورماديٌّ وحدَه
-  groove: { position: 'absolute', height: 5, borderRadius: 3, backgroundColor: 'rgba(10,35,45,0.10)',
-    borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.65)' },
+  // خيطُ الفراغ: هو **شريطُ الكرتِ نفسُه** ممتدًّا — نفسُ السماكةِ ونفسُ الاستدارةِ ونفسُ
+  // الارتفاع، رماديٌّ فارغٌ لا يمتلئ. فيُقرأُ الصفُّ خطًّا واحدًا يمرُّ من كرتٍ إلى كرت.
+  groove: { position: 'absolute', borderRadius: 2, backgroundColor: 'rgba(10,35,45,0.11)' },
 
   // ── ④ المَجْرى: البريكُ المرن (بلا أيقونة) ──
   trough: { position: 'absolute', borderRadius: 19, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
@@ -2182,7 +2212,7 @@ const cs = scaledStyleSheet({
   barFill: { height: '100%', borderRadius: 2 },
   barTick: { position: 'absolute', top: -2.5, width: 1.5, height: 8.5, borderRadius: 1, opacity: 0.6 },
   time: { marginTop: 1, fontSize: 9, fontWeight: '700', opacity: 0.72 },
-  docRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  docRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, height: 12 },
   doc: { flex: 1, fontSize: 8.5, fontWeight: '800', opacity: 0.82 },
 }) as any;
 
