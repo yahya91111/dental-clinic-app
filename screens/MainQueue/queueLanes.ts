@@ -44,6 +44,21 @@ export type TimelineData = { lanes: Lane[]; dayStart: number; dayEnd: number };
 export type Break = { start: number; end: number; fixed?: boolean };   // فترةُ استراحةٍ لكلِّ العيادات (دقائقُ من منتصف الليل)؛ fixed = ثابتٌ لا يتحرّك
 
 
+// ── تبديلُ الشفتِ حاجزٌ لا يُخترَق (قاعدةُ عرضٍ زمنيّةٌ محضة) ──
+// لا كرتَ يتداخلُ مع تبديلِ الشفت. حالتان تقعانِ في العملِ الحقيقيّ:
+//  • **دخلَ داخلَ وقتِ التبديل** → مكانُه بعدَه (فالتبديلُ ماضٍ حينَ جلس)، ووقتُ دخولِه
+//    الحقيقيُّ يبقى معروضًا فوقَ كرتِه فلا تضيعُ الحقيقةُ في الإزاحة.
+//  • **تأخّرَ فانتهى داخلَه** → يبقى قبلَه كاملًا (فقد بدأَ قبلَ التبديل)، ووقتُ انتهائه كما سُجِّل.
+// تُعيدُ نافذةَ العرض [ds, de] التي يجبُ أن يقعَ الكرتُ داخلَها، و moved = أُزيحَ عن ساعتِه.
+export function drawWindow(b: Blk, seams: Blk[]): { ds: number; de: number; moved: boolean } {
+  if (b.kind === 'break') return { ds: b.start, de: b.end, moved: false };
+  let ds = b.start, moved = false;
+  for (const s of seams) if (b.start >= s.start && b.start < s.end && s.end > ds) { ds = s.end; moved = true; }
+  let de = Math.max(b.end, ds);
+  for (const s of seams) if (s.start >= ds && s.start < de) de = s.start;
+  return { ds, de: Math.max(de, ds), moved };
+}
+
 // مريضٌ صوريٌّ لكتلةِ البريك (كي تُعامَلَ ككتلةٍ عاديّةٍ في الرسمِ والتخطيط دونَ حقلٍ اختياريّ)
 const BREAK_P = { id: '__break__', name: 'Break', queue_number: -2, age: 0 } as Patient;
 

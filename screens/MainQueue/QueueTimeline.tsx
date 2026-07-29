@@ -24,7 +24,7 @@ import { Patient, TREATMENT_DURATIONS } from './constants';
 // (scripts/test-timeline-wall.ts)
 import {
   buildLanes, slotAvailable, shiftFit, snapshotChart, estMinutes, hasDuration, isPriority,
-  minutesOfDay, isRealClinic, clinicNum, localDay,
+  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow,
 } from './queueLanes';
 import type { Kind, Blk, Lane, TimelineData, Break, DayChart } from './queueLanes';
 import { rememberDayChart } from './dayChartStore';
@@ -122,9 +122,11 @@ const HEAD_SHADE: [string, string] = ['rgba(10,35,45,0.13)', 'rgba(10,35,45,0)']
 // الحجاب: المستقبلُ نصفُ ورقةٍ أعلى — يفتحُ الأرضَ بعدَ الآنَ ولا يُغرِقُها
 const VEIL: [string, string, string] = ['rgba(255,255,255,0.40)', 'rgba(255,255,255,0.13)', 'rgba(255,255,255,0.07)'];
 const BLOOM: [string, string, string] = ['rgba(14,159,140,0)', 'rgba(14,159,140,0.20)', 'rgba(14,159,140,0)'];
-const FOLD_PRE: [string, string] = ['rgba(10,35,45,0.20)', 'rgba(10,35,45,0)'];
-const FOLD_BAND: [string, string] = ['rgba(10,35,45,0.17)', 'rgba(255,255,255,0.55)'];
-const FOLD_POST: [string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.13)'];
+// تبديلُ الشفت: عمودٌ رفيعٌ هادئ. هالتُه **متماثلةٌ** على جانبَيه (فلا يبدو مضاءً من جهةٍ
+// مظلمًا من أخرى)، وجسمُه يخفتُ عندَ طرفَيه فلا حافّةَ له تُقطَع، وشفةٌ بيضاءُ تُبقيه واضحًا.
+const SEAM_HALO_L: [string, string] = ['rgba(96,116,126,0)', 'rgba(96,116,126,0.13)'];
+const SEAM_HALO_R: [string, string] = ['rgba(96,116,126,0.13)', 'rgba(96,116,126,0)'];
+const SEAM_BODY: [string, string, string, string] = ['rgba(108,128,138,0.06)', 'rgba(108,128,138,0.46)', 'rgba(108,128,138,0.46)', 'rgba(108,128,138,0.06)'];
 // المَجْرى (البريكُ المرن): حفرةٌ في الورقةِ يصعدُ منها دفءٌ كهرمانيّ — بلا أيقونة
 const TROUGH_BASE: [string, string] = ['#54401C', '#2C1F0A'];
 const TROUGH_LIGHT: [string, string, string] = ['rgba(255,201,116,0)', 'rgba(255,175,72,0.42)', 'rgba(255,214,150,0.92)'];
@@ -499,6 +501,8 @@ const idleTier = (min: number) => IDLE_MIN.find((t) => min <= t.max) as typeof I
 // أضيقُ ما يسعُ الرقمَ كاملًا («1hr 30min») — لا يضيقُ الوسمُ عنه ولو انعدمتِ المسافة
 const IDLE_LBL = scale(54);
 
+// قاعدةُ حاجزِ التبديلِ (drawWindow) في queueLanes — زمنيّةٌ محضةٌ فتُختبَرُ وحدَها
+
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
 // readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا محاكاةَ ولا
 // تحريرَ بريكاتٍ ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
@@ -579,14 +583,16 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
       const arr = need.get(to); if (arr) arr.push({ from, w }); else need.set(to, [{ from, w }]);
     };
     for (const l of lanes) {
-      const chipWall = l.beyond.length > 0 ? l.blocks.find((b) => b.kind === 'break' && b.fixed) : undefined;
+      const seams = l.blocks.filter((b) => b.kind === 'break' && b.fixed);
+      const chipWall = l.beyond.length > 0 ? seams[0] : undefined;
       for (let i = 0; i < l.blocks.length; i++) {
         const b = l.blocks[i];
-        claim(b.start, b.end, drawnW(b));
+        const w = drawWindow(b, seams);
+        claim(w.ds, w.de, drawnW(b));       // الكرتُ يسعُ داخلَ نافذتِه — فلا يعبرُ حاجزًا
         const nx = l.blocks[i + 1];
         if (!nx) continue;
         const idle = nx.start - b.end;
-        claim(b.end, nx.start, (idle >= 1 ? idleTier(idle).w : GAP) + (nx === chipWall ? CHIP_W + GAP : 0));
+        claim(w.de, drawWindow(nx, seams).ds, (idle >= 1 ? idleTier(idle).w : GAP) + (nx === chipWall ? CHIP_W + GAP : 0));
       }
     }
 
@@ -672,13 +678,15 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // المحورُ حجزَ لها سلفًا، فلا قصَّ ولا اقتراضَ ولا دفعَ متراكم. و`floor` باقٍ حارسًا أخيرًا:
   // لا يعملُ إلّا حيثُ تتداخلُ كتلتانِ في الوقتِ حقًّا (مريضانِ سُجّلا في كرسيٍّ واحدٍ معًا).
   const laidLanes = lanes.map((l) => {
-    const chipWall = l.beyond.length > 0 ? l.blocks.find((b) => b.kind === 'break' && b.fixed) : undefined;
+    const seams = l.blocks.filter((b) => b.kind === 'break' && b.fixed);
+    const chipWall = l.beyond.length > 0 ? seams[0] : undefined;
     let floor = -Infinity;
     return l.blocks.map((b, i) => {
       // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
       // خلفَه. ندفعُه فُرجةً صغيرةً إلى اليمين — دفعُ رسمٍ لا تغييرَ في جدولِه، ويسري على
       // كلِّ العياداتِ سواءً فلا يكسرُ التحاذي.
-      const x0 = xAt(b.start);
+      const w = drawWindow(b, seams);
+      const x0 = xAt(w.ds);
       const base = (b.kind !== 'done' && b.kind !== 'lateDone' && b.kind !== 'break'
         && x0 >= nowX - scale(2) && x0 < nowX + NOW_PAD) ? nowX + NOW_PAD : x0;
       const left = Math.max(base, floor);
@@ -689,7 +697,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
       const prev = i > 0 ? l.blocks[i - 1] : null;
       const prevEnd = prev ? ((prev.kind === 'cur' || prev.kind === 'over') ? Math.max(prev.end, prev.start + estMinutes(prev.p)) : prev.end) : -Infinity;
       const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لخيطِ الفراغ)
-      return { b, left, width, idle };
+      return { b, left, width, idle, moved: w.moved };
     });
   });
 
@@ -740,14 +748,16 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   };
 
   // شريطُ أوقاتٍ خاصٌّ بكلِّ عيادة: بداياتُ كروتِها فوقَها (متحرِّكةٌ مع الدور)، أو الساعاتُ الافتراضيّة إن كانت فارغة.
+  // ومَن أزاحَه تبديلُ الشفتِ (دخلَ داخلَه فرُسِمَ بعدَه) **لا يُسقَطُ وسمُه أبدًا** ولو تزاحمَ:
+  // موضعُه لم يعُدْ يقولُ ساعتَه، فالرقمُ وحدَه يقولُها — وهو أحقُّ ما يُعرَض.
   const LBL_GAP = scale(40);
   const strips = laidLanes.map((laid) => {
     if (!laid.length) return null;
-    const ticks: { left: number; label: string }[] = [];
+    const ticks: { left: number; label: string; moved: boolean }[] = [];
     let lastR = -Infinity;
-    for (const { b, left } of laid) {
-      if (left < lastR + LBL_GAP) continue;
-      ticks.push({ left, label: fmtHM(b.start) });
+    for (const { b, left, moved } of laid) {
+      if (!moved && left < lastR + LBL_GAP) continue;
+      ticks.push({ left, label: fmtHM(b.start), moved });
       lastR = left;
     }
     return ticks;
@@ -956,13 +966,20 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                         </React.Fragment>
                       );
                     })}
-                    {/* أرقامُ تبديلِ الشفت: الخطُّ رفيعٌ لا يسعُها، فترتفعُ إلى المسطرةِ فوقَه —
+                    {/* أرقامُ تبديلِ الشفت: العمودُ رفيعٌ لا يسعُها، فترتفعُ إلى المسطرةِ فوقَه —
                         المساحةُ تقولُ «هنا تبديل»، والرقمُ يقولُ «من متى إلى متى». */}
-                    {folds.map((fb, fi) => (
-                      <View key={'sg' + fi} style={[full.seamTag, { left: xAt(fb.start) - scale(37) }]}>
-                        <Text style={full.seamTagTx} numberOfLines={1}>{fmtHM(fb.start)} – {fmtHM(fb.end)}</Text>
-                      </View>
-                    ))}
+                    {folds.map((fb, fi) => {
+                      const sx = xAt(fb.start) + Math.max(SEAM_W, xAt(fb.end) - xAt(fb.start)) / 2;
+                      return (
+                        <React.Fragment key={'sg' + fi}>
+                          <View style={[full.seamTag, { left: sx - scale(40) }]}>
+                            <Text style={full.seamTagEye}>SHIFT</Text>
+                            <Text style={full.seamTagTx} numberOfLines={1}>{fmtHM(fb.start)} – {fmtHM(fb.end)}</Text>
+                          </View>
+                          <View style={[full.seamTagTail, { left: sx, top: scale(36), height: topH - scale(36) }]} />
+                        </React.Fragment>
+                      );
+                    })}
                   </View>
                   {/* الكسرةُ وظلُّها: بها يبدو الرأسُ مطويًّا فوقَ الجدولِ لا مرسومًا عليه */}
                   <View pointerEvents="none" style={[full.creaseLine, { top: topH - 1, width: contentW }]} />
@@ -981,8 +998,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                           {st
                             ? st.map((tk, ti) => (
                                 <React.Fragment key={ti}>
-                                  <Text style={[full.startTick, { left: tk.left }]} numberOfLines={1}>{tk.label}</Text>
-                                  <View style={[full.startTickMark, { left: tk.left + scale(1) }]} />
+                                  <Text style={[full.startTick, tk.moved && full.startTickMoved, { left: tk.left }]} numberOfLines={1}>{tk.label}</Text>
+                                  <View style={[full.startTickMark, tk.moved && full.startTickMarkMoved, { left: tk.left + scale(1) }]} />
                                 </React.Fragment>
                               ))
                             : hourMarks.map(({ h, x }) => (
@@ -1055,25 +1072,28 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                       </React.Fragment>
                     );
                   })}
-                  {/* ═══ الطيّة: تبديلُ الشفت ═══
-                      كانت بلاطةً بعرضِ مدّتِها — بريكٌ إلى منتصفِ الليلِ يحتلُّ رُبعَ المخطّط. وهو
-                      **حدٌّ** لا استراحة، فصارَ خطًّا رفيعًا: ظلٌّ يسبقُه، وكسرةٌ بيضاءُ تلتقطُ
-                      الضوء، وظلٌّ بعدَها. وأرقامُه رفعناها إلى المسطرةِ فوقَه.
-                      ومساحةُ النقرِ أوسعُ من الخطِّ عمدًا كي تُصابَ بالإصبع. */}
+                  {/* ═══ تبديلُ الشفت ═══
+                      كان بلاطةً بعرضِ مدّتِه — بريكٌ إلى منتصفِ الليلِ يحتلُّ رُبعَ المخطّط. وهو
+                      **حدٌّ** لا استراحة، فصارَ عمودًا رفيعًا هادئًا: هالةٌ ليّنةٌ متماثلةٌ تخفتُ
+                      إلى جانبَيه (لا ظلٌّ من جهةٍ وضوءٌ من أخرى)، والعمودُ نفسُه يخفتُ عندَ طرفَيه
+                      فلا حافّةَ له تُقطَع، وشفةٌ بيضاءُ رفيعةٌ تُبقيه واضحًا على الورقةِ الفاتحة.
+                      وأرقامُه فوقَه في المسطرة. ومساحةُ النقرِ أوسعُ منه عمدًا كي تُصابَ بالإصبع. */}
                   {folds.map((fb, fi) => {
                     const fx = xAt(fb.start), fw = Math.max(SEAM_W, xAt(fb.end) - fx);
+                    const fh = lanes.length * unitH;
                     return (
                       <React.Fragment key={'fold' + fi}>
-                        <LinearGradient pointerEvents="none" colors={FOLD_PRE} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: Math.max(0, fx - scale(18)), width: scale(18), top: topH, height: lanes.length * unitH }} />
-                        <LinearGradient pointerEvents="none" colors={FOLD_BAND} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: fx, width: fw, top: topH, height: lanes.length * unitH }} />
-                        <View pointerEvents="none" style={[full.foldLine, { left: fx + fw, height: topH + lanes.length * unitH }]} />
-                        <LinearGradient pointerEvents="none" colors={FOLD_POST} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: fx + fw, width: scale(22), top: topH, height: lanes.length * unitH }} />
+                        <LinearGradient pointerEvents="none" colors={SEAM_HALO_L} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                          style={{ position: 'absolute', left: Math.max(0, fx - scale(20)), width: scale(20), top: topH, height: fh }} />
+                        <LinearGradient pointerEvents="none" colors={SEAM_HALO_R} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                          style={{ position: 'absolute', left: fx + fw, width: scale(20), top: topH, height: fh }} />
+                        <View pointerEvents="none" style={[full.seam, { left: fx, width: fw, top: topH + scale(4), height: fh - scale(8) }]}>
+                          <LinearGradient colors={SEAM_BODY} locations={[0, 0.18, 0.82, 1]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                          <View style={full.seamLip} />
+                        </View>
                         <TouchableOpacity activeOpacity={0.85} disabled={!!readOnly}
                           onPress={() => setBreakActionOrig(fb.orig ?? fb.start)}
-                          style={{ position: 'absolute', left: fx - scale(10), width: fw + scale(20), top: topH, height: lanes.length * unitH }} />
+                          style={{ position: 'absolute', left: fx - scale(11), width: fw + scale(22), top: topH, height: fh }} />
                       </React.Fragment>
                     );
                   })}
@@ -1884,6 +1904,9 @@ const full = scaledStyleSheet({
   // بداياتُ المرضى خفتَتْ عمدًا: الساعاتُ الثابتةُ في الرأسِ هي المرجع، وهذه تفصيلٌ تحتَها لا يزاحمُها
   strip: { position: 'absolute', left: 0 },
   startTick: { position: 'absolute', top: 1, fontSize: 8, fontWeight: '800', color: 'rgba(11,127,113,0.62)' },
+  // مَن أزاحَه التبديل: موضعُه لا يقولُ ساعتَه، فرقمُه أوضحُ وعلامتُه أظهر
+  startTickMoved: { color: 'rgba(11,127,113,0.95)' },
+  startTickMarkMoved: { height: 7, backgroundColor: 'rgba(14,124,102,0.55)' },
   startTickMark: { position: 'absolute', top: 12, width: 1, height: 4, backgroundColor: 'rgba(14,124,102,0.22)' },
   hourTick: { position: 'absolute', top: 2, fontSize: 10, fontWeight: '800', color: '#8CA0A8' },
   laneRow: { position: 'absolute', left: 0, right: 0 },
@@ -1916,14 +1939,18 @@ const full = scaledStyleSheet({
   slideHead: { position: 'absolute', width: 0, height: 0, borderTopWidth: 3.5, borderBottomWidth: 3.5, borderLeftWidth: 5,
     borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: 'rgba(154,124,70,0.85)' },
 
-  // ── ③ الطيّة: تبديلُ الشفت — خطٌّ رفيعٌ وأرقامُه في المسطرةِ فوقَه ──
-  foldLine: { position: 'absolute', top: 0, width: 2, backgroundColor: 'rgba(255,255,255,0.97)', zIndex: 4,
-    shadowColor: '#FFFFFF', shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
-  // وسمُ التبديلِ في المسطرة: حبّةٌ صغيرةٌ تحملُ «من – إلى»، تقعُ على الخطِّ تمامًا
-  seamTag: { position: 'absolute', top: 27, width: 74, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 2, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.86)',
-    borderWidth: 1, borderColor: 'rgba(140,160,168,0.32)' },
-  seamTagTx: { fontSize: 8, lineHeight: 10, fontWeight: '800', letterSpacing: 0.1, color: '#5D6F77' },
+  // ── ③ تبديلُ الشفت: عمودٌ رفيعٌ وأرقامُه في المسطرةِ فوقَه ──
+  seam: { position: 'absolute', borderRadius: 4, overflow: 'hidden', zIndex: 3 },
+  seamLip: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 1, backgroundColor: 'rgba(255,255,255,0.75)' },
+  // وسمُ التبديلِ في المسطرة: حبّةٌ زجاجيّةٌ هادئةٌ تحملُ «من – إلى» ولها كلمتُها فوقَ الرقم،
+  // وذَنَبٌ رفيعٌ ينزلُ منها إلى العمودِ فتُقرأُ ملتصقةً به لا طافيةً بجانبِه.
+  seamTag: { position: 'absolute', top: 8, width: 80, alignItems: 'center', justifyContent: 'center',
+    paddingTop: 2.5, paddingBottom: 3, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1, borderColor: 'rgba(108,128,138,0.30)',
+    shadowColor: '#0A2834', shadowOpacity: 0.10, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  seamTagEye: { fontSize: 6, lineHeight: 7, fontWeight: '800', letterSpacing: 1.5, color: '#93A5AD' },
+  seamTagTx: { marginTop: 0.5, fontSize: 8.5, lineHeight: 10, fontWeight: '800', letterSpacing: 0.1, color: '#56686F' },
+  seamTagTail: { position: 'absolute', width: 1, backgroundColor: 'rgba(108,128,138,0.34)' },
 
   // ── شريطُ اليوم ──
   rib: {
