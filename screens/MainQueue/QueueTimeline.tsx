@@ -485,15 +485,19 @@ const drawnW = (b: Blk): number =>
     ? (b.fixed ? SEAM_W : FLEX_MIN + Math.min(scale(40), HINT(b.end - b.start)))
     : ((b.kind === 'cur' || b.kind === 'over') ? CUR_MIN : CARD_MIN) + Math.min(scale(72), HINT(estMinutes(b.p)));
 
-// ── الفراغُ بين مريضَين: ثلاثُ درجاتٍ يقرؤها الطرفُ قبلَ أن يقرأَ الرقم ──
-// يظهرُ **دائمًا** ما دامَ حقيقيًّا — لم يعُدْ فضلةً تبقى بعدَ الكروتِ فيظهرَ مرّةً ويغيبَ مرّة.
-// وعرضُه قصيرٌ مقنَّن: دقيقةٌ وثلاثون دقيقةً لا تُطيلانِ المخطّط، واللونُ والرقمُ يُفرِّقان.
-const IDLE_TIERS: { max: number; w: number; ink: string; fill: string }[] = [
-  { max: 10, w: scale(54), ink: '#8A98A0', fill: 'rgba(138,152,160,0.22)' },    // رماديٌّ: لا شيءَ يُذكَر
-  { max: 30, w: scale(70), ink: '#B18732', fill: 'rgba(214,172,86,0.26)' },     // أصفرُ ناعم: بدأَ يطول
-  { max: Infinity, w: scale(88), ink: '#B96C36', fill: 'rgba(214,140,80,0.28)' }, // برتقاليٌّ ناعم: وقتٌ ضاع
+// ── الفراغُ بين مريضَين ──
+// خيطٌ **متّصلٌ** من كرتٍ إلى كرتٍ يقرأُه الطرفُ صفًّا واحدًا لا قطعًا متناثرة، **رماديٌّ**
+// وحدَه فلا لونَ يُنازعُ الكروتَ على الانتباه. ويظهرُ **دائمًا** ما دامَ حقيقيًّا — لم يعُدْ
+// فضلةً تبقى بعدَ الكروتِ فيظهرَ مرّةً ويغيبَ مرّة. وطولُه ثلاثُ درجاتٍ **حدُّها الأدنى**
+// يُحجَزُ في المحور: الأطولُ أطولُ قليلًا، ولا أحدَ منها يُطيلُ المخطّط.
+const IDLE_MIN = [
+  { max: 10, w: scale(54) },        // حتّى عشرِ دقائق
+  { max: 30, w: scale(70) },        // إلى نصفِ ساعة
+  { max: Infinity, w: scale(88) },  // فما فوق
 ];
-const idleTier = (min: number) => IDLE_TIERS.find((t) => min <= t.max) as typeof IDLE_TIERS[0];
+const idleTier = (min: number) => IDLE_MIN.find((t) => min <= t.max) as typeof IDLE_MIN[0];
+// أضيقُ ما يسعُ الرقمَ كاملًا («1hr 30min») — لا يضيقُ الوسمُ عنه ولو انعدمتِ المسافة
+const IDLE_LBL = scale(54);
 
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
 // readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا محاكاةَ ولا
@@ -1018,28 +1022,21 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                             </View>
                           ) : null}
                           {/* ── الفراغُ بينَ مريضَين ──
-                              مكانُه محجوزٌ في المحورِ فيظهرُ **دائمًا** ما دامَ حقيقيًّا — لم يعُدْ فضلةً
-                              تبقى بعدَ الكروتِ فتظهرَ مرّةً وتغيبَ مرّة. وعرضُه مقنَّنٌ قصير: دقيقةٌ وساعتانِ
-                              لا تُطيلانِ المخطّط؛ اللونُ يُنبّهُ بدرجاتِه، والرقمُ يقولُ الحقيقة.
-                              والوسمُ بعرضِ الفجوةِ نفسِها فلا يفيضُ على الكروتِ أبدًا. */}
+                              خيطٌ **متّصلٌ** يمسُّ الكرتَين معًا فيُقرأُ الصفُّ خطًّا واحدًا لا قطعًا
+                              متناثرة، رماديٌّ وحدَه لا لونَ فيه. ومكانُه محجوزٌ في المحورِ بحدٍّ أدنى
+                              لدرجتِه، فيظهرُ **دائمًا** ما دامَ حقيقيًّا. والوسمُ لا يضيقُ عن رقمِه
+                              كاملًا (IDLE_LBL) ولو انعدمتِ المسافة — الرقمُ هو الحقيقةُ فلا يُبتَر. */}
                           {laid.map((o, i) => {
                             if (i === 0 || o.idle < 1) return null;
                             const prev = laid[i - 1];
                             const gx = prev.left + prev.width;
                             const gw = o.left - gx;
-                            if (gw < scale(10)) return null;
-                            const tier = idleTier(o.idle);
-                            // ── الخيطُ بعرضِ درجتِه لا بعرضِ الحفرة ──
-                            // المحورُ مشتركٌ بين العيادات، فقد تتّسعُ فترةٌ لأنّ **عيادةً أخرى** ازدحمت
-                            // فيها. لو مطّطنا الخيطَ على المتّسعِ كلِّه لقالَ فراغُ ثلاثِ دقائقَ أكثرَ ممّا
-                            // يقولُه فراغُ أربعين. فالخيطُ يأخذُ عرضَ درجتِه ويتوسّطُ مكانَه، وما فضلَ
-                            // يبقى ورقًا خاليًا — وهو صادقٌ في نفسِه: هنا كان غيرُك يعمل.
-                            const tw = Math.min(gw, tier.w);
-                            const tx = gx + (gw - tw) / 2;
+                            if (gw <= 0) return null;
+                            const lw = Math.max(gw, IDLE_LBL);
                             return (
                               <React.Fragment key={'idle' + i}>
-                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: tx, width: tw, top: laneH / 2 - scale(17), color: tier.ink }]}>{fmtGap(o.idle)}</Text>
-                                <View pointerEvents="none" style={[full.groove, { left: tx + scale(5), width: Math.max(scale(2), tw - scale(10)), top: laneH / 2 - scale(2.5), backgroundColor: tier.fill }]} />
+                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + (gw - lw) / 2, width: lw, top: laneH / 2 - scale(17) }]}>{fmtGap(o.idle)}</Text>
+                                <View pointerEvents="none" style={[full.groove, { left: gx, width: gw, top: laneH / 2 - scale(2.5) }]} />
                               </React.Fragment>
                             );
                           })}
@@ -1894,10 +1891,10 @@ const full = scaledStyleSheet({
   vacant: { position: 'absolute', top: 7, bottom: 7, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.36)', borderStyle: 'dashed' },
   vacantPill: { position: 'absolute', top: '50%', marginTop: -14, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
   vacantTxt: { fontSize: 10.5, fontWeight: '800', color: '#5A7079' },
-  // مدّةُ الفراغِ فوقَ خيطِه — عرضُه عرضُ الفجوةِ نفسِها فلا يفيضُ، ولونُه من درجتِها
+  // مدّةُ الفراغِ فوقَ خيطِه — لا يضيقُ عن رقمِه كاملًا مهما ضاقتِ الفجوة
   idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '800', letterSpacing: 0.2, color: '#93A3AA',
     textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
-  // الفراغُ محفور: مَجْرًى يلمعُ قاعُه — لا خيطٌ منقَّطٌ مرسومٌ فوقَ السطح. لونُه يأتي من درجتِه
+  // الفراغُ محفور: مَجْرًى يلمعُ قاعُه — متّصلٌ من كرتٍ إلى كرتٍ ورماديٌّ وحدَه
   groove: { position: 'absolute', height: 5, borderRadius: 3, backgroundColor: 'rgba(10,35,45,0.10)',
     borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.65)' },
 
