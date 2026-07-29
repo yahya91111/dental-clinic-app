@@ -467,6 +467,34 @@ function Card({ b, left, width, top, height, nowMin, onPress }:
   );
 }
 
+// ═══════════════ قاعدةُ الرسم: المساحةُ تُفهِم، والرقمُ يُخبِر ═══════════════
+// لا مسافةَ في هذا المخطّطِ تساوي زمنًا. كان العرضُ يُشتَقُّ من المدّةِ فيتصادمُ مع
+// أصغرِ عرضٍ يُقرأُ، فيزحفُ المنجَزُ يسارًا ويدفعُ ما قبلَه، ويختلفُ صفٌّ عن صفٍّ
+// وقد تساوى وقتُهما. فصارتِ القاعدةُ: **كلُّ عنصرٍ يأخذُ ما يكفي ليُقرَأ**، وزيادةً
+// **مضغوطةً** تُوحي بطولِه لا تُطابقُه، و**الرقمُ المكتوبُ عليه هو الحقيقة**.
+// فالخواءُ الطويلُ يُطوى مهما طال، والمزدحمُ يتّسعُ بقدرِ ما فيه، والترتيبُ لا يكذبُ أبدًا.
+const STEP = scale(7);              // أدنى تباعدٍ بين مرساتَين متجاورتَين — به يُطوى الخواء
+const CARD_MIN = scale(132);        // أرضيّةُ الكرت: ما يكفي لاسمِه ووقتِه وعلاجِه — لا يُقَصُّ دونَها أبدًا
+const CUR_MIN = scale(120);
+const FLEX_MIN = scale(96);         // البريكُ المرن يبقى مَجْرًى له حضورُه — لا يُختزَلُ خطًّا
+const SEAM_W = scale(6);            // البريكُ الثابت (تبديلُ الشفت): خطٌّ رفيع، وأرقامُه فوقَه في المسطرة
+// إيحاءُ الطول: جذرٌ لا خطّ — علاجُ ساعةٍ أعرضُ من علاجِ عشرِ دقائقَ بفارقٍ يُلحَظُ ولا يُثقِل
+const HINT = (min: number): number => Math.round(scale(20) * Math.sqrt(Math.max(0, min) / 10));
+const drawnW = (b: Blk): number =>
+  b.kind === 'break'
+    ? (b.fixed ? SEAM_W : FLEX_MIN + Math.min(scale(40), HINT(b.end - b.start)))
+    : ((b.kind === 'cur' || b.kind === 'over') ? CUR_MIN : CARD_MIN) + Math.min(scale(72), HINT(estMinutes(b.p)));
+
+// ── الفراغُ بين مريضَين: ثلاثُ درجاتٍ يقرؤها الطرفُ قبلَ أن يقرأَ الرقم ──
+// يظهرُ **دائمًا** ما دامَ حقيقيًّا — لم يعُدْ فضلةً تبقى بعدَ الكروتِ فيظهرَ مرّةً ويغيبَ مرّة.
+// وعرضُه قصيرٌ مقنَّن: دقيقةٌ وثلاثون دقيقةً لا تُطيلانِ المخطّط، واللونُ والرقمُ يُفرِّقان.
+const IDLE_TIERS: { max: number; w: number; ink: string; fill: string }[] = [
+  { max: 10, w: scale(54), ink: '#8A98A0', fill: 'rgba(138,152,160,0.22)' },    // رماديٌّ: لا شيءَ يُذكَر
+  { max: 30, w: scale(70), ink: '#B18732', fill: 'rgba(214,172,86,0.26)' },     // أصفرُ ناعم: بدأَ يطول
+  { max: Infinity, w: scale(88), ink: '#B96C36', fill: 'rgba(214,140,80,0.28)' }, // برتقاليٌّ ناعم: وقتٌ ضاع
+];
+const idleTier = (min: number) => IDLE_TIERS.find((t) => min <= t.max) as typeof IDLE_TIERS[0];
+
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
 // readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا محاكاةَ ولا
 // تحريرَ بريكاتٍ ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
@@ -509,8 +537,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     onSaveBreaks(breaks.filter((b) => b.start !== breakActionOrig));
     setBreakActionOrig(null);
   };
-  const HOUR_W = scale(200);                        // اتّساعُ الساعةِ الواحدة — أوسعُ كي يقتربَ عرضُ الكرتِ من امتدادِه الزمنيِّ الحقيقيّ (فيبقى داخلَ نطاقِ ساعتِه)
-  // topH = رأسُ الجدول: حافّةٌ مطويّةٌ فوقَ الورقةِ تحملُ محورَ الأوقاتِ الثابت (7:00 8:00 …) مرجعًا لكلِّ العيادات
+  // topH = رأسُ الجدول: حافّةٌ مطويّةٌ فوقَ الورقةِ تحملُ الساعاتِ — وهي الآنَ **علاماتٌ تطفو**
+  // حيثُ تقعُ فعلًا (تتقاربُ في الهدوءِ وتتباعدُ في الزحام)، لا شبكةً متساويةً مفروضةً على الكروت
   // laneH اتّسعَ عن ٩٦: الكرتُ الحائمُ يرتفعُ عن مستقرِّه، فيلزمُه فراغٌ فوقَه لا يخرجُ منه إلى صفِّ الأوقات
   const laneH = scale(106), stripH = scale(17), topH = scale(46), labelW = scale(64);
   // كلُّ الكروتِ على سطرٍ واحدٍ وارتفاعٍ واحد — العمقُ يقولُه الظلُّ والمادّةُ لا موضعُ الكرتِ في صفِّه
@@ -520,60 +548,57 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   const NOW_PAD = scale(12);                         // فُرجةٌ بينَ حدِّ الماءِ ومَن يبدأُ عنده، كي يُقرأَ وقتُ دخولِه
   const unitH = stripH + laneH;                    // شريطُ الأوقات + كروتُ العيادة = وحدةٌ واحدة
   const GAP = scale(8);                             // فجوةٌ دنيا بين كلِّ كرتَين متجاورَين (كي لا تلتصقَ الكروت)
-  const MIN_IDLE = scale(12);                       // حدٌّ أدنى مرئيٌّ لخيطِ الفراغِ (للفجواتِ الصغيرةِ جدًّا فقط) — لا يُضافُ فوقَ المتناسبِ، فتبقى المسافةُ دقيقةً للأكبر
-  // العرضُ الأدنى المقروء. البريكُ الثابتُ صارَ طيّةً رفيعةً لا كرتًا، فلا يحجزُ عرضَ كرتٍ كاملٍ
-  // بعدَه (وإلّا انفتحَ خلفَ الطيّةِ فراغٌ زائفٌ)؛ والمرنُ مَجْرًى يسعُ وقتَه ومدّتَه.
-  const minWOf = (b: Blk): number =>
-    b.kind === 'break' ? (b.fixed ? scale(30) : scale(96))
-      : (b.kind === 'cur' || b.kind === 'over') ? scale(120) : scale(132);   // الجاري صارَ كرتًا كاملًا (يمشي عليه الخطُّ) فيحتاجُ عرضًا مقروءًا
+  const CHIP_W = scale(44);                         // شارةُ «خلفَ الشفت» — يُحجَزُ لها مكانُها قبلَ التبديل
   const hours: number[] = [];
   for (let h = dayStart / 60; h <= dayEnd / 60; h++) hours.push(h);
 
-  // ═══ محورٌ زمنيٌّ مشتركٌ لكلِّ العيادات ═══
-  // خطّيٌّ بالوقتِ الحقيقيّ، ويتمدّدُ فقط حيثُ تتزاحمُ الكروتُ كي لا تتراكبَ (لا يضغطُ دونَ الوقت).
-  // كلُّ العياداتِ تشتركُ فيه: الساعاتُ الثابتةُ في الرأسِ فوقَه، وكلُّ كرتٍ تحتَها في موضعِه الزمنيِّ الحقيقيِّ نفسِه —
-  // والساعاتُ تتباعدُ حيثُ يلزمُ لتُفسِحَ للكروت. (يُصلِحُ أيضًا انزياحَ خطِّ الآنَ لأنّه يقرأُ المحورَ نفسَه.)
+  // ═══ محورٌ واحدٌ لكلِّ العيادات — بالحجزِ لا بالتناسب ═══
+  // كان التباعدُ خطّيًّا بالوقتِ ثمّ يُوسَّعُ عند التزاحم؛ وكان المنجَزُ مُستثنًى من الحجزِ لأنّه
+  // «يقترضُ» من يسارِه — فيومُ الأرشيفِ كلُّه منجَزٌ فلا يتّسعُ شيءٌ أبدًا، وينزلقُ الصفُّ كلُّه.
+  // والدفعُ كان يتراكمُ **داخلَ كلِّ عيادةٍ وحدَها**، فمريضانِ عليهما الدورُ في اللحظةِ نفسِها
+  // يقعانِ في موضعَين — أحدُهما قريبٌ من خطِّ الآنَ والآخرُ بعيد، بلا سببٍ إلّا ازدحامَ صفِّه قبلَ ساعة.
+  //
+  // فصارَ المحورُ يُحصي **حجوزًا**: «من هذه المرساةِ إلى تلك لا بدَّ من كذا بكسلًا» —
+  // كتلةٌ تسعُ نفسَها، وفراغٌ يسعُ وسمَه. وما لم يُحجَزْ له شيءٌ يأخذُ خطوةً صغيرةً ثابتة،
+  // فتُطوى الساعاتُ الخاويةُ مهما طالت. ولأنّ الحجزَ يجري على المحورِ المشتركِ لا داخلَ الصفّ،
+  // فما تساوى وقتُه تحاذى رأسيًّا مهما اختلفت عيادتُه وازدحامُها.
   const axis = useMemo(() => {
     const anchorSet = new Set<number>([dayStart, dayEnd, nowMin]);
     for (const l of lanes) for (const b of l.blocks) { anchorSet.add(b.start); anchorSet.add(b.end); }
-    for (let h = dayStart / 60; h <= dayEnd / 60; h++) { anchorSet.add(h * 60); if (h * 60 + 30 <= dayEnd) anchorSet.add(h * 60 + 30); }
+    for (let h = dayStart / 60; h <= dayEnd / 60; h++) anchorSet.add(h * 60);
     const anchors = Array.from(anchorSet).sort((a, b) => a - b);
-    const predOf = new Map<Blk, Blk>();               // سابقُ كلِّ كتلةٍ في عيادتِها
-    const startsAt = new Map<number, Blk[]>();         // كتلٌ تبدأُ عند كلِّ وقت
-    for (const l of lanes) for (let i = 0; i < l.blocks.length; i++) {
-      const b = l.blocks[i];
-      if (i > 0) predOf.set(b, l.blocks[i - 1]);
-      const arr = startsAt.get(b.start); if (arr) arr.push(b); else startsAt.set(b.start, [b]);
+
+    const need = new Map<number, { from: number; w: number }[]>();
+    // كتلٌ متداخلةٌ في الوقتِ (مريضانِ سُجّلا في كرسيٍّ واحدٍ معًا) لا حجزَ لها — يتكفّلُ بها دفعُ الرسم
+    const claim = (from: number, to: number, w: number) => {
+      if (!(to > from)) return;
+      const arr = need.get(to); if (arr) arr.push({ from, w }); else need.set(to, [{ from, w }]);
+    };
+    for (const l of lanes) {
+      const chipWall = l.beyond.length > 0 ? l.blocks.find((b) => b.kind === 'break' && b.fixed) : undefined;
+      for (let i = 0; i < l.blocks.length; i++) {
+        const b = l.blocks[i];
+        claim(b.start, b.end, drawnW(b));
+        const nx = l.blocks[i + 1];
+        if (!nx) continue;
+        const idle = nx.start - b.end;
+        claim(b.end, nx.start, (idle >= 1 ? idleTier(idle).w : GAP) + (nx === chipWall ? CHIP_W + GAP : 0));
+      }
     }
+
     const xm = new Map<number, number>();
     xm.set(anchors[0], 0);
     for (let i = 1; i < anchors.length; i++) {
-      const t = anchors[i], pt = anchors[i - 1];
-      let xx = (xm.get(pt) as number) + ((t - pt) / 60) * HOUR_W;   // تباعدٌ طبيعيٌّ بالوقت
-      const bs = startsAt.get(t);
-      if (bs) for (const b of bs) {
-        const p = predOf.get(b); if (!p) continue;
-        const xpS = xm.get(p.start) as number;
-        // الكرتُ يبدأُ بعدَ سابقِه في عيادتِه: عرضُه الأدنى المقروء (أو امتدادُه الزمنيّ) + فجوة.
-        // الفراغُ الزمنيُّ الحقيقيُّ (≥١د — ينتهي مريضٌ ثمّ يتأخّرُ دخولُ التالي) مسافتُه **دقيقةٌ متناسبةٌ مع الدقائق**
-        // (تأتي طبيعيًّا من xx)؛ نضمنُ فقط حدًّا أدنى مرئيًّا للخيطِ (MIN_IDLE) بلا إضافةٍ فوقَ المتناسبِ — فلا يتشوّهُ الأكبر.
-        // المنجَزُ (done/lateDone) يُثبَّتُ يمينُه على وقتِ إنجازِه ويمتدُّ يسارًا (قاعدةُ الاقتراض) — فلا نحجزُ عرضَه الأدنى
-        // إلى يمينِه (وإلّا ظهرَ فراغٌ زائفٌ = فائضُ عرضِه)، بل تُدارُ مسافتُه من نهايتِه فقط فتصيرُ الفجوةُ دقيقةً حقًّا.
-        const pDone = p.kind === 'done' || p.kind === 'lateDone';
-        const idleFloor = (p.end < t && t - p.end >= 1) ? MIN_IDLE : 0;
-        const cand = p.end < t
-          ? (pDone
-              ? (xm.get(p.end) as number) + Math.max(GAP, idleFloor)
-              : Math.max(xpS + minWOf(p) + GAP, (xm.get(p.end) as number) + Math.max(GAP, idleFloor)))
-          : (pDone
-              ? xpS                                          // منجَزٌ متتالٍ بلا فراغ — لا قيدَ يمينَه، والفجوةُ الدنيا (GAP) تُدارُ في الرسمِ (rightBound)
-              : Math.max(xpS + minWOf(p) + GAP, xpS + ((p.end - p.start) / 60) * HOUR_W + GAP));
-        if (cand > xx) xx = cand;
+      const t = anchors[i];
+      let xx = (xm.get(anchors[i - 1]) as number) + STEP;
+      for (const r of need.get(t) ?? []) {
+        const fx = xm.get(r.from);
+        if (fx !== undefined && fx + r.w > xx) xx = fx + r.w;
       }
       xm.set(t, xx);
     }
     return { anchors, xm };
-  }, [lanes, dayStart, dayEnd, nowMin]);
+  }, [lanes, dayStart, dayEnd, nowMin, GAP, CHIP_W]);
 
   // زمنٌ → بكسل: إصابةٌ مباشرةٌ من المرساة (كلُّ أوقاتِنا مراسٍ)، وإلّا استيفاءٌ خطّيٌّ بين أقربِ مرساتين
   const xAt = (t: number): number => {
@@ -639,67 +664,51 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     return () => loop.stop();
   }, [visible, pulse]);
 
-  // تخطيطُ الكروت لكلِّ مسار: عرضٌ أدنى يُقرأ + فجوةٌ بينها، ويُدفَعُ لليمينِ عندَ التزاحمِ فلا يتداخلُ كرتان.
-  // وحيثُ توجدُ فجوةُ فراغٍ زمنيّةٌ نُوسّعُ المسافةَ قليلًا كي يظهرَ خيطُها ولو كانتِ الفجوةُ دقائقَ معدودة.
-  // تخطيطُ الكروت من المحورِ المشترك: كلُّ كرتٍ في موضعِه الزمنيِّ الحقيقيِّ (left = xAt(البداية))،
-  // وعرضُه يمتدُّ إلى نهايتِه الزمنيّةِ (أو الحدُّ الأدنى المقروء)، مقصوصًا كي لا يتجاوزَ تاليَه في العيادة.
-  const CHIP_W = scale(44);                        // شارةُ «خلفَ الشفت» — تُحجَزُ لها مساحةٌ قبلَ التبديل
+  // ═══ تخطيطُ الصفوف: كلُّ كتلةٍ في موضعِ دقيقتِها، وعرضُها عرضُها ═══
+  // المحورُ حجزَ لها سلفًا، فلا قصَّ ولا اقتراضَ ولا دفعَ متراكم. و`floor` باقٍ حارسًا أخيرًا:
+  // لا يعملُ إلّا حيثُ تتداخلُ كتلتانِ في الوقتِ حقًّا (مريضانِ سُجّلا في كرسيٍّ واحدٍ معًا).
   const laidLanes = lanes.map((l) => {
-    // خطوطُ تبديلِ الشفتِ في هذه العيادة — حواجزُ رسمٍ صلبة
-    const walls = l.blocks.filter((b) => b.kind === 'break' && b.fixed).map((b) => b.start);
-    const chipWall = l.blocks.find((b) => b.kind === 'break' && b.fixed);   // حيثُ تلتصقُ شارةُ «خلفَ الشفت»
-    // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
-    // خلفَه. ندفعُه فُرجةً صغيرةً إلى اليمين — دفعُ رسمٍ لا تغييرَ في جدولِه ولا في ساعتِه.
-    const base = l.blocks.map((b) => {
-      const x0 = xAt(b.start);
-      return (b.kind !== 'done' && b.kind !== 'lateDone' && b.kind !== 'break'
-        && x0 >= nowX - scale(2) && x0 < nowX + NOW_PAD) ? nowX + NOW_PAD : x0;
-    });
-    // والدفعُ لا يقفُ عندَ المدفوعِ وحدَه: مَن بعدَه يُدفَعُ مثلَه إن ضاقتِ الفُرجة، وإلّا تلاصقا.
-    // floor = أقصى يسارٍ مسموحٍ للتالي = يمينُ سابقِه وفُرجةٌ. لا يعملُ إلّا حيثُ يلزم.
+    const chipWall = l.beyond.length > 0 ? l.blocks.find((b) => b.kind === 'break' && b.fixed) : undefined;
     let floor = -Infinity;
     return l.blocks.map((b, i) => {
-      const left = Math.max(base[i], floor);
+      // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
+      // خلفَه. ندفعُه فُرجةً صغيرةً إلى اليمين — دفعُ رسمٍ لا تغييرَ في جدولِه، ويسري على
+      // كلِّ العياداتِ سواءً فلا يكسرُ التحاذي.
+      const x0 = xAt(b.start);
+      const base = (b.kind !== 'done' && b.kind !== 'lateDone' && b.kind !== 'break'
+        && x0 >= nowX - scale(2) && x0 < nowX + NOW_PAD) ? nowX + NOW_PAD : x0;
+      const left = Math.max(base, floor);
+      const width = drawnW(b);
       const succ = l.blocks[i + 1];
-      const rawW = Math.max(minWOf(b), xAt(b.end) - left);
-      const chipRoom = (succ && succ === chipWall && l.beyond.length > 0) ? CHIP_W + GAP : 0;
-      const capW = succ ? (base[i + 1] - GAP - chipRoom - left) : Infinity;   // لا يتجاوزُ بدايةَ تاليه
-      let width = Math.max(minWOf(b), Math.min(rawW, capW));
-      // ── حائطُ الرسم ──
-      // الكرتُ يُرسَمُ بعرضٍ أدنى مقروءٍ مهما قصُرَت مدّتُه، فكرتُ نصفِ ساعةٍ يُطلى أعرضَ من
-      // نصفِ ساعة. ولهذا كانت كروتُ الانتظارِ تعبرُ خطَّ التبديلِ **رسمًا** وإن كان جدولُها
-      // سليمًا. فهنا حاجزٌ صلب: لا بكسلَ واحدًا يتجاوزُ الخطَّ — يضيقُ الكرتُ ولا يعبر.
-      // (الجاري والمنجَزُ لا يُقصّان: هما واقعٌ حدثَ، لا تنبّؤٌ يُربِكُ الشفتَ التالي.)
-      if (b.kind === 'fut' || b.kind === 'eld' || b.kind === 'na') {
-        const wall = walls.find((w) => b.start < w);
-        if (wall != null) width = Math.min(width, Math.max(scale(1), xAt(wall) - GAP - left));
-      }
+      const chipRoom = (succ && succ === chipWall) ? CHIP_W + GAP : 0;
       floor = left + width + GAP + chipRoom;
       const prev = i > 0 ? l.blocks[i - 1] : null;
       const prevEnd = prev ? ((prev.kind === 'cur' || prev.kind === 'over') ? Math.max(prev.end, prev.start + estMinutes(prev.p)) : prev.end) : -Infinity;
-      const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لمَجْرى الفراغ)
+      const idle = prev ? (b.start - prevEnd) : 0;   // فراغٌ زمنيٌّ قبلَها (لخيطِ الفراغ)
       return { b, left, width, idle };
     });
-  });
-  // ═══ الكروتُ المنجَزةُ خلفَ خطِّ الآنَ: اقتراضٌ ثمّ عودةٌ تدريجيّة ═══
-  // كلُّ منجَزٍ مثبَّتٌ بيمينِه على وقتِ إنجازِه (≤ الآنَ فيبقى خلفَ الخطّ) ويمتدُّ يسارًا بعرضٍ مقروء.
-  // إن لم يتّسعِ المكانُ خلفَه دفعَ المنجَزَ الأسبقَ إلى الخلفِ (يقترضُ مكانَه مؤقّتًا فيصيرُ موضعُه «خطأً» زمنيًّا)،
-  // ثمّ يعودُ كلٌّ إلى موضعِه الحقيقيِّ حينَ يتّسعُ المحورُ (بدخولِ التالي/تقدُّمِ الوقت). يمسُّ المنجَزاتِ المتصدّرةَ فقط.
-  laidLanes.forEach((laid) => {
-    let rightBound = Infinity;                              // أقصى يمينٍ متاحٍ للكرتِ الحاليِّ (يتضاءلُ يسارًا)
-    for (let i = laid.length - 1; i >= 0; i--) {
-      const o = laid[i];
-      if (o.b.kind !== 'done' && o.b.kind !== 'lateDone') { rightBound = o.left - GAP; continue; }
-      const desiredW = Math.max(minWOf(o.b), (estMinutes(o.b.p) / 60) * HOUR_W);   // حجمُه الطبيعيُّ (بالمدّةِ المحدَّدة) فلا ينكمشُ بعدَ الإنجاز
-      const right = Math.min(xAt(o.b.end), rightBound);                      // يمينُه = وقتُ إنجازِه، أو ما قبلَ تاليه
-      const left = Math.max(0, right - desiredW);                            // لا يُدفَعُ خارجَ الحافّةِ اليسرى — يتقلّصُ بدلَ أن يختفي
-      o.left = left; o.width = Math.max(scale(1), right - left);
-      rightBound = left - GAP;
-    }
   });
 
   const maxRight = laidLanes.reduce((mx, arr) => arr.reduce((m, p) => Math.max(m, p.left + p.width), mx), 0);
   const contentW = Math.max(xAt(dayEnd), maxRight + scale(24));
+
+  // ═══ الساعاتُ علاماتٌ تطفو ═══
+  // ما دامتِ المسافةُ لا تساوي الزمنَ فمسافاتٌ متساويةٌ بين الساعاتِ كذبةٌ صريحة. فالساعةُ
+  // تُرسَمُ حيثُ تقعُ فعلًا على المحور: تتباعدُ حيثُ ازدحمَ الشغلُ وتتقاربُ حيثُ هدأ. وحينَ
+  // تتلاصقُ في الساعاتِ الخاويةِ يُخفى المتزاحمُ ويبقى واحدٌ يدلُّ — وهي القاعدةُ نفسُها التي
+  // يمشي عليها شريطُ كلِّ عيادةٍ (LBL_GAP). و`wide` = هل بعدَها متّسعٌ لعلاماتِ الرُّبعِ والنصف.
+  const HOUR_GAP = scale(48);
+  const hourMarks: { h: number; x: number; wide: boolean }[] = [];
+  {
+    let lastX = -Infinity;
+    for (let i = 0; i < hours.length; i++) {
+      const h = hours[i], x = xAt(h * 60);
+      if (x - lastX < HOUR_GAP) continue;
+      const nx = i + 1 < hours.length ? xAt(hours[i + 1] * 60) : x;
+      hourMarks.push({ h, x, wide: nx - x >= scale(96) });
+      lastX = x;
+    }
+  }
 
   // ═══ شريطُ اليوم: اليومُ كلُّه في سطرٍ تحتَ الجدول ═══
   // المخطّطُ يتمدّدُ لساعاتٍ وأنتَ ترى منه شبرًا. الشريطُ يُريكَ شكلَ اليومِ كلِّه — أينَ الازدحامُ
@@ -919,13 +928,12 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                       start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                       style={{ position: 'absolute', top: topH, left: nowX, width: contentW - nowX, height: lanes.length * unitH }} />
                   ) : null}
-                  {/* رأسُ الجدول: حافّةٌ مطويّةٌ تحملُ الساعاتِ الثابتة — رقمٌ محفورٌ كبيرٌ ودقائقُه مرفوعةٌ بجانبِه،
-                      ومسطرةٌ تحتَه: علامةٌ للساعةِ وأقصرُ للنصفِ وأخفتُ للرُّبع، والساعةُ التي أنتَ فيها مُضاءة. */}
+                  {/* رأسُ الجدول: حافّةٌ مطويّةٌ تحملُ الساعاتِ — علاماتٌ تطفو حيثُ تقعُ فعلًا، ويُخفى
+                      المتزاحمُ منها. وعلاماتُ الرُّبعِ والنصفِ لا تُرسَمُ إلّا حيثُ اتّسعتِ الساعةُ لها. */}
                   <View pointerEvents="none" style={[full.ruler, { width: contentW, height: topH }]}>
                     <LinearGradient colors={HEAD_G} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-                    {hours.map((h) => {
+                    {hourMarks.map(({ h, x: hx, wide }) => {
                       const on = h === Math.floor(nowMin / 60);
-                      const hx = xAt(h * 60);
                       return (
                         <React.Fragment key={'r' + h}>
                           {on ? (
@@ -938,19 +946,26 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                           </View>
                           {on ? <View style={[full.hUnder, { left: hx - scale(13) }]} /> : null}
                           <View style={[full.tickH, { left: hx }]} />
-                          {h * 60 + 30 <= dayEnd ? <View style={[full.tickM, { left: xAt(h * 60 + 30) }]} /> : null}
-                          {h * 60 + 15 <= dayEnd ? <View style={[full.tickQ, { left: xAt(h * 60 + 15) }]} /> : null}
-                          {h * 60 + 45 <= dayEnd ? <View style={[full.tickQ, { left: xAt(h * 60 + 45) }]} /> : null}
+                          {wide && h * 60 + 30 <= dayEnd ? <View style={[full.tickM, { left: xAt(h * 60 + 30) }]} /> : null}
+                          {wide && h * 60 + 15 <= dayEnd ? <View style={[full.tickQ, { left: xAt(h * 60 + 15) }]} /> : null}
+                          {wide && h * 60 + 45 <= dayEnd ? <View style={[full.tickQ, { left: xAt(h * 60 + 45) }]} /> : null}
                         </React.Fragment>
                       );
                     })}
+                    {/* أرقامُ تبديلِ الشفت: الخطُّ رفيعٌ لا يسعُها، فترتفعُ إلى المسطرةِ فوقَه —
+                        المساحةُ تقولُ «هنا تبديل»، والرقمُ يقولُ «من متى إلى متى». */}
+                    {folds.map((fb, fi) => (
+                      <View key={'sg' + fi} style={[full.seamTag, { left: xAt(fb.start) - scale(37) }]}>
+                        <Text style={full.seamTagTx} numberOfLines={1}>{fmtHM(fb.start)} – {fmtHM(fb.end)}</Text>
+                      </View>
+                    ))}
                   </View>
                   {/* الكسرةُ وظلُّها: بها يبدو الرأسُ مطويًّا فوقَ الجدولِ لا مرسومًا عليه */}
                   <View pointerEvents="none" style={[full.creaseLine, { top: topH - 1, width: contentW }]} />
                   <LinearGradient pointerEvents="none" colors={HEAD_SHADE} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
                     style={[full.shadeBand, { top: topH, width: contentW }]} />
                   {/* خطوطُ التقسيم: أعمدةُ الساعاتِ الرأسيّةُ تمتدُّ من الرأسِ إلى أسفلِ الجدول (top:0) + فواصلُ العيادات الأفقيّة */}
-                  {hours.map((h) => <View key={'gv' + h} pointerEvents="none" style={[full.gridV, { left: xAt(h * 60), top: 0 }]} />)}
+                  {hourMarks.map(({ h, x }) => <View key={'gv' + h} pointerEvents="none" style={[full.gridV, { left: x, top: 0 }]} />)}
                   {lanes.map((l, li) => {
                     const uTop = topH + li * unitH;
                     const st = strips[li];
@@ -966,8 +981,8 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                                   <View style={[full.startTickMark, { left: tk.left + scale(1) }]} />
                                 </React.Fragment>
                               ))
-                            : hours.map((h) => (
-                                <Text key={h} style={[full.hourTick, { left: xAt(h * 60) }]}>{h}:00</Text>
+                            : hourMarks.map(({ h, x }) => (
+                                <Text key={h} style={[full.hourTick, { left: x }]}>{h}:00</Text>
                               ))}
                         </View>
                         {/* صفُّ العيادة */}
@@ -1002,17 +1017,29 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                               </View>
                             </View>
                           ) : null}
-                          {/* الفراغُ محفورٌ في الورقة: مَجْرًى رفيعٌ يلمعُ قاعُه، ومدّتُه فوقَه — لأيِّ فراغٍ ≥ دقيقة */}
+                          {/* ── الفراغُ بينَ مريضَين ──
+                              مكانُه محجوزٌ في المحورِ فيظهرُ **دائمًا** ما دامَ حقيقيًّا — لم يعُدْ فضلةً
+                              تبقى بعدَ الكروتِ فتظهرَ مرّةً وتغيبَ مرّة. وعرضُه مقنَّنٌ قصير: دقيقةٌ وساعتانِ
+                              لا تُطيلانِ المخطّط؛ اللونُ يُنبّهُ بدرجاتِه، والرقمُ يقولُ الحقيقة.
+                              والوسمُ بعرضِ الفجوةِ نفسِها فلا يفيضُ على الكروتِ أبدًا. */}
                           {laid.map((o, i) => {
                             if (i === 0 || o.idle < 1) return null;
                             const prev = laid[i - 1];
                             const gx = prev.left + prev.width;
                             const gw = o.left - gx;
-                            if (gw < scale(5)) return null;
+                            if (gw < scale(10)) return null;
+                            const tier = idleTier(o.idle);
+                            // ── الخيطُ بعرضِ درجتِه لا بعرضِ الحفرة ──
+                            // المحورُ مشتركٌ بين العيادات، فقد تتّسعُ فترةٌ لأنّ **عيادةً أخرى** ازدحمت
+                            // فيها. لو مطّطنا الخيطَ على المتّسعِ كلِّه لقالَ فراغُ ثلاثِ دقائقَ أكثرَ ممّا
+                            // يقولُه فراغُ أربعين. فالخيطُ يأخذُ عرضَ درجتِه ويتوسّطُ مكانَه، وما فضلَ
+                            // يبقى ورقًا خاليًا — وهو صادقٌ في نفسِه: هنا كان غيرُك يعمل.
+                            const tw = Math.min(gw, tier.w);
+                            const tx = gx + (gw - tw) / 2;
                             return (
                               <React.Fragment key={'idle' + i}>
-                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + gw / 2 - scale(28), width: scale(56), top: laneH / 2 - scale(17) }]}>{fmtGap(o.idle)}</Text>
-                                <View pointerEvents="none" style={[full.groove, { left: gx + scale(6), width: Math.max(scale(1), gw - scale(12)), top: laneH / 2 - scale(2.5) }]} />
+                                <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: tx, width: tw, top: laneH / 2 - scale(17), color: tier.ink }]}>{fmtGap(o.idle)}</Text>
+                                <View pointerEvents="none" style={[full.groove, { left: tx + scale(5), width: Math.max(scale(2), tw - scale(10)), top: laneH / 2 - scale(2.5), backgroundColor: tier.fill }]} />
                               </React.Fragment>
                             );
                           })}
@@ -1032,23 +1059,24 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     );
                   })}
                   {/* ═══ الطيّة: تبديلُ الشفت ═══
-                      ظلٌّ يسبقُها، ثمّ الورقةُ تنكسرُ، ثمّ كسرةٌ بيضاءُ تلتقطُ الضوءَ وظلٌّ بعدَها —
-                      فيُرى بلمحةٍ لماذا وقفَ الدورُ عندها. وبالنقرِ تُفتَحُ نافذةُ نوعِ البريك. */}
+                      كانت بلاطةً بعرضِ مدّتِها — بريكٌ إلى منتصفِ الليلِ يحتلُّ رُبعَ المخطّط. وهو
+                      **حدٌّ** لا استراحة، فصارَ خطًّا رفيعًا: ظلٌّ يسبقُه، وكسرةٌ بيضاءُ تلتقطُ
+                      الضوء، وظلٌّ بعدَها. وأرقامُه رفعناها إلى المسطرةِ فوقَه.
+                      ومساحةُ النقرِ أوسعُ من الخطِّ عمدًا كي تُصابَ بالإصبع. */}
                   {folds.map((fb, fi) => {
-                    const fx = xAt(fb.start), fw = Math.max(scale(14), xAt(fb.end) - fx);
+                    const fx = xAt(fb.start), fw = Math.max(SEAM_W, xAt(fb.end) - fx);
                     return (
                       <React.Fragment key={'fold' + fi}>
                         <LinearGradient pointerEvents="none" colors={FOLD_PRE} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: Math.max(0, fx - scale(28)), width: scale(28), top: topH, height: lanes.length * unitH }} />
-                        <TouchableOpacity activeOpacity={0.85} disabled={!!readOnly}
-                          onPress={() => setBreakActionOrig(fb.orig ?? fb.start)}
-                          style={{ position: 'absolute', left: fx, width: fw, top: topH, height: lanes.length * unitH }}>
-                          <LinearGradient colors={FOLD_BAND} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-                          <Text numberOfLines={1} style={[full.foldTx, { left: (fw - scale(96)) / 2, width: scale(96) }]}>SHIFT · {fmtHM(fb.start)}</Text>
-                        </TouchableOpacity>
+                          style={{ position: 'absolute', left: Math.max(0, fx - scale(18)), width: scale(18), top: topH, height: lanes.length * unitH }} />
+                        <LinearGradient pointerEvents="none" colors={FOLD_BAND} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                          style={{ position: 'absolute', left: fx, width: fw, top: topH, height: lanes.length * unitH }} />
                         <View pointerEvents="none" style={[full.foldLine, { left: fx + fw, height: topH + lanes.length * unitH }]} />
                         <LinearGradient pointerEvents="none" colors={FOLD_POST} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: fx + fw, width: scale(36), top: topH, height: lanes.length * unitH }} />
+                          style={{ position: 'absolute', left: fx + fw, width: scale(22), top: topH, height: lanes.length * unitH }} />
+                        <TouchableOpacity activeOpacity={0.85} disabled={!!readOnly}
+                          onPress={() => setBreakActionOrig(fb.orig ?? fb.start)}
+                          style={{ position: 'absolute', left: fx - scale(10), width: fw + scale(20), top: topH, height: lanes.length * unitH }} />
                       </React.Fragment>
                     );
                   })}
@@ -1866,10 +1894,10 @@ const full = scaledStyleSheet({
   vacant: { position: 'absolute', top: 7, bottom: 7, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.36)', borderStyle: 'dashed' },
   vacantPill: { position: 'absolute', top: '50%', marginTop: -14, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)' },
   vacantTxt: { fontSize: 10.5, fontWeight: '800', color: '#5A7079' },
-  // الوقتُ المتاحُ فوقَ مَجْرى الفراغ — محفورٌ في الورقةِ كغيرِه
-  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '700', letterSpacing: 0.2, color: '#93A3AA',
+  // مدّةُ الفراغِ فوقَ خيطِه — عرضُه عرضُ الفجوةِ نفسِها فلا يفيضُ، ولونُه من درجتِها
+  idleLabel: { position: 'absolute', textAlign: 'center', fontSize: 8.5, fontWeight: '800', letterSpacing: 0.2, color: '#93A3AA',
     textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
-  // الفراغُ محفور: مَجْرًى داكنٌ يلمعُ قاعُه — لا خيطٌ منقَّطٌ مرسومٌ فوقَ السطح
+  // الفراغُ محفور: مَجْرًى يلمعُ قاعُه — لا خيطٌ منقَّطٌ مرسومٌ فوقَ السطح. لونُه يأتي من درجتِه
   groove: { position: 'absolute', height: 5, borderRadius: 3, backgroundColor: 'rgba(10,35,45,0.10)',
     borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.65)' },
 
@@ -1891,12 +1919,14 @@ const full = scaledStyleSheet({
   slideHead: { position: 'absolute', width: 0, height: 0, borderTopWidth: 3.5, borderBottomWidth: 3.5, borderLeftWidth: 5,
     borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: 'rgba(154,124,70,0.85)' },
 
-  // ── ③ الطيّة: تبديلُ الشفت ──
+  // ── ③ الطيّة: تبديلُ الشفت — خطٌّ رفيعٌ وأرقامُه في المسطرةِ فوقَه ──
   foldLine: { position: 'absolute', top: 0, width: 2, backgroundColor: 'rgba(255,255,255,0.97)', zIndex: 4,
     shadowColor: '#FFFFFF', shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
-  foldTx: { position: 'absolute', top: '42%', textAlign: 'center', fontSize: 7.5, lineHeight: 10, fontWeight: '800',
-    letterSpacing: 1.8, color: '#63757D', transform: [{ rotate: '90deg' }],
-    textShadowColor: 'rgba(255,255,255,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+  // وسمُ التبديلِ في المسطرة: حبّةٌ صغيرةٌ تحملُ «من – إلى»، تقعُ على الخطِّ تمامًا
+  seamTag: { position: 'absolute', top: 27, width: 74, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 2, borderRadius: 7, backgroundColor: 'rgba(255,255,255,0.86)',
+    borderWidth: 1, borderColor: 'rgba(140,160,168,0.32)' },
+  seamTagTx: { fontSize: 8, lineHeight: 10, fontWeight: '800', letterSpacing: 0.1, color: '#5D6F77' },
 
   // ── شريطُ اليوم ──
   rib: {
