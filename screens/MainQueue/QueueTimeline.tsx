@@ -135,7 +135,9 @@ const SUNK_IN: [string, string, string] = ['rgba(10,35,45,0.22)', 'rgba(10,35,45
 // ظلُّ الحائمِ على الورقة. الضبابُ الحقيقيُّ ثقيلٌ في الهاتف، فنصنعُه من ثلاثِ طبقاتٍ متراكزة:
 // كلُّ طبقةٍ تخفتُ إلى حافّتَيها **عموديًّا** بتدرّجٍ، وتضيقُ عن التي تحتَها **أفقيًّا** — فيتلاشى
 // الظلُّ في الاتّجاهَين معًا ويصيرُ لطخةً مستديرةً ليّنةً بلا حدٍّ يُرى.
-// (LAND_1..3 حُذِفَت مع SoftShadow — ظلُّ البريكِ المرنِ الذي رُفِع)
+const LAND_1: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.06)', 'rgba(10,35,45,0)'];
+const LAND_2: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.08)', 'rgba(10,35,45,0)'];
+const LAND_3: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.10)', 'rgba(10,35,45,0)'];
 
 // ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
 function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
@@ -325,7 +327,16 @@ const barInfo = (b: Blk, nowMin: number): { fill: number; tick: number; empty: b
   return { fill: Math.max(0, Math.min(100, (elapsed / total) * 100)), tick: Math.max(0, Math.min(100, (est / total) * 100)), empty: false };
 };
 
-// (SoftShadow حُذِف — كان ظلَّ البريكِ المرنِ وحدَه، وقد رُفِعَ الظلُّ عنه.)
+// ظلٌّ ليّنٌ مستديرٌ يقعُ على الورقةِ تحتَ ما يحومُ فوقَها — والفُرجةُ بينَه وبينَ صاحبِه هي ما يجعلُه يُقرأُ طائرًا
+function SoftShadow({ left, width, top }: { left: number; width: number; top: number }) {
+  return (
+    <View pointerEvents="none" style={[cs.landWrap, { left, width, top }]}>
+      <LinearGradient colors={LAND_1} style={[cs.land1, { width }]} />
+      <LinearGradient colors={LAND_2} style={[cs.land2, { left: width * 0.10, width: width * 0.80 }]} />
+      <LinearGradient colors={LAND_3} style={[cs.land3, { left: width * 0.23, width: width * 0.54 }]} />
+    </View>
+  );
+}
 
 // تاريخُ اليومِ بالإنجليزيّةِ دونَ اعتمادٍ على locale (كي لا يتغيّرَ الشكلُ بين الأجهزة)
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -444,20 +455,9 @@ function Card({ b, left, width, top, height, nowMin, onPress, onBarY }:
         {!bar.empty ? <View style={[cs.barFill, { width: `${bar.fill}%` as any, backgroundColor: v.fil }]} /> : null}
         {!bar.empty && bar.tick >= 0 && bar.tick < 99.5 ? <View style={[cs.barTick, { left: `${bar.tick}%` as any, backgroundColor: v.ink }]} /> : null}
       </View>
-      {/* ── سطرُ الوقت: الدخولُ ثمّ الخروج ──
-          وقتُ الدخولِ كان بطاقةً فوقَ الكرتِ فبدا غريبَ الموضعِ عنه. صارَ **في الكرتِ**
-          حبّةً خضراءَ بأرقامٍ بيضاءَ كاملةٍ (ساعةً ودقائقَ بحجمٍ واحدٍ فتُقرأُ الدقائق)،
-          يليها سهمٌ ثمّ وقتُ الخروج — فيُقرأُ السطرُ مدًى لا رقمَين متفرِّقَين. */}
       {b.kind === 'na'
         ? <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{naMin != null ? `Called ${fmtHM(naMin)}` : 'Not available'}</Text>
-        : (
-          <View style={cs.timeRow}>
-            <View style={cs.inChip}>
-              <Text style={cs.inTx} numberOfLines={1}>{fmtHM(b.start)}</Text>
-            </View>
-            <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}→ {fmtHM(endMin)}</Text>
-          </View>
-        )}
+        : <Text style={[cs.time, { color: v.sub }]} numberOfLines={1}>{b.p.appointment_min != null ? '🕐 ' : ''}End time {fmtHM(endMin)}</Text>}
       {/* صفُّ الطبيبِ يُحجَزُ دائمًا وإن خلا: الكروتُ متساويةُ المحتوى فيقعُ شريطُها كلِّها
           على ارتفاعٍ واحد — وعليه يستقيمُ خيطُ الفراغِ بينها امتدادًا لا كسرًا. */}
       <View style={cs.docRow}>
@@ -562,13 +562,17 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // topH = رأسُ الجدول: حافّةٌ مطويّةٌ فوقَ الورقةِ تحملُ الساعاتِ — وهي الآنَ **علاماتٌ تطفو**
   // حيثُ تقعُ فعلًا (تتقاربُ في الهدوءِ وتتباعدُ في الزحام)، لا شبكةً متساويةً مفروضةً على الكروت
   // laneH اتّسعَ عن ٩٦: الكرتُ الحائمُ يرتفعُ عن مستقرِّه، فيلزمُه فراغٌ فوقَه لا يخرجُ منه إلى صفِّ الأوقات
-  // ولا شريطَ أوقاتٍ فوقَ الصفِّ بعدَ اليوم: وقتُ الدخولِ صارَ في الكرتِ نفسِه، فلم يبقَ
-  // للشريطِ ما يحملُه. ارتفاعُه رجعَ إلى الكرتِ فاتّسع، والصفُّ كلُّه صارَ أقصرَ فيُرى من
-  // العياداتِ أكثر.
-  const laneH = scale(106), topH = scale(46), labelW = scale(64);
+  // بطاقةُ وقتِ الدخولِ تجلسُ في **قاعِ** الشريطِ (bottom) لا في رأسِه، والكرتُ رُفِعَ إليها
+  // (CARD_TOP صغُر) — فيلتقيان ويُقرآنِ شيئًا واحدًا. وما فضلَ من الصفِّ يذهبُ إلى أسفلِ
+  // الكرتِ حيثُ يقعُ ظلُّ الحائم، وهو أولى به.
+  //
+  // ⚠️ وارتفاعُ الشريطِ لا ينزلُ عن ٢٣: الرأسُ يُلقي تحتَ كسرتِه ظلًّا (shadeBand) بعمقِ ٦
+  // داخلَ جسمِ الجدول، فبطاقةُ العيادةِ الأولى — وهي وحدَها الملاصقةُ للرأس — كانت تقعُ تحتَه
+  // فتُقرأُ متداخلةً معه. فالفرقُ بين الشريطِ والبطاقةِ فُرجةٌ تُجاوِزُ ذلك الظلَّ وتخلُصُ منه.
+  const laneH = scale(106), stripH = scale(23), topH = scale(46), labelW = scale(64);
   // كلُّ الكروتِ على سطرٍ واحدٍ وارتفاعٍ واحد — العمقُ يقولُه الظلُّ والمادّةُ لا موضعُ الكرتِ في صفِّه
-  const CARD_H = scale(90);
-  const CARD_TOP = scale(6);
+  const CARD_H = scale(84);
+  const CARD_TOP = scale(2);   // ملاصقٌ لبطاقتِه من فوق؛ وما فضلَ إلى أسفلِه حيثُ يقعُ ظلُّ الحائم
   // ── خيطُ الفراغِ امتدادٌ لشريطِ الكرت ──
   // ارتفاعُ الشريطِ داخلَ الكرتِ يعتمدُ على ارتفاعِ نصوصِه، وهو يختلفُ بين المنصّات — فلا
   // يُحسَبُ بالحسابِ بل يُقاسُ: أوّلُ كرتٍ يُرسَمُ يُبلِّغُ موضعَ شريطِه مرّةً واحدة، ثمّ يمتدُّ
@@ -584,7 +588,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   const threadTop = CARD_TOP + (barY ?? (CARD_H * 0.57));
   const TROUGH_H = scale(44);                        // المَجْرى أقصرُ من الكرتِ فيُقرأُ حفرًا لا صندوقًا
   const NOW_PAD = scale(12);                         // فُرجةٌ بينَ حدِّ الماءِ ومَن يبدأُ عنده، كي يُقرأَ وقتُ دخولِه
-  const unitH = laneH;                             // صفُّ العيادةِ وحدَه — لا شريطَ أوقاتٍ فوقَه
+  const unitH = stripH + laneH;                    // شريطُ الأوقات + كروتُ العيادة = وحدةٌ واحدة
   const GAP = scale(8);                             // فجوةٌ دنيا بين كلِّ كرتَين متجاورَين (كي لا تلتصقَ الكروت)
   const CHIP_W = scale(44);                         // شارةُ «خلفَ الشفت» — يُحجَزُ لها مكانُها قبلَ التبديل
   const hours: number[] = [];
@@ -793,8 +797,24 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     hScroll.current?.scrollTo({ x: Math.max(0, Math.min(contentW - portW, p * contentW - portW / 2)), animated: false });
   };
 
-  // (شريطُ أوقاتِ العيادةِ حُذِف — وقتُ الدخولِ صارَ في الكرتِ نفسِه، فبقيَ الشريطُ بلا مضمون.
-  //  ومَن أزاحَه تبديلُ الشفتِ لم يعُدْ يحتاجُ استثناءً: كلُّ كرتٍ يحملُ ساعتَه معه الآن.)
+  // شريطُ أوقاتٍ خاصٌّ بكلِّ عيادة: بداياتُ كروتِها فوقَها (متحرِّكةٌ مع الدور)، أو الساعاتُ الافتراضيّة إن كانت فارغة.
+  // ومَن أزاحَه تبديلُ الشفتِ (دخلَ داخلَه فرُسِمَ بعدَه) **لا يُسقَطُ وسمُه أبدًا** ولو تزاحمَ:
+  // موضعُه لم يعُدْ يقولُ ساعتَه، فالرقمُ وحدَه يقولُها — وهو أحقُّ ما يُعرَض.
+  // والبريكُ لا وقتَ دخولٍ له: وقتُ التبديلِ مكتوبٌ في وسمِه فوقَ العمود، ووقتُ الاستراحةِ
+  // المرنةِ محفورٌ في مَجْراها — فإقحامُه هنا يُقرأُ «مريضٌ دخلَ في البريك».
+  const LBL_GAP = scale(40);
+  const strips = laidLanes.map((laid) => {
+    if (!laid.length) return null;
+    const ticks: { left: number; label: string }[] = [];
+    let lastR = -Infinity;
+    for (const { b, left, moved } of laid) {
+      if (b.kind === 'break') continue;
+      if (!moved && left < lastR + LBL_GAP) continue;
+      ticks.push({ left, label: fmtHM(b.start) });
+      lastR = left;
+    }
+    return ticks;
+  });
 
   // طيّاتُ الورقة: البريكُ الثابتُ (تبديلُ الشفت) واحدٌ لكلِّ العياداتِ في وقتِه نفسِه، فلا معنى
   // لرسمِه كرتًا يتكرّرُ في كلِّ صفّ — هو **حدٌّ** لا استراحة. نأخذُه من أوّلِ عيادةٍ ونرسمُه
@@ -1005,11 +1025,26 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                   {hourMarks.map(({ h, x }) => <View key={'gv' + h} pointerEvents="none" style={[full.gridV, { left: x, top: 0 }]} />)}
                   {lanes.map((l, li) => {
                     const uTop = topH + li * unitH;
+                    const st = strips[li];
                     const laid = laidLanes[li];
                     return (
                       <React.Fragment key={l.clinic}>
+                        {/* شريطُ أوقاتِ العيادة: بداياتُ المرضى (متحرِّكة) أو الساعاتُ الافتراضيّة */}
+                        <View style={[full.strip, { top: uTop, width: contentW, height: stripH }]}>
+                          {st
+                            ? st.map((tk, ti) => (
+                                <View key={ti} style={[full.eTag, { left: tk.left }]}>
+                                  <LinearGradient colors={MINI_TEAL_G} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
+                                  <View pointerEvents="none" style={full.eTagGloss} />
+                                  <Text style={full.eTagTx} numberOfLines={1}>{tk.label}</Text>
+                                </View>
+                              ))
+                            : hourMarks.map(({ h, x }) => (
+                                <Text key={h} style={[full.hourTick, { left: x }]}>{h}:00</Text>
+                              ))}
+                        </View>
                         {/* صفُّ العيادة */}
-                        <View style={[full.laneRow, { top: uTop, height: laneH }]}>
+                        <View style={[full.laneRow, { top: uTop + stripH, height: laneH }]}>
                           {/* «خلفَ الشفت»: مَن انتهى شفتُه قبلَ أن يأتيَ دورُه — سيرحل. لا نرسمُ له
                               كرتًا في شفتٍ ليس شفتَه؛ شارةٌ ملاصقةٌ لكرتِ التبديلِ من اليسارِ
                               تقولُ كم هم، وبالنقرِ تظهرُ أسماؤهم. */}
@@ -1118,7 +1153,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                   <LinearGradient pointerEvents="none" colors={BLOOM} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                     style={{ position: 'absolute', top: topH, height: lanes.length * unitH, left: nowX - scale(30), width: scale(60) }} />
                   {lanes.map((l, li) => {
-                    const mid = topH + li * unitH + laneH / 2;
+                    const mid = topH + li * unitH + stripH + laneH / 2;
                     return [scale(20), scale(34), scale(50)].map((r, ri) => (
                       <View key={`rp${li}-${ri}`} pointerEvents="none"
                         style={[full.ripple, { left: nowX - r / 2, top: mid - r / 2, width: r, height: r, borderRadius: r / 2, opacity: 0.9 - ri * 0.26 }]} />
@@ -1914,7 +1949,23 @@ const full = scaledStyleSheet({
   railName: { marginTop: 4, fontSize: 8, fontWeight: '800', letterSpacing: 0.7, color: '#8CA0A8' },
   railBar: { marginTop: 8, width: 26, height: 3, borderRadius: 2, backgroundColor: 'rgba(18,58,68,0.1)', overflow: 'hidden' },
   railBarFill: { height: '100%', borderRadius: 2, backgroundColor: '#7DD3C0' },
-  // (strip · eTag · hourTick حُذِفَت — شريطُ الأوقاتِ فوقَ الصفِّ زال، ووقتُ الدخولِ في الكرت.)
+  // ── شريطُ الأوقاتِ والصفّ ──
+  // بداياتُ المرضى خفتَتْ عمدًا: الساعاتُ الثابتةُ في الرأسِ هي المرجع، وهذه تفصيلٌ تحتَها لا يزاحمُها
+  strip: { position: 'absolute', left: 0 },
+  // ── وقتُ دخولِ المريض: لوحةٌ خضراءُ فوقَ الكرتِ من يسارِه ──
+  // مُحاذاةٌ حرفيّةٌ لحافّةِ الكرتِ اليسرى (left = leftُ الكرتِ نفسُه)، فهي تُؤشِّرُ أوّلَ دقيقةٍ فيه
+  // لا تحومُ قربَه. وركنُها الأسفلُ الأيسرُ **قائمٌ بلا استدارة** وحدَه — فيقعُ فوقَ ركنِ الكرتِ
+  // مسامتًا له، ويُقرأُ الاثنانِ زاويةً واحدةً لا شيئَينِ متجاورَين. والأركانُ الثلاثةُ الباقيةُ
+  // مستديرة، فلا تصيرُ اللوحةُ صندوقًا. وحرفُها أبيضُ كاملٌ بحجمٍ واحد — الساعةُ والدقائقُ سواء.
+  eTag: {
+    position: 'absolute', bottom: 0, height: 15, minWidth: 34, paddingHorizontal: 6,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    borderTopLeftRadius: 5, borderTopRightRadius: 5, borderBottomRightRadius: 5, borderBottomLeftRadius: 0,
+  },
+  // بريقُ الحافّةِ العليا — المادّةُ نفسُها التي في الكرتِ واللوح، فتنتمي إليهما
+  eTagGloss: { position: 'absolute', top: 0, left: 4, right: 4, height: 1, backgroundColor: 'rgba(255,255,255,0.45)' },
+  eTagTx: { fontSize: 9.5, lineHeight: 11, fontWeight: '800', letterSpacing: -0.2, color: '#FFFFFF' },
+  hourTick: { position: 'absolute', top: 2, fontSize: 10, fontWeight: '800', color: '#8CA0A8' },
   laneRow: { position: 'absolute', left: 0, right: 0 },
   // ── عيادةٌ فارغة + خيطُ الفراغ ──
   vacant: { position: 'absolute', top: 7, bottom: 7, borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(140,160,168,0.36)', borderStyle: 'dashed' },
@@ -2153,7 +2204,10 @@ const cs = scaledStyleSheet({
   card: { position: 'absolute', borderRadius: 16, paddingTop: 6, paddingBottom: 6, paddingLeft: 12, paddingRight: 10, borderWidth: 1, justifyContent: 'center' },
   sunk: { transform: [{ scale: 0.965 }] },        // الغائرُ ينحسرُ قليلًا عن حدودِه فيبدو داخلَ السطح
   // ظلُّ الحائمِ على الورقة: مفصولٌ عنه بفُرجةٍ فيبدو معلَّقًا فوقَها لا واقعًا عليها
-  // (landWrap · land1..3 حُذِفَت مع SoftShadow)
+  landWrap: { position: 'absolute', height: 16 },
+  land1: { position: 'absolute', left: 0, top: 0, height: 16, borderRadius: 8 },
+  land2: { position: 'absolute', top: 2.5, height: 11, borderRadius: 5.5 },
+  land3: { position: 'absolute', top: 4.5, height: 7, borderRadius: 3.5 },
   clip: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 15, overflow: 'hidden' },
   gloss: { position: 'absolute', top: 0, left: 8, right: 8, height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
   row1: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -2172,11 +2226,7 @@ const cs = scaledStyleSheet({
   bar: { height: 3.5, borderRadius: 2, marginTop: 4, marginBottom: 2 },
   barFill: { height: '100%', borderRadius: 2 },
   barTick: { position: 'absolute', top: -2.5, width: 1.5, height: 8.5, borderRadius: 1, opacity: 0.6 },
-  // سطرُ الوقت: حبّةُ الدخولِ الخضراءُ ثمّ سهمٌ ووقتُ الخروج
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  inChip: { paddingHorizontal: 5, paddingVertical: 1.5, borderRadius: 6, backgroundColor: '#0E9F8C' },
-  inTx: { fontSize: 9, lineHeight: 10.5, fontWeight: '800', letterSpacing: -0.1, color: '#FFFFFF' },
-  time: { fontSize: 9, fontWeight: '700', opacity: 0.72 },
+  time: { marginTop: 1, fontSize: 9, fontWeight: '700', opacity: 0.72 },
   docRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, height: 12 },
   doc: { flex: 1, fontSize: 8.5, fontWeight: '800', opacity: 0.82 },
 }) as any;
