@@ -90,6 +90,17 @@ export function solveAxis(anchors: number[], claims: Claim[], step: (from: numbe
   return xm;
 }
 
+// ── ساعةُ دخولِ المنتظِر ──
+// كرتُ المريضِ في القائمةِ يقولُ متى يدخل، وساعتُه **هي ساعةُ المخطّطِ نفسُها** لا حسابٌ ثانٍ
+// يُشبِهُها: تُقرأُ من الكتلةِ التي رسمَها المخطّطُ له. ولا يُؤخَذُ إلّا مَن لم يدخلْ بعد
+// (fut/eld) — فالجاري والمنجَزُ لهما ساعاتُهما المسجَّلة، ومَن كان «خلفَ الشفت» لا كتلةَ له
+// أصلًا فلا وعدَ له بساعة.
+export function etaFromLanes(lanes: Lane[]): { [patientId: string]: number } {
+  const out: { [patientId: string]: number } = {};
+  for (const l of lanes) for (const b of l.blocks) if (b.kind === 'fut' || b.kind === 'eld') out[b.p.id] = b.start;
+  return out;
+}
+
 // مريضٌ صوريٌّ لكتلةِ البريك (كي تُعامَلَ ككتلةٍ عاديّةٍ في الرسمِ والتخطيط دونَ حقلٍ اختياريّ)
 const BREAK_P = { id: '__break__', name: 'Break', queue_number: -2, age: 0 } as Patient;
 

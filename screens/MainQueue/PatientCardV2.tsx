@@ -166,12 +166,16 @@ const fmtHM = (d?: Date) => {
   return `${hh}:${m < 10 ? '0' + m : m} ${ap}`;
 };
 
-const statusText = (p: Patient) => {
+// المنتظِرُ وحدَه لا وقتَ له في سطرِه: مَن أُنجِزَ يقولُ متى، ومَن نُوديَ يقولُ متى، ومَن دخلَ
+// يقولُ أينَ — والمنتظِرُ يقولُ «أنتظر» فحسب. وساعةُ دخولِه معلومةٌ في المخطّطِ فتُنقَلُ إلى
+// سطرِه: هي هي، لا حسابَ ثانٍ هنا (تأتي جاهزةً من onSchedule) فلا يفترقُ الرقمان أبدًا.
+// وتُكتَبُ **أمامَ** الكلمةِ لأنّها الخبرُ الذي يُنتظَر، والكلمةُ حالٌ معلومةٌ سلفًا.
+const statusText = (p: Patient, etaMin?: number | null) => {
   const k = kindOf(p);
   if (k === 'done') return p.completed_at ? `Done ${fmtHM(p.completed_at)}` : 'Done';
   if (k === 'na') return p.na_at ? `Called ${fmtHM(p.na_at)}` : 'Not available';
   if (k === 'inclinic') return `In ${p.clinic}`;
-  return 'Waiting';
+  return etaMin != null ? `${fmtClock(etaMin)} · Waiting` : 'Waiting';
 };
 
 // option lists derived from the app's canonical constants
@@ -621,6 +625,8 @@ export interface PatientCardV2Props {
   hasProfile?: boolean;
   // لقطةُ المخطّطِ نفسِه (عبرَ onSchedule) فيطابقُ فحصُ الحجزِ ما تراه على الشاشة
   appointmentCtx?: ApptCtx;
+  // ساعةُ دخولِ المنتظِرِ كما قرّرَها المخطّطُ (دقائقُ من منتصفِ الليل) — من onSchedule نفسِه
+  etaMin?: number | null;
   renderProfile?: (backRef: React.MutableRefObject<(() => boolean) | null>) => React.ReactNode;
   // هل هذا الظهورُ دخولٌ حقًّا؟ الكرتُ يُركَّبُ أيضًا وهو يمرُّ في التمرير، أو حينَ تعودُ
   // القائمةُ بعدَ إغلاقِ كرتٍ موسَّع — وتلك ليست دخولًا بل استئنافٌ لِما كان قائمًا.
@@ -642,6 +648,7 @@ export function PatientCardV2({
   readOnly,
   hasProfile,
   appointmentCtx,
+  etaMin,
   renderProfile,
   animate: doEnter = true,
 }: PatientCardV2Props) {
@@ -948,7 +955,7 @@ export function PatientCardV2({
                   <View style={s.topLine}>
                     <View style={s.statusWrap}>
                       <PulseDot color={dotColor} animated />
-                      <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient)}</Text>
+                      <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient, etaMin)}</Text>
                     </View>
                     {/* the name is the patient — tapping it opens their chart,
                         collapsed or open, as long as they have a file */}

@@ -28,6 +28,7 @@ import { PatientCardV2 } from './PatientCardV2';
 const USE_V2_CARD = true;
 import { AppModals } from './AppModals';
 import { QueueTimelinePager, Lane, Break } from './QueueTimeline';
+import { etaFromLanes } from './queueLanes';
 import { QueueStatsStrip } from './QueueStatsStrip';
 import { QueueBoard } from './QueueBoard';
 import { ExpandedPatientHeader } from '../../components/ExpandedPatientHeader';
@@ -371,8 +372,18 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   // تمامًا ما يظهرُ على المخطّطِ — محاكاةً كان أو وقتًا فعليًّا. يُخزَّنُ في مرجعٍ (ref) كي لا تُعادَ
   // رسمُ قائمةِ الكروتِ مع كلِّ نبضةِ ساعةِ المحاكاة، ويُلتقَطُ لقطةً عندَ فتحِ كرتٍ للحجز.
   const scheduleRef = useRef<{ lanes: Lane[]; chairCount: number; breaks: Break[]; nowMin: number }>({ lanes: [], chairCount: 0, breaks: [], nowMin: 0 });
+  // ── ساعةُ دخولِ المنتظِرِ على كرتِه ──
+  // هي ساعةُ المخطّطِ نفسُها لا حسابٌ ثانٍ يُشبِهُها: تُؤخَذُ من الكتلةِ التي رسمَها المخطّطُ
+  // لذلك المريضِ بعينِه. ولأنّ اللقطةَ في مرجعٍ (كي لا تُعادَ رسمُ القائمةِ مع كلِّ نبضةِ
+  // ساعة)، نُخرِجُ منها هذا القدرَ إلى حالةٍ — ولا تُحدَّثُ إلّا إذا **تغيّرَ رقمٌ فعلًا**،
+  // فبصمةٌ نصّيّةٌ تُقارَنُ أوّلًا. فالساعةُ تمضي دقائقَ دون أن يتحرّكَ الدورُ فلا تُرسَمُ القائمة.
+  const [etaMap, setEtaMap] = useState<{ [id: string]: number }>({});
+  const etaSig = useRef('');
   const onSchedule = useCallback((lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => {
     scheduleRef.current = { lanes, chairCount, breaks, nowMin };
+    const next = etaFromLanes(lanes);
+    const sig = Object.keys(next).sort().map((k) => k + ':' + next[k]).join('|');
+    if (sig !== etaSig.current) { etaSig.current = sig; setEtaMap(next); }
   }, []);
   const appointmentCtx = useMemo(() => scheduleRef.current, [expandedPermanentCardId, patients]);
 
@@ -930,6 +941,9 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
                 : null,
             ]}
             data={filteredPatients.filter(p => !expandedPermanentCardId || p.id === expandedPermanentCardId)}
+            // القائمةُ المُنافَذةُ لا تُعيدُ رسمَ صفوفِها لتغيُّرِ شيءٍ خارجَ عناصرِها — وساعاتُ
+            // الدخولِ خارجُها. ومرجعُ الخريطةِ لا يتبدّلُ إلّا إذا تبدّلَ رقمٌ فعلًا.
+            extraData={etaMap}
             keyExtractor={(patient) => `${patient.id}-${animKey}`}
             onScroll={onListScroll}
             // آخرُ إطارٍ هو المهمّ: بالخنقِ وحدَه تفوتُ نهايةُ الاندفاعِ فتُحفَظُ إزاحةٌ
@@ -975,6 +989,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               onToggleExpand={() => toggleCard(patient)}
               hasProfile={!!patient.permanent_patient_id}
               appointmentCtx={appointmentCtx}
+              etaMin={etaMap[patient.id] ?? null}
               renderProfile={(backRef) => (
                 <ExpandedPatientHeader
                   backRef={backRef}
