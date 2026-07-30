@@ -169,13 +169,14 @@ const fmtHM = (d?: Date) => {
 // المنتظِرُ وحدَه لا وقتَ له في سطرِه: مَن أُنجِزَ يقولُ متى، ومَن نُوديَ يقولُ متى، ومَن دخلَ
 // يقولُ أينَ — والمنتظِرُ يقولُ «أنتظر» فحسب. وساعةُ دخولِه معلومةٌ في المخطّطِ فتُنقَلُ إلى
 // سطرِه: هي هي، لا حسابَ ثانٍ هنا (تأتي جاهزةً من onSchedule) فلا يفترقُ الرقمان أبدًا.
-// وتُكتَبُ **أمامَ** الكلمةِ لأنّها الخبرُ الذي يُنتظَر، والكلمةُ حالٌ معلومةٌ سلفًا.
+// وتُكتَبُ **بعدَ** الكلمةِ كما في أخواتِها كلِّها: الحالُ أوّلًا ثمّ ساعتُها — Done ثمّ متى،
+// وCalled ثمّ متى، وWaiting ثمّ متى. فالسطرُ كلُّه يُقرأُ على نسقٍ واحد.
 const statusText = (p: Patient, etaMin?: number | null) => {
   const k = kindOf(p);
   if (k === 'done') return p.completed_at ? `Done ${fmtHM(p.completed_at)}` : 'Done';
   if (k === 'na') return p.na_at ? `Called ${fmtHM(p.na_at)}` : 'Not available';
   if (k === 'inclinic') return `In ${p.clinic}`;
-  return etaMin != null ? `${fmtClock(etaMin)} · Waiting` : 'Waiting';
+  return etaMin != null ? `Waiting · ${fmtClock(etaMin)}` : 'Waiting';
 };
 
 // option lists derived from the app's canonical constants
@@ -952,7 +953,10 @@ export function PatientCardV2({
               </Animated.View>
               <View style={s.who}>
                 <Animated.View style={{ opacity: qnumFade }}>
-                  <View style={s.topLine}>
+                  {/* مطويًّا: الحالُ تواجهُ الاسمَ في سطرٍ واحد — والاسمُ الطويلُ يُقَصُّ لأنّ الحالَ
+                      لا تنضغط. وموسَّعًا: للاسمِ سطرُه كاملًا والحالُ تنزلُ تحتَه إلى الحاشيةِ
+                      نفسِها التي عليها سطرُ الحالة، فيُقرأُ الاسمُ تامًّا ولا يُزاحمُه شيء. */}
+                  <View style={[s.topLine, open && s.topLineOpen]}>
                     <View style={s.statusWrap}>
                       <PulseDot color={dotColor} animated />
                       <Text style={[s.statusTxt, { color: dotColor }]} numberOfLines={1}>{statusText(patient, etaMin)}</Text>
@@ -961,15 +965,15 @@ export function PatientCardV2({
                         collapsed or open, as long as they have a file */}
                     {hasProfile && !readOnly ? (
                       <TouchableOpacity
-                        style={s.nameHit}
+                        style={[s.nameHit, open && s.wide]}
                         activeOpacity={0.6}
                         hitSlop={{ top: 8, bottom: 8 }}
                         onPress={() => onProfilePress?.(patient)}
                       >
-                        <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
+                        <Text style={s.name} numberOfLines={open ? 2 : 1}>{patient.name}</Text>
                       </TouchableOpacity>
                     ) : (
-                      <Text style={s.name} numberOfLines={1}>{patient.name}</Text>
+                      <Text style={[s.name, open && s.wide]} numberOfLines={open ? 2 : 1}>{patient.name}</Text>
                     )}
                   </View>
                   {caseText ? <Text style={s.caseLine} numberOfLines={1}>{caseText}</Text> : null}
@@ -1393,6 +1397,10 @@ const s = StyleSheet.create({
   name: { flex: 1, fontSize: scale(17), fontWeight: '700', color: C.inkStrong, textAlign: 'right', lineHeight: scale(23) },
   // top line: status (left) faces the name (right); case sits on its own line below
   topLine: { flexDirection: 'row', alignItems: 'center', gap: scale(8) },
+  // موسَّعًا يصيرُ السطرُ عمودًا مقلوبًا: الاسمُ فوقُ بعرضِ الكرتِ كلِّه، والحالُ تحتَه
+  topLineOpen: { flexDirection: 'column-reverse', alignItems: 'flex-start', gap: scale(3) },
+  // في العمودِ لا معنى لِـ flex:1 (يمدُّ الطولَ لا العرض) — فالعرضُ يُؤخَذُ صراحةً
+  wide: { flex: 0, width: '100%' },
   statusWrap: { flexDirection: 'row', alignItems: 'center', gap: scale(6), flexShrink: 0 },
   dotWrap: { width: scale(7), height: scale(7), alignItems: 'center', justifyContent: 'center' },
   dotGlow: { position: 'absolute', width: scale(16), height: scale(16), borderRadius: scale(8), opacity: 0.22 },
