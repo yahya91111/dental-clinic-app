@@ -33,15 +33,25 @@ const FLOOR: [string, string] = ['rgba(255,255,255,0)', 'rgba(255,255,255,0.16)'
 const RIM = 'rgba(255,255,255,0.80)';
 
 const firstName = (n?: string) => (n || '').trim().split(/\s+/)[0] || '—';
+// حالتُه = علاجُه، بالقاعدةِ نفسِها التي في بطاقةِ المخطّط (caseOf) — فلا يختلفُ وصفُه بينهما
+const caseOf = (p: Patient) => (p.treatment && p.treatment !== 'Treatment') ? p.treatment : '';
+// ساعةٌ بلسانِ الكرت: ١٢ ساعةً، وحرفاها مرفوعانِ صغيرَين كما تُكتَبُ ساعاتُ رأسِ المخطّط
+const clock12 = (min: number) => {
+  const h = Math.floor(min / 60), m = min % 60;
+  return { t: `${((h + 11) % 12) + 1}:${m < 10 ? '0' + m : m}`, ap: h < 12 ? 'AM' : 'PM' };
+};
 
 export const QueueStatsStrip = React.memo(function QueueStatsStrip({
   total,
   waiting,
   patients,
+  eta,
 }: {
   total: number;
   waiting: number;
   patients: Patient[];
+  // ساعاتُ الدخولِ كما قرّرَها المخطّط (etaFromLanes) — لا تُحسَبُ هنا فلا تفترقُ عنه
+  eta?: { [patientId: string]: number };
 }) {
   const m = useMemo(() => {
     const live = patients.filter((p) => p.status !== 'complete' && p.status !== 'na');
@@ -56,6 +66,9 @@ export const QueueStatsStrip = React.memo(function QueueStatsStrip({
           (a.queue_number || 0) - (b.queue_number || 0))[0] ?? null,
     };
   }, [patients]);
+
+  const nextEta = m.next ? (eta?.[m.next.id] ?? null) : null;
+  const nextCase = m.next ? caseOf(m.next) : '';
 
   return (
     <View style={s.rail}>
@@ -90,9 +103,23 @@ export const QueueStatsStrip = React.memo(function QueueStatsStrip({
               <LinearGradient colors={isPriority(m.next) ? AMBER_G : TEAL_G} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={s.qn}>
                 <Text style={s.qnTxt}>{m.next.queue_number}</Text>
               </LinearGradient>
+              {/* سطرانِ لا ثالثَ لهما: الوسمُ وساعتُه فوق، والاسمُ وحالتُه تحت. والساعةُ
+                  فيروزيّةٌ لأنّها خبرٌ لا عنوان، والحالُ رماديّةٌ لأنّها تفصيلٌ بعدَ الاسم. */}
               <View style={s.nextTxt}>
-                <Text style={s.nextLbl}>NEXT UP</Text>
-                <Text style={s.nextName} numberOfLines={1}>{firstName(m.next.name)}</Text>
+                <Text style={s.nextLbl} numberOfLines={1}>
+                  NEXT UP
+                  {nextEta != null ? (
+                    <Text>
+                      <Text style={s.dot}>  ·  </Text>
+                      <Text style={s.nextEta}>{clock12(nextEta).t}</Text>
+                      <Text style={s.nextAp}>{clock12(nextEta).ap}</Text>
+                    </Text>
+                  ) : null}
+                </Text>
+                <Text style={s.nextName} numberOfLines={1}>
+                  {firstName(m.next.name)}
+                  {nextCase ? <Text style={s.nextCase}>  ·  {nextCase}</Text> : null}
+                </Text>
               </View>
             </View>
           ) : (
@@ -149,7 +176,12 @@ const s = StyleSheet.create({
   qnTxt: { fontSize: scale(12), fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
   nextTxt: { flexShrink: 1, alignItems: 'flex-end' },
   nextLbl: { fontSize: scale(7.5), fontWeight: '800', letterSpacing: 1.1, color: MUTED },
+  // الفاصلُ خافتٌ عمدًا: يفصلُ ولا يُقرأ. وحرفا الساعةِ أصغرُ ومرفوعانِ عن رقمِها
+  dot: { color: 'rgba(90,112,121,0.42)', letterSpacing: 0 },
+  nextEta: { fontSize: scale(9.5), fontWeight: '800', letterSpacing: -0.2, color: TEAL },
+  nextAp: { fontSize: scale(7), fontWeight: '800', letterSpacing: 0.3, color: 'rgba(14,159,140,0.72)' },
   nextName: { fontSize: scale(12.5), fontWeight: '800', color: INK, marginTop: scale(1) },
+  nextCase: { fontSize: scale(9.5), fontWeight: '600', color: MUTED, letterSpacing: 0 },
 
   clear: {
     flexDirection: 'row', alignItems: 'center', gap: scale(6),

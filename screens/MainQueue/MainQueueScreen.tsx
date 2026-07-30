@@ -895,6 +895,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
               total={totalPatients}
               waiting={waitingPatients}
               patients={patients}
+              eta={etaMap}
             />
           </Animated.View>
         </Animated.View>
