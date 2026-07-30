@@ -59,6 +59,37 @@ export function drawWindow(b: Blk, seams: Blk[]): { ds: number; de: number; move
   return { ds, de: Math.max(de, ds), moved };
 }
 
+// ── المحورُ: من الحجزِ إلى البكسل ──
+// حجزٌ = «من هذه المرساةِ إلى تلك لا بدَّ من كذا بكسلًا» (كتلةٌ تسعُ نفسَها، فراغٌ يسعُ وسمَه).
+export type Claim = { from: number; to: number; w: number };
+
+// وكان الحجزُ يُصرَفُ **كلُّه دفعةً واحدةً عندَ آخرِه**: فالمرساةُ الواقعةُ في وسطِه — وخطُّ
+// «الآنَ» أوّلُها — لا تنالُ منه شيئًا، فتأخذُ الخطوةَ الافتراضيّةَ الصغيرةَ وحدَها. فيبقى
+// خطُّ الزمنِ لاصقًا ببدايةِ الكرتِ الجاري طولَ العلاجِ ثمّ يقفزُ عرضَ الكرتِ كلَّه دفعةً
+// حينَ يبلغُ نهايتَه. والحقُّ أنّ الحجزَ **مساحةٌ للزمنِ فيها نصيب**: فمَن وقعَ في وسطِه
+// نالَ منه بقدرِ ما مضى من وقتِه. فيسيرُ خطُّ الآنَ في الكرتِ سيرَ شريطِ التقدُّمِ داخلَه
+// سواءً بسواء، والساعةُ الواقعةُ داخلَ علاجٍ طويلٍ تقعُ في موضعِها منه لا في أوّله.
+//
+// step(from,to) = المسافةُ الافتراضيّةُ بين مرساتَين متجاورتَين (ما لم يُحجَزْ أكثرُ منها).
+export function solveAxis(anchors: number[], claims: Claim[], step: (from: number, to: number) => number): Map<number, number> {
+  const xm = new Map<number, number>();
+  if (!anchors.length) return xm;
+  xm.set(anchors[0], 0);
+  for (let i = 1; i < anchors.length; i++) {
+    const t = anchors[i], pt = anchors[i - 1];
+    let xx = (xm.get(pt) as number) + step(pt, t);
+    for (const c of claims) {
+      if (c.from >= t || c.to < t) continue;         // لا يعنينا إلّا حجزٌ نحنُ في داخلِه أو عندَ آخره
+      const fx = xm.get(c.from);
+      if (fx === undefined) continue;               // طرفٌ ليس مرساةً — حجزٌ لا محلَّ له
+      const share = c.to === t ? c.w : c.w * ((t - c.from) / (c.to - c.from));
+      if (fx + share > xx) xx = fx + share;
+    }
+    xm.set(t, xx);
+  }
+  return xm;
+}
+
 // مريضٌ صوريٌّ لكتلةِ البريك (كي تُعامَلَ ككتلةٍ عاديّةٍ في الرسمِ والتخطيط دونَ حقلٍ اختياريّ)
 const BREAK_P = { id: '__break__', name: 'Break', queue_number: -2, age: 0 } as Patient;
 

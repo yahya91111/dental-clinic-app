@@ -24,9 +24,9 @@ import { Patient, TREATMENT_DURATIONS } from './constants';
 // (scripts/test-timeline-wall.ts)
 import {
   buildLanes, slotAvailable, shiftFit, snapshotChart, estMinutes, hasDuration, isPriority,
-  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow,
+  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow, solveAxis,
 } from './queueLanes';
-import type { Kind, Blk, Lane, TimelineData, Break, DayChart } from './queueLanes';
+import type { Kind, Blk, Lane, TimelineData, Break, DayChart, Claim } from './queueLanes';
 import { rememberDayChart } from './dayChartStore';
 export { buildLanes, slotAvailable, shiftFit };
 export type { Lane, TimelineData, Break, DayChart };
@@ -509,6 +509,10 @@ const IDLE_MIN = [
 const idleTier = (min: number) => IDLE_MIN.find((t) => min <= t.max) as typeof IDLE_MIN[0];
 // أضيقُ ما يسعُ الرقمَ كاملًا («1hr 30min») — لا يضيقُ الوسمُ عنه ولو انعدمتِ المسافة
 const IDLE_LBL = scale(54);
+// إزاحةُ لوحةِ وقتِ الدخولِ عن حافّةِ كرتِها: خطوةٌ واحدةٌ إلى اليمين — بها يقعُ **رقمُها**
+// على استقامةِ حرفِ الكرتِ الأوّل (حشوةُ اللوحةِ ٦ + هذه ٦ = حشوةُ الكرتِ اليسرى ١٢)،
+// فتُقرأُ اللوحةُ والكرتُ عمودًا واحدًا لا حافّتَين متزاحمتَين.
+const E_TAG_IN = scale(6);
 
 // قاعدةُ حاجزِ التبديلِ (drawWindow) في queueLanes — زمنيّةٌ محضةٌ فتُختبَرُ وحدَها
 // والجاري يُقاسُ بمدّتِه المتوقّعةِ لا بما مضى منها: عليها يمشي خطُّ الآنَ داخلَ كرتِه
@@ -610,12 +614,9 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     for (let h = dayStart / 60; h <= dayEnd / 60; h++) anchorSet.add(h * 60);
     const anchors = Array.from(anchorSet).sort((a, b) => a - b);
 
-    const need = new Map<number, { from: number; w: number }[]>();
+    const need: Claim[] = [];
     // كتلٌ متداخلةٌ في الوقتِ (مريضانِ سُجّلا في كرسيٍّ واحدٍ معًا) لا حجزَ لها — يتكفّلُ بها دفعُ الرسم
-    const claim = (from: number, to: number, w: number) => {
-      if (!(to > from)) return;
-      const arr = need.get(to); if (arr) arr.push({ from, w }); else need.set(to, [{ from, w }]);
-    };
+    const claim = (from: number, to: number, w: number) => { if (to > from) need.push({ from, to, w }); };
     for (const l of lanes) {
       const seams = l.blocks.filter((b) => b.kind === 'break' && b.fixed);
       const chipWall = l.beyond.length > 0 ? seams[0] : undefined;
@@ -638,18 +639,10 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
       .map((b) => [b.start, b.end] as [number, number]);
     const folded = (a: number, z: number) => seamIv.some(([s, e]) => a >= s && z <= e);
 
-    const xm = new Map<number, number>();
-    xm.set(anchors[0], 0);
-    for (let i = 1; i < anchors.length; i++) {
-      const t = anchors[i], pt = anchors[i - 1];
-      const nat = folded(pt, t) ? STEP : Math.max(STEP, ((t - pt) / 60) * HOUR_NOM);
-      let xx = (xm.get(pt) as number) + nat;
-      for (const r of need.get(t) ?? []) {
-        const fx = xm.get(r.from);
-        if (fx !== undefined && fx + r.w > xx) xx = fx + r.w;
-      }
-      xm.set(t, xx);
-    }
+    // والحجزُ يُوزَّعُ على الزمنِ لا يُصرَفُ كلُّه عندَ آخرِه (solveAxis) — فخطُّ «الآنَ» يقطعُ
+    // الكرتَ الجاريَ بقدرِ ما قُطِعَ من علاجِه، لا يقفُ عندَ أوّلِه ثمّ يثبُ إلى آخره.
+    const xm = solveAxis(anchors, need,
+      (pt, t) => (folded(pt, t) ? STEP : Math.max(STEP, ((t - pt) / 60) * HOUR_NOM)));
     return { anchors, xm };
   }, [lanes, dayStart, dayEnd, nowMin, GAP, CHIP_W]);
 
@@ -1033,7 +1026,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                         <View style={[full.strip, { top: uTop, width: contentW, height: stripH }]}>
                           {st
                             ? st.map((tk, ti) => (
-                                <View key={ti} style={[full.eTag, { left: tk.left }]}>
+                                <View key={ti} style={[full.eTag, { left: tk.left + E_TAG_IN }]}>
                                   <LinearGradient colors={MINI_TEAL_G} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
                                   <View pointerEvents="none" style={full.eTagGloss} />
                                   <Text style={full.eTagTx} numberOfLines={1}>{tk.label}</Text>
@@ -1953,9 +1946,9 @@ const full = scaledStyleSheet({
   // بداياتُ المرضى خفتَتْ عمدًا: الساعاتُ الثابتةُ في الرأسِ هي المرجع، وهذه تفصيلٌ تحتَها لا يزاحمُها
   strip: { position: 'absolute', left: 0 },
   // ── وقتُ دخولِ المريض: لوحةٌ خضراءُ فوقَ الكرتِ من يسارِه ──
-  // مُحاذاةٌ حرفيّةٌ لحافّةِ الكرتِ اليسرى (left = leftُ الكرتِ نفسُه)، فهي تُؤشِّرُ أوّلَ دقيقةٍ فيه
-  // لا تحومُ قربَه. وركنُها الأسفلُ الأيسرُ **قائمٌ بلا استدارة** وحدَه — فيقعُ فوقَ ركنِ الكرتِ
-  // مسامتًا له، ويُقرأُ الاثنانِ زاويةً واحدةً لا شيئَينِ متجاورَين. والأركانُ الثلاثةُ الباقيةُ
+  // مُحاذاةٌ لحافّةِ الكرتِ اليسرى مُزاحةً خطوةً إلى الداخل (E_TAG_IN)، فيستقيمُ **رقمُها** مع
+  // حرفِ الكرتِ الأوّل. وركنُها الأسفلُ الأيسرُ **قائمٌ بلا استدارة** وحدَه — فتُقرأُ لسانًا
+  // نازلًا على الكرتِ لا لوحةً تحومُ فوقَه. والأركانُ الثلاثةُ الباقيةُ
   // مستديرة، فلا تصيرُ اللوحةُ صندوقًا. وحرفُها أبيضُ كاملٌ بحجمٍ واحد — الساعةُ والدقائقُ سواء.
   eTag: {
     position: 'absolute', bottom: 0, height: 15, minWidth: 34, paddingHorizontal: 6,
