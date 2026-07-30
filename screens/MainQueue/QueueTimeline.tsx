@@ -1091,7 +1091,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                               <React.Fragment key={'idle' + i}>
                                 <Text pointerEvents="none" numberOfLines={1} style={[full.idleLabel, { left: gx + (gw - lw) / 2, width: lw, top: threadTop - scale(14) }]}>{fmtGap(o.idle)}</Text>
                                 {segs.map(([a, z], si) => (
-                                  <View key={si} pointerEvents="none" style={[full.groove, { left: a, width: z - a, top: threadTop, height: BAR_H }]} />
+                                  <View key={si} pointerEvents="none" style={[full.groove, { left: a, width: z - a, top: threadTop, height: BAR_H + 1.5 }]} />
                                 ))}
                               </React.Fragment>
                             );
@@ -1969,7 +1969,13 @@ const full = scaledStyleSheet({
     textShadowColor: 'rgba(255,255,255,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
   // خيطُ الفراغ: هو **شريطُ الكرتِ نفسُه** ممتدًّا — نفسُ السماكةِ ونفسُ الاستدارةِ ونفسُ
   // الارتفاع، رماديٌّ فارغٌ لا يمتلئ. فيُقرأُ الصفُّ خطًّا واحدًا يمرُّ من كرتٍ إلى كرت.
-  groove: { position: 'absolute', borderRadius: 2, backgroundColor: 'rgba(10,35,45,0.11)' },
+  //
+  // وهو **محفورٌ** في الورقةِ لا مرسومٌ فوقَها (تصميمُ الورقةِ المطويّة): مَجْرًى داكنٌ تلمعُ
+  // حافّتُه السفلى حيثُ يقعُ عليها ضوءُ السطح — كما تلمعُ شفةُ كلِّ طيّةٍ في هذه الصفحة.
+  // والشفةُ **تحتَ** قاعِ المَجْرى لا داخلَه، فيبقى الجزءُ الداكنُ بسماكةِ شريطِ الكرتِ
+  // تمامًا ومحاذيًا له، ولا يكسبُ الخيطُ إلّا عمقَه.
+  groove: { position: 'absolute', borderRadius: 3, backgroundColor: 'rgba(10,35,45,0.11)',
+    borderBottomWidth: 1.5, borderBottomColor: 'rgba(255,255,255,0.65)' },
 
   // ── ④ المَجْرى: البريكُ المرن — رمالٌ ناعمةٌ بلا ظلٍّ ولا شفاهٍ حادّة ──
   trough: { position: 'absolute', borderRadius: 15, overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
