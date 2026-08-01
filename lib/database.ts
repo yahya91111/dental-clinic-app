@@ -15,7 +15,6 @@ import {
 import {
   PermanentPatient,
   PermanentPatientDecrypted,
-  Patient,
   ToothSurfaceCondition,
   EditingRecord,
   PlanningRecord,
@@ -408,45 +407,6 @@ export async function deletePermanentPatient(
 // ═══════════════════════════════════════════════════════════════
 // Daily Patients (Visits)
 // ═══════════════════════════════════════════════════════════════
-
-/**
- * Create a new daily visit for a patient
- */
-export async function createDailyVisit(
-  queueNumber: number,
-  clinicId: string,
-  permanentPatientId?: string,
-  walkInName?: string,
-  doctorId?: string,
-  condition?: string,
-  treatment?: string,
-  visitDate?: string
-): Promise<DatabaseResponse<Patient>> {
-  try {
-    const { data, error } = await supabase
-      .from('patients')
-      .insert({
-        queue_number: queueNumber,
-        clinic_id: clinicId,
-        permanent_patient_id: permanentPatientId || null,
-        name: walkInName || null,
-        doctor_id: doctorId || null,
-        condition: condition || null,
-        treatment: treatment || null,
-        status: 'waiting',
-        visit_date: visitDate || new Date().toISOString().split('T')[0],
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return { data, error: null };
-  } catch (error) {
-    console.error('Error creating daily visit:', error);
-    return { data: null, error: error as Error };
-  }
-}
 
 /**
  * Update patient status
