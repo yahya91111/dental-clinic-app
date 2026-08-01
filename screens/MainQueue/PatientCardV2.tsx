@@ -190,8 +190,11 @@ const statusText = (p: Patient, etaMin?: number | null) => {
   if (k === 'na') return p.na_at ? `Called ${fmtHM(p.na_at)}` : 'Not available';
   if (k === 'inclinic') {
     const left = leftText(p);
-    return left ? `In ${p.clinic} · ${left}` : `In ${p.clinic}`;
+    return left ? `In ${p.clinic} (${left})` : `In ${p.clinic}`;
   }
+  // ذو الموعدِ لا يقالُ له «ينتظر» فحسب: له وقتٌ مضروبٌ يُقالُ بدلًا منه، في كلمةٍ واحدةٍ
+  // وساعةٍ — فالسطرُ يشاركُ الاسمَ عرضَه، وكلُّ حرفٍ زائدٍ يُقتَطَعُ من الاسم.
+  if (p.appointment_min != null) return `Booked ${fmtClock(p.appointment_min)}`;
   return etaMin != null ? `Waiting · ${fmtClock(etaMin)}` : 'Waiting';
 };
 
