@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { scale } from '../../lib/scale';
 import { Patient, CLINICS, CONDITIONS, TREATMENTS, TREATMENT_DURATIONS, treatmentNeedsDuration } from './constants';
 import { slotAvailable, shiftFit, Lane, Break } from './QueueTimeline';
+import { clinicLeft } from './queueLanes';
 
 // لقطةُ الجدولِ المعروضِ على المخطّط — بها يُفحَصُ توفّرُ وقتِ الحجز، وهل تسعُ المدّةُ قبلَ تبديلِ الشفت
 type ApptCtx = { chairCount: number; breaks: Break[]; lanes: Lane[]; nowMin: number };
@@ -171,12 +172,47 @@ const fmtHM = (d?: Date) => {
 // سطرِه: هي هي، لا حسابَ ثانٍ هنا (تأتي جاهزةً من onSchedule) فلا يفترقُ الرقمان أبدًا.
 // وتُكتَبُ **بعدَ** الكلمةِ كما في أخواتِها كلِّها: الحالُ أوّلًا ثمّ ساعتُها — Done ثمّ متى،
 // وCalled ثمّ متى، وWaiting ثمّ متى. فالسطرُ كلُّه يُقرأُ على نسقٍ واحد.
+// ── داخلَ العيادة: المدّةُ المحدَّدةُ للحالةِ تنقصُ دقيقةً بدقيقة ──
+// يدخلُ المريضُ فيُقالُ «In 3 · 40 min»، ثمّ ٣٩، ثمّ ٣٨ — فالسطرُ لا يقولُ أينَ هو فحسب،
+// بل **كم بقيَ له**. وإن جاوزَ مدّتَه انقلبَ العدُّ إلى «+N» فيُقرأُ التأخيرُ صريحًا.
+// (والمدّةُ هي مدّةُ الكرتِ نفسِها التي في درجِه — durOf — فلا رقمانِ لحالةٍ واحدة.
+//  وما لا مدّةَ محدَّدةَ له من العلاجات يبقى سطرُه كما كان: أينَ هو ولا شيءَ بعدَه.)
+const leftText = (p: Patient): string | null => {
+  if (!needsDuration(p.treatment)) return null;
+  const gone = p.clinic_entry_at ? Math.floor((Date.now() - +new Date(p.clinic_entry_at)) / 60000) : null;
+  const c = clinicLeft(durOf(p), gone);
+  return c.over ? `+${c.left} min` : `${c.left} min`;
+};
+
 const statusText = (p: Patient, etaMin?: number | null) => {
   const k = kindOf(p);
   if (k === 'done') return p.completed_at ? `Done ${fmtHM(p.completed_at)}` : 'Done';
   if (k === 'na') return p.na_at ? `Called ${fmtHM(p.na_at)}` : 'Not available';
-  if (k === 'inclinic') return `In ${p.clinic}`;
+  if (k === 'inclinic') {
+    const left = leftText(p);
+    return left ? `In ${p.clinic} · ${left}` : `In ${p.clinic}`;
+  }
   return etaMin != null ? `Waiting · ${fmtClock(etaMin)}` : 'Waiting';
+};
+
+// ── نبضةُ الدقيقة ──
+// العدُّ التنازليُّ يحتاجُ إعادةَ رسمٍ مع مرورِ الوقت، ولا يصحُّ أن تُعادَ القائمةُ كلُّها من
+// أجلِ كرتٍ أو كرتَين. فمؤقّتٌ **واحدٌ** على مستوى الوحدةِ يشتركُ فيه مَن يعُدُّ وحدَه: يبدأُ
+// بأوّلِ مشتركٍ ويتوقّفُ بآخرِهم — فإن لم يكنْ في العياداتِ أحدٌ لم تكن هناك نبضةٌ أصلًا.
+let tickSubs: (() => void)[] = [];
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+const useMinuteTick = (active: boolean) => {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const fn = () => bump((n) => n + 1);
+    tickSubs.push(fn);
+    if (!tickTimer) tickTimer = setInterval(() => { tickSubs.forEach((f) => f()); }, 30000);
+    return () => {
+      tickSubs = tickSubs.filter((f) => f !== fn);
+      if (!tickSubs.length && tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    };
+  }, [active]);
 };
 
 // option lists derived from the app's canonical constants
@@ -656,6 +692,8 @@ export function PatientCardV2({
   // Expansion is driven by the parent: one card open at a time, isolated on the page
   // (the header collapses with the same animation the old card used).
   const open = isExpanded;
+  // مَن هو داخلَ العيادةِ الآنَ يعُدُّ وقتَه — وحدَه يشتركُ في النبضة (ولا نبضةَ في الأرشيف)
+  useMinuteTick(!readOnly && kindOf(patient) === 'inclinic');
   const [row, setRow] = useState<FieldKey | null>(null);
   // the visit timeline is reference info — folded away until asked for.
   // In the archive it is the point of opening the card at all, so it starts open.

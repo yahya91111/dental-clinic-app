@@ -73,6 +73,16 @@ export const foldSide = (b: { start: number; end: number }, dayStart = DAY_START
 export const foldLips = (s: FoldSide): { left: boolean; right: boolean } =>
   ({ left: s !== 'start', right: s !== 'end' });
 
+// ── العدُّ داخلَ العيادة ──
+// دخلَ المريضُ فبدأت مدّتُه المحدَّدةُ تنقص. وإن جاوزَها انقلبَ العدُّ إلى تأخير. والدقائقُ
+// المنقضيةُ تُحسَبُ كاملةً (تُجبَرُ إلى أسفل) فلا ينقصُ الرقمُ قبلَ أن تتمَّ دقيقتُه، ولا
+// يُحسَبُ زمنٌ سالبٌ لو سُجِّلَ دخولٌ في المستقبل.
+export const clinicLeft = (dur: number, goneMin: number | null): { left: number; over: boolean } => {
+  if (goneMin == null) return { left: dur, over: false };     // دخلَ ولا وقتَ دخولٍ مسجَّل: تُعرَضُ مدّتُه كما هي
+  const rem = dur - Math.max(0, goneMin);
+  return rem >= 0 ? { left: rem, over: false } : { left: -rem, over: true };
+};
+
 // ── حائطُ الراحلين: خلفَ أيِّ تبديلٍ تقفُ شارةُ «+N»؟ ──
 // «خلفَ الشفت» = مَن انتهى شفتُه قبلَ أن يأتيَ دورُه. والشفتُ الذي انتهى هو **شفتُه هو**:
 // القطاعُ الجاري الآن (curSeg في buildLanes)، ونهايتُه هي التبديلُ الذي يختمُه. وكانت الشارةُ

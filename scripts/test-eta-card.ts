@@ -7,7 +7,7 @@
  *
  * تشغيل: npx tsx scripts/test-eta-card.ts
  */
-import { buildLanes, etaFromLanes } from '../screens/MainQueue/queueLanes';
+import { buildLanes, etaFromLanes, clinicLeft } from '../screens/MainQueue/queueLanes';
 import type { Break } from '../screens/MainQueue/queueLanes';
 import type { Patient } from '../screens/MainQueue/constants';
 
@@ -91,6 +91,23 @@ console.log('\n— خريطةٌ فارغةٌ لا تنفجر —');
   ok(Object.keys(etaFromLanes([])).length === 0, 'لا صفوفَ → لا وعود');
   const { lanes } = buildLanes([], 10 * 60, CHAIRS, NO_BREAK);
   ok(Object.keys(etaFromLanes(lanes)).length === 0, 'ولا مرضى → لا وعود');
+}
+
+console.log('\n— وداخلَ العيادة: المدّةُ المحدَّدةُ تنقص، فإن جاوزَها انقلبت تأخيرًا —');
+{
+  const t = (dur: number, gone: number | null) => {
+    const c = clinicLeft(dur, gone);
+    return c.over ? `+${c.left}` : `${c.left}`;
+  };
+  ok(t(40, 0) === '40', 'لحظةَ الدخولِ يُعرَضُ الوقتُ المحدَّدُ كاملًا (40)');
+  ok(t(40, 15) === '25', 'وبعدَ ربعِ ساعةٍ يبقى ٢٥');
+  ok(t(40, 39) === '1', 'وقبلَ نهايتِه بدقيقةٍ تبقى واحدة');
+  ok(t(40, 40) === '0', 'وعندَ تمامِها صفرٌ — لم يتأخّرْ بعد');
+  ok(t(40, 41) === '+1', 'وبعدَها بدقيقةٍ يبدأُ التأخير');
+  ok(t(40, 55) === '+15', 'ويكبرُ بقدرِ ما تجاوز');
+  ok(t(40, null) === '40', 'ومَن دخلَ بلا وقتِ دخولٍ مسجَّلٍ تُعرَضُ مدّتُه كما هي');
+  ok(t(40, -5) === '40', 'ودخولٌ مسجَّلٌ في المستقبلِ لا يزيدُ المدّة');
+  ok(t(25, 25) === '0' && !clinicLeft(25, 25).over, 'والحدُّ عندَ الصفرِ لا يُعدُّ تأخيرًا');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ناجح · ${fail} فاشل\n`);
