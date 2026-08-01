@@ -246,12 +246,21 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
     return result;
   };
 
+  // نقرةٌ واحدةٌ تُضيفُ مريضًا واحدًا — العلّةُ نفسُها التي في صفحةِ الدور: الإضافةُ تستغرقُ
+  // لحظةً على الشبكةِ فيظنُّ المستخدمُ أنّ نقرتَه ضاعت فينقرُ ثانية. فمرجعٌ يمنعُ الاستدعاءَ
+  // الثانيَ في الحال، وحالةٌ تُغيِّرُ هيئةَ الزرِّ فورًا فلا يبقى في ظنٍّ أصلًا.
+  const addingRef = useRef(false);
+  const [addingPatient, setAddingPatient] = useState(false);
+
   const handleAddPatient = async () => {
+    if (addingRef.current) return;
     if (!newPatientName.trim()) {
       Alert.alert('Error', 'Please enter patient name');
       return;
     }
 
+    addingRef.current = true;
+    setAddingPatient(true);
     try {
       // Ensure queue_number is always a valid integer
       let queueNumber = 1;
@@ -300,6 +309,9 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
       fetchPatients();
     } catch (error) {
       Alert.alert('Error', 'Failed to add patient');
+    } finally {
+      addingRef.current = false;
+      setAddingPatient(false);
     }
   };
 
@@ -1101,14 +1113,14 @@ export default function MyTimelineScreen({ onBack }: MyTimelineScreenProps) {
                     blurOnSubmit
                   />
 
-                  <TouchableOpacity style={styles.addButton} onPress={handleAddPatient}>
+                  <TouchableOpacity style={styles.addButton} disabled={addingPatient} onPress={handleAddPatient}>
                     <LinearGradient
                       colors={['#A855F7', '#D4B8E8']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.addButtonGradient}
                     >
-                      <Text style={styles.addButtonText}>Add Patient</Text>
+                      <Text style={styles.addButtonText}>{addingPatient ? 'Adding…' : 'Add Patient'}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </LinearGradient>

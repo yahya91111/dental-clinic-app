@@ -60,6 +60,7 @@ interface AppModalsProps {
   modalEditingPatientId: string | null;
   setModalEditingPatientId: (id: string | null) => void;
   handleAddPatient: () => void;
+  addingPatient: boolean;
   handleFileNumberSearch: (fileNumber: string) => void;
   handlePatientNameSearch: (name: string) => void;
   patients: Patient[];
@@ -191,6 +192,7 @@ export function AppModals(props: AppModalsProps) {
           showPatientSuggestions={props.showPatientSuggestions}
           setShowPatientSuggestions={props.setShowPatientSuggestions}
           onSubmit={props.handleAddPatient}
+          submitting={props.addingPatient}
         />
       )}
 

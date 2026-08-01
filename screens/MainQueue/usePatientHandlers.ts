@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { supabase, Patient, TimelineEvent, arabicToEnglish, TREATMENT_DURATIONS, treatmentNeedsDuration } from './constants';
 import { generateDentalSummary } from './dentalHelpers';
@@ -357,7 +357,18 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     }
   };
 
+  // ── نقرةٌ واحدةٌ تُضيفُ مريضًا واحدًا ──
+  // الإضافةُ تجري على الشبكةِ فتستغرقُ لحظةً، وقد كان الزرُّ يبقى في هيئتِه طوالَها — فيظنُّ
+  // المستخدمُ أنّ نقرتَه لم تُصِبْ فينقرُ ثانية، ويُضافُ المريضُ مرّتَين. فحارسان لا واحد:
+  //   • مرجعٌ (ref) يمنعُ الاستدعاءَ الثاني ما دامَ الأوّلُ جاريًا — ويعملُ **في الحال**،
+  //     بخلافِ حالةِ الواجهةِ التي لا تُحدَّثُ إلّا في الرسمةِ التالية، فتنفذُ منها النقرةُ السريعة.
+  //   • وحالةٌ تُغيِّرُ هيئةَ الزرِّ فورًا («Adding…» معطَّلًا) فلا يبقى المستخدمُ في ظنٍّ أصلًا.
+  // وكلاهما يُفَكُّ في finally: نجحَ أو أخفقَ أو خرجَ من منتصفِ الطريق.
+  const addingRef = useRef(false);
+  const [addingPatient, setAddingPatient] = useState(false);
+
   const handleAddPatient = async () => {
+    if (addingRef.current) return;
     if (!newPatientName.trim()) {
       Alert.alert('Error', 'Please enter patient name');
       return;
@@ -369,6 +380,8 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
       return;
     }
 
+    addingRef.current = true;
+    setAddingPatient(true);
     try {
 
       const englishQueueNumber = arabicToEnglish(newPatientQueueNumber);
@@ -665,6 +678,9 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
       Alert.alert('Success', 'Patient added successfully');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Unknown error occurred');
+    } finally {
+      addingRef.current = false;
+      setAddingPatient(false);
     }
   };
 
@@ -1575,6 +1591,7 @@ export function usePatientHandlers(params: UsePatientHandlersParams) {
     handleFileNumberSearch,
     handlePatientNameSearch,
     handleAddPatient,
+    addingPatient,
     handleMenuAction,
     handleSaveNote,
     handleViewNote,

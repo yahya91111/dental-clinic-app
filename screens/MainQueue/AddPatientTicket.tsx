@@ -12,6 +12,7 @@ import {
   LayoutAnimation,
   Platform,
   StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -201,6 +202,8 @@ export interface AddPatientTicketProps {
   setShowPatientSuggestions: (v: boolean) => void;
 
   onSubmit: () => void;
+  // الإضافةُ جاريةٌ الآن: الزرُّ يقولُها ولا يقبلُ نقرةً ثانية
+  submitting?: boolean;
 }
 
 export function AddPatientTicket(p: AddPatientTicketProps) {
@@ -284,8 +287,10 @@ export function AddPatientTicket(p: AddPatientTicketProps) {
     }
   };
 
-  const ready = p.name.trim().length > 1 && !!p.queueNumber.trim();
-  const cta = p.isEditMode ? 'Update patient' : 'Add patient';
+  // ما دامتِ الإضافةُ جاريةً فالزرُّ ليس جاهزًا: يقولُ ما يفعلُه ولا يقبلُ نقرةً أخرى،
+  // فالمستخدمُ لا يبقى في ظنٍّ أنّ نقرتَه ضاعت — وهي التي كانت تُضيفُ المريضَ مرّتَين.
+  const ready = p.name.trim().length > 1 && !!p.queueNumber.trim() && !p.submitting;
+  const cta = p.submitting ? (p.isEditMode ? 'Updating…' : 'Adding…') : (p.isEditMode ? 'Update patient' : 'Add patient');
 
   return (
     <Modal visible={p.visible} animationType="fade" transparent onRequestClose={p.onClose}>
@@ -575,7 +580,9 @@ export function AddPatientTicket(p: AddPatientTicketProps) {
                     style={[s.issue, !ready && { opacity: 0.4 }]}
                   >
                     <LinearGradient colors={G.brand} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={s.issueFill}>
-                      <Ionicons name={p.isEditMode ? 'checkmark-sharp' : 'person-add'} size={scale(18)} color="#fff" />
+                      {p.submitting
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Ionicons name={p.isEditMode ? 'checkmark-sharp' : 'person-add'} size={scale(18)} color="#fff" />}
                       <Text style={s.issueTxt}>{cta}</Text>
                     </LinearGradient>
                   </TouchableOpacity>

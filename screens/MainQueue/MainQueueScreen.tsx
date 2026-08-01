@@ -183,6 +183,7 @@ export interface MainQueueScreenProps {
   modalEditingPatientId: string | null;
   setModalEditingPatientId: (val: string | null) => void;
   handleAddPatient: () => void;
+  addingPatient: boolean;
   handleFileNumberSearch: (text: string) => void;
   handlePatientNameSearch: (text: string) => void;
   showMenuForPatient: string | null;
@@ -1226,6 +1227,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           setFileNumberSearchResults={props.setFileNumberSearchResults}
           modalEditingPatientId={props.modalEditingPatientId}
           handleAddPatient={props.handleAddPatient}
+          addingPatient={props.addingPatient}
           handleFileNumberSearch={props.handleFileNumberSearch}
           handlePatientNameSearch={props.handlePatientNameSearch}
           patients={patients}

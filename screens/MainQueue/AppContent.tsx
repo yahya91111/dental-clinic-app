@@ -257,6 +257,7 @@ export function AppContent() {
     handleFileNumberSearch,
     handlePatientNameSearch,
     handleAddPatient,
+    addingPatient,
     handleMenuAction,
     handleSaveNote,
     handleViewNote,
@@ -968,6 +969,7 @@ export function AppContent() {
       modalEditingPatientId={modalEditingPatientId}
       setModalEditingPatientId={setModalEditingPatientId}
       handleAddPatient={handleAddPatient}
+      addingPatient={addingPatient}
       handleFileNumberSearch={handleFileNumberSearch}
       handlePatientNameSearch={handlePatientNameSearch}
       showMenuForPatient={showMenuForPatient}
