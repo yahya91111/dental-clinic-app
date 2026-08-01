@@ -16,7 +16,7 @@ import { generateDentalSummary } from './screens/MainQueue/dentalHelpers';
 import { DayChartViewer } from './screens/MainQueue/QueueTimeline';
 import { DayChartCard } from './screens/MainQueue/DayChartCard';
 import { PatientCardV2 } from './screens/MainQueue/PatientCardV2';
-import { reviveChart } from './screens/MainQueue/queueLanes';
+import { reviveChart, localDay } from './screens/MainQueue/queueLanes';
 import type { DayChart } from './screens/MainQueue/queueLanes';
 import type { Patient as QueuePatient } from './screens/MainQueue/constants';
 
@@ -296,7 +296,14 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   const loadArchivedPatients = async (date: Date) => {
     try {
       setLoading(true);
-      const dateStr = date.toISOString().split('T')[0];
+      // ── يومُ الأرشيفِ يومٌ تقويميٌّ محلّيٌّ لا لحظةٌ عالميّة ──
+      // ما يكتبُ اليومَ يكتبُه محلّيًّا: الأرشفةُ (localDay في autoArchiveService، و٢٣:٥٩
+      // بتوقيتِ بغدادَ في pg_cron) ولقطةُ المخطّط. وكانت القراءةُ هنا تُحوِّلُ تاريخَ المُنتَقي
+      // إلى **الـ UTC**، وبيننا وبينه ثلاثُ ساعات — فكلُّ تاريخٍ يحملُ ساعةً قبلَ الثالثةِ فجرًا
+      // ينزلقُ يومًا إلى الوراء، فيُعرَضُ عملُ الخميسِ تحتَ عنوانِ الجمعة. (والمُنتَقي يحملُ
+      // ساعةَ فتحِ الصفحة، فالخللُ يظهرُ ويختفي بحسبِ متى فُتِحَتْ — وهذا ما أخفاه طويلًا.)
+      // فالمقياسُ واحدٌ في الطرفَين: التقويمُ المحلّيّ، ولا أثرَ لساعةِ اليومِ فيه أصلًا.
+      const dateStr = localDay(date);
       //  استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
       const clinicId = selectedClinicId || userClinicId;
 
@@ -386,8 +393,9 @@ export default function ArchiveScreen({ onBack, selectedClinicId, userClinicId, 
   const loadStatistics = async (from: Date, to: Date) => {
     try {
       setLoading(true);
-      const fromStr = from.toISOString().split('T')[0];
-      const toStr = to.toISOString().split('T')[0];
+      // المدى بالتقويمِ المحلّيِّ نفسِه الذي كُتِبَ به archive_date (انظر loadArchivedPatients)
+      const fromStr = localDay(from);
+      const toStr = localDay(to);
       //  استخدام selectedClinicId أولاً (للمدير العام)، ثم userClinicId
       const clinicId = selectedClinicId || userClinicId;
 
