@@ -59,6 +59,20 @@ export function drawWindow(b: Blk, seams: Blk[]): { ds: number; de: number; move
   return { ds, de: Math.max(de, ds), moved };
 }
 
+// ── موضعُ تبديلِ الشفتِ من الورقة ──
+// تبديلٌ يبدأُ مع اليومِ (٠٠:٠٠ ← ٧:٠٠) أو ينتهي بانتهائه (٢٠:٠٠ ← ٠٠:٠٠) ليس حدًّا **في**
+// الورقةِ بل حدٌّ **لها**: يختمُها. والحكمُ بالوقتِ لا بالبكسل — فاليومُ من منتصفِ ليلٍ إلى
+// منتصفِ ليلٍ دائمًا، وهو قاطعٌ لا يتبدّلُ بتزاحمِ الرسمِ ولا بهامشِ الورقة. (ولو ابتدأَ اليومَ
+// وختمَه فهو فاتحتُه: لا شيءَ قبلَه أصلًا.)
+export type FoldSide = 'start' | 'end' | 'mid';
+export const foldSide = (b: { start: number; end: number }, dayStart = DAY_START, dayEnd = DAY_END): FoldSide =>
+  b.start <= dayStart ? 'start' : (b.end >= dayEnd ? 'end' : 'mid');
+
+// شفةُ العمودِ البيضاء: حدٌّ في وسطِ الورقةِ له شفتان — من أينَ ابتدأَ وأينَ انتهى. وخاتمُ
+// الطرفِ له **واحدةٌ فقط**: من جهةِ الورقة. فما وراءَه ليس ورقةً حتّى يُعلَّمَ عليها حدّ.
+export const foldLips = (s: FoldSide): { left: boolean; right: boolean } =>
+  ({ left: s !== 'start', right: s !== 'end' });
+
 // ── المحورُ: من الحجزِ إلى البكسل ──
 // حجزٌ = «من هذه المرساةِ إلى تلك لا بدَّ من كذا بكسلًا» (كتلةٌ تسعُ نفسَها، فراغٌ يسعُ وسمَه).
 export type Claim = { from: number; to: number; w: number };

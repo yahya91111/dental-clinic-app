@@ -24,7 +24,7 @@ import { Patient, TREATMENT_DURATIONS } from './constants';
 // (scripts/test-timeline-wall.ts)
 import {
   buildLanes, slotAvailable, shiftFit, snapshotChart, estMinutes, hasDuration, isPriority,
-  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow, solveAxis,
+  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow, solveAxis, foldSide, foldLips,
 } from './queueLanes';
 import type { Kind, Blk, Lane, TimelineData, Break, DayChart, Claim } from './queueLanes';
 import { rememberDayChart } from './dayChartStore';
@@ -126,7 +126,9 @@ const BLOOM: [string, string, string] = ['rgba(14,159,140,0)', 'rgba(14,159,140,
 // مظلمًا من أخرى)، وجسمُه يخفتُ عندَ طرفَيه فلا حافّةَ له تُقطَع، وشفةٌ بيضاءُ تُبقيه واضحًا.
 const SEAM_HALO_L: [string, string] = ['rgba(96,116,126,0)', 'rgba(96,116,126,0.13)'];
 const SEAM_HALO_R: [string, string] = ['rgba(96,116,126,0.13)', 'rgba(96,116,126,0)'];
-const SEAM_BODY: [string, string, string, string] = ['rgba(108,128,138,0.06)', 'rgba(108,128,138,0.46)', 'rgba(108,128,138,0.46)', 'rgba(108,128,138,0.06)'];
+// خاتمُ الورقة: يشتدُّ عندَ طرفِها ويخفتُ إلى داخلِها — يُقلَبُ اتّجاهُه بحسبِ الطرف
+const SEAM_SEAL: [string, string, string] = ['rgba(78,98,108,0.36)', 'rgba(78,98,108,0.10)', 'rgba(78,98,108,0)'];
+const SEAM_BODY: [string, string, string, string] =['rgba(108,128,138,0.06)', 'rgba(108,128,138,0.46)', 'rgba(108,128,138,0.46)', 'rgba(108,128,138,0.06)'];
 // المَجْرى (البريكُ المرن): رمالٌ ناعمةٌ لا حفرةٌ داكنة — دفءٌ كهرمانيٌّ خفيفٌ يعلو قاعَه، بلا أيقونةٍ ولا ظلّ
 const TROUGH_FILL: [string, string] = ['rgba(246,226,190,0.92)', 'rgba(236,208,163,0.92)'];
 const TROUGH_GLOW: [string, string, string] = ['rgba(255,214,150,0.55)', 'rgba(255,224,176,0.18)', 'rgba(255,232,200,0)'];
@@ -737,8 +739,22 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     });
   });
 
+  // ── طيّاتُ الورقة: تبديلُ الشفت ──
+  // البريكُ الثابتُ واحدٌ لكلِّ العياداتِ في وقتِه نفسِه، فلا معنى لرسمِه كرتًا يتكرّرُ في كلِّ
+  // صفّ — هو **حدٌّ** لا استراحة. نأخذُه من أوّلِ عيادةٍ ونرسمُه عمودًا واحدًا يعبرُ الصفوفَ
+  // كلَّها كطيّةٍ في الورقة.
+  //
+  // وموضعُه من الورقةِ يُغيِّرُ معناه: تبديلٌ يبدأُ مع اليومِ (٠٠:٠٠ ← ٧:٠٠) أو ينتهي بانتهائه
+  // (٢٠:٠٠ ← ٠٠:٠٠) ليس حدًّا **في** الورقةِ بل حدٌّ **لها**: يختمُها. والفصلُ بينهما بالوقتِ
+  // لا بالبكسل — فاليومُ من منتصفِ ليلٍ إلى منتصفِ ليلٍ دائمًا (DAY_START/DAY_END)، وهو حكمٌ
+  // قاطعٌ لا يتبدّلُ بتزاحمِ الرسمِ ولا بهامشِ الورقة.
+  const folds = (lanes[0]?.blocks ?? []).filter((b) => b.kind === 'break' && b.fixed);
+  const sideOf = (fb: Blk) => foldSide(fb, dayStart, dayEnd);
+  const sealsEnd = folds.some((fb) => sideOf(fb) === 'end');
+
   const maxRight = laidLanes.reduce((mx, arr) => arr.reduce((m, p) => Math.max(m, p.left + p.width), mx), 0);
-  const contentW = Math.max(xAt(dayEnd), maxRight + scale(24));
+  // وحيثُ يختمُ الطرفَ لا يبقى بعدَه هامشٌ من ورق: الخاتمُ آخرُ الصفحةِ لا شيءَ خلفَه
+  const contentW = Math.max(xAt(dayEnd), maxRight + (sealsEnd ? 0 : scale(24)));
 
   // ═══ الساعاتُ علاماتٌ تطفو ═══
   // ما دامتِ المسافةُ لا تساوي الزمنَ فمسافاتٌ متساويةٌ بين الساعاتِ كذبةٌ صريحة. فالساعةُ
@@ -812,12 +828,17 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // طيّاتُ الورقة: البريكُ الثابتُ (تبديلُ الشفت) واحدٌ لكلِّ العياداتِ في وقتِه نفسِه، فلا معنى
   // لرسمِه كرتًا يتكرّرُ في كلِّ صفّ — هو **حدٌّ** لا استراحة. نأخذُه من أوّلِ عيادةٍ ونرسمُه
   // عمودًا واحدًا يعبرُ الصفوفَ كلَّها كطيّةٍ في الورقة.
-  const folds = (lanes[0]?.blocks ?? []).filter((b) => b.kind === 'break' && b.fixed);
-  // نطاقُ كلِّ عمودٍ بالبكسل — يُقتَطَعُ عندَه خيطُ الفراغِ فلا يدخلُه
-  const seamBands: [number, number][] = folds.map((fb) => {
+  // الخاتمُ يُرسَمُ خاتمًا لا فاصلًا: يملأُ ارتفاعَ الورقةِ كلَّه بلا انحسارٍ عندَ طرفَيه، وشفتُه
+  // البيضاءُ من **جهةِ الورقةِ وحدَها** (وما وراءَه ليس ورقةً، فلا شفةَ هناك ولا هالةَ تخفتُ في
+  // شيء)، ويشتدُّ لونُه نحوَ الطرفِ فيُقرأُ طيًّا تنتهي عندَه الصفحةُ لا خطًّا مرسومًا عليها.
+  // والهندسةُ تُحسَبُ **مرّةً واحدةً** هنا: يقرؤها العمودُ في الجسمِ ووسمُه في المسطرة، فلا
+  // يفترقُ موضعُ أحدِهما عن الآخر.
+  const foldGeom = folds.map((fb) => {
     const fx = xAt(fb.start);
-    return [fx, fx + Math.max(SEAM_W, xAt(fb.end) - fx)] as [number, number];
+    return { fb, fx, fw: Math.max(SEAM_W, xAt(fb.end) - fx), side: sideOf(fb), mid: fx + Math.max(SEAM_W, xAt(fb.end) - fx) / 2 };
   });
+  // نطاقُ كلِّ عمودٍ بالبكسل — يُقتَطَعُ عندَه خيطُ الفراغِ فلا يدخلُه
+  const seamBands: [number, number][] = foldGeom.map((g) => [g.fx, g.fx + g.fw] as [number, number]);
 
   // ── المَجْرى: البريكُ المرن ──
   // كان حفرةً داكنةً بشفتَينِ وظلٍّ تحتَها — ثقيلٌ على ورقةٍ فاتحة. صارَ **مَجْرًى رمليًّا
@@ -997,15 +1018,22 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                     })}
                     {/* أرقامُ تبديلِ الشفت: العمودُ رفيعٌ لا يسعُها، فترتفعُ إلى المسطرةِ فوقَه —
                         المساحةُ تقولُ «هنا تبديل»، والرقمُ يقولُ «من متى إلى متى». */}
-                    {folds.map((fb, fi) => {
-                      const sx = xAt(fb.start) + Math.max(SEAM_W, xAt(fb.end) - xAt(fb.start)) / 2;
+                    {foldGeom.map(({ fb, fx, fw, side, mid: sx }, fi) => {
+                      // الوسمُ يتوسّطُ عمودَه ما دامَ في الورقة، فإن ختمَ طرفَها لزمَ ذلك الطرفَ
+                      // ولم يخرجْ عنه — ويبقى ذَنَبُه مصوَّبًا إلى العمودِ نفسِه أينما استقرَّ.
+                      const TW = scale(90), pad = scale(3);
+                      const left = side === 'start' ? pad
+                        : side === 'end' ? Math.max(pad, contentW - TW - pad)
+                        : Math.max(pad, Math.min(contentW - TW - pad, sx - TW / 2));
+                      const tailX = Math.max(left + scale(8), Math.min(left + TW - scale(8), sx));
                       return (
                         <React.Fragment key={'sg' + fi}>
-                          <View style={[full.seamTag, { left: sx - scale(40) }]}>
-                            <Text style={full.seamTagEye}>SHIFT</Text>
+                          <View style={[full.seamTag, { left, width: TW }]}>
+                            <View pointerEvents="none" style={full.seamTagGloss} />
+                            <Text style={full.seamTagEye}>{side === 'mid' ? 'SHIFT' : side === 'start' ? 'DAY OPENS' : 'DAY CLOSES'}</Text>
                             <Text style={full.seamTagTx} numberOfLines={1}>{fmtHM(fb.start)} – {fmtHM(fb.end)}</Text>
                           </View>
-                          <View style={[full.seamTagTail, { left: sx, top: scale(36), height: topH - scale(36) }]} />
+                          <View style={[full.seamTagTail, { left: tailX, top: scale(36), height: topH - scale(36) }]} />
                         </React.Fragment>
                       );
                     })}
@@ -1118,24 +1146,42 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                       إلى جانبَيه (لا ظلٌّ من جهةٍ وضوءٌ من أخرى)، والعمودُ نفسُه يخفتُ عندَ طرفَيه
                       فلا حافّةَ له تُقطَع، وشفةٌ بيضاءُ رفيعةٌ تُبقيه واضحًا على الورقةِ الفاتحة.
                       وأرقامُه فوقَه في المسطرة. ومساحةُ النقرِ أوسعُ منه عمدًا كي تُصابَ بالإصبع. */}
-                  {folds.map((fb, fi) => {
-                    const fx = xAt(fb.start), fw = Math.max(SEAM_W, xAt(fb.end) - fx);
+                  {foldGeom.map(({ fb, fx, fw, side }, fi) => {
                     const fh = lanes.length * unitH;
+                    const cap = side !== 'mid';   // خاتمُ الورقةِ لا فاصلٌ فيها
                     return (
                       <React.Fragment key={'fold' + fi}>
-                        <LinearGradient pointerEvents="none" colors={SEAM_HALO_L} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: Math.max(0, fx - scale(20)), width: scale(20), top: topH, height: fh }} />
-                        <LinearGradient pointerEvents="none" colors={SEAM_HALO_R} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={{ position: 'absolute', left: fx + fw, width: scale(20), top: topH, height: fh }} />
-                        <View pointerEvents="none" style={[full.seam, { left: fx, width: fw, top: topH + scale(4), height: fh - scale(8) }]}>
+                        {/* الهالةُ إلى الورقةِ لا إلى الخارج: ما وراءَ الخاتمِ ليس ورقةً تخفتُ فيه */}
+                        {foldLips(side).left ? (
+                          <LinearGradient pointerEvents="none" colors={SEAM_HALO_L} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                            style={{ position: 'absolute', left: Math.max(0, fx - scale(20)), width: scale(20), top: topH, height: fh }} />
+                        ) : null}
+                        {foldLips(side).right ? (
+                          <LinearGradient pointerEvents="none" colors={SEAM_HALO_R} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                            style={{ position: 'absolute', left: fx + fw, width: scale(20), top: topH, height: fh }} />
+                        ) : null}
+                        <View pointerEvents="none" style={[full.seam,
+                          cap && (side === 'start' ? full.seamCapL : full.seamCapR),
+                          { left: fx, width: fw, top: cap ? topH : topH + scale(4), height: cap ? fh : fh - scale(8) }]}>
                           <LinearGradient colors={SEAM_BODY} locations={[0, 0.18, 0.82, 1]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
-                          {/* بدايتُه ونهايتُه: حافّتانِ بيضاوانِ صريحتان — يُرى أينَ ابتدأَ وأينَ انتهى */}
-                          <View style={[full.seamEdge, { left: 0 }]} />
-                          <View style={[full.seamEdge, { right: 0 }]} />
+                          {/* الخاتمُ يشتدُّ عندَ طرفِ الورقةِ ويخفتُ إلى داخلِها — طيّةٌ تنتهي عندَها الصفحة */}
+                          {cap ? (
+                            <LinearGradient pointerEvents="none" colors={SEAM_SEAL}
+                              start={side === 'start' ? { x: 0, y: 0 } : { x: 1, y: 0 }}
+                              end={side === 'start' ? { x: 1, y: 0 } : { x: 0, y: 0 }}
+                              style={StyleSheet.absoluteFill} />
+                          ) : null}
+                          {/* بدايتُه ونهايتُه: حافّتانِ بيضاوانِ صريحتان — يُرى أينَ ابتدأَ وأينَ انتهى.
+                              وللخاتمِ شفةٌ واحدةٌ: من جهةِ الورقةِ فقط (foldLips). */}
+                          {foldLips(side).left ? <View style={[full.seamEdge, { left: 0 }]} /> : null}
+                          {foldLips(side).right ? <View style={[full.seamEdge, { right: 0 }]} /> : null}
                         </View>
+                        {/* مساحةُ النقرِ أوسعُ منه عمدًا — ولا تتجاوزُ الورقةَ إن ختمَ طرفَها */}
                         <TouchableOpacity activeOpacity={0.85} disabled={!!readOnly}
                           onPress={() => setBreakActionOrig(fb.orig ?? fb.start)}
-                          style={{ position: 'absolute', left: fx - scale(11), width: fw + scale(22), top: topH, height: fh }} />
+                          style={{ position: 'absolute', left: Math.max(0, fx - scale(11)),
+                            width: fw + (side === 'start' ? scale(11) : side === 'end' ? scale(11) : scale(22)),
+                            top: topH, height: fh }} />
                       </React.Fragment>
                     );
                   })}
@@ -1985,15 +2031,21 @@ const full = scaledStyleSheet({
 
   // ── ③ تبديلُ الشفت: عمودٌ رفيعٌ وأرقامُه في المسطرةِ فوقَه ──
   seam: { position: 'absolute', borderRadius: 5, overflow: 'hidden', zIndex: 3 },
+  // الخاتم: ركناهُ من جهةِ الورقةِ مستديران، ومن جهةِ الطرفِ قائمانِ — فينتهي عندَه الورقُ
+  // انتهاءً حادًّا لا يُلمِّحُ إلى شيءٍ بعدَه، ويلينُ من الداخلِ حيثُ يستمرُّ الجدول.
+  seamCapL: { borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
+  seamCapR: { borderTopRightRadius: 0, borderBottomRightRadius: 0 },
   seamEdge: { position: 'absolute', top: 0, bottom: 0, width: 1.5, backgroundColor: 'rgba(255,255,255,0.92)' },
   // وسمُ التبديلِ في المسطرة: حبّةٌ زجاجيّةٌ هادئةٌ تحملُ «من – إلى» ولها كلمتُها فوقَ الرقم،
-  // وذَنَبٌ رفيعٌ ينزلُ منها إلى العمودِ فتُقرأُ ملتصقةً به لا طافيةً بجانبِه.
-  seamTag: { position: 'absolute', top: 8, width: 80, alignItems: 'center', justifyContent: 'center',
-    paddingTop: 2.5, paddingBottom: 3, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.94)',
-    borderWidth: 1, borderColor: 'rgba(108,128,138,0.30)',
+  // وذَنَبٌ رفيعٌ ينزلُ منها إلى العمودِ فتُقرأُ ملتصقةً به لا طافيةً بجانبِه. وشعرةُ ضوءٍ
+  // على حافّتِها العليا — مادّةُ الكرتِ ولوحِ الدخولِ نفسُها، فتنتمي إليهما لا تُقحَمُ عليهما.
+  seamTag: { position: 'absolute', top: 7, alignItems: 'center', justifyContent: 'center',
+    paddingTop: 3, paddingBottom: 3.5, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1, borderColor: 'rgba(108,128,138,0.28)', overflow: 'hidden',
     shadowColor: '#0A2834', shadowOpacity: 0.10, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
-  seamTagEye: { fontSize: 6, lineHeight: 7, fontWeight: '800', letterSpacing: 1.5, color: '#93A5AD' },
-  seamTagTx: { marginTop: 0.5, fontSize: 8.5, lineHeight: 10, fontWeight: '800', letterSpacing: 0.1, color: '#56686F' },
+  seamTagGloss: { position: 'absolute', top: 0, left: 7, right: 7, height: 1, backgroundColor: 'rgba(255,255,255,0.85)' },
+  seamTagEye: { fontSize: 6, lineHeight: 7.5, fontWeight: '800', letterSpacing: 1.7, color: '#93A5AD' },
+  seamTagTx: { marginTop: 1, fontSize: 9.5, lineHeight: 11, fontWeight: '800', letterSpacing: -0.1, color: '#46585F' },
   seamTagTail: { position: 'absolute', width: 1, backgroundColor: 'rgba(108,128,138,0.34)' },
 
   // ── شريطُ اليوم ──
