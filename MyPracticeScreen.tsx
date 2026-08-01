@@ -170,10 +170,16 @@ export default function MyPracticeScreen({
 
         if (patientsError) throw patientsError;
 
-        const today = new Date().toISOString().split('T')[0];
-        const todayPatients = patients?.filter(
-          (p) => p.created_at.startsWith(today)
-        ).length || 0;
+        // «اليومَ» يومٌ تقويميٌّ محلّيٌّ لا يومُ UTC: كانت المقارنةُ على نصِّ created_at وهو
+        // مكتوبٌ بتوقيتِ غرينتش، وبيننا وبينه ثلاثُ ساعات — فمرضى ما بعدَ منتصفِ الليلِ
+        // يُحسَبونَ على الأمس. فنقارنُ اللحظاتِ بحدَّي اليومِ المحلّيِّ لا النصوصَ بأوائلها.
+        const dayStart = new Date();
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+        const todayPatients = patients?.filter((p) => {
+          const t = new Date(p.created_at);
+          return t >= dayStart && t < dayEnd;
+        }).length || 0;
         const completedPatients = patients?.filter(
           (p) => p.status === 'complete'
         ).length || 0;

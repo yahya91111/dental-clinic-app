@@ -16,7 +16,6 @@ import {
   PermanentPatient,
   PermanentPatientDecrypted,
   Patient,
-  PatientWithDetails,
   ToothSurfaceCondition,
   EditingRecord,
   PlanningRecord,
@@ -450,52 +449,6 @@ export async function createDailyVisit(
 }
 
 /**
- * Get today's patients for a clinic (not archived)
- */
-export async function getTodaysPatients(
-  clinicId: string
-): Promise<DatabaseResponse<PatientWithDetails[]>> {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-
-    const { data, error } = await supabase
-      .from('patients')
-      .select('*, doctors(*)')
-      .eq('clinic_id', clinicId)
-      .eq('visit_date', today)
-      .is('archive_date', null)
-      .order('queue_number', { ascending: true });
-
-    if (error) throw error;
-
-    // Fetch and decrypt permanent patient data for each visit
-    const patientsWithDetails: PatientWithDetails[] = await Promise.all(
-      data.map(async (patient) => {
-        let permanentPatient: PermanentPatientDecrypted | undefined;
-
-        if (patient.permanent_patient_id) {
-          const { data: ppData } = await getPermanentPatientById(
-            patient.permanent_patient_id
-          );
-          if (ppData) permanentPatient = ppData;
-        }
-
-        return {
-          ...patient,
-          permanent_patient: permanentPatient,
-          doctor: patient.doctors,
-        };
-      })
-    );
-
-    return { data: patientsWithDetails, error: null };
-  } catch (error) {
-    console.error('Error getting today\'s patients:', error);
-    return { data: null, error: error as Error };
-  }
-}
-
-/**
  * Update patient status
  */
 export async function updatePatientStatus(
@@ -514,53 +467,6 @@ export async function updatePatientStatus(
   } catch (error) {
     console.error('Error updating patient status:', error);
     return { data: false, error: error as Error };
-  }
-}
-
-/**
- * Archive a patient visit (set archive_date)
- */
-export async function archivePatientVisit(
-  patientId: string
-): Promise<DatabaseResponse<boolean>> {
-  try {
-    const { error } = await supabase
-      .from('patients')
-      .update({ archive_date: new Date().toISOString() })
-      .eq('id', patientId);
-
-    if (error) throw error;
-
-    return { data: true, error: null };
-  } catch (error) {
-    console.error('Error archiving patient visit:', error);
-    return { data: false, error: error as Error };
-  }
-}
-
-/**
- * Archive all today's patients for a clinic (end of day)
- */
-export async function archiveAllTodaysPatients(
-  clinicId: string
-): Promise<DatabaseResponse<number>> {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-
-    const { data, error } = await supabase
-      .from('patients')
-      .update({ archive_date: new Date().toISOString() })
-      .eq('clinic_id', clinicId)
-      .eq('visit_date', today)
-      .is('archive_date', null)
-      .select();
-
-    if (error) throw error;
-
-    return { data: data.length, error: null };
-  } catch (error) {
-    console.error('Error archiving all today\'s patients:', error);
-    return { data: null, error: error as Error };
   }
 }
 
@@ -1569,34 +1475,6 @@ export async function deleteScalingRecord(
 // ═══════════════════════════════════════════════════════════════
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════
-
-/**
- * Get next queue number for today
- */
-export async function getNextQueueNumber(
-  clinicId: string
-): Promise<DatabaseResponse<number>> {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-
-    const { data, error } = await supabase
-      .from('patients')
-      .select('queue_number')
-      .eq('clinic_id', clinicId)
-      .eq('visit_date', today)
-      .order('queue_number', { ascending: false })
-      .limit(1);
-
-    if (error) throw error;
-
-    const nextNumber = data && data.length > 0 ? data[0].queue_number + 1 : 1;
-
-    return { data: nextNumber, error: null };
-  } catch (error) {
-    console.error('Error getting next queue number:', error);
-    return { data: null, error: error as Error };
-  }
-}
 
 // ---------------------------------------------------------------
 // General Notes
