@@ -24,7 +24,7 @@ import { Patient, TREATMENT_DURATIONS } from './constants';
 // (scripts/test-timeline-wall.ts)
 import {
   buildLanes, slotAvailable, shiftFit, snapshotChart, estMinutes, hasDuration, isPriority,
-  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow, solveAxis, foldSide, foldLips,
+  minutesOfDay, isRealClinic, clinicNum, localDay, drawWindow, solveAxis, foldSide, foldLips, shiftWall,
 } from './queueLanes';
 import type { Kind, Blk, Lane, TimelineData, Break, DayChart, Claim } from './queueLanes';
 import { rememberDayChart } from './dayChartStore';
@@ -306,6 +306,28 @@ const CARD: { [k in Kind]?: CardVis } = {
               trk: 'rgba(59,63,99,0.17)', fil: 'transparent' },
 };
 
+// ── الأولويّةُ صفةُ الإنسانِ لا صفةُ حالتِه ──
+// اللونُ في هذا المخطّطِ للحالة، والذهبيُّ وحدَه للأولويّة — وقد كانا يتنازعانِ الكرتَ الواحد:
+// فإذا أُنجِزَ كبيرُ السنِّ غلبتِ الحالةُ فصارَ رماديًّا كسائرِ المنجَزين، وضاعَ من الصفحةِ أنّه
+// كان صاحبَ أولويّة. ولا يصحُّ: مضى العلاجُ ولم تمضِ صفتُه.
+//   • المنجَزُ منهم → غائرٌ **ذهبيٌّ خافت**: عمقُ المنجَزِ نفسُه ولونُ الأولويّةِ مطفأً فيه،
+//     فيُقرأُ «انتهى» و«كان أَولى» معًا في نظرةٍ واحدة.
+//   • والمتأخّرُ منهم يبقى أحمرَ — فتأخيرُه خبرٌ أهمُّ من صفتِه — وتبقى **شارةُ رقمِه** ذهبيّةً
+//     محدَّدةً بخطٍّ متقطّع، وهي وسمُ الأولويّةِ نفسُه في كلِّ حالاتِه، فلا يضيعُ الرجلُ في الخبر.
+const DONE_ELD: CardVis = {
+  depth: 'sunk', bg: 'rgba(214,190,140,0.55)', border: 'rgba(255,255,255,0.40)',
+  ink: '#5A4712', sub: '#87703A', badgeBg: 'rgba(255,255,255,0.60)', badgeInk: '#7A5410',
+  trk: 'rgba(70,52,10,0.15)', fil: 'rgba(150,116,40,0.55)',
+};
+const ELD_BADGE = { badgeBg: 'rgba(255,255,255,0.78)', badgeDash: 'rgba(176,126,18,0.85)', badgeInk: '#7A5410', badgeGrad: undefined };
+const visOf = (b: Blk): CardVis => {
+  const v = CARD[b.kind] ?? CARD.fut!;
+  if (!isPriority(b.p)) return v;
+  if (b.kind === 'done') return DONE_ELD;
+  if (b.kind === 'lateDone') return { ...v, ...ELD_BADGE };
+  return v;
+};
+
 // وسمُ الحالةِ الناطق: نصٌّ يُغني عن قراءةِ اللون (متأخّرٌ +7، جارٍ 8 min left، إلخ)
 const chipOf = (b: Blk, nowMin: number): string => {
   const s = b.start, est = estMinutes(b.p), e = b.end;
@@ -390,7 +412,7 @@ function BlobField() {
 function Card({ b, left, width, top, height, nowMin, onPress, onBarY }:
   { b: Blk; left: number; width: number; top: number; height: number;
     nowMin: number; onPress: () => void; onBarY?: (y: number) => void }) {
-  const v = CARD[b.kind]!;
+  const v = visOf(b);
   const est = estMinutes(b.p);
   const dur = est;
   const caseType = (b.p.treatment && b.p.treatment !== 'Treatment') ? b.p.treatment : 'Treatment';
@@ -621,7 +643,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
     const claim = (from: number, to: number, w: number) => { if (to > from) need.push({ from, to, w }); };
     for (const l of lanes) {
       const seams = l.blocks.filter((b) => b.kind === 'break' && b.fixed);
-      const chipWall = l.beyond.length > 0 ? seams[0] : undefined;
+      const chipWall = l.beyond.length > 0 ? shiftWall(seams, nowMin) : undefined;
       for (let i = 0; i < l.blocks.length; i++) {
         const b = l.blocks[i];
         // الجاري يُحجَزُ عرضُه على **مدّتِه المتوقّعة** لا على ما مضى منها، فيقطعُه خطُّ الآنَ
@@ -717,7 +739,7 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
   // لا يعملُ إلّا حيثُ تتداخلُ كتلتانِ في الوقتِ حقًّا (مريضانِ سُجّلا في كرسيٍّ واحدٍ معًا).
   const laidLanes = lanes.map((l) => {
     const seams = l.blocks.filter((b) => b.kind === 'break' && b.fixed);
-    const chipWall = l.beyond.length > 0 ? seams[0] : undefined;
+    const chipWall = l.beyond.length > 0 ? shiftWall(seams, nowMin) : undefined;
     let floor = -Infinity;
     return l.blocks.map((b, i) => {
       // حدُّ الماءِ يقعُ عندَ nowX بشفتِه وظلِّه ووسمِه، فمَن يبدأُ عندَه تمامًا يختفي وقتُ دخولِه
@@ -1070,9 +1092,11 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                               كرتًا في شفتٍ ليس شفتَه؛ شارةٌ ملاصقةٌ لكرتِ التبديلِ من اليسارِ
                               تقولُ كم هم، وبالنقرِ تظهرُ أسماؤهم. */}
                           {l.beyond.length > 0 && (() => {
-                            // تلتصقُ بأوّلِ تبديلٍ في العيادةِ من **يسارِه** دائمًا — مهما مضى الوقت.
-                            // فهي تقولُ «هؤلاء وقفوا هنا ولم يعبروا»، ولو رحلَتْ يمينَه لقالتْ عكسَ ذلك.
-                            const wall = l.blocks.find((b) => b.kind === 'break' && b.fixed);
+                            // تلتصقُ بالتبديلِ الذي يختمُ **شفتَهم هم** من يسارِه: مَن تركتَه في شفتِ
+                            // المساءِ يقفُ عندَ تبديلِ المساء، لا عندَ تبديلِ الظهرِ الذي مضى قبلَ ساعات.
+                            // ومن يسارِه دائمًا لأنّها تقولُ «هؤلاء وقفوا هنا ولم يعبروا» — ولو رحلَتْ
+                            // يمينَه لقالت عكسَ ذلك. (القاعدةُ في shiftWall، وهي زمنيّةٌ محضة.)
+                            const wall = shiftWall(l.blocks.filter((b) => b.kind === 'break' && b.fixed), nowMin);
                             const left = wall
                               ? xAt(wall.start) - CHIP_W - GAP
                               : laid.reduce((m, o) => Math.max(m, o.left + o.width), scale(8)) + GAP;
