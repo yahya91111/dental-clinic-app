@@ -46,56 +46,6 @@ const fmtGap = (min: number): string => {
 const TEAL_INK = '#0E7C66';
 const BG_COLORS: [string, string, string] = ['#F0F4F8', '#E8EDF3', '#F5F0F8'];
 
-// ═══════════════ محاكاةٌ افتراضيّةٌ تفاعليّةٌ معزولةٌ عن الوقتِ الفعليّ (بيئةُ عملٍ للتجربة 7ص→9م) ═══════════════
-// عالَمٌ افتراضيٌّ قائمٌ بذاته يأخذُ مرضاك **الحقيقيّين** (أسماؤهم/علاجُهم/مدّتُهم) ويتجاهلُ
-// أوقاتَهم الحقيقيّةَ تمامًا. **لا شيءَ تلقائيّ**: المريضُ يبقى منتظِرًا حتّى تُدخِلَه أنتَ للعيادةِ
-// (بنقرِه على المخطّط) ثمّ تُنهيه — كالعملِ الحقيقيّ لكن بساعةٍ مسرَّعة. (الربطُ الحيُّ لاحقًا، بنفسِ المنطق.)
-//
-// وهي **بيئةُ عملٍ لنا لا ميزةٌ للطبيب**: يُطوى شريطُها عن الإصدارِ حينَ لا نحتاجُه.
-// مفتاحٌ واحدٌ لا حذف — يبقى عملُها كاملًا في الملفّ. (مفتوحٌ الآنَ لتجربةِ تصميمِ المخطّط.)
-const SIM_ENABLED: boolean = true;
-
-export type SimAct = { enter?: number; chair?: number; done?: number; na?: boolean; naAt?: number };
-
-// نأخذُ تاريخَ اليومِ فقط لبناءِ Date؛ الساعةُ/الدقيقةُ افتراضيّةٌ بالكامل (buildLanes يقرأُ الدقائقَ فقط).
-const dateAtMin = (min: number): Date => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(min / 60), Math.round(min % 60), 0, 0);
-};
-
-// يُجسّدُ حالةَ كلِّ مريضٍ من إجراءاتِك أنتَ (أختامٌ افتراضيّةٌ فقط): منتظِرٌ ما لم تُدخِلْه.
-function applySimActs(patients: Patient[], acts: { [id: string]: SimAct }, doctorName?: string): Patient[] {
-  return patients.map((p) => {
-    const a = acts[p.id];
-    // «غيرُ متاح»: إجراؤُك في المحاكاةِ يَجُبُّ الحالةَ الحقيقيّةَ (وإلّا فالحالةُ الحقيقيّة)
-    const naEff = a?.na !== undefined ? a.na : p.status === 'na';
-    // نسجّلُ لحظةَ النداءِ (متى صارَ غيرَ متاح) لتُعرَضَ على الكرت — من الإجراءِ إن وُجدَ وإلّا نُبقي الحقيقيّ
-    if (naEff) return { ...p, status: 'na', clinic_entry_at: undefined, completed_at: undefined,
-      na_at: a?.naAt != null ? dateAtMin(a.naAt) : p.na_at } as Patient;
-    if (!a || a.enter == null) {
-      // لم تُدخِلْه بعد → منتظِرٌ بلا أختامٍ ولا طبيبٍ معالِج؛ الحسّابُ يتوقّعُ مكانَه أمامَ الخطّ
-      return { ...p, clinic: 'Clinic', status: p.isElderly ? 'elderly' : 'normal', clinic_entry_at: undefined, completed_at: undefined, doctor_name: undefined } as Patient;
-    }
-    return {
-      ...p,
-      clinic: `Clinic ${a.chair}`,
-      status: a.done != null ? 'complete' : (p.isElderly ? 'elderly' : 'normal'),
-      clinic_entry_at: dateAtMin(a.enter),
-      completed_at: a.done != null ? dateAtMin(a.done) : undefined,
-      doctor_name: doctorName || p.doctor_name,   // في المحاكاةِ أنتَ الطبيبُ المعالِج (وسمُ الكرت)
-    } as Patient;
-  });
-}
-
-// أوّلُ كرسيٍّ شاغرٍ عندَ الإدخال (لا يشغلُه مريضٌ أُدخِلَ ولم يُنجَزْ بعد)
-function firstFreeChair(acts: { [id: string]: SimAct }, chairCount: number): number {
-  const busy = new Set(Object.values(acts).filter((a) => a.enter != null && a.done == null).map((a) => a.chair));
-  for (let c = 1; c <= chairCount; c++) if (!busy.has(c)) return c;
-  return 1;
-}
-
-const SIM_SPEEDS = [1, 3, 10, 30, 90]; // دقائقُ افتراضيّةٌ لكلِّ ثانيةٍ حقيقيّة (1 = أبطأ، الافتراضيّ — دقيقةٌ لكلِّ ثانية)
-
 // المخطّطُ يُمرَّرُ أفقيًّا، وشريطُ اليومِ يقرأُ إزاحتَه. نقرؤها بالمحرّكِ الأصليِّ فلا إعادةَ
 // رسمٍ لكلِّ إطار، وscrollTo يمرُّ عبرَ المرجعِ كما هو (createAnimatedComponent يُمرّرُ المراجع).
 const AnimatedScrollView = Animated.ScrollView as unknown as typeof ScrollView;
@@ -142,7 +92,7 @@ const LAND_2: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.0
 const LAND_3: [string, string, string] = ['rgba(10,35,45,0)', 'rgba(10,35,45,0.10)', 'rgba(10,35,45,0)'];
 
 // ═══════════════ بطاقةُ المعلومات (في موضع الإحصاء) — لا مخطّطٌ مصغّر، بل «التالي في الدور» وملخّصٌ سريع ═══════════════
-function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: number; simOn?: boolean }) {
+function MiniTimeline({ data, nowMin }: { data: TimelineData; nowMin: number }) {
   const { lanes } = data;
   const flat = lanes.flatMap((l) => l.blocks.map((b) => ({ b, clinic: l.short })));
   const serving = flat.filter((x) => x.b.kind === 'cur' || x.b.kind === 'over');
@@ -177,7 +127,6 @@ function MiniTimeline({ data, nowMin, simOn }: { data: TimelineData; nowMin: num
 
       <View style={mini.head}>
         <Text style={mini.eyebrow}>{next ? 'NEXT UP' : 'QUEUE'}</Text>
-        {simOn && <View style={mini.simBadge}><Text style={mini.simBadgeTxt}>SIM</Text></View>}
         <Text style={mini.clock}>{fmtHM(nowMin)}</Text>
         <View style={mini.exp}><Text style={mini.expTxt}>⤢</Text></View>
       </View>
@@ -246,7 +195,7 @@ function TimeStepper({ value, onChange }: { value: number; onChange: (v: number)
   );
 }
 
-// إجراءاتُ المريضِ من المخطّط — تُنفَّذُ على قاعدةِ البيانات (الوضعُ الحقيقيّ) أو على المحاكاةِ وحدَها.
+// إجراءاتُ المريضِ من المخطّط — تُنفَّذُ على قاعدةِ البيانات.
 // هي نفسُها إجراءاتُ الكرتِ في صفحةِ الدور، فالحدثُ واحدٌ أينما نُفِّذ.
 export type BlockActions = {
   onEnterClinic: (patientId: string, chair: string) => void;
@@ -546,14 +495,13 @@ const spanOf = (b: Blk): Blk =>
     : b;
 
 // ═══════════════ المكبّر (ملء الشاشة) ═══════════════
-// readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا محاكاةَ ولا
-// تحريرَ بريكاتٍ ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
+// readOnly: عرضُ يومٍ مضى من الأرشيف. المخطّطُ نفسُه بلا يدٍ تُغيّره — لا تحريرَ بريكاتٍ
+// ولا إجراءاتِ مريض. اليومُ انتهى، وما يُعرَضُ خبرٌ عنه لا تحكُّمٌ فيه.
 // instant: فُتِحَ استئنافًا (عائدًا من ملفِّ مريضٍ دخلتَه من هنا) — فلا مقدّماتٍ ولا تلاشٍ:
 // يُرسَمُ في مكانِه من أوّلِ إطارٍ كأنّك لم تغادرْه.
 // pull: سحبٌ إلى الأسفلِ فيُسألُ الخادمُ الآن. اليومُ المحفوظُ لا يُسأل.
-function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, sim, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle, instant, pull }:
+function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, breaks, onSaveBreaks, chairCount, onSetChairCount, actions, readOnly, title, subtitle, instant, pull }:
   { visible: boolean; onClose: () => void; data: TimelineData; nowMin: number; topInset: number; bottomInset: number;
-    sim: { on: boolean; playing: boolean; speed: number; toggle: () => void; playPause: () => void; cycleSpeed: () => void; reset: () => void };
     breaks: Break[]; onSaveBreaks: (b: Break[]) => void;
     chairCount: number; onSetChairCount: (n: number) => void; actions: BlockActions;
     readOnly?: boolean; title?: string; subtitle?: string; instant?: boolean;
@@ -919,32 +867,11 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
                       <View style={full.clockDot} />
                     </View>
                   )}
-                  <Text style={full.clockLTxt}>{readOnly ? 'SAVED' : sim.on ? 'SIM' : 'LIVE'}</Text>
+                  <Text style={full.clockLTxt}>{readOnly ? 'SAVED' : 'LIVE'}</Text>
                 </View>
               </View>
             </View>
           </View>
-
-          {/* شريطُ المحاكاة (مسرِّعٌ زمنيّ للاختبار) — لا معنى له في يومٍ مضى، ولا في الإصدار (SIM_ENABLED) */}
-          {!readOnly && SIM_ENABLED && (
-          <View style={full.simBar}>
-            <TouchableOpacity onPress={sim.toggle} style={[full.simMain, sim.on && full.simMainOn]}>
-              <Text style={[full.simMainTxt, sim.on && { color: '#fff' }]}>{sim.on ? '● محاكاة' : '▶ محاكاة يوم'}</Text>
-            </TouchableOpacity>
-            {sim.on && (
-              <>
-                <TouchableOpacity onPress={sim.reset} style={full.simCtl}><Text style={full.simCtlTxt}>⏮</Text></TouchableOpacity>
-                <TouchableOpacity onPress={sim.playPause} style={full.simCtl}><Text style={full.simCtlTxt}>{sim.playing ? '⏸' : '▶'}</Text></TouchableOpacity>
-                <TouchableOpacity onPress={sim.cycleSpeed} style={full.simCtl}><Text style={full.simCtlTxt}>{sim.speed} د/ث</Text></TouchableOpacity>
-              </>
-            )}
-            <View style={{ flex: 1 }} />
-            {sim.on ? <Text style={full.simTag}>اختبار</Text> : null}
-          </View>
-          )}
-          {!readOnly && sim.on && (
-            <Text style={full.simHint}>انقرِ المريضَ على المخطّطِ لتفتحَ إجراءاتِه — لا شيءَ تلقائيّ.</Text>
-          )}
 
           {/* لوحُ المخطّطِ الزجاجيّ — ظلٌّ خارجيٌّ لا يُقصُّ + حافّةٌ عليا مضيئة، وتمريرٌ عموديٌّ للعياداتِ الكثيرة.
               maxHeight = مقاسُ العياداتِ نفسِها (الرأسُ + عددُ العيادات) فيهبطُ اللوحُ على قدرِها ولا يتمدّدُ؛
@@ -1573,7 +1500,6 @@ function FullTimeline({ visible, onClose, data, nowMin, topInset, bottomInset, s
 // ── عارضُ لقطةِ يومٍ محفوظة (الأرشيف) ──
 // اللقطةُ تحملُ مساراتِها ومحورَها وساعةَ حفظِها، فلا حسابَ هنا ولا اعتمادَ على «الآن»:
 // نرسمُ ما حُفِظَ كما حُفِظ. ونمرّرُ دوالَّ صوريّةً لأنّ readOnly يقطعُ كلَّ ما يستدعيها.
-const NO_SIM = { on: false, playing: false, speed: 1, toggle: () => {}, playPause: () => {}, cycleSpeed: () => {}, reset: () => {} };
 const NO_ACTIONS: BlockActions = { onEnterClinic: () => {}, onToggleNA: () => {}, onDone: () => {} };
 
 export function DayChartViewer({ visible, onClose, chart, dateLabel }:
@@ -1589,7 +1515,6 @@ export function DayChartViewer({ visible, onClose, chart, dateLabel }:
       nowMin={chart.savedAtMin}
       topInset={insets.top}
       bottomInset={insets.bottom}
-      sim={NO_SIM}
       breaks={chart.breaks}
       onSaveBreaks={() => {}}
       chairCount={chart.chairCount}
@@ -1614,10 +1539,10 @@ const lastPage: { [clinic: string]: number } = {};
 // النيّةَ خارجَ الشجرةِ (كما نحفظُ الصفحةَ الحاليّة) فيُستأنَفُ المخطّطُ عندَ العودةِ مفتوحًا.
 const reopenChart: { [clinic: string]: boolean } = {};
 
-export function QueueTimelinePager({ patients, clinicId, statsNode, currentDoctorName, onSchedule, onEnterClinic, onToggleNA, onDone, onProfile, onReload }:
-  { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode; currentDoctorName?: string;
+export function QueueTimelinePager({ patients, clinicId, statsNode, onSchedule, onEnterClinic, onToggleNA, onDone, onProfile, onReload }:
+  { patients: Patient[]; clinicId?: string | null; statsNode: React.ReactNode;
     onSchedule?: (lanes: Lane[], chairCount: number, breaks: Break[], nowMin: number) => void;
-    // إجراءاتُ صفحةِ الدور الحقيقيّة (نفسُها على الكرت) — تُستدعى خارجَ المحاكاة
+    // إجراءاتُ صفحةِ الدور الحقيقيّة — نفسُها التي على كرتِ المريض
     onEnterClinic?: (patientId: string, clinic: string) => void;
     onToggleNA?: (patientId: string) => void;
     onDone?: (patientId: string) => void;
@@ -1674,13 +1599,6 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
     if (clinicId) { updateChartChairs(clinicId, n).catch(() => {}); }   // وللمركز
   };
   const [breaks, setBreaks] = useState<Break[]>([]);   // أوقاتُ البريك لكلِّ العيادات (من إعداداتِ المركز)
-  // محاكاة (مسرِّعٌ زمنيّ): ساعةٌ افتراضيّةٌ من 7ص إلى 9م + مرضى مولَّدون
-  const [simOn, setSimOn] = useState(false);
-  const [simPlaying, setSimPlaying] = useState(true);
-  const [simSpeedIdx, setSimSpeedIdx] = useState(0);
-  const [simNowMin, setSimNowMin] = useState(7 * 60);
-  // إجراءاتُك داخلَ المحاكاة (إدخال/إنجاز) بالوقتِ الافتراضيّ — لا شيءَ تلقائيّ، ولا كتابةَ في قاعدةِ البيانات
-  const [simActs, setSimActs] = useState<{ [id: string]: SimAct }>({});
 
   // عددُ العياداتِ من إعداداتِ المركز (نفسُ الرقمِ في صفحةِ الجداول). قراءةٌ فقط،
   // ويُحدَّثُ كلَّ نصفِ دقيقةٍ ليظهرَ أيُّ تغييرٍ في العددِ فورًا تقريبًا — ومع كلِّ سحبةِ تحديث.
@@ -1725,49 +1643,25 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
       : [],
     [chairOverride, clinicCount]);
 
-  // ساعةُ المحاكاة: تتقدّمُ بسرعةٍ مختارةٍ حتّى 9م ثمّ تتوقّف
-  const simSpeed = SIM_SPEEDS[simSpeedIdx];
-  useEffect(() => {
-    if (!simOn || !simPlaying) return;
-    const id = setInterval(() => {
-      setSimNowMin((m) => Math.min(24 * 60, m + simSpeed * 0.25));
-    }, 250);
-    return () => clearInterval(id);
-  }, [simOn, simPlaying, simSpeed]);
+  const data = useMemo(() => buildLanes(patients, nowMin, chairs, breaks), [patients, nowMin, chairs, breaks]);
 
-  // بياناتٌ فعّالة:
-  //  • المحاكاة (تجربة) = عالَمٌ افتراضيٌّ معزول: الحالةُ من إجراءاتِك أنتَ (applySimActs)، والوقتُ
-  //    من ساعتِها الافتراضيّة — تجاهلٌ تامٌّ لأوقاتِ المرضى الحقيقيّة، فلا يتسرّبُ الوقتُ الفعليّ.
-  //  • بدون محاكاة = الوقتُ الفعليُّ والحالةُ الحقيقيّة (يأتي ربطُه حيًّا لاحقًا).
-  const simChairs = chairs.length ? chairs : ['Clinic 1', 'Clinic 2', 'Clinic 3'];
-  const effNow = simOn ? Math.round(simNowMin) : nowMin;
-  // ملحوظةٌ عن المحاكاة: ساعتُها افتراضيّةٌ بينما يبقى registered_at بالساعةِ الحقيقيّة، فكلُّ
-  // مَن في الطابورِ يبدو لها «منتظِرًا منذ الفجر». فحكمُ البريكِ الثابتِ على تسجيلٍ جديدٍ لا
-  // يُعايَنُ إلّا في الوضعِ الحيّ — والمحاكاةُ تبقى لِمعاينةِ سيرِ الدورِ لا لِهذا.
-  const effPatients = useMemo(
-    () => (simOn ? applySimActs(patients, simActs, currentDoctorName) : patients),
-    [simOn, patients, simActs, currentDoctorName],
-  );
-  const effChairs = simOn ? simChairs : chairs;
-  const data = useMemo(() => buildLanes(effPatients, effNow, effChairs, breaks), [effPatients, effNow, effChairs, breaks]);
-
-  // نُبلّغُ الشاشةَ بالجدولِ الحاليِّ نفسِه المعروضِ (محاكاةً كان أو وقتًا فعليًّا) كي يعتمدَه
-  // فحصُ توفّرِ حجزِ موعدِ الدخول في الكروت — فيطابقُ الحجزُ ما تراه على المخطّطِ تمامًا.
+  // نُبلّغُ الشاشةَ بالجدولِ الحاليِّ نفسِه المعروضِ كي يعتمدَه فحصُ توفّرِ حجزِ موعدِ الدخول
+  // في الكروت — فيطابقُ الحجزُ ما تراه على المخطّطِ تمامًا.
   // نُبلّغُ بعددِ الكراسي **المرسومةِ فعلًا** لا بالمُعَدِّ: إن لم يكن للمركزِ عددٌ محفوظٌ
   // (ولا تجاوزٌ محلّيّ) كان المُعَدُّ صفرًا، وصفرٌ يعني عندَ فحصِ التوفّرِ «لا أعرفُ فلا أمنع» —
   // فلا يحمرُّ وقتٌ ممتلئٌ أبدًا. أمّا المرسومُ فلا يقلُّ عن واحد، ويطابقُ ما تراه.
-  useEffect(() => { onSchedule?.(data.lanes, data.lanes.length, breaks, effNow); }, [data, breaks, effNow, onSchedule]);
+  useEffect(() => { onSchedule?.(data.lanes, data.lanes.length, breaks, nowMin); }, [data, breaks, nowMin, onSchedule]);
 
   // لقطةُ اليوم: تُودَعُ مع كلِّ بناءٍ فيبقى في قاعدةِ البيانات آخرُ ما رآه المركز، وتجدُها
-  // أرشفةُ الخادمِ الليليّةُ جاهزةً. والمحاكاةُ عالَمٌ افتراضيٌّ — لا تُحفَظ.
+  // أرشفةُ الخادمِ الليليّةُ جاهزةً.
   // البصمةُ تصفُ **المضمونَ** بلا وقت، فتُفرَّقُ الكتابةُ عندَ تغييرٍ حقيقيٍّ عن تقدُّمِ الساعةِ وحدَه.
   useEffect(() => {
-    if (simOn || !clinicId) return;
-    const sig = effPatients
+    if (!clinicId) return;
+    const sig = patients
       .map((p) => `${p.id}:${p.status}:${p.expected_minutes}:${p.appointment_min}:${p.clinic_entry_at?.getTime() ?? ''}:${p.completed_at?.getTime() ?? ''}:${p.na_at?.getTime() ?? ''}`)
-      .join('|') + `#${JSON.stringify(breaks)}#${effChairs.length}`;
-    rememberDayChart(clinicId, snapshotChart(data, breaks, localDay(), effNow), sig);
-  }, [data, effPatients, breaks, effChairs.length, effNow, simOn, clinicId]);
+      .join('|') + `#${JSON.stringify(breaks)}#${chairs.length}`;
+    rememberDayChart(clinicId, snapshotChart(data, breaks, localDay(), nowMin), sig);
+  }, [data, patients, breaks, chairs.length, nowMin, clinicId]);
 
   // حفظُ أوقاتِ البريك في إعداداتِ المركز (تفاؤليّ + كتابةٌ في قاعدة البيانات)
   const onSaveBreaks = async (next: Break[]) => {
@@ -1776,49 +1670,20 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
   };
 
   // ── إجراءاتُ نافذةِ المريض ──
-  // المحاكاةُ مشغَّلة → تُنفَّذُ على simActs وحدَها (لا كتابةَ في قاعدةِ البيانات، العزلُ محفوظ).
-  // مطفأة → تُستدعى دوالُّ الصفحةِ الحقيقيّةُ نفسُها، فالحدثُ واحدٌ هنا وعلى كرتِ المريض.
+  // تُستدعى دوالُّ الصفحةِ الحقيقيّةُ نفسُها، فالحدثُ واحدٌ هنا وعلى كرتِ المريض.
   const actions: BlockActions = useMemo(() => ({
-    onEnterClinic: (id, clinic) => {
-      if (simOn) {
-        const now = Math.round(simNowMin);
-        const chair = clinicNum(clinic) || firstFreeChair(simActs, simChairs.length);
-        setSimActs((prev) => ({ ...prev, [id]: { ...prev[id], enter: prev[id]?.enter ?? now, chair, na: false, done: undefined } }));
-      } else onEnterClinic?.(id, clinic);
-    },
-    onToggleNA: (id) => {
-      if (simOn) {
-        const cur = patients.find((p) => p.id === id);
-        setSimActs((prev) => {
-          const nowNA = prev[id]?.na !== undefined ? prev[id]!.na : cur?.status === 'na';
-          const turningOn = !nowNA;   // عندَ التفعيل نُثبّتُ وقتَ النداء (لحظةَ المحاكاةِ الآن)؛ وعندَ الإلغاء نمحوه
-          // نمحو الدخول/الإنجاز في الحالتين: التفعيل يُخرِجُه من الكرسيّ، والإلغاءُ يُعيدُه إلى الطابورِ حسبَ رقمِ الدور (لا يستأنفُ علاجًا)
-          return { ...prev, [id]: { ...prev[id], na: turningOn, naAt: turningOn ? Math.round(simNowMin) : undefined, enter: undefined, done: undefined } };
-        });
-      } else onToggleNA?.(id);
-    },
+    onEnterClinic: (id, clinic) => { onEnterClinic?.(id, clinic); },
+    onToggleNA: (id) => { onToggleNA?.(id); },
     onDone: (id) => {
-      if (simOn) setSimActs((prev) => ({ ...prev, [id]: { ...prev[id], done: Math.round(simNowMin) } }));
-      // الوضعُ الحقيقيّ: نُغلقُ المخطّطَ أوّلًا لتظهرَ نافذةُ اختيارِ الطبيبِ الحاليّةُ دونَ تراكُمِ نافذتين،
+      // نُغلقُ المخطّطَ أوّلًا لتظهرَ نافذةُ اختيارِ الطبيبِ الحاليّةُ دونَ تراكُمِ نافذتين،
       // ونُمهِلُ إغلاقَه قبلَ فتحِها لأنّ فتحَ نافذةٍ في اللحظةِ نفسِها التي تُغلَقُ فيها أخرى قد يبتلِعُها.
-      else { closeFull(); setTimeout(() => onDone?.(id), 350); }
+      closeFull(); setTimeout(() => onDone?.(id), 350);
     },
     // الملفُّ صفحةٌ **تحلُّ محلَّ** الصفحةِ كلِّها، فهذه الشجرةُ — والمخطّطُ معها — تُهدَمُ في الحال.
     // فلا نُغلِقُه أوّلًا ثمّ ننتظرُ: الإغلاقُ ثمّ الانتظارُ هو ما كان يُظهِرُ صفحةَ الدورِ بينهما.
     // ونُسجّلُ أنّنا خرجنا من المخطّطِ كي يستقبلَنا مفتوحًا حينَ نضغطُ «رجوع» في الملفّ.
     onProfile: (id) => { reopenChart[pageKey] = true; onProfile?.(id); },
-  }), [simOn, simNowMin, simActs, simChairs.length, patients, onEnterClinic, onToggleNA, onDone, onProfile, pageKey]);
-
-  const simApi = {
-    on: simOn, playing: simPlaying, speed: simSpeed,
-    toggle: () => {
-      if (!SIM_ENABLED) return;   // مطفأةٌ من مفتاحٍ واحد: لا بابَ إليها ولو نُوديَ عليها
-      setSimOn((v) => { const nx = !v; if (nx) { setSimNowMin(7 * 60); setSimPlaying(true); setSimActs({}); } return nx; });
-    },
-    playPause: () => setSimPlaying((v) => !v),
-    cycleSpeed: () => setSimSpeedIdx((i) => (i + 1) % SIM_SPEEDS.length),
-    reset: () => { setSimNowMin(7 * 60); setSimActs({}); },
-  };
+  }), [onEnterClinic, onToggleNA, onDone, onProfile, pageKey]);
 
   return (
     <View>
@@ -1848,13 +1713,13 @@ export function QueueTimelinePager({ patients, clinicId, statsNode, currentDocto
           <View style={{ flexDirection: 'row', gap: scale(16) }}>{statsNode}</View>
         </View>
         <TouchableOpacity activeOpacity={0.9} style={{ width: W, paddingHorizontal: scale(24) }} onPress={() => setShowFull(true)}>
-          <MiniTimeline data={data} nowMin={effNow} simOn={simOn} />
+          <MiniTimeline data={data} nowMin={nowMin} />
         </TouchableOpacity>
       </ScrollView>
 
       {/* لا نُقَطَ صفحاتٍ تحتَ اللوح: مساحتُها صارت له، والصفحةُ الثانيةُ تُعرَفُ بالسحب */}
 
-      <FullTimeline visible={showFull} onClose={closeFull} instant={resumed.current} data={data} nowMin={effNow} topInset={insets.top} bottomInset={insets.bottom} sim={simApi} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={effChairs.length} onSetChairCount={setChairCount} actions={actions} pull={pull} />
+      <FullTimeline visible={showFull} onClose={closeFull} instant={resumed.current} data={data} nowMin={nowMin} topInset={insets.top} bottomInset={insets.bottom} breaks={breaks} onSaveBreaks={onSaveBreaks} chairCount={chairs.length} onSetChairCount={setChairCount} actions={actions} pull={pull} />
     </View>
   );
 }
@@ -1880,8 +1745,6 @@ const mini = scaledStyleSheet({
     backgroundColor: 'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: MINI_RIM,
   },
   expTxt: { fontSize: 9, color: '#8FA3AC', fontWeight: '800' },
-  simBadge: { backgroundColor: '#0B7F71', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 },
-  simBadgeTxt: { fontSize: 8, fontWeight: '800', letterSpacing: 1, color: '#fff' },
 
   // بلاطةُ التالي — الرقمُ يمينَ الاسم (صفٌّ معكوس)، ووَشْمُها يذوبُ فلا حدَّ لها
   slab: {
@@ -1959,17 +1822,7 @@ const full = scaledStyleSheet({
   clockRing: { position: 'absolute', width: 5, height: 5, borderRadius: 3, backgroundColor: '#7DD3C0' },
   clockDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#7DD3C0' },
   clockLTxt: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.4, color: '#8CA0A8' },
-  // ── شريطُ المحاكاة ──
-  simBar: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 22, paddingTop: 12, paddingBottom: 10 },
-  simMain: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.5)', borderWidth: 1, borderColor: 'rgba(125,211,192,0.8)' },
-  simMainOn: { backgroundColor: '#0E7C66', borderColor: '#0E7C66' },
-  simMainTxt: { fontSize: 11.5, fontWeight: '800', color: '#0E7C66' },
-  simCtl: { minWidth: 33, paddingHorizontal: 8, paddingVertical: 7, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 1, borderColor: 'rgba(18,58,68,0.09)', alignItems: 'center' },
-  simCtlTxt: { fontSize: 11, fontWeight: '800', color: '#31454D' },
-  simTag: { fontSize: 9, fontWeight: '800', letterSpacing: 1, color: '#8CA0A8' },
-  simHint: { fontSize: 11, fontWeight: '700', color: '#0E7C66', textAlign: 'center', paddingHorizontal: 22, paddingBottom: 8 },
   // ── اللوحُ الزجاجيّ + عمودُ العيادات ──
-  // marginTop: كان شريطُ المحاكاةِ يفصلُ اللوحَ عن الرأسِ بجسمِه؛ وقد طُويَ، فالفصلُ الآنَ فراغٌ مقصود
   panelShadow: { flex: 1, marginHorizontal: 14, marginTop: 14, marginBottom: 12, borderRadius: 28, shadowColor: '#0A2834', shadowOpacity: 0.32, shadowRadius: 22, shadowOffset: { width: 0, height: 16 }, elevation: 10 },
   panel: { flex: 1, borderRadius: 28, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.80)' },
   panelTopHi: { position: 'absolute', top: 0, left: 22, right: 22, height: 1, backgroundColor: 'rgba(255,255,255,0.9)', zIndex: 5 },

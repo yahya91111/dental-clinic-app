@@ -389,8 +389,8 @@ export function buildLanes(patients: Patient[], nowMin: number, chairsOverride?:
       segFree[lane][i] = s + est;
       return true;
     };
-    // لحظةُ تسجيلِه. ولا تتجاوزُ «الآنَ» لأنّ المحاكاةَ تُرجِعُ الساعةَ إلى الوراء،
-    // فيبدو المسجَّلُ قبلَ قليلٍ كأنّه سُجِّلَ في المستقبل.
+    // لحظةُ تسجيلِه، ولا تتجاوزُ «الآنَ»: ختمٌ متقدّمٌ على الساعةِ (فرقُ توقيتٍ أو ساعةُ جهازٍ
+    // مضبوطةٌ إلى الأمام) يجعلُ المسجَّلَ قبلَ قليلٍ يبدو كأنّه سُجِّلَ في المستقبل.
     const reg = Math.min(minutesOfDay(p.registered_at ?? p.timestamp) ?? nowMin, nowMin);
     // والموعدُ المحجوزُ يَجُبُّ لحظةَ التسجيل: مَن حُجِزَ له وقتٌ فقد اختيرَ شفتُه اختيارًا.
     const anchor = appt > 0 ? appt : reg;
