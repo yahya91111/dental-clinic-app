@@ -370,8 +370,8 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
   } = props;
 
   // سياقُ حجزِ موعدِ الدخول: يأتي جاهزًا من مخطّطِ الدور (QueueTimelinePager عبرَ onSchedule) فيطابقُ
-  // تمامًا ما يظهرُ على المخطّط. يُخزَّنُ في مرجعٍ (ref) كي لا تُعادَ رسمُ قائمةِ الكروتِ مع كلِّ
-  // نبضةِ ساعة، ويُلتقَطُ لقطةً عندَ فتحِ كرتٍ للحجز.
+  // تمامًا ما يظهرُ على المخطّطِ — محاكاةً كان أو وقتًا فعليًّا. يُخزَّنُ في مرجعٍ (ref) كي لا تُعادَ
+  // رسمُ قائمةِ الكروتِ مع كلِّ نبضةِ ساعةِ المحاكاة، ويُلتقَطُ لقطةً عندَ فتحِ كرتٍ للحجز.
   const scheduleRef = useRef<{ lanes: Lane[]; chairCount: number; breaks: Break[]; nowMin: number }>({ lanes: [], chairCount: 0, breaks: [], nowMin: 0 });
   // ── ساعةُ دخولِ المنتظِرِ على كرتِه ──
   // هي ساعةُ المخطّطِ نفسُها لا حسابٌ ثانٍ يُشبِهُها: تُؤخَذُ من الكتلةِ التي رسمَها المخطّطُ
@@ -860,6 +860,7 @@ export const MainQueueScreen: React.FC<MainQueueScreenProps> = (props) => {
           <QueueTimelinePager
             patients={patients}
             clinicId={selectedClinicId}
+            currentDoctorName={currentDoctorName}
             onSchedule={onSchedule}
             onEnterClinic={tlEnterClinic}
             onToggleNA={tlToggleNA}
