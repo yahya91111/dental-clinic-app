@@ -10,7 +10,10 @@ workflows:
       xcode: latest
       vars:
         EXPO_PUBLIC_SUPABASE_URL: https://usuljsxfvhhcxdwnshpr.supabase.co
-        EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdWxqc3hmdmhoY3hkd25zaHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTc0MTEsImV4cCI6MjA3ODE5MzQxMX0.cXd-iJVVsWr1O-pZ3swdYD6Rv-cwZ5y12TxDoeIX7Hs
+        # مفتاحُ Supabase العامّ — الجيلُ الجديد (sb_publishable_…).
+        # الجيلُ القديم (JWT) صارت الدوالُّ الطرفيّةُ ترفضُه (UNAUTHORIZED_LEGACY_JWT)
+        # فسقطَ الذكاءُ وحدَه وبقيَتْ قاعدةُ البيانات تعمل. وهذا يعملُ في الطبقتَين.
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_BljeoFOicpMd5W-UaIi2ww_aEzeEpoJ
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.yahyasadeq.dentalclinic
@@ -82,7 +85,10 @@ workflows:
         - android_keystore
       vars:
         EXPO_PUBLIC_SUPABASE_URL: https://usuljsxfvhhcxdwnshpr.supabase.co
-        EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzdWxqc3hmdmhoY3hkd25zaHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTc0MTEsImV4cCI6MjA3ODE5MzQxMX0.cXd-iJVVsWr1O-pZ3swdYD6Rv-cwZ5y12TxDoeIX7Hs
+        # مفتاحُ Supabase العامّ — الجيلُ الجديد (sb_publishable_…).
+        # الجيلُ القديم (JWT) صارت الدوالُّ الطرفيّةُ ترفضُه (UNAUTHORIZED_LEGACY_JWT)
+        # فسقطَ الذكاءُ وحدَه وبقيَتْ قاعدةُ البيانات تعمل. وهذا يعملُ في الطبقتَين.
+        EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_BljeoFOicpMd5W-UaIi2ww_aEzeEpoJ
     scripts:
       - name: Install dependencies
         script: |
