@@ -12,8 +12,13 @@ import {
 } from '@expo-google-fonts/ibm-plex-sans-arabic';
 import { AuthProvider } from './AuthContext';
 import { AppContent } from './screens/MainQueue/AppContent';
+import { useInstantUpdates } from './lib/otaUpdate';
 
 export default function App() {
+  // التحديثُ الجوّيُّ يصلُ في حينِه لا في الإقلاعِ التالي — قبلَ حاجزِ الخطوطِ
+  // كي يعملَ ولو تعثّرَ تحميلُها.
+  useInstantUpdates();
+
   const [fontsLoaded] = useFonts({
     'IBMPlexSansArabic-Regular': IBMPlexSansArabic_400Regular,
     'IBMPlexSansArabic-Medium': IBMPlexSansArabic_500Medium,
