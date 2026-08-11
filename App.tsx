@@ -13,6 +13,7 @@ import {
 import { AuthProvider } from './AuthContext';
 import { AppContent } from './screens/MainQueue/AppContent';
 import { useInstantUpdates } from './lib/otaUpdate';
+import { UpdateGate } from './components/UpdateGate';
 
 export default function App() {
   // التحديثُ الجوّيُّ يصلُ في حينِه لا في الإقلاعِ التالي — قبلَ حاجزِ الخطوطِ
@@ -38,7 +39,11 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <SafeAreaProvider>
-          <AppContent />
+          {/* البوّابةُ تعلو كلَّ شيءٍ داخلَ حاويةِ الأمان: تحجبُ التطبيقَ كلَّه حتّى شاشةِ
+              الدخول، فمن عَلِقَ على نسخةٍ قديمةٍ يراها قبلَ أن يُحاولَ العمل. */}
+          <UpdateGate>
+            <AppContent />
+          </UpdateGate>
         </SafeAreaProvider>
       </AuthProvider>
     </GestureHandlerRootView>
