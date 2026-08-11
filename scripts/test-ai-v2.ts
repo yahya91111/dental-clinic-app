@@ -7,7 +7,8 @@
 //   npx tsx --env-file=.env scripts/test-ai-v2.ts
 //
 // What it does:
-//   1. Loads EXPO_PUBLIC_ANTHROPIC_API_KEY from .env
+//   1. Loads Supabase env from .env (the Anthropic key lives on the server,
+//      inside the anthropic-proxy Edge Function — never in .env or the app)
 //   2. Builds a fake Team Leader user
 //   3. Sends your message to sendMessageV2
 //   4. Prints the response + token usage
